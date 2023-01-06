@@ -13,7 +13,6 @@
                 "Programming Language :: Python :: 3.11",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "<p align=\"center\">\n  <a href=\"https://cardoai.com/\"><img src=\"https://cardoai.com/wp-content/themes/yootheme/cache/logo-cardo-negativo-cd27a0ee.webp\" alt=\"FastAPI\"></a>\n</p>\n<p align=\"center\">\n    <em>IDP Authentication hexagonal architecture implementation</em>\n</p>\n\n---\n\n## Purpose\n\nThis project handles the authentication process of the Cardo platform. It is a hexagonal architecture implementation, which means that the business logic is independent of the framework used to implement the API.\n\n\n\n## Architecture\n\nThe architecture is based on the [Hexagonal Architecture](https://en.wikipedia.org/wiki/Hexagonal_architecture_(software)).\n\nThe main idea is to separate the business logic from the framework and the infrastructure.\n\nThe business logic is implemented in the `domain` module. This module is independent of the infrastructure.\n\nThe infrastructure is implemented `infrastructure` module.\n\nThe `app` which uses this package itself is the entry point of the application. It is the only module that depends on the framework.\n\n\n## Project layout\n\n    idp_authentication/\n    \u251c\u2500\u2500 infrastructure\n    \u2502   \u251c\u2500\u2500 custom_orm_column_types.py\n    \u2502   \u251c\u2500\u2500 database.py\n    \u2502   \u251c\u2500\u2500 orm.py\n    \u251c\u2500\u2500 users\n    \u2502   \u251c\u2500\u2500 adapters\n    \u2502   \u2502   \u251c\u2500\u2500 orm.py\n    \u2502   \u2502   \u251c\u2500\u2500 unit_of_work.py\n    \u2502   \u2502   \u251c\u2500\u2500 events\n    \u2502   \u2502   \u251c\u2500\u2500 repositories\n    \u2502   \u251c\u2500\u2500 base_classes\n    \u2502   \u2502   \u251c\u2500\u2500 base_entity.py\n    \u2502   \u2502   \u251c\u2500\u2500 base_repository.py\n    \u2502   \u251c\u2500\u2500 di\n    \u2502   \u2502   \u251c\u2500\u2500 containers.py\n    \u2502   \u251c\u2500\u2500 domain\n    \u2502   \u2502   \u251c\u2500\u2500 entities\n    \u2502   \u2502   \u251c\u2500\u2500 ports\n    \u2502   \u2502   \u251c\u2500\u2500 use_cases\n    \u2502   \u251c\u2500\u2500 infrastructure\n    \u2502   \u2502   \u251c\u2500\u2500 database\n    \u2502   \u2502   \u2502   \u251c\u2500\u2500 sqlalchemy\n    \u2502   \u2502   \u251c\u2500\u2500 faust\n    \u2502   \u2502   \u2502   \u251c\u2500\u2500 faust_app.py\n    \u2502   \u251c\u2500\u2500 tests\n    \u2502   \u2502   \u251c\u2500\u2500 domain\n    \u2502   \u2502   \u2502   \u251c\u2500\u2500 __init__.py\n\n\n## Requirements\n\nPython 3.9+\n\nIDP Authentication requires the following to be implemented:\n\n* <a href=\"https://python-dependency-injector.ets-labs.org/\" class=\"external-link\" target=\"_blank\">Dependency Injector</a>\n\n\n## Installation\nSince this is a private repository, you need to install the package with the following command:\n\n    pip install git+ssh://git@github.com/CardoAI/idp-authentication.git@main\n\n\n## Example\n\n### Usage\nInside your application container:\n\n    from dependency_injector import providers\n    from idp_authentication.users.di.containers import IDPApplicationContainer\n\n    idp_authentication = providers.Container(\n        IDPApplicationContainer,\n        config=config,\n        database=database,\n        app_entities_unit_of_work=app_entities_unit_of_work,\n    )\n\n\n### Extending default config\n    from idp_authentication.config import Config\n    \n    class TestConfig(Config):\n        APP_IDENTIFIER = \"test\"\n        CONSUMER_APP_ENV = \"test\"\n        FAUST_APP_PATH = \"idp_authentication.users.tests.faust_app.app\"\n        TENANTS = [\"default\"]\n        ROLES = [TEST_ROLE_1, TEST_ROLE_2]\n        KAFKA_BOOTSTRAP_SERVERS = [\"localhost:29092\"]\n        KAFKA_TOPIC = \"users\"\n        ISOLATION_LEVEL = \"SERIALIZABLE\"\n    \n        class Config:\n            env_file_encoding = \"utf-8\"\n            use_enum_values = True\n\n\n### Configuration example\n    from dependency_injector import containers, providers\n    from idp_authentication.users.di.containers import IDPApplicationContainer\n    \n\n    class YourTestContainer(containers.DeclarativeContainer):\n        config = providers.Configuration(pydantic_settings=[TestConfig()])\n        url = get_test_memory_db_uri()\n        database = providers.Singleton(\n            Database,\n        )\n        app_entities_unit_of_work = providers.Factory(\n            AppEntitiesUnitOfWork,\n            session=database.provided.session,\n        )\n        idp_authentication = providers.Container(\n            IDPApplicationContainer,\n            config=config,\n            database=database,\n            app_entities_unit_of_work=app_entities_unit_of_work,\n        )\n\n\n### Usage example\n\n    def container():\n        container = YourTestContainer()\n        container.wire(packages=[\"idp_authentication\"]) # Wire IDPAuthentication\n        container.idp_authentication.start_mapper() # Start IDPAuthentication mapper\n        yield container\n\n\n### App Entity\n\nTo declare a new AppEntity, these steps are necessary:\n- The Entity class should:\n  - Inherit from the class `AppEntity`\n  - Declare the properties `idp_identifier`, `idp_label` and optionally `entity_type`\n  - Example:\n    ```python3\n    from idp_authentication.users.domain.entities.app_entity import AppEntity\n    \n    class TestEntity(AppEntity):\n          @property\n          def idp_identifier(self):\n              return self.id\n          \n          @property\n          def idp_label(self):\n              return self.name\n    \n          @property\n          def entity_type(self):\n              return \"test\"\n    ```\n- The repository of the entity should:\n  - Inherit from `AppEntityRepositoryPort`\n  - Inherit from `BaseRepository` to use the default implementation of the methods\n  - Implement the method `get_idp_identifier_attr`\n  - Example:\n    ```python3\n    from idp_authentication.users.domain.ports.repository import AppEntityRepositoryPort\n    from idp_authentication.users.base_classes.base_repository import BaseRepository\n    \n    class TestEntityRepository(BaseRepository[TestEntity], AppEntityRepositoryPort):\n        entity = TestEntity    \n    \n        def get_idp_identifier_attr(self):\n            return \"id\"\n    ```\n\n\n## Scripts\n\n### Lint \n\n    make lint\n\n\n### Format \n\n    make format\n\n\n### Tests\n\n    make test\n\n\n### Run Docs\n\n    make run docs\n\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -43,7 +42,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16319943,
+        "last_serial": 16329943,
         "urls": [
             {
                 "comment_text": "",
@@ -63,6 +62,145 @@
                 "upload_time": "2023-01-05T17:08:55",
                 "upload_time_iso_8601": "2023-01-05T17:08:55.900392Z",
                 "url": "https://files.pythonhosted.org/packages/71/99/bfea5cabf198929feb4d46311c1dfbe79bb98deb098ddd1d12bbf8239f56/idp_authentication-0.0.6.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.7": {
+        "info": {
+            "author": "Lirim Shala, Euron Metaliaj, Klajdi \u00c7aushi",
+            "author_email": "Lirim Shala <lirim.shala@cardoai.com>, Klajdi \u00c7aushi <klajdi.caushi@cardoai.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Intended Audience :: Information Technology",
+                "Intended Audience :: System Administrators",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/CardoAI/idp-authentication",
+            "keywords": "",
+            "license": "MIT (X11)",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "idp-authentication",
+            "package_url": "https://pypi.org/project/idp-authentication/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/idp-authentication/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/CardoAI/idp-authentication/issues",
+                "Homepage": "https://github.com/CardoAI/idp-authentication"
+            },
+            "release_url": "https://pypi.org/project/idp-authentication/0.0.7/",
+            "requires_dist": null,
+            "requires_python": ">=3.10",
+            "summary": "IDP Authentication - Hexagonal Architecture Implementation",
+            "version": "0.0.7",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16329943,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "860b688aba756c8fe944e74958c875a1f46152796854c287d2afd8f7fb537b63",
+                    "md5": "7947c7855690241f67a6455817cb4d01",
+                    "sha256": "9feddaac0026188496e017760fd34cd8815284424a690374a389b0415b3f2644"
+                },
+                "downloads": -1,
+                "filename": "idp_authentication-0.0.7.tar.gz",
+                "has_sig": false,
+                "md5_digest": "7947c7855690241f67a6455817cb4d01",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.10",
+                "size": 21912,
+                "upload_time": "2023-01-06T11:35:08",
+                "upload_time_iso_8601": "2023-01-06T11:35:08.700351Z",
+                "url": "https://files.pythonhosted.org/packages/86/0b/688aba756c8fe944e74958c875a1f46152796854c287d2afd8f7fb537b63/idp_authentication-0.0.7.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.8": {
+        "info": {
+            "author": "Lirim Shala, Euron Metaliaj, Klajdi \u00c7aushi",
+            "author_email": "Lirim Shala <lirim.shala@cardoai.com>, Klajdi \u00c7aushi <klajdi.caushi@cardoai.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Intended Audience :: Information Technology",
+                "Intended Audience :: System Administrators",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "<p align=\"center\">\n  <a href=\"https://cardoai.com/\"><img src=\"https://cardoai.com/wp-content/themes/yootheme/cache/logo-cardo-negativo-cd27a0ee.webp\" alt=\"FastAPI\"></a>\n</p>\n<p align=\"center\">\n    <em>IDP Authentication hexagonal architecture implementation</em>\n</p>\n\n---\n\n## Purpose\n\nThis project handles the authentication process of the Cardo platform. It is a hexagonal architecture implementation, which means that the business logic is independent of the framework used to implement the API.\n\n\n\n## Architecture\n\nThe architecture is based on the [Hexagonal Architecture](https://en.wikipedia.org/wiki/Hexagonal_architecture_(software)).\n\nThe main idea is to separate the business logic from the framework and the infrastructure.\n\nThe business logic is implemented in the `domain` module. This module is independent of the infrastructure.\n\nThe infrastructure is implemented `infrastructure` module.\n\nThe `app` which uses this package itself is the entry point of the application. It is the only module that depends on the framework.\n\n\n## Project layout\n\n    idp_authentication/\n    \u251c\u2500\u2500 infrastructure\n    \u2502   \u251c\u2500\u2500 custom_orm_column_types.py\n    \u2502   \u251c\u2500\u2500 database.py\n    \u2502   \u251c\u2500\u2500 orm.py\n    \u251c\u2500\u2500 users\n    \u2502   \u251c\u2500\u2500 adapters\n    \u2502   \u2502   \u251c\u2500\u2500 orm.py\n    \u2502   \u2502   \u251c\u2500\u2500 unit_of_work.py\n    \u2502   \u2502   \u251c\u2500\u2500 events\n    \u2502   \u2502   \u251c\u2500\u2500 repositories\n    \u2502   \u251c\u2500\u2500 base_classes\n    \u2502   \u2502   \u251c\u2500\u2500 base_entity.py\n    \u2502   \u2502   \u251c\u2500\u2500 base_repository.py\n    \u2502   \u251c\u2500\u2500 di\n    \u2502   \u2502   \u251c\u2500\u2500 containers.py\n    \u2502   \u251c\u2500\u2500 domain\n    \u2502   \u2502   \u251c\u2500\u2500 entities\n    \u2502   \u2502   \u251c\u2500\u2500 ports\n    \u2502   \u2502   \u251c\u2500\u2500 use_cases\n    \u2502   \u251c\u2500\u2500 infrastructure\n    \u2502   \u2502   \u251c\u2500\u2500 database\n    \u2502   \u2502   \u2502   \u251c\u2500\u2500 sqlalchemy\n    \u2502   \u2502   \u251c\u2500\u2500 faust\n    \u2502   \u2502   \u2502   \u251c\u2500\u2500 faust_app.py\n    \u2502   \u251c\u2500\u2500 tests\n    \u2502   \u2502   \u251c\u2500\u2500 domain\n    \u2502   \u2502   \u2502   \u251c\u2500\u2500 __init__.py\n\n\n## Requirements\n\nPython 3.9+\n\nIDP Authentication requires the following to be implemented:\n\n* <a href=\"https://python-dependency-injector.ets-labs.org/\" class=\"external-link\" target=\"_blank\">Dependency Injector</a>\n\n\n## Installation\nSince this is a private repository, you need to install the package with the following command:\n\n    pip install git+ssh://git@github.com/CardoAI/idp-authentication.git@main\n\n\n## Example\n\n### Usage\nInside your application container:\n\n```python3\nfrom dependency_injector import providers\nfrom idp_authentication.users.di.containers import UsersModuleDIContainer\n\n    users_module = providers.Container(\n        UsersModuleDIContainer,\n        config=config,\n        database=database,\n    )\n```\n\n\n### Extending default config\n\n```python3\nfrom idp_authentication.config import Config\n\nclass TestConfig(Config):\n    APP_IDENTIFIER = \"test\"\n    TENANTS = [\"default\"]\n    ROLES = [TEST_ROLE_1, TEST_ROLE_2]\n    APP_ENTITY_TYPES = [\"app_entity_1\", \"app_entity_2\"]\n\n    class Config:\n        env_file_encoding = \"utf-8\"\n        use_enum_values = True\n```\n\n\n### Configuration example\n\n```python3\nfrom dependency_injector import containers, providers\nfrom idp_authentication.users.di.containers import UsersModuleDIContainer\n\n\nclass YourTestContainer(containers.DeclarativeContainer):\n    config = providers.Configuration(pydantic_settings=[TestConfig()])\n    url = get_test_memory_db_uri()\n    database = providers.Singleton(\n        Database,\n    )\n    users_module = providers.Container(\n        UsersModuleDIContainer,\n        config=config,\n        database=database,\n    )\n```\n\n\n### Usage example\n\n```python3\n    def container():\n        container = YourTestContainer()\n        container.wire(packages=[\"idp_authentication\"]) # Wire IDPAuthentication\n        container.users_module.start_mappers() # Start Users Module mapper\n        yield container\n```\n\n\n### App Entity\n\nTo declare a new AppEntity, the Entity class should:\n- Inherit from the class `AppEntity`\n- Declare the properties `idp_identifier`, `idp_label` and optionally `entity_type`\n- Example:\n  ```python3\n  from idp_authentication.users.domain.entities.app_entity import AppEntity\n    \n  class TestEntity(AppEntity):\n        @property\n        def idp_identifier(self):\n            return self.id\n          \n        @property\n        def idp_label(self):\n            return self.name\n    \n        @property\n        def entity_type(self):\n            return \"test\"\n  ```\n\n\n## Scripts\n\n### Lint \n\n    make lint\n\n\n### Format \n\n    make format\n\n\n### Tests\n\n    make test\n\n\n### Run Docs\n\n    make run docs\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/CardoAI/idp-authentication",
+            "keywords": "",
+            "license": "MIT (X11)",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "idp-authentication",
+            "package_url": "https://pypi.org/project/idp-authentication/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/idp-authentication/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/CardoAI/idp-authentication/issues",
+                "Homepage": "https://github.com/CardoAI/idp-authentication"
+            },
+            "release_url": "https://pypi.org/project/idp-authentication/0.0.8/",
+            "requires_dist": null,
+            "requires_python": ">=3.10",
+            "summary": "IDP Authentication - Hexagonal Architecture Implementation",
+            "version": "0.0.8",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16329943,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c6088ff97d24df8023ff6735b5b4247418054fd40837cb74a5dc9e94cbda0f86",
+                    "md5": "66dc0e95033a4f382b3613c2ffc396f9",
+                    "sha256": "896c1ea8e11c588ad3b00a174a28f1c8517c61adb3a4b0a12bc4692b8699e97c"
+                },
+                "downloads": -1,
+                "filename": "idp_authentication-0.0.8.tar.gz",
+                "has_sig": false,
+                "md5_digest": "66dc0e95033a4f382b3613c2ffc396f9",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.10",
+                "size": 21910,
+                "upload_time": "2023-01-06T11:37:44",
+                "upload_time_iso_8601": "2023-01-06T11:37:44.052658Z",
+                "url": "https://files.pythonhosted.org/packages/c6/08/8ff97d24df8023ff6735b5b4247418054fd40837cb74a5dc9e94cbda0f86/idp_authentication-0.0.8.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
