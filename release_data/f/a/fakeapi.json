@@ -1,0 +1,91 @@
+{
+    "1.0.0": {
+        "info": {
+            "author": "joknarf",
+            "author_email": "joknarf@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: POSIX",
+                "Programming Language :: Python :: 3",
+                "Topic :: Utilities"
+            ],
+            "description": "# fakeapi\nFaking/Mocking API Rest Call requests\n\nFaking API calls using static fixtures json with FakeAPI class.  \nMocking API calls using FakeAPI get/post/patch/delete methods.  \n\n# FakeAPI class\n\nFakes http requests calls (get/post/put/patch/delete).  \nInstead of doing http calls to urls, FakeAPI class will returns response with data from url dict data or json files.  \nCan be used during development of Application that must use 3rd party API without actually calling the API, but using static tests sets data for url calls.\n\nAnother purpose is to use FakeAPI class to mock http requests when doing Unit testing of application that is using 3rd party API calls (the tests won't actually call the 3rd party API that is not to be tested)\n\n## Quick examples:\n>```python\n>>>> from fakeapi import FakeAPI\n>>>> api = FakeAPI({\n>  'http://localhost/api': {\n>    'status_code': 200,\n>    'data': {\n>      'message': 'Call successfull'\n>    }\n>  }\n>})\n>>>> response = api.get('http://localhost/api')\n>>>> response.status_code\n>200\n>>>> response.json()\n>{'message': 'Call successfull'}\n>```\n\nFakeAPI class can easily mock requests calls in unittest.  \nUsefull to test Application that is calling 3rd party API that is not to be tested.\n>```python\n>mycli.py:\n>import requests\n>\n>def call_api():\n>  response = requests.get('http://localhost/api')\n>  return response.json()\n>```\n>```python\n>test_mycli.py:\n>import unittest, mycli\n>from fakeapi import FakeAPI\n>\n>class TestMyCLI(unittest.TestCase):\n>  fakeapi = FakeAPI({'http://localhost/api': {'data': {'message': 'Call successfull'}}})\n>  def setUp(self):\n>    # mock 'mycli.requests' get/post/patch/put/delete calls to fakeapi\n>    self.mocks = self.fakeapi.mock_module(self, 'mycli.requests')\n>  \n>  def test_mycli(self):\n>    data = mycli.call_api()   # requests calls are mocked to fakeAPI\n>    self.mocks.get.assert_called_with('http://localhost/api')\n>    print(data)\n>\n>if __name__ == \"__main__\":\n>    unittest.main(failfast=True, verbosity=2)\n>```\n>```python\n>$ python test_mycli.py\n>test_mycli (__main__.TestMyCLI) ... {'message': 'Call successfull'}\n>ok\n>\n>----------------------------------------------------------------------\n>Ran 1 test in 0.002s\n>\n>OK\n>```\ninstead of passing data using FakeAPI(), data can be automatically get from json files located in:\n`fixtures/<url>/<method>.json`  \nIn the example, the json file has to be located in :\n`fixtures/localhost/api/get.json`\n\n> **`fixtures/localhost/api/get.json:`**  \n>```json\n>{\"message\": \"Call successfull\"}\n>```\n\n>```python\n>>>> from fakeapi import FakeAPI\n>>>> api = FakeAPI()\n>>>> api.get(\"http://localhost/api\").json()\n>{\"message\": \"Call successfull\"}\n>```\n\nThis will make easy to create full test sets of the different API paths.\n\n## Usage\n\nFakeAPI class defines the 5 methods:\n* get\n* post\n* put\n* patch\n* delete\n\nFakeAPI provides the mocking methods to be used in unittest.TestCase.setUp():\n* mock_module(test_case: TestCase, module: str)\n* mock_class(apicli: Object)\n\n## Mapping Static data to urls calls\n\nInstead of calling 3rd party API, FakeAPI will use static data (from dict or json files). \nstatic data can be defined several ways :\n* passing FakeAPI url_config parameter with data: `api = FakeAPI(url_config={'url':{'data':{...}},...})`\n* passing FakeAPI url_config parameter with json file/dir: `api = FakeAPI(url_config={'url':{'json':'jsonfile'},...})`\n  * FakeAPI.url_config property can be modified after creation\n  * specific data/json for method using key : 'url/method'\n* Using automatic url mapping to json files, FakeAPI will get data from `fixtures/<url>/<method>.json`\n\n## Using url_config\n\nEach different url calls can be configured in url_config to provide specific status_code or data.\n\nProviding data in url_config for url\n```python\n  '<url>[/<method>]': {\n    'status_code': <status_code>,\n    'data': <url_data>\n  }\n```\n* `<url>         `: full url that is called (with query string)\n* `<method>      `: http method : get/post/put/patch/delete\n* `<status_code> `: http code to return in repsonse (200/201/404/500...)\n* `<url_data>    `: data to retrieve for url call on method.\n\nWhen a request method occurs on `<url>` if the key `<url>/<method>` has a entry in url_config, returns 'data'/'status_code' if defined.  \nElse if the `<url>` key found in url_config, will returns 'data'/'status_code' if defined for all methods calls.\n\nProviding data using json file path:\n```python \n  '<url>[/<method>]': {\n    'status_code': <status_code>,\n    'json': <path to json file/directory>\n  }\n```\nif 'json' is defined for `<url>/<method>`, the data will be retrieved from json file in `fixtures/<path to json file>`.  \nif 'json' is defined for `<url>`, the data will be retrieve from json directoy in `fixtures/<path to json dir>/<method>.json`.\n\nExample:\n```python\napi = FakeAPI(url_config={\n  'http://localhost/api/get': {\n    'status_code': 200,\n    'data': {'message':'successfull'}\n  },\n  'http://localhost/api/users': {\n    'status_code': 200,\n    'json': 'api/users'\n  },\n  'http://localhost/api/users?name=foo/get': {\n    'status_code': 200,\n    'json' : 'api/users_foo.json'\n  }\n})\n```\n\n## Automatic url/method mapping to json files\n\nInstead of using url_config, FakeAPI will automatically search for json data files according to url.  \nAs characters are restricted in file names on different OSes, the following search is done to create matching file path from url/method:\n* removed scheme (http://, https://...)\n* removed server port (localhost:8443 => localhost)\n* base directory is cwd/fixtures\n* url encoded and not encoded will be checked\n* characters ? and & substituted to # will be checked  \n\ncall to : `get 'http://localhost:8443/api/tests?search=my search@test&limit=5'`  \nwill be automatically mapped to the following file names:  \n* `fixtures/localhost/api/test?search=my search@test&limit=5/get.json`  \n* `fixtures/localhost/api/test?search=my+search%40test&limit=5/get.json`\n* `fixtures/localhost/api/test#search=my+search%40test#limit=5/get.json`\n\n## Summary url / data mapping\nWhen a request to a url is done, FakeAPI will get data from:\n* `<url>/<method>` in url_config\n  * 'data' defined returns data\n  * 'json' defined returns json file data\n* `<url>` in url_config\n  * 'data' defined returns dat`\n  * 'json' defined returns `json directory/<method>.json` data\n* when no 'data' or 'json' found for 'url'/'url/method' in url_config:\n  * Automatic mapping of url/method to json files:\n  \n\n## FakePI returns FakeResponse or json\n\nFakeAPI methods by default returns `FakeResponse` with following :\n* status_code = 200/201 (for post) or status_code defined in url_config\n* url : url called\n* content : json text\n* json() : return json from json file corresponding to url / method\n\n`fakeapi = FakeAPI(returns='json')` is to be used to return directly 'json', instead of response.  \nTo be used with api-client module class APIClient(response_handler=JsonResponseHandler) as get/post/patch/delete returns directly json() from response.\n\n\n## Mocking http requests using FakeAPI\n\nMocking can be done using mock_module or mock_class methods in unittest.TestCase.setUp() method.\n\nExample to mock requests with api-client APIClient():\n```python\nmycli.py:\nfrom apiclient import APIClient\nclass MyClient(APIClient):\n  def call_api():\n    return self.get('http://localhost/api').json()\n```\n\n```python\nimport unittest\nfrom fakeapi import FakeAPI\nfrom mycli import MyClient\nclass UnitTest(unittest.TestCase):\n    \"\"\" Unit Testing mocking MyClient get/post/put/patch \"\"\"\n    fakeapi = FakeAPI()\n    apicli = MyClient()\n\n    def setUp(self):\n        \"\"\" Mock API calls \"\"\"\n        self.apicli = self.fakeapi.mock_class(self.apicli)\n\n    def test_call_api(self):\n        \"\"\" test_call_api \"\"\"\n        response = self.apicli.call_api()\n        self.apicli.get.assert_called_with('http://localhost/api')\n        print(response.json())\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/joknarf/fakeapi",
+            "keywords": "requests API Rest api-client mock http",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "fakeapi",
+            "package_url": "https://pypi.org/project/fakeapi/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/fakeapi/",
+            "project_urls": {
+                "Homepage": "https://github.com/joknarf/fakeapi"
+            },
+            "release_url": "https://pypi.org/project/fakeapi/1.0.0/",
+            "requires_dist": [
+                "incremental"
+            ],
+            "requires_python": "",
+            "summary": "Fake/Mock API Rest Calls requests",
+            "version": "1.0.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16352684,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "1b8d1d147e7d7e50199db585588e3092a903fdb1da6a00c99939c4c7a46b2195",
+                    "md5": "bd7d56ce8533fb8da311edb62aee4bb9",
+                    "sha256": "25da7e3d6a1d0393dcf994d0d46bf2c9ba541565ed17a5e460242cb88f67a1c7"
+                },
+                "downloads": -1,
+                "filename": "fakeapi-1.0.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "bd7d56ce8533fb8da311edb62aee4bb9",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 9692,
+                "upload_time": "2023-01-08T22:28:22",
+                "upload_time_iso_8601": "2023-01-08T22:28:22.567759Z",
+                "url": "https://files.pythonhosted.org/packages/1b/8d/1d147e7d7e50199db585588e3092a903fdb1da6a00c99939c4c7a46b2195/fakeapi-1.0.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "0dee549725e9ca7a33890f31fa3756a979d1b98c0d5a80a2ced763c68ecf664a",
+                    "md5": "fe81a85498ae32393f9c1e86354ea5a4",
+                    "sha256": "9c74edc96aad50eaa915f7957aecf5ec5f996dc59c9da09eaaf9dcf39e928336"
+                },
+                "downloads": -1,
+                "filename": "fakeapi-1.0.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "fe81a85498ae32393f9c1e86354ea5a4",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 9336,
+                "upload_time": "2023-01-08T22:28:23",
+                "upload_time_iso_8601": "2023-01-08T22:28:23.734062Z",
+                "url": "https://files.pythonhosted.org/packages/0d/ee/549725e9ca7a33890f31fa3756a979d1b98c0d5a80a2ced763c68ecf664a/fakeapi-1.0.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
