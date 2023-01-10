@@ -33,7 +33,7 @@
             "yanked": true,
             "yanked_reason": "missing association measure"
         },
-        "last_serial": 16332173,
+        "last_serial": 16364688,
         "urls": [
             {
                 "comment_text": "",
@@ -93,7 +93,7 @@
             "yanked": true,
             "yanked_reason": "init file not working"
         },
-        "last_serial": 16332173,
+        "last_serial": 16364688,
         "urls": [
             {
                 "comment_text": "",
@@ -154,7 +154,7 @@
             "yanked": true,
             "yanked_reason": "wrong Discretizers import"
         },
-        "last_serial": 16332173,
+        "last_serial": 16364688,
         "urls": [
             {
                 "comment_text": "",
@@ -215,7 +215,7 @@
             "yanked": true,
             "yanked_reason": "corrected Discretizers"
         },
-        "last_serial": 16332173,
+        "last_serial": 16364688,
         "urls": [
             {
                 "comment_text": "",
@@ -276,7 +276,7 @@
             "yanked": true,
             "yanked_reason": "incorrect grouping of NaNs"
         },
-        "last_serial": 16332173,
+        "last_serial": 16364688,
         "urls": [
             {
                 "comment_text": "",
@@ -308,7 +308,6 @@
             "author_email": "defrancemario@gmail.com",
             "bugtrack_url": null,
             "classifiers": [],
-            "description": "# AutoCarver\n\n**AutoCarver** is an approach for maximising a qualitative feature's association with a binary target feature while reducing it's number of distinct modalities.\nCan also be used to discretize quantitative features, that are prealably cut in quantiles.\n\n Modalities/values of features are carved/regrouped according to a computed specific order defined based on their types:\n  - *Qualitative features* grouped based on target rate per modality.\n  - *Qualitative ordinal features* grouped based on specified modality order.\n  - *Quantitative features* grouped based on the order of their values.\n \nUses Tschurpow's T or Cramer's V to find the optimal carving (regrouping) of modalities/values of features.\n\n`AutoCarver` is an `sklearn` transformer.\n\nOnly implementend for binary classification problems.\n\n## Install\n\nAutoCarver can be installed from [PyPI](https://pypi.org/project/AutoCarver):\n\n<pre>\npip install --upgrade autocarver\n</pre>\n\n## Complete Example\n\n#### Setting up Samples\n\n`AutoCarver` tests the robustness of carvings on a specific sample. For this purpose, the use of an out of time sample is recommended. \n\n```python\n# defining training and testing sets\nX_train, y_train = ...\nX_test, y_test = ...\nX_val, y_val = ...\n```\n\n#### Formatting features to be carved\n\nAll features need to be discretized via a `Discretizer` so `AutoCarver` can group their modalities. Following parameters must be set for `Discretizer`:\n\n- `min_freq`, should be set from 0.01 (preciser) to 0.05 (faster, increased stability).\n  - *For qualitative features:*  Minimal frequency of a modality, less frequent modalities are grouped in the `default_value='__OTHER__'` modality.\n  - *For qualitative ordinal features:* Less frequent modalities are grouped to the closest modality  (smallest frequency or closest target rate), between the superior and inferior values (specified in the `values_orders` dictionnary).\n\n- `q`, should be set from 10 (faster) to 20 (preciser).\n  - *For quantitative features:* Number of quantiles to initialy cut the feature. Values more frequent than `1/q` will be set as their own group and remaining frequency will be cut into proportionaly less quantiles (`q:=max(round(non_frequent * q), 1)`). \n\n- `values_orders`\n  - *For qualitative ordinal features:* `dict` of features values and `GroupedList` of their values. Modalities less frequent than `min_freq` are automaticaly grouped to the closest modality (smallest frequency or closest target rate), between the superior and inferior values.\n\nAt this step, all `numpy.nan` are kept as their own modality.\n\nFor qualitative features, unknown modalities passed to `Discretizer.transform` (that where not passed to `Discretizer.fit`) are automaticaly grouped to the `default_value='__OTHER__'` modality.\n\nBy default, samples are modified and not copied (recommanded for large datasets). Use `copy=True` if you want a new `DataFrame` to be returned.\n\n```python\nfrom AutoCarver.Discretizers import Discretizer\n\n# specifying features to be carved\nquantitatives = ['amount', 'distance', 'length', 'height']\nqualitatives = ['age', 'type', 'grade', 'city']\n\n# specifying orders of categorical ordinal features\nvalues_orders = {\n    'age': ['0-18', '18-30', '30-50', '50+'],\n    'grade': ['A', 'B', 'C', 'D', 'J', 'K', 'NN']\n}\n\n# pre-processing of features into categorical ordinal features\ndiscretizer = Discretizer(quantitatives, qualitatives, min_freq=0.02, q=20, values_orders=values_orders)\ndiscretizer.fit_transform(X_train, y_train)\ndiscretizer.transform(X_test)\n\n# updating features' values orders (at this step every features are qualitative ordinal)\nvalues_orders = discretizer.values_orders\n```\n\n#### Automatic Carving of features\n\nAll specified features can now automatically be carved in an association maximising grouping of their modalities while reducing their number. Following parameters must be set for `AutoCarver`:\n\n- `sort_by`, association measure used to find the optimal group modality combination.\n  - Use `sort_by='cramerv'` for more modalities, less robust.\n  - Use `sort_by='tschuprowt'` for more robust modalities.\n  - **Tip:** a combination of features carved with `sort_by='cramerv'` and `sort_by='tschuprowt'` can sometime prove to be better than only one of those.\n\n- `sample_size`, sample size used for stratified sampling per feature modalities by target rate. Should be set from 0.01 (faster, use with large dataset) to 0.5 (preciser, use with small dataset).\n\n- `max_n_mod`, maximum number of modalities for the carved features (excluding `numpy.nan`). All possible combinations of less than `max_n_mod` groups of modalities will be tested. Should be set from 4 (faster) to 6 (preciser).\n\nAt this step, all `numpy.nan` are grouped to the best non-NaN value (after they were grouped). Use `keep_nans=True` if you want `numpy.nan` to remain as a specific modality.\n\n\n```python\nfrom AutoCarver import AutoCarver\n\n# intiating AutoCarver\nauto_carver = AutoCarver(values_orders, sort_by='cramerv', max_n_mod=5, sample_size=0.01)\n\n# fitting on training sample \n# a test sample can be specified to evaluate carving robustness\nauto_carver.fit_transform(X_train, y_train, X_test, y_test)\n\n# applying transformation on test sample\nauto_carver.transform(X_test)\n```\n<p align=\"left\">\n  <img width=\"500\" src=\"/docs/auto_carver_fit.PNG\" />\n</p>\n\n#### Storing, reusing an AutoCarver\n\nThe `Discretizer` and `AutoCarver` steps can be stored in a `Pipeline` and can than be stored as a `pickle` file.\n\n```python\nfrom pickle import dump\nfrom sklearn.pipeline import Pipeline\n\n# storing Discretizer\npipe = [('Discretizer', discretizer)]\n\n# storing fitted AutoCarver in a Pipeline\npipe += [('AutoCarver', auto_carver)]\npipe = Pipeline(pipe)\n\n# storing as pickle file\ndump(pipe, open('my_pipe.pkl', 'wb'))\n```\n\nThe stored `Pipeline`, can then be used to transform new datasets.\n\n```python\nfrom pickle import load\n\n# restoring the pipeline\npipe = load(open('my_pipe.pkl', 'rb'))\n\n# applying pipe to a validation set or in production\nX_val = pipe.transform(X_val)\n```",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -335,10 +334,10 @@
             "requires_python": "",
             "summary": "Automatic Carving of Features with Optimal Association",
             "version": "1.1.0",
-            "yanked": false,
-            "yanked_reason": null
+            "yanked": true,
+            "yanked_reason": "updated computation of association via crosstabs directly"
         },
-        "last_serial": 16332173,
+        "last_serial": 16364688,
         "urls": [
             {
                 "comment_text": "",
@@ -358,6 +357,251 @@
                 "upload_time": "2023-01-06T15:42:45",
                 "upload_time_iso_8601": "2023-01-06T15:42:45.440332Z",
                 "url": "https://files.pythonhosted.org/packages/9c/01/d12bab086bbe1654e9240e190d5ec7fdc233b0b2e346897b3db931cbdff6/AutoCarver-1.1.0.tar.gz",
+                "yanked": true,
+                "yanked_reason": "updated computation of association via crosstabs directly"
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "2.0.1": {
+        "info": {
+            "author": "Mario DEFRANCE",
+            "author_email": "defrancemario@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/mdefrance/AutoCarver",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "AutoCarver",
+            "package_url": "https://pypi.org/project/AutoCarver/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/AutoCarver/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/mdefrance/AutoCarver/issues",
+                "Homepage": "https://github.com/mdefrance/AutoCarver"
+            },
+            "release_url": "https://pypi.org/project/AutoCarver/2.0.1/",
+            "requires_dist": null,
+            "requires_python": "",
+            "summary": "Automatic Carving of Features with Optimal Association",
+            "version": "2.0.1",
+            "yanked": true,
+            "yanked_reason": "corrected __init__ file"
+        },
+        "last_serial": 16364688,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "449d4e5ef4ddd5aecf2e90e76699b4d597ed544742baa4f011bbd7ab0d06eb65",
+                    "md5": "bbc4997ad950dfeebcc7a219932fab1b",
+                    "sha256": "cabddb491c51fbd0e05b24a37abdc26600e3779537aa5e6fa1f0b5a937570124"
+                },
+                "downloads": -1,
+                "filename": "AutoCarver-2.0.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "bbc4997ad950dfeebcc7a219932fab1b",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 15574,
+                "upload_time": "2023-01-09T19:39:17",
+                "upload_time_iso_8601": "2023-01-09T19:39:17.640639Z",
+                "url": "https://files.pythonhosted.org/packages/44/9d/4e5ef4ddd5aecf2e90e76699b4d597ed544742baa4f011bbd7ab0d06eb65/AutoCarver-2.0.1.tar.gz",
+                "yanked": true,
+                "yanked_reason": "corrected __init__ file"
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "2.0.2": {
+        "info": {
+            "author": "Mario DEFRANCE",
+            "author_email": "defrancemario@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/mdefrance/AutoCarver",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "AutoCarver",
+            "package_url": "https://pypi.org/project/AutoCarver/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/AutoCarver/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/mdefrance/AutoCarver/issues",
+                "Homepage": "https://github.com/mdefrance/AutoCarver"
+            },
+            "release_url": "https://pypi.org/project/AutoCarver/2.0.2/",
+            "requires_dist": null,
+            "requires_python": "",
+            "summary": "Automatic Carving of Features with Optimal Association",
+            "version": "2.0.2",
+            "yanked": true,
+            "yanked_reason": "corrected import "
+        },
+        "last_serial": 16364688,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "dd72aa846c3e44cb178c4f61ddc7b8dec4ce1dbacf719ae2621538ec7336537f",
+                    "md5": "03d3f74b939b8e9fee70c30b0f6bd774",
+                    "sha256": "25e9eeb657923e2a4fc5a83f2b249436d4d5975f52e5c6417823a4791a263bff"
+                },
+                "downloads": -1,
+                "filename": "AutoCarver-2.0.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "03d3f74b939b8e9fee70c30b0f6bd774",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 15557,
+                "upload_time": "2023-01-09T19:51:29",
+                "upload_time_iso_8601": "2023-01-09T19:51:29.174221Z",
+                "url": "https://files.pythonhosted.org/packages/dd/72/aa846c3e44cb178c4f61ddc7b8dec4ce1dbacf719ae2621538ec7336537f/AutoCarver-2.0.2.tar.gz",
+                "yanked": true,
+                "yanked_reason": "corrected import "
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "2.0.3": {
+        "info": {
+            "author": "Mario DEFRANCE",
+            "author_email": "defrancemario@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/mdefrance/AutoCarver",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "AutoCarver",
+            "package_url": "https://pypi.org/project/AutoCarver/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/AutoCarver/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/mdefrance/AutoCarver/issues",
+                "Homepage": "https://github.com/mdefrance/AutoCarver"
+            },
+            "release_url": "https://pypi.org/project/AutoCarver/2.0.3/",
+            "requires_dist": null,
+            "requires_python": "",
+            "summary": "Automatic Carving of Features with Optimal Association",
+            "version": "2.0.3",
+            "yanked": true,
+            "yanked_reason": "corrected verbosity"
+        },
+        "last_serial": 16364688,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "18b614bb3f6d5014dff89ab56c9db77a64b622ecf73d3970e602b0327f5458a7",
+                    "md5": "f47fc0a13cf04f707d8366e00e9c9b7c",
+                    "sha256": "b400a7d132c0069a8ef489051c9485286849d5df6e6ff2d3e0b413722b319b85"
+                },
+                "downloads": -1,
+                "filename": "AutoCarver-2.0.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "f47fc0a13cf04f707d8366e00e9c9b7c",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 15557,
+                "upload_time": "2023-01-09T19:58:50",
+                "upload_time_iso_8601": "2023-01-09T19:58:50.604668Z",
+                "url": "https://files.pythonhosted.org/packages/18/b6/14bb3f6d5014dff89ab56c9db77a64b622ecf73d3970e602b0327f5458a7/AutoCarver-2.0.3.tar.gz",
+                "yanked": true,
+                "yanked_reason": "corrected verbosity"
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "2.0.4": {
+        "info": {
+            "author": "Mario DEFRANCE",
+            "author_email": "defrancemario@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "# AutoCarver\n\n**AutoCarver** is an approach for maximising a qualitative feature's association with a binary target feature while reducing it's number of distinct modalities.\nCan also be used to discretize quantitative features, that are prealably cut in quantiles.\n\n Modalities/values of features are carved/regrouped according to a computed specific order defined based on their types:\n  - *Qualitative features* grouped based on target rate per modality.\n  - *Qualitative ordinal features* grouped based on specified modality order.\n  - *Quantitative features* grouped based on the order of their values.\n \nUses Tschurpow's T or Cramer's V to find the optimal carving (regrouping) of modalities/values of features.\n\n`AutoCarver` is an `sklearn` transformer.\n\nOnly implementend for binary classification problems.\n\n## Install\n\nAutoCarver can be installed from [PyPI](https://pypi.org/project/AutoCarver):\n\n<pre>\npip install --upgrade autocarver\n</pre>\n\n## Complete Example\n\n#### Setting up Samples\n\n`AutoCarver` tests the robustness of carvings on a specific sample. For this purpose, the use of an out of time sample is recommended. \n\n```python\n# defining training and testing sets\nX_train, y_train = ...\nX_test, y_test = ...\nX_val, y_val = ...\n```\n\n#### Formatting features to be carved\n\nAll features need to be discretized via a `Discretizer` so `AutoCarver` can group their modalities. Following parameters must be set for `Discretizer`:\n\n- `min_freq`, should be set from 0.01 (preciser) to 0.05 (faster, increased stability).\n  - *For qualitative features:*  Minimal frequency of a modality, less frequent modalities are grouped in the `default_value='__OTHER__'` modality.\n  - *For qualitative ordinal features:* Less frequent modalities are grouped to the closest modality  (smallest frequency or closest target rate), between the superior and inferior values (specified in the `values_orders` dictionnary).\n\n- `q`, should be set from 10 (faster) to 20 (preciser).\n  - *For quantitative features:* Number of quantiles to initialy cut the feature. Values more frequent than `1/q` will be set as their own group and remaining frequency will be cut into proportionaly less quantiles (`q:=max(round(non_frequent * q), 1)`). \n\n- `values_orders`\n  - *For qualitative ordinal features:* `dict` of features values and `GroupedList` of their values. Modalities less frequent than `min_freq` are automaticaly grouped to the closest modality (smallest frequency or closest target rate), between the superior and inferior values.\n\nAt this step, all `numpy.nan` are kept as their own modality.\n\nFor qualitative features, unknown modalities passed to `Discretizer.transform` (that where not passed to `Discretizer.fit`) are automaticaly grouped to the `default_value='__OTHER__'` modality.\n\nBy default, samples are modified and not copied (recommanded for large datasets). Use `copy=True` if you want a new `DataFrame` to be returned.\n\n```python\nfrom AutoCarver.Discretizers import Discretizer\n\n# specifying features to be carved\nquantitatives = ['amount', 'distance', 'length', 'height']\nqualitatives = ['age', 'type', 'grade', 'city']\n\n# specifying orders of categorical ordinal features\nvalues_orders = {\n    'age': ['0-18', '18-30', '30-50', '50+'],\n    'grade': ['A', 'B', 'C', 'D', 'J', 'K', 'NN']\n}\n\n# pre-processing of features into categorical ordinal features\ndiscretizer = Discretizer(quantitatives, qualitatives, min_freq=0.02, q=20, values_orders=values_orders)\ndiscretizer.fit_transform(X_train, y_train)\ndiscretizer.transform(X_test)\n\n# updating features' values orders (at this step every features are qualitative ordinal)\nvalues_orders = discretizer.values_orders\n```\n\n#### Automatic Carving of features\n\nAll specified features can now automatically be carved in an association maximising grouping of their modalities while reducing their number. Following parameters must be set for `AutoCarver`:\n\n- `sort_by`, association measure used to find the optimal group modality combination.\n  - Use `sort_by='cramerv'` for more modalities, less robust.\n  - Use `sort_by='tschuprowt'` for more robust modalities.\n  - **Tip:** a combination of features carved with `sort_by='cramerv'` and `sort_by='tschuprowt'` can sometime prove to be better than only one of those.\n\n- `sample_size`, sample size used for stratified sampling per feature modalities by target rate. Should be set from 0.01 (faster, use with large dataset) to 0.5 (preciser, use with small dataset).\n\n- `max_n_mod`, maximum number of modalities for the carved features (excluding `numpy.nan`). All possible combinations of less than `max_n_mod` groups of modalities will be tested. Should be set from 4 (faster) to 6 (preciser).\n\nAt this step, all `numpy.nan` are grouped to the best non-NaN value (after they were grouped). Use `keep_nans=True` if you want `numpy.nan` to remain as a specific modality.\n\n\n```python\nfrom AutoCarver.AutoCarver import AutoCarver\n\n# intiating AutoCarver\nauto_carver = AutoCarver(values_orders, sort_by='cramerv', max_n_mod=5, sample_size=0.01)\n\n# fitting on training sample \n# a test sample can be specified to evaluate carving robustness\nauto_carver.fit_transform(X_train, y_train, X_test, y_test)\n\n# applying transformation on test sample\nauto_carver.transform(X_test)\n```\n<p align=\"left\">\n  <img width=\"500\" src=\"/docs/auto_carver_fit.PNG\" />\n</p>\n\n#### Storing, reusing an AutoCarver\n\nThe `Discretizer` and `AutoCarver` steps can be stored in a `Pipeline` and can than be stored as a `pickle` file.\n\n```python\nfrom pickle import dump\nfrom sklearn.pipeline import Pipeline\n\n# storing Discretizer\npipe = [('Discretizer', discretizer)]\n\n# storing fitted AutoCarver in a Pipeline\npipe += [('AutoCarver', auto_carver)]\npipe = Pipeline(pipe)\n\n# storing as pickle file\ndump(pipe, open('my_pipe.pkl', 'wb'))\n```\n\nThe stored `Pipeline`, can then be used to transform new datasets.\n\n```python\nfrom pickle import load\n\n# restoring the pipeline\npipe = load(open('my_pipe.pkl', 'rb'))\n\n# applying pipe to a validation set or in production\nX_val = pipe.transform(X_val)\n```",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/mdefrance/AutoCarver",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "AutoCarver",
+            "package_url": "https://pypi.org/project/AutoCarver/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/AutoCarver/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/mdefrance/AutoCarver/issues",
+                "Homepage": "https://github.com/mdefrance/AutoCarver"
+            },
+            "release_url": "https://pypi.org/project/AutoCarver/2.0.4/",
+            "requires_dist": null,
+            "requires_python": "",
+            "summary": "Automatic Carving of Features with Optimal Association",
+            "version": "2.0.4",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16364688,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6edb892dc75b9d3de9e446734308a93dc4200423e9e41441d526895886b9bde8",
+                    "md5": "5db4c3ad4a3657c4bc11a92c0472a3e6",
+                    "sha256": "a508cdd8d501bf2bf8d5cf235ee173b1453ed6026aac552aadadb741429bbce5"
+                },
+                "downloads": -1,
+                "filename": "AutoCarver-2.0.4.tar.gz",
+                "has_sig": false,
+                "md5_digest": "5db4c3ad4a3657c4bc11a92c0472a3e6",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 15557,
+                "upload_time": "2023-01-09T20:02:54",
+                "upload_time_iso_8601": "2023-01-09T20:02:54.523620Z",
+                "url": "https://files.pythonhosted.org/packages/6e/db/892dc75b9d3de9e446734308a93dc4200423e9e41441d526895886b9bde8/AutoCarver-2.0.4.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
