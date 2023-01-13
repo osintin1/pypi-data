@@ -35,7 +35,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16373722,
+        "last_serial": 16406034,
         "urls": [
             {
                 "comment_text": "",
@@ -118,7 +118,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16373722,
+        "last_serial": 16406034,
         "urls": [
             {
                 "comment_text": "",
@@ -201,7 +201,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16373722,
+        "last_serial": 16406034,
         "urls": [
             {
                 "comment_text": "",
@@ -284,7 +284,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16373722,
+        "last_serial": 16406034,
         "urls": [
             {
                 "comment_text": "",
@@ -369,7 +369,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16373722,
+        "last_serial": 16406034,
         "urls": [
             {
                 "comment_text": "",
@@ -454,7 +454,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16373722,
+        "last_serial": 16406034,
         "urls": [
             {
                 "comment_text": "",
@@ -539,7 +539,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16373722,
+        "last_serial": 16406034,
         "urls": [
             {
                 "comment_text": "",
@@ -624,7 +624,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16373722,
+        "last_serial": 16406034,
         "urls": [
             {
                 "comment_text": "",
@@ -679,7 +679,6 @@
             "classifiers": [
                 "Programming Language :: Python :: 3"
             ],
-            "description": "`dead-instrument` is the instrumenter used in [DEAD](https://github.com/DeadCodeProductions/dead).\n\n\nIt inserts markers (as function calls) in C or C++ source code to enable differential\ntesting:\n1. Instrument a program.\n2. Compile it with two or more compilers (or compiler versions, or optimization levels, etc).\n3. For each output: the markers whose corresponding calls are still present in the\n   generated assembly are _alive_, the remaining are _dead_.\n4. Differential testing: compare the sets of _alive_ and _dead_ markers across\n   outputs.\n\nThere are two kinds of markers supported: \n- DCE (Dead Code Elimination) Markers\n- VR (Value Range) Markers\n\nA __DCEMarker__ tests if a compiler dead code eliminates a piece of code (basic block). For example, \n```\nif (Cond){\n  DCEMarker0_();\n  STMT0;\n  STMT1;\n  //...\n}\n```\nIf `call DCEMarker0_();` is not present in the generated assembly code then the\ncompiler determined that `Cond` must always be false and therefore the body of\nthis if statement is dead.\n\nA __VRMarker__ tests if a compiler can determine subsets of the value ranges of\nvariables, for example:\n```\nif (a <= C)\n    VRMarker0_();\n```\nIf `call VRMarker0_();` is not present in the generated assembly code then the\ncompiler determined that `a`'s value is always `a > C`. Currently only integer\nvariables are instrumented. \n\n#### To build just the clang tool\n\nPrerequisites: `cmake`, `make`, `clang/llvm` 13/14.\n\n```\nmkdir build\ncd build\ncmake .. \ncmake --build . [--parallel]\ncmake --install . --prefix=/where/to/install/\n```\n\n#### Usage\n```\ncat test.c\nint foo(int a) {\n    if (a == 0)\n        return 1;\n    else {\n        a = 5;\n    }\n\n    return a;\n}\n\n\ndead-instrument test.c --\n\n\ncat test.c | clang-format\n#if defined DisableDCEMarker0_\n#define DCEMARKERMACRO0_ ;\n#elif defined UnreachableDCEMarker0_\n#define DCEMARKERMACRO0_ __builtin_unreachable();\n#else\n#define DCEMARKERMACRO0_ DCEMarker0_();\nvoid DCEMarker0_(void);\n#endif\n#if defined DisableDCEMarker1_\n#define DCEMARKERMACRO1_ ;\n#elif defined UnreachableDCEMarker1_\n#define DCEMARKERMACRO1_ __builtin_unreachable();\n#else\n#define DCEMARKERMACRO1_ DCEMarker1_();\nvoid DCEMarker1_(void);\n#endif\nint foo(int a) {\n  if (a == 0)\n  {\n    DCEMARKERMACRO1_\n    return 1;\n  }\n  else {\n    DCEMARKERMACRO0_\n    a = 5;\n  }\n\n  return a;\n}\n```\n\nIndividual markers can be disabled or turned into unreachables (useful for helping the compiler optimize parts known to be dead):\n\n```\ngcc -E -P -DDisableDCEMarker0_ -DUnreachableDCEMarker1_ test.c | clang-format\nint foo(int a) {\n  if (a == 0) {\n    __builtin_unreachable();\n    return 1;\n  } else {\n    ;\n    a = 5;\n  }\n  return a;\n}\n```\n\nPassing  `--ignore-functions-with-macros` to `dead-instrument` will cause it to ignore any functions that contain macro expansions.\n\n\nValue range markers can be emitted instead by using `--mode=vr`: \n```\ncat test.c\nint foo(int a) {\n  if (a == 0)\n    return 1;\n  return 0;\n}\n\ndead-instrument --mode=vr test.c --\n\ncat test.c | clang-format \n#if defined DisableVRMarkerLE0_\n#define VRMARKERMACROLE0_(VAR)\n#elif defined UnreachableVRMarkerLE0_\n#define VRMARKERMACROLE0_(VAR)         \\\n  if ((VAR) <= VRMarkerConstantLE0_)   \\\n    __builtin_unreachable();\n#else\n#define VRMARKERMACROLE0_(VAR)         \\\n  if ((VAR) <= VRMarkerConstantLE0_)   \\\n    VRMarkerLE0_();\nvoid VRMarkerLE0_(void);\n#endif\n#ifndef VRMarkerConstantLE0_\n#define VRMarkerConstantLE0_ 0\n#endif\n#if defined DisableVRMarkerGE0_\n#define VRMARKERMACROGE0_(VAR)\n#elif defined UnreachableVRMarkerGE0_\n#define VRMARKERMACROGE0_(VAR)         \\\n  if ((VAR) >= VRMarkerConstantGE0_)   \\\n    __builtin_unreachable();\n#else\n#define VRMARKERMACROGE0_(VAR)         \\\n  if ((VAR) >= VRMarkerConstantGE0_)   \\\n    VRMarkerGE0_();\nvoid VRMarkerGE0_(void);\n#endif\n#ifndef VRMarkerConstantGE0_\n#define VRMarkerConstantGE0_ 0\n#endif\nint foo(int a) {\n  VRMARKERMACROLE0_(a)\n  VRMARKERMACROGE0_(a)\n  if (a == 0)\n    return 1;\n  return 0;\n}\n```\n\n\nThe ranges that each marker test can be adjucted via macros and individual markers can be disabled or turned into unreachables:\n\n```\ngcc -E -P -DDisableVRMarkerLE0_ -DVRMarkerConstantGE0_=8 test.c | clang-format\nvoid VRMarkerGE0_(void);\nint foo(int a) {\n\n  if ((a) >= 8)\n    VRMarkerGE0_();\n  if (a == 0)\n    return 1;\n  return 0;\n}\n```\n\n#### Python wrapper\n\n`pip install dead-instrumenter`\n\n\nTo use the instrumenter in python import `from dead_instrumenter.instrumenter import instrument_program`: `instrument_program(program: diopter.SourceProgram, ignore_functions_with_macros: bool) -> InstrumentedProgram`. \n\n\n#### Building the python wrapper\n\n##### Local build\n\n```\n./build_python_wheel_local.sh #this will build the current branch\npip install .\n```\n\n#### Docker based build\n\n```\ndocker run --rm -e REVISION=REV -v `pwd`:/io theodort/manylinux-with-llvm:latest /io/build_python_wheel_docker.sh\n```\n\nThis will build multiple wheels for `REV` with multiple python versions.\nThe output is stored in the `wheelhouse` directory.\nThe docker image is based on https://github.com/thetheodor/manylinux-with-llvm.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -710,7 +709,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16373722,
+        "last_serial": 16406034,
         "urls": [
             {
                 "comment_text": "",
@@ -751,6 +750,92 @@
                 "upload_time": "2023-01-10T11:19:55",
                 "upload_time_iso_8601": "2023-01-10T11:19:55.781109Z",
                 "url": "https://files.pythonhosted.org/packages/a6/fc/ab1627c8cdf3aa87db7b7eb18dc9d390c467eb066af88494080d74baa73b/dead_instrumenter-0.3.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.3.1": {
+        "info": {
+            "author": "Theodoros Theodoridis",
+            "author_email": "theodort@inf.ethz.ch",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "`dead-instrument` is the instrumenter used in [DEAD](https://github.com/DeadCodeProductions/dead).\n\n\nIt inserts markers (as function calls) in C or C++ source code to enable differential\ntesting:\n1. Instrument a program.\n2. Compile it with two or more compilers (or compiler versions, or optimization levels, etc).\n3. For each output: the markers whose corresponding calls are still present in the\n   generated assembly are _alive_, the remaining are _dead_.\n4. Differential testing: compare the sets of _alive_ and _dead_ markers across\n   outputs.\n\nThere are two kinds of markers supported: \n- DCE (Dead Code Elimination) Markers\n- VR (Value Range) Markers\n\nA __DCEMarker__ tests if a compiler dead code eliminates a piece of code (basic block). For example, \n```\nif (Cond){\n  DCEMarker0_();\n  STMT0;\n  STMT1;\n  //...\n}\n```\nIf `call DCEMarker0_();` is not present in the generated assembly code then the\ncompiler determined that `Cond` must always be false and therefore the body of\nthis if statement is dead.\n\nA __VRMarker__ tests if a compiler can determine subsets of the value ranges of\nvariables, for example:\n```\nif (a <= C)\n    VRMarker0_();\n```\nIf `call VRMarker0_();` is not present in the generated assembly code then the\ncompiler determined that `a`'s value is always `a > C`. Currently only integer\nvariables are instrumented. \n\n#### To build just the clang tool\n\nPrerequisites: `cmake`, `make`, `clang/llvm` 13/14.\n\n```\nmkdir build\ncd build\ncmake .. \ncmake --build . [--parallel]\ncmake --install . --prefix=/where/to/install/\n```\n\n#### Usage\n```\ncat test.c\nint foo(int a) {\n    if (a == 0)\n        return 1;\n    else {\n        a = 5;\n    }\n\n    return a;\n}\n\n\ndead-instrument test.c --\n\n\ncat test.c | clang-format\n#if defined DisableDCEMarker0_\n#define DCEMARKERMACRO0_ ;\n#elif defined UnreachableDCEMarker0_\n#define DCEMARKERMACRO0_ __builtin_unreachable();\n#else\n#define DCEMARKERMACRO0_ DCEMarker0_();\nvoid DCEMarker0_(void);\n#endif\n#if defined DisableDCEMarker1_\n#define DCEMARKERMACRO1_ ;\n#elif defined UnreachableDCEMarker1_\n#define DCEMARKERMACRO1_ __builtin_unreachable();\n#else\n#define DCEMARKERMACRO1_ DCEMarker1_();\nvoid DCEMarker1_(void);\n#endif\nint foo(int a) {\n  if (a == 0)\n  {\n    DCEMARKERMACRO1_\n    return 1;\n  }\n  else {\n    DCEMARKERMACRO0_\n    a = 5;\n  }\n\n  return a;\n}\n```\n\nIndividual markers can be disabled or turned into unreachables (useful for helping the compiler optimize parts known to be dead):\n\n```\ngcc -E -P -DDisableDCEMarker0_ -DUnreachableDCEMarker1_ test.c | clang-format\nint foo(int a) {\n  if (a == 0) {\n    __builtin_unreachable();\n    return 1;\n  } else {\n    ;\n    a = 5;\n  }\n  return a;\n}\n```\n\nPassing  `--ignore-functions-with-macros` to `dead-instrument` will cause it to ignore any functions that contain macro expansions.\n\n\nValue range markers can be emitted instead by using `--mode=vr`: \n```\ncat test.c\nint foo(int a) {\n  if (a == 0)\n    return 1;\n  return 0;\n}\n\ndead-instrument --mode=vr test.c --\n\ncat test.c | clang-format \n#if defined DisableVRMarkerLE0_\n#define VRMARKERMACROLE0_(VAR)\n#elif defined UnreachableVRMarkerLE0_\n#define VRMARKERMACROLE0_(VAR)         \\\n  if ((VAR) <= VRMarkerConstantLE0_)   \\\n    __builtin_unreachable();\n#else\n#define VRMARKERMACROLE0_(VAR)         \\\n  if ((VAR) <= VRMarkerConstantLE0_)   \\\n    VRMarkerLE0_();\nvoid VRMarkerLE0_(void);\n#endif\n#ifndef VRMarkerConstantLE0_\n#define VRMarkerConstantLE0_ 0\n#endif\n#if defined DisableVRMarkerGE0_\n#define VRMARKERMACROGE0_(VAR)\n#elif defined UnreachableVRMarkerGE0_\n#define VRMARKERMACROGE0_(VAR)         \\\n  if ((VAR) >= VRMarkerConstantGE0_)   \\\n    __builtin_unreachable();\n#else\n#define VRMARKERMACROGE0_(VAR)         \\\n  if ((VAR) >= VRMarkerConstantGE0_)   \\\n    VRMarkerGE0_();\nvoid VRMarkerGE0_(void);\n#endif\n#ifndef VRMarkerConstantGE0_\n#define VRMarkerConstantGE0_ 0\n#endif\nint foo(int a) {\n  VRMARKERMACROLE0_(a)\n  VRMARKERMACROGE0_(a)\n  if (a == 0)\n    return 1;\n  return 0;\n}\n```\n\n\nThe ranges that each marker test can be adjucted via macros and individual markers can be disabled or turned into unreachables:\n\n```\ngcc -E -P -DDisableVRMarkerLE0_ -DVRMarkerConstantGE0_=8 test.c | clang-format\nvoid VRMarkerGE0_(void);\nint foo(int a) {\n\n  if ((a) >= 8)\n    VRMarkerGE0_();\n  if (a == 0)\n    return 1;\n  return 0;\n}\n```\n\n#### Python wrapper\n\n`pip install dead-instrumenter`\n\n\nTo use the instrumenter in python import `from dead_instrumenter.instrumenter import instrument_program`: `instrument_program(program: diopter.SourceProgram, ignore_functions_with_macros: bool) -> InstrumentedProgram`. \n\n\n#### Building the python wrapper\n\n##### Local build\n\n```\n./build_python_wheel_local.sh #this will build the current branch\npip install .\n```\n\n#### Docker based build\n\n```\ndocker run --rm -e REVISION=REV -v `pwd`:/io theodort/manylinux-with-llvm:latest /io/build_python_wheel_docker.sh\n```\n\nThis will build multiple wheels for `REV` with multiple python versions.\nThe output is stored in the `wheelhouse` directory.\nThe docker image is based on https://github.com/thetheodor/manylinux-with-llvm.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/DeadCodeProductions/dead_instrumenter",
+            "keywords": "",
+            "license": "Apache License 2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "dead-instrumenter",
+            "package_url": "https://pypi.org/project/dead-instrumenter/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/dead-instrumenter/",
+            "project_urls": {
+                "Homepage": "https://github.com/DeadCodeProductions/dead_instrumenter"
+            },
+            "release_url": "https://pypi.org/project/dead-instrumenter/0.3.1/",
+            "requires_dist": [
+                "diopter (>=0.0.10)"
+            ],
+            "requires_python": ">=3.10",
+            "summary": "A C/C++ code instrumenter used in DEAD",
+            "version": "0.3.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16406034,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "b8027a9120db60343dea9772cb70c1bf79caee5396935479aedd167c0d318e79",
+                    "md5": "49c8ce46b8ff7a7f55800f964d55262c",
+                    "sha256": "90d0c2e9cb2eeaf90ccd4582b8cf2413ac581e6cbca1625f3ffd78dd53515b2a"
+                },
+                "downloads": -1,
+                "filename": "dead_instrumenter-0.3.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "49c8ce46b8ff7a7f55800f964d55262c",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.10",
+                "size": 16849444,
+                "upload_time": "2023-01-12T15:58:20",
+                "upload_time_iso_8601": "2023-01-12T15:58:20.228015Z",
+                "url": "https://files.pythonhosted.org/packages/b8/02/7a9120db60343dea9772cb70c1bf79caee5396935479aedd167c0d318e79/dead_instrumenter-0.3.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "99be9d96615713806711e1a91425e5b8b6af5c8507550f74023f11b3522d4e89",
+                    "md5": "61507e2bfab755662ca4e7b821b16f18",
+                    "sha256": "dfd6c984f7cb1066d4b09709a9d02d946463dd9329047384c2823ed1f1c265c5"
+                },
+                "downloads": -1,
+                "filename": "dead_instrumenter-0.3.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "61507e2bfab755662ca4e7b821b16f18",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.10",
+                "size": 16849443,
+                "upload_time": "2023-01-12T15:58:27",
+                "upload_time_iso_8601": "2023-01-12T15:58:27.041380Z",
+                "url": "https://files.pythonhosted.org/packages/99/be/9d96615713806711e1a91425e5b8b6af5c8507550f74023f11b3522d4e89/dead_instrumenter-0.3.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl",
                 "yanked": false,
                 "yanked_reason": null
             }
