@@ -1,0 +1,96 @@
+{
+    "1.0.0": {
+        "info": {
+            "author": "lojack5",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: BSD License",
+                "Operating System :: Microsoft :: Windows",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: Implementation :: CPython",
+                "Typing :: Typed"
+            ],
+            "description": "![tests](https://github.com/lojack5/structured/actions/workflows/tests.yml/badge.svg)\r\n[![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)\r\n[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)\r\n[![Imports: isort](https://img.shields.io/badge/%20imports-isort-%231674b1?style=flat&labelColor=ef8336)](https://pycqa.github.io/isort/)\r\n\r\n\r\n# IFileOperation- a simple wrapper to use Windows shell file operations.\r\nThis is a very small wrapper around IFileOperation to expose methods to perform file opereration (\r\nmove, copy, rename, new, delete) on files using Windows shell operations.  This means these\r\noperations can be undone, files can be recycled, and you can allow users to handle name conflicts:\r\njust like when you do any of these through Windows Explorer.\r\n\r\nAt the moment this is a very young and so only exposes the file operations:\r\n- Move\r\n- Copy\r\n- Rename\r\n- New\r\n- Delete\r\n\r\nMore features may be added in the future, feel free to open a feature request for something\r\nspecific.\r\n\r\n\r\n## Installation:\r\n`pip install ifileoperation`\r\n\r\nAt the moment the library is tested to run on Python 3.11, but other version may\r\nwork if `pywin32` and `comtypes` are available.\r\n\r\n\r\n## Usage\r\nAll of the functionality is accessed via the `FileOperator` class.  This is a scheduling context\r\nmanager. If you're familiar with IFileOperation, you'll know that you queue a bunch of operations\r\nyou wish to be performed, then order them to be executed all at once:\r\n\r\n```python\r\nfrom Pathlib import Path\r\nfrom ifileoperation import FileOperator, FileOperationFlags\r\n\r\n\r\nif __name__ == '__main__':\r\n    # Configure for recycling, showing a prompt if the file(s) can't be recyled\r\n    # and must be deleted instead.\r\n    recycle_flags = (\r\n      # ALLOW_UNDO: for versions < Win8, ADDUNDORECORD is preferred for Win8+\r\n      FileOperationFlags.ALLOW_UNDO | FileOperationFlags.ADDUNDORECORD |\r\n      # RECYCLEONDELETE: Perform deletes as recycles\r\n      FileOperationFlags.RECYCLEONDELETE |\r\n      # WANTNUKEWARNING: If a file is too big to be recyled, show a warning that\r\n      #  it will be deleted instead\r\n      FileOperationFlags.WANTNUKEWARNING |\r\n    )\r\n    # Don't show any confirmation dialogs (except for WANTNUKEWARNING), or a UAC\r\n    # prompt if elevation is required (default behavior)\r\n    ui_flags = (\r\n      # NO_CONFIMATION: Don't show confirmation dialogs (ie, treat all dialogs\r\n      # as if 'Yes to All' was selected)\r\n      FileOperationFlags.NO_CONFIRMATION |\r\n    )\r\n    config = recycle_flags | ui_flags\r\n    with FileOperator(flags=config, commit_on_exit=True) as op:\r\n        op.delete_file('Q:/foo.txt')\r\n        op.delete_file(Path.cwd().join('bar.txt'))\r\n```\r\n\r\n\r\n## FileOperator\r\nA thin wrapper around IFileOperation, exposing the move, copy, rename, and\r\ndelete operations.  All paths can be specified as anything implementing the\r\n`os.PathLike[str]` interface: strings, `Path` objects, or your own custom\r\n`PathLike` class.  The `FileOperator` instance is a context manager: you queue\r\noperations in the `with` block, and then `commit` them or have them committed\r\nautomatically.\r\n\r\nNOTE: `FileOperator` is not reentrant.  Once you've entered the `with` block and\r\nexited, you should create a new instance to perform more operations.\r\n\r\n### Configuring:\r\nConfiguration is done via the constructor:\r\n```python\r\n__init__(self, parent=None, flags=None, commit_on_exit=False):\r\n```\r\n- `parent`: A optional `HANDLE` to the parent that should own any dialog boxes\r\n  shown. You may also pass a `wx.Window` object, and `FileOperator` will extract\r\n  the handle for you.\r\n- `flags`: A `FileOperationFlags` instance indicating the options you want when\r\n  performing the operations.  See the Microsoft documentation on [these flags](\r\n  https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-ifileoperation-setoperationflags)\r\n  for more details on what each means.  These are also in the docstrings for\r\n  `FileOperationFlags`, so you can read there them as well.\r\n- `commit_on_exit`: If set to `True`, all the queued operations will be\r\n  automatically commited as long as no exceptions occurred withing the `with`\r\n  block before exiting.  Exceptions *might* still occur during the committing\r\n  itself though!\r\n\r\n### Operations supported:\r\nThe basic file operations can be scheduled.  In these method signatures,\r\n`StrPath` is defined as `str | os.PathLike[str]`.\r\n- `move_file(source: StrPath, destination: StrPath, new_name: str | None = None)`:\r\n  Moves the file at `source` to the destination directory `destination`.  If `new_name`\r\n  is supplied, the file will also be renamed to the new name.\r\n- `move_files(sources: Iterable[StrPath], destination: StrPath, new_name: str | None = None)`:\r\n  Moves the specified files `sources` to the destination directory `destination`.  If\r\n  `new_name` is supplied, the files will all be renamed to the new name. In this case,\r\n  you probably also want to supply `FileOperationFlags.RENAMEONCOLLISION`.\r\n- `copy_file(source: StrPath, destination: StrPath, new_name: str | None = None)`:\r\n  Like move, but performs a copy instead.\r\n- `copy_files(sources: Iterable[StrPath], destination: StrPath)`:\r\n  Like move (without the rename), but performs a copy instead.\r\n- `rename_file(source: StrPath, new_name: str, allow_move: bool = True)`:\r\n  Renames a file to a new name.  Normally, `new_name` should just be the name of\r\n  the new file, without its directory.  However, if you're used to other file\r\n  APIs that let you \"rename\" a file into a different directory, `rename_file`\r\n  supports this as well.  When `allow_move` is `True`, if it is detected that\r\n  `new_name` is actually a path resolving to a different directory, this will\r\n  automatically be transformed into a `move_file` operation instead.\r\n- `rename_files(sources: Iterable[StrPath], new_name: str)`:  Renames the given\r\n  files to have the new name.  Unlike `rename_file`, you cannot rename files\r\n  into files in different directories.\r\n- `delete_file(source: StrPath)`: Deletes the target file.\r\n- `delete_files(sources: Iterable[StrPath])`: Deletes the target files.\r\n- `commit()`: Cause all the queue operations to be performed.  After a `commit`,\r\n  the `.aborted` attribute will be set to `True` or `False` depending on if any\r\n  file operations were Canceled/Aborted.\r\n\r\n### Exceptions\r\nAll exceptions raised by this library are based on `IFileOperationError`, except\r\nfor any exceptions that are translated into standard library exceptions (at the\r\nmoment, none of them are).  These exceptions are just a simple translation of\r\n`pythoncom.com_error`, so you don't have to have any knowledge of the [pywin32](\r\nhttps://pypi.org/project/pywin32/) library.\r\n\r\nI have plans to convert some of the exceptions into standard `OSError`s, for\r\nexample `FileNotFoundError`, `PermimssionError`, etc.\r\n\r\n\r\n## Contributing\r\nPull requests are welcome!  We use branch protection with some (minimal) tests\r\nat the moment: just formatting really. To install the dependencies needed for\r\ndevelopment, use:\r\n`pip install -r requirements-dev.txt`\r\n\r\nAnd before committing make sure to check against the tests and formatters:\r\n- `pytest`: No tests at the moment\r\n- `black ifileoperation`: Code formatting\r\n- `isort ifileoperation`: Code formatting\r\n- `flake8 ifileoperation`: Linting\r\n\r\nIFileOperation uses [semantic versioning](https://semver.org/), but if you're\r\nunsure if your changes need a version bump feel free to note that in your pull\r\nrequest and you'll get feedback!\r\n\r\nIf you're not into coding, you can open a [Bug Report or Feature Request](https://github.com/lojack5/IFileOperation/issues)\r\nand I'll look into it.\r\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "BSD 3-Clause",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "ifileoperation",
+            "package_url": "https://pypi.org/project/ifileoperation/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/ifileoperation/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/lojack5/IFileOperation/issues",
+                "Homepage": "https://github.com/lojack5/IFileOperation"
+            },
+            "release_url": "https://pypi.org/project/ifileoperation/1.0.0/",
+            "requires_dist": [
+                "comtypes (>=1.1.14)",
+                "pywin32 (>=305)"
+            ],
+            "requires_python": ">=3.11",
+            "summary": "Python wrapper for using Win32's IFileOperation for manipulating the filesystem.",
+            "version": "1.0.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16515483,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e7bafdaca1b91ef1c5421af1e7a138d127e918fbb6fe53c75d4859660bbf4bf9",
+                    "md5": "0a495a07ca5914d2487aa79a185fc9b5",
+                    "sha256": "ed1a6faec90d1a9f1161945fb2a72c4a0455d13304c8fa662360c6db0cfd077f"
+                },
+                "downloads": -1,
+                "filename": "ifileoperation-1.0.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "0a495a07ca5914d2487aa79a185fc9b5",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.11",
+                "size": 14563,
+                "upload_time": "2023-01-21T21:15:44",
+                "upload_time_iso_8601": "2023-01-21T21:15:44.929936Z",
+                "url": "https://files.pythonhosted.org/packages/e7/ba/fdaca1b91ef1c5421af1e7a138d127e918fbb6fe53c75d4859660bbf4bf9/ifileoperation-1.0.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "df255e3a5ba9cc7d815abb5869121d766cbc832e6e57d8de845e10833530c3ae",
+                    "md5": "59898f532d31bb8e9f6740c2117e6ec4",
+                    "sha256": "ac002cd2bacd6727f304b541324c3e5619d2e46e9aa4610be1c86adbe45738f2"
+                },
+                "downloads": -1,
+                "filename": "ifileoperation-1.0.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "59898f532d31bb8e9f6740c2117e6ec4",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.11",
+                "size": 16492,
+                "upload_time": "2023-01-21T21:15:46",
+                "upload_time_iso_8601": "2023-01-21T21:15:46.446612Z",
+                "url": "https://files.pythonhosted.org/packages/df/25/5e3a5ba9cc7d815abb5869121d766cbc832e6e57d8de845e10833530c3ae/ifileoperation-1.0.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
