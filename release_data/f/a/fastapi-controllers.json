@@ -1,0 +1,99 @@
+{
+    "0.1.0": {
+        "info": {
+            "author": "Jerzy G\u00f3ra",
+            "author_email": "j.gora89@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Framework :: FastAPI",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: MacOS :: MacOS X",
+                "Operating System :: Microsoft :: Windows",
+                "Operating System :: POSIX",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Software Development :: Libraries"
+            ],
+            "description": "<p>\n    <h1 align=\"center\">fastapi-controllers</h1>\n    <p align=\"center\">\n        A simple solution for organizing your FastAPI endpoints\n    </p>\n    <p align=\"center\">\n    <img src=\"https://badgen.net/badge/python/3.8|3.9|3.10|3.11/blue?icon=pypi\"/>\n    <img src=\"https://badgen.net/badge/license/MIT/blue\"/>\n    <img src=\"https://github.com/goraje/fastapi-controllers/actions/workflows/test.yml/badge.svg\">\n    </p>\n</p>\n\n## Organize your API endpoints\n\n`fastapi-controllers` offers a simple solution for organizing your API endpoints by means of a `Controller` class embracing the concept of class-based views.\n\n## Features\n\n- class-based approach to organizing FastAPI endpoints\n- class-scoped definition of APIRouter parameters\n- instance-scoped definition of FastAPI dependencies\n- it integrates seamlessly with the FastAPI framework\n- works with both sync and async endpoints\n\n## Installation\n\n```sh\npip install fastapi-controllers\n```\n\n## Minimal working example\n\n```python\nimport uvicorn\nfrom fastapi import FastAPI, Response, status\n\nfrom fastapi_controllers import Controller, get\n\n\nclass ExampleController(Controller):\n    @get(\"/example\", response_class=Response)\n    async def get_example(self) -> Response:\n        return Response(status_code=status.HTTP_200_OK)\n\n\nif __name__ == \"__main__\":\n    app = FastAPI()\n    app.include_router(ExampleController.create_router())\n    uvicorn.run(app)\n```\n\nFastAPI's `APIRouter` is created and populated with API routes by the `Controller.create_router` method and can be incorporated into the application in the usual way via `app.include_router`.\n\n## Seamless integration\n\nThe router-related parameters as well as those of HTTP request-specific decorators are expected to be the same as those used by `fastapi.APIRouter` and `fastapi.APIRouter.<request_method>`. Validation of the provided parameters is performed during initialization via the `inspect` module. This ensures compatibility with the FastAPI framework and prevents the introduction of a new, unnecessary naming convention.\n\n### Supported HTTP request methods\n\n```python\nfrom fastapi_controllers import delete, get, head, options, patch, post, put, trace\n```\n\n## Use class variables to customize your APIRouter\n\nClass variables can be used to set the commonly used APIRouter parameters: `prefix`, `dependencies` and `tags`.\n\n```python\nimport uvicorn\nfrom fastapi import Depends, FastAPI, Response, status\nfrom fastapi.security import HTTPBasic, HTTPBasicCredentials\nfrom pydantic import BaseModel\n\nfrom fastapi_controllers import Controller, get, post\n\nsecurity = HTTPBasic()\n\n\nasync def authorized_user(credentials: HTTPBasicCredentials = Depends(security)) -> None:\n    ...\n\n\nclass ExampleRequest(BaseModel):\n    name: str\n\n\nclass ExampleResponse(BaseModel):\n    message: str\n\n\nclass ExampleController(Controller):\n    prefix = \"/example\"\n    tags = [\"example\"]\n    dependencies = [Depends(authorized_user)]\n\n    @get(\"\", response_class=Response)\n    async def get_example(self) -> Response:\n        return Response(status_code=status.HTTP_200_OK)\n\n    @post(\"\", response_model=ExampleResponse)\n    async def post_example(self, data: ExampleRequest) -> ExampleResponse:\n        return ExampleResponse(message=f\"Hello, {data.name}!\")\n\n\nif __name__ == \"__main__\":\n    app = FastAPI()\n    app.include_router(ExampleController.create_router())\n    uvicorn.run(app)\n```\n### Additional APIRouter parameters\nAdditional APIRouter parameters can be provided via the `__router_params__` class variable in form of a mapping.\n\n```python\nimport uvicorn\nfrom fastapi import FastAPI, Response, status\n\nfrom fastapi_controllers import Controller, get\n\n\nclass ExampleController(Controller):\n    prefix = \"/example\"\n    tags = [\"example\"]\n    __router_params__ = {\"deprecated\": True}\n\n    @get(\"\", response_class=Response)\n    async def get_example(self) -> Response:\n        return Response(status_code=status.HTTP_200_OK)\n\n\nif __name__ == \"__main__\":\n    app = FastAPI()\n    app.include_router(ExampleController.create_router())\n    uvicorn.run(app)\n```\n>**Important**:\n>**Beware of assigning values to the same parameter twice (directly on class-level and through `__router_params__`). The values stored in `__router_params__` have precedence and will override your other settings if a name conflict arises. E.g. the following `Controller` would create an `APIRouter` with `prefix=/override`, `tags=[\"override\"]` and `dependencies=[Depends(override)]`**\n\n```python\nfrom fastapi import Depends\n\nfrom fastapi_controllers import Controller\n\n\nclass ExampleController(Controller):\n    prefix = \"/example\"\n    tags = [\"example\"]\n    dependencies = [Depends(example)]\n    __router_params__ = {\n        \"prefix\": \"/override\",\n        \"tags\": [\"override\"],\n        \"dependencies\": [Depends(override)],\n    }\n```\n\n\n## Instance-scoped dependencies\n\nInstance-scoped attributes can be defined in the `__init__` method of the `Controller` and offer an easy way to access common dependencies for all endpoints.\n\n```python\nimport json\n\nimport uvicorn\nfrom fastapi import Depends, FastAPI, Response, status\n\nfrom fastapi_controllers import Controller, get\n\n\nclass DbSession:\n    @property\n    def status(self) -> str:\n        return \"CONNECTED\"\n\n\nasync def get_db_session() -> DbSession:\n    return DbSession()\n\n\nclass ExampleController(Controller):\n    prefix = \"/example\"\n\n    def __init__(self, session: DbSession = Depends(get_db_session)) -> None:\n        self.session = session\n\n    @get(\"\", response_class=Response)\n    async def get_status(self) -> Response:\n        return Response(\n            content=json.dumps({\"status\": f\"{self.session.status}\"}),\n            status_code=status.HTTP_200_OK,\n            media_type=\"application/json\",\n        )\n\n\nif __name__ == \"__main__\":\n    app = FastAPI()\n    app.include_router(ExampleController.create_router())\n    uvicorn.run(app)\n    uvicorn.run(app)\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/goraje/fastapi-controllers",
+            "keywords": "fastapi,controller,cbv,routing",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "fastapi-controllers",
+            "package_url": "https://pypi.org/project/fastapi-controllers/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/fastapi-controllers/",
+            "project_urls": {
+                "Homepage": "https://github.com/goraje/fastapi-controllers",
+                "Repository": "https://github.com/goraje/fastapi-controllers"
+            },
+            "release_url": "https://pypi.org/project/fastapi-controllers/0.1.0/",
+            "requires_dist": [
+                "fastapi"
+            ],
+            "requires_python": ">=3.8,<4.0",
+            "summary": "Simple Controller implementation for FastAPI",
+            "version": "0.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16560885,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "8e89de62b4545cea676ec438f390dc4d3f0ed92474679b216248fcb90ec1e21f",
+                    "md5": "dfcdd1a00fa087691bd0a5be4de9b830",
+                    "sha256": "e95ffb0f2298925e3d96df7e4e1468aa295f08add74118aedcee9d2c9da2ae46"
+                },
+                "downloads": -1,
+                "filename": "fastapi_controllers-0.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "dfcdd1a00fa087691bd0a5be4de9b830",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8,<4.0",
+                "size": 6467,
+                "upload_time": "2023-01-25T12:27:48",
+                "upload_time_iso_8601": "2023-01-25T12:27:48.602855Z",
+                "url": "https://files.pythonhosted.org/packages/8e/89/de62b4545cea676ec438f390dc4d3f0ed92474679b216248fcb90ec1e21f/fastapi_controllers-0.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "b656817b76e077c6cfcaacbe81be27edc0b401a5c4038a448c3a95d75b9a94d1",
+                    "md5": "f464b9f54f5a4defad015e9447ae9101",
+                    "sha256": "f2757e0a530fded5912f32fbd69a6a52acf5741d2bde551a425a1eeab773cbb4"
+                },
+                "downloads": -1,
+                "filename": "fastapi_controllers-0.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "f464b9f54f5a4defad015e9447ae9101",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8,<4.0",
+                "size": 9925,
+                "upload_time": "2023-01-25T12:27:51",
+                "upload_time_iso_8601": "2023-01-25T12:27:51.048083Z",
+                "url": "https://files.pythonhosted.org/packages/b6/56/817b76e077c6cfcaacbe81be27edc0b401a5c4038a448c3a95d75b9a94d1/fastapi_controllers-0.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
