@@ -46,7 +46,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16545707,
+        "last_serial": 16562120,
         "urls": [
             {
                 "comment_text": "",
@@ -109,7 +109,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "<h3 align=\"center\">\r\n\tDiscord Linked Roles OAuth2\r\n</h3>\r\n<h5 align=\"center\">\r\n  A basic wrapper for the Discord Linked Roles OAuth2 API.\r\n</h5>\r\n\r\n<p align=\"center\">\r\n    <img alt=\"Releases\" src=\"https://img.shields.io/github/release/staciax/discord-linked-roles.svg?style=for-the-badge&logo=github&color=F2CDCD&logoColor=D9E0EE&labelColor=302D41\"/></a>\r\n\t<a href=\"https://github.com/staciax/discord-linked-roles/stargazers\"><img src=\"https://img.shields.io/github/stars/staciax/discord-linked-roles?colorA=363a4f&colorB=b7bdf8&style=for-the-badge\"></a>\r\n\t<a href=\"https://github.com/staciax/discord-linked-roles/issues\"><img src=\"https://img.shields.io/github/issues/staciax/discord-linked-roles?colorA=363a4f&colorB=f5a97f&style=for-the-badge\"></a>\r\n\t<a href=\"https://github.com/staciax/discord-linked-roles/contributors\"><img src=\"https://img.shields.io/github/contributors/staciax/discord-linked-roles?colorA=363a4f&colorB=a6da95&style=for-the-badge\"></a>\r\n</p>\r\n\r\n<!-- https://github.com/catppuccin color style -->\r\n\r\n## Installation:\r\n```sh\r\npip install linked-roles\r\n```\r\n\r\n## FastAPI Examples:\r\n```py\r\nimport logging\r\n\r\nfrom fastapi import FastAPI, status\r\nfrom fastapi.responses import RedirectResponse\r\n\r\nimport config\r\nfrom linked_roles import LinkedRolesOAuth2, OAuth2Scopes, RolePlatform, Unauthorized, NotFound\r\n\r\n_log = logging.getLogger(__name__)\r\n\r\napp = FastAPI(title='Linked Roles OAuth2')\r\n\r\nclient = LinkedRolesOAuth2(\r\n    client_id=config.DISCORD_CLIENT_ID,\r\n    client_secret=config.DISCORD_CLIENT_SECRET,\r\n    redirect_uri=config.DISCORD_REDIRECT_URI,\r\n    # token=config.DISCORD_TOKEN, # Optinal for Resgister\r\n    scopes=(OAuth2Scopes.role_connection_write, OAuth2Scopes.identify),\r\n    state=config.COOKIE_SECRET,\r\n)\r\n\r\n\r\n@app.on_event('startup')\r\nasync def startup():\r\n    await client.start()\r\n    _log.info('Startup complete')\r\n\r\n\r\n@app.on_event('shutdown')\r\nasync def shutdown():\r\n    await client.close()\r\n    _log.info('Shutdown complete')\r\n\r\n\r\n@app.get('/linked-role', status_code=status.HTTP_302_FOUND)\r\nasync def linked_roles():\r\n    url = client.get_oauth_url()\r\n    return RedirectResponse(url=url)\r\n\r\n\r\n@app.get('/verified-role')\r\nasync def verified_role(code: str):\r\n\r\n    tokens = await client.get_oauth2_tokens(code)\r\n    user = await client.fetch_user(tokens=tokens)\r\n\r\n    platform = RolePlatform(name='VALORANT', username='STACIA#1234')\r\n    platform.edit_metadata(key='matches', value=50)\r\n    platform.edit_metadata(key='winrate', value=25)\r\n    platform.edit_metadata(key='combat_score', value=5)\r\n    platform.edit_metadata(key='last_update', value=datetime.datetime.now())\r\n    platform.edit_metadata(key='verified', value=False)\r\n\r\n\r\n    await user.edit_role_metadata(platform=platform)\r\n\r\n    return 'Verified role successfully'\r\n\r\n@app.post('/update-role-metadata')\r\nasync def update_role_metadata(user_id: int):\r\n\r\n    user = client.get_user(id=user_id)\r\n\r\n    if user is None:\r\n        raise NotFound(f'User with ID {user_id} not found')\r\n\r\n    tokens = user.get_tokens()\r\n    if tokens is None:\r\n        raise Unauthorized('User is not connected to Linked Roles')\r\n\r\n    if tokens.is_expired():\r\n        await tokens.refresh()\r\n\r\n    platform = user.get_role_platform()\r\n    platform = RolePlatform(name='VALORANT', username='STACIA#1234')\r\n    platform.edit_metadata(key='matches', value=100)\r\n    platform.edit_metadata(key='winrate', value=50)\r\n    platform.edit_metadata(key='combat_score', value=10)\r\n    platform.edit_metadata(key='last_update', value=datetime.datetime.now())\r\n    platform.edit_metadata(key='verified', value=True)\r\n\r\n\r\n    await user.edit_role_metadata(platform=platform)\r\n```\r\n\r\n# Register Examples:\r\n```py\r\nimport asyncio\r\n\r\nimport config\r\nfrom linked_roles import AppRoleConnectionMetadataRecordType as RoleMetadataType, LinkedRolesOAuth2, RoleMetadataRecord\r\n\r\n\r\nasync def main():\r\n\r\n    client = LinkedRolesOAuth2(client_id=config.DISCORD_CLIENT_ID, token=config.DISCORD_TOKEN)\r\n\r\n    async with client:\r\n\r\n        records = (\r\n            RoleMetadataRecord(\r\n                key='matches',\r\n                name='Matches',\r\n                description='Number of matches this season',\r\n                type=2,\r\n            ),\r\n            RoleMetadataRecord(\r\n                key='winrate',\r\n                name='Win Rate',\r\n                description='Win rate this season',\r\n                type=RoleMetadataType.interger_greater_than_or_equal,\r\n            ),\r\n            RoleMetadataRecord(\r\n                key='combat_score',\r\n                name='Combat Score',\r\n                description='Combat score this season',\r\n                type=RoleMetadataType.interger_greater_than_or_equal,\r\n            ),\r\n            RoleMetadataRecord(\r\n                key='last_update',\r\n                name='Last Update',\r\n                description='Last time this data was updated',\r\n                type=RoleMetadataType.datetime_less_than_or_equal,\r\n            ),\r\n            RoleMetadataRecord(\r\n                key='verified',\r\n                name='Verified',\r\n                description='Verified role',\r\n                type=RoleMetadataType.boolean_equal,\r\n            )\r\n        )\r\n\r\n        records = await client.register_role_metadata(records=records)\r\n        print(records)\r\n\r\n\r\nif __name__ == '__main__':\r\n    asyncio.run(main())\r\n\r\n```\r\n## TODO:\r\n- [ ] Add more examples\r\n- [ ] Add more documentation\r\n- [ ] Database support\r\n\r\n## License\r\nlicensed under the [MIT license](LICENSE).\r\n\r\n<!-- code style, inspiration is discord.py -->\r\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -141,7 +140,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16545707,
+        "last_serial": 16562120,
         "urls": [
             {
                 "comment_text": "",
@@ -182,6 +181,195 @@
                 "upload_time": "2023-01-24T11:01:11",
                 "upload_time_iso_8601": "2023-01-24T11:01:11.533412Z",
                 "url": "https://files.pythonhosted.org/packages/8a/b4/d4928a753082e02f899a00195a201c215d653050971b9d2623089ba4c509/linked-roles-1.0.0rc1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.1.0": {
+        "info": {
+            "author": "staciax",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: MIT License",
+                "Natural Language :: English",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/staciax/discord-linked-roles",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "linked-roles",
+            "package_url": "https://pypi.org/project/linked-roles/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/linked-roles/",
+            "project_urls": {
+                "Homepage": "https://github.com/staciax/discord-linked-roles",
+                "Issue tracker": "https://github.com/staciax/discord-linked-roles/issues"
+            },
+            "release_url": "https://pypi.org/project/linked-roles/1.1.0/",
+            "requires_dist": [
+                "aiohttp (<4,>=3.8.x)"
+            ],
+            "requires_python": ">=3.8.0",
+            "summary": "A basic wrapper for the Discord Linked Roles OAuth2 API.",
+            "version": "1.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16562120,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6a38a8aecd474c508d9541b01a7be16ac3961b464087a0a2d0b94b813fc4631a",
+                    "md5": "bb0da4c31f3801f04ecccda2a4323daa",
+                    "sha256": "2c74330903ea8e92239d238f7d19c97ef0bc8bd76cd98ca3313057e738a70ecf"
+                },
+                "downloads": -1,
+                "filename": "linked_roles-1.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "bb0da4c31f3801f04ecccda2a4323daa",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8.0",
+                "size": 16562,
+                "upload_time": "2023-01-25T12:53:36",
+                "upload_time_iso_8601": "2023-01-25T12:53:36.985851Z",
+                "url": "https://files.pythonhosted.org/packages/6a/38/a8aecd474c508d9541b01a7be16ac3961b464087a0a2d0b94b813fc4631a/linked_roles-1.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "dd1d3359a9ee0ffa5b892d9890e62c05e578e32f9e48a279f48b5eb872af6975",
+                    "md5": "437887d0fc91661b2e00ccd352d33d3d",
+                    "sha256": "9c5edffa659cd00fedb2e0e3267773e74291144bb0e379256868ce93be599678"
+                },
+                "downloads": -1,
+                "filename": "linked-roles-1.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "437887d0fc91661b2e00ccd352d33d3d",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8.0",
+                "size": 14688,
+                "upload_time": "2023-01-25T12:53:38",
+                "upload_time_iso_8601": "2023-01-25T12:53:38.768323Z",
+                "url": "https://files.pythonhosted.org/packages/dd/1d/3359a9ee0ffa5b892d9890e62c05e578e32f9e48a279f48b5eb872af6975/linked-roles-1.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.1.1": {
+        "info": {
+            "author": "staciax",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: MIT License",
+                "Natural Language :: English",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "<h3 align=\"center\">\r\n\tDiscord Linked Roles OAuth2\r\n</h3>\r\n<h5 align=\"center\">\r\n  A basic wrapper for the Discord Linked Roles OAuth2 API.\r\n</h5>\r\n\r\n<p align=\"center\">\r\n    <img alt=\"Releases\" src=\"https://img.shields.io/github/release/staciax/discord-linked-roles.svg?style=for-the-badge&logo=github&color=F2CDCD&logoColor=D9E0EE&labelColor=302D41\"/></a>\r\n\t<a href=\"https://github.com/staciax/discord-linked-roles/stargazers\"><img src=\"https://img.shields.io/github/stars/staciax/discord-linked-roles?colorA=363a4f&colorB=b7bdf8&style=for-the-badge\"></a>\r\n\t<a href=\"https://github.com/staciax/discord-linked-roles/issues\"><img src=\"https://img.shields.io/github/issues/staciax/discord-linked-roles?colorA=363a4f&colorB=f5a97f&style=for-the-badge\"></a>\r\n\t<a href=\"https://github.com/staciax/discord-linked-roles/contributors\"><img src=\"https://img.shields.io/github/contributors/staciax/discord-linked-roles?colorA=363a4f&colorB=a6da95&style=for-the-badge\"></a>\r\n</p>\r\n\r\n<!-- https://github.com/catppuccin color style -->\r\n\r\n## Installation\r\n```sh\r\n$ pip install -U linked-roles\r\n```\r\n\r\n## FastAPI Example:\r\n```py\r\nfrom fastapi import FastAPI\r\nfrom fastapi.responses import RedirectResponse\r\n\r\nimport config\r\nfrom linked_roles import LinkedRolesOAuth2, OAuth2Scopes, RolePlatform, UserNotFound\r\n\r\napp = FastAPI(title='Linked Roles OAuth2')\r\n\r\nclient = LinkedRolesOAuth2(\r\n    client_id=config.DISCORD_CLIENT_ID,\r\n    client_secret=config.DISCORD_CLIENT_SECRET,\r\n    redirect_uri=config.DISCORD_REDIRECT_URI,\r\n    # token=config.DISCORD_TOKEN, # Optinal for Resgister\r\n    scopes=(OAuth2Scopes.role_connection_write, OAuth2Scopes.identify),\r\n    state=config.COOKIE_SECRET,\r\n)\r\n\r\n@app.on_event('startup')\r\nasync def startup():\r\n    await client.start()\r\n\r\n@app.on_event('shutdown')\r\nasync def shutdown():\r\n    await client.close()\r\n\r\n@app.get('/linked-role')\r\nasync def linked_roles():\r\n    url = client.get_oauth_url()\r\n    return RedirectResponse(url=url)\r\n\r\n@app.get('/verified-role')\r\nasync def verified_role(code: str):\r\n\r\n    tokens = await client.get_oauth2_tokens(code)\r\n    user = await client.fetch_user(tokens=tokens)\r\n\r\n    if user is None:\r\n        raise UserNotFound('User not found')\r\n\r\n    platform = RolePlatform(name='VALORANT', username='STACIA#1234')\r\n    platform.add_metadata(key='matches', value=100)\r\n    platform.add_metadata(key='winrate', value=50)\r\n    platform.add_metadata(key='combat_score', value=10)\r\n    platform.add_metadata(key='last_update', value=datetime.datetime.now())\r\n    platform.add_metadata(key='verified', value=True)\r\n\r\n    await user.edit_role_metadata(platform=platform)\r\n\r\n    return 'Verified role successfully'\r\n```\r\n\r\n## Register Example:\r\n```py\r\nimport asyncio\r\n\r\nimport config\r\nfrom linked_roles import AppRoleConnectionMetadataRecordType as RoleMetadataType, LinkedRolesOAuth2, RoleMetadataRecord\r\n\r\n\r\nasync def main():\r\n\r\n    client = LinkedRolesOAuth2(client_id=config.DISCORD_CLIENT_ID, token=config.DISCORD_TOKEN)\r\n\r\n    async with client:\r\n\r\n        records = (\r\n            RoleMetadataRecord(\r\n                key='matches',\r\n                name='Matches',\r\n                description='Number of matches this season',\r\n                type=2,\r\n            ),\r\n            RoleMetadataRecord(\r\n                key='winrate',\r\n                name='Win Rate',\r\n                description='Win rate this season',\r\n                type=RoleMetadataType.interger_greater_than_or_equal,\r\n            ),\r\n            RoleMetadataRecord(\r\n                key='combat_score',\r\n                name='Combat Score',\r\n                description='Combat score this season',\r\n                type=RoleMetadataType.interger_greater_than_or_equal,\r\n            ),\r\n            RoleMetadataRecord(\r\n                key='last_update',\r\n                name='Last Update',\r\n                description='Last time this data was updated',\r\n                type=RoleMetadataType.datetime_less_than_or_equal,\r\n            ),\r\n            RoleMetadataRecord(\r\n                key='verified',\r\n                name='Verified',\r\n                description='Verified role',\r\n                type=RoleMetadataType.boolean_equal,\r\n            )\r\n        )\r\n\r\n        records = await client.register_role_metadata(records=records)\r\n        print(records)\r\n\r\n\r\nif __name__ == '__main__':\r\n    asyncio.run(main())\r\n\r\n```\r\n## Config Example:\r\n```py\r\nDISCORD_TOKEN = '<your bot token>'\r\nDISCORD_CLIENT_ID = '<your client id>'\r\nDISCORD_CLIENT_SECRET = '<your client secret>'\r\nDISCORD_REDIRECT_URI = 'http://localhost:8000/verified-role'  # example redirect uri\r\nCOOKIE_SECRET = '<your cookie secret>'\r\n\r\n# cookie secret can be generated with:\r\nimport uuid\r\n>> uuid.uuid4().hex\r\n```\r\n\r\n## More Examples:\r\n- fastapi more examples: [examples/fastapi](examples/fastapi_.py)\r\n\r\n## TODO:\r\n- [ ] Add more examples\r\n- [ ] Add documentation\r\n- [ ] Add database support (postgresql, sqlite, etc.) ?\r\n- [ ] add more class error\r\n\r\n<!-- code style, inspiration is discord.py -->\r\n## Code Style Inspiration\r\n<!-- https://github.com/Rapptz/discord.py -->\r\n- [discord.py](https://github.com/Rapptz/discord.py)\r\n\r\n## License\r\nlicensed under the [MIT license](LICENSE).\r\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/staciax/discord-linked-roles",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "linked-roles",
+            "package_url": "https://pypi.org/project/linked-roles/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/linked-roles/",
+            "project_urls": {
+                "Homepage": "https://github.com/staciax/discord-linked-roles",
+                "Issue tracker": "https://github.com/staciax/discord-linked-roles/issues"
+            },
+            "release_url": "https://pypi.org/project/linked-roles/1.1.1/",
+            "requires_dist": [
+                "aiohttp (<4,>=3.8.x)"
+            ],
+            "requires_python": ">=3.8.0",
+            "summary": "A basic wrapper for the Discord Linked Roles OAuth2 API.",
+            "version": "1.1.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16562120,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "de738b91c434c64a67bc478d9a25b6fb0e99853bcf024d80b44cbc4fa5eab873",
+                    "md5": "3667d8d5e67bd9b1b49a393603f4d7ca",
+                    "sha256": "3a6ff9858578acb30b77eae71634dd3124d5c55be2efd92fee859afdc1b5645c"
+                },
+                "downloads": -1,
+                "filename": "linked_roles-1.1.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "3667d8d5e67bd9b1b49a393603f4d7ca",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8.0",
+                "size": 16538,
+                "upload_time": "2023-01-25T13:35:49",
+                "upload_time_iso_8601": "2023-01-25T13:35:49.378043Z",
+                "url": "https://files.pythonhosted.org/packages/de/73/8b91c434c64a67bc478d9a25b6fb0e99853bcf024d80b44cbc4fa5eab873/linked_roles-1.1.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "b31a04fa1000c06b9d02abe1c0499bae880d0acf046323d94ed52f8908e67755",
+                    "md5": "87723586511fd9c79a09733cc5f07943",
+                    "sha256": "db38818ff52a6bd68710abec75bc2c37085ddd4e28f2dbb94ccb658982f71471"
+                },
+                "downloads": -1,
+                "filename": "linked-roles-1.1.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "87723586511fd9c79a09733cc5f07943",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8.0",
+                "size": 14734,
+                "upload_time": "2023-01-25T13:35:52",
+                "upload_time_iso_8601": "2023-01-25T13:35:52.113418Z",
+                "url": "https://files.pythonhosted.org/packages/b3/1a/04fa1000c06b9d02abe1c0499bae880d0acf046323d94ed52f8908e67755/linked-roles-1.1.1.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
