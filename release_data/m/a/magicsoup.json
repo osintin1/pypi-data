@@ -40,7 +40,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16538734,
+        "last_serial": 16576752,
         "urls": [
             {
                 "comment_text": "",
@@ -128,7 +128,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16538734,
+        "last_serial": 16576752,
         "urls": [
             {
                 "comment_text": "",
@@ -216,7 +216,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16538734,
+        "last_serial": 16576752,
         "urls": [
             {
                 "comment_text": "",
@@ -281,7 +281,6 @@
                 "Topic :: Scientific/Engineering",
                 "Typing :: Typed"
             ],
-            "description": "## Magicsoup\n\nThis is a game that simulates cell metabolic and transduction pathway evolution.\nDefine a 2D world with certain molecules and reactions.\nAdd a few cells and create evolutionary pressure by selectively replicating and killing them.\nThen run and see what random mutations can do.\n\n![monitoring run](https://raw.githubusercontent.com/mRcSchwering/magic-soup/main/tensorboard_example.png)\n_Watching an ongoing simulation using TensorBoard. In [this simulation](./experiments/e1_co2_fixing/) cells were made to fix CO2 from an artificial CO2 source in the middle of the map._\n\n### Example\n\nThe basic building blocks of what a cell can do are defined by the world's chemistry.\nThere are molecules and reactions that can convert these molecules.\nCells can develop proteins with domains that can transport these molecules,\ncatalyze the reactions, and be regulated by molecules.\nAny reaction or transport happens only if energetically favourable.\nBelow, I am defining the reaction $CO2 + NADPH \\rightleftharpoons formiat + NADP$.\nEach molecule species is defined with a fictional standard Gibbs free energy of formation.\n\n```python\nimport torch\nimport magicsoup as ms\n\nNADPH = ms.Molecule(\"NADPH\", 200 * 1e3)\nNADP = ms.Molecule(\"NADP\", 100 * 1e3)\nformiat = ms.Molecule(\"formiat\", 20 * 1e3)\nco2 = ms.Molecule(\"CO2\", 10 * 1e3)\n\nmolecules = [NADPH, NADP, formiat, co2]\nreactions = [([co2, NADPH], [formiat, NADP])]\n\nchemistry = ms.Chemistry(reactions=reactions, molecules=molecules)\nworld = ms.World(chemistry=chemistry)\n```\n\nBy coupling multiple domains within the same protein, energetically unfavourable actions\ncan be powered with the energy of energetically favourable ones.\nThese domains, their specifications, and how they are coupled in proteins, is all encoded in the cell's genome.\nHere, I am generating 100 cells with random genomes of 500 basepairs each and place them\nin random places on the 2D world map.\n\n```python\ngenomes = [ms.random_genome(s=500) for _ in range(100)]\nworld.add_random_cells(genomes=genomes)\n```\n\nCells discover new proteins by chance through mutations.\nIn the function below all cells experience 1E-3 random point mutations per nucleotide.\n10% of them will be indels.\n\n```python\ndef mutate_cells():\n    mutated = ms.point_mutations(seqs=[d.genome for d in world.cells])\n    world.update_cells(genome_idx_pairs=mutated)\n```\n\nEvolutionary pressure can be applied by selectively killing or replicating cells.\nHere, cells have an increased chance of dying when formiat gets too low\nand an increased chance of replicating when formiat gets high.\n\n```python\ndef sample(p: torch.Tensor) -> list[int]:\n    idxs = torch.argwhere(torch.bernoulli(p))\n    return idxs.flatten().tolist()\n\ndef kill_cells():\n    x = world.cell_molecules[:, 2]\n    idxs = sample(.01 / (.01 + x))\n    world.kill_cells(cell_idxs=idxs)\n\ndef replicate_cells():\n    x = world.cell_molecules[:, 2]\n    idxs = sample(x ** 3 / (x ** 3 + 20.0 ** 3))\n    world.replicate_cells(parent_idxs=idxs)\n```\n\nFinally, the simulation itself is run in a python loop by repetitively calling the different steps.\nWith `world.enzymatic_activity()` chemical reactions and molecule transport\nin cells advance by one time step.\n`world.diffuse_molecules()` lets molecules on the world map diffuse and permeate through cell membranes\n(if they can) by one time step.\n\n```python\nfor _ in range(1000):\n    world.enzymatic_activity()\n    kill_cells()\n    replicate_cells()\n    mutate_cells()\n    world.diffuse_molecules()\n    world.increment_cell_survival()\n```\n\n### Documentation\n\nThe user documentation is in the code.\nAll important classes and methods have docstrings explaining what they do,\nhow they work, and what they are used for.\nFor an explanation of the mechanics in this simulation please see [Concepts](#concepts) below.\n\nIn general, you create a `Chemistry` object with reactions and molecule species.\nFor molecules you can define things like energy, permeability, diffusivity.\nSee the [Molecule](./magicsoup/containers.py) docstring for more information.\n\nThen, you create a `World` object which defines things like world map and genetics.\nIt carries all data that describes the world at this time step with cells, molecule distributions and so on.\nOn this object there are also methods that are used to advance the world by one time step.\nRead the [World](./magicsoup/world.py) docstring for more information.\n\nUsually, you would only adjust `Molecule`s and `World`.\nHowever, in some cases you might want to change the way how genetics work,\n_e.g._ change the way how certain domains are encoded, or change how coding regions are defined.\nIn that case you can override the default `Genetics` object.\nSee the [Genetics](./magicsoup/genetics.py) docstring for more information.\n\nApart from that, you create the simulation to your own likings.\nFrom the `World` object you can read molecule abundances within cells and use that\nto kill or replicate them (like in the example above).\nYou can also alter parts of the world, like creating concentration gradients\nor regularly supplying the world with certain molecules/energy.\n\nAll major work is done by [PyTorch](https://pytorch.org/) and can be moved to a GPU.\nThe `World` object has an argument `device` to control that.\nPlease see [CUDA semantics](https://pytorch.org/docs/stable/notes/cuda.html) on how to use it.\nAnd since this simulation already requires [PyTorch](https://pytorch.org/), it makes sense\nto use [TensorBoard](https://pytorch.org/docs/stable/tensorboard.html) to interactively monitor your ongoing simulation.\n\n## Concepts\n\nThe simulation is an agent-based 2D spatio-temporal simulation.\nCells are agents. Each cell has a string, the genome, which unambigously encodes a set or proteins, the proteome.\nThese proteins can change molecules in and around the cell.\nThrough that each cell can process information.\nEach cell's proteome can form complex networks with feedback loops, cascades, and oscillators.\nWhen randomly changing the cell's genome, this network changes randomly, too.\nBy selectively replicating certain cells while killing others, cells can be brought to evolve.\n\nI believe that most interesting behaviors take many time steps to evolve.\nThat's why this simulation is implemented with millions of time steps in mind.\nGenetics, chemistry, physics in this simulation is simplified a lot.\nIt is a tradeoff between a reasonable amount of complexity and performance.\n\n- [Genetics](#genetics) explains how genetics work in this simulation\n- [Chemistry](#chemistry) explanation for molecules, reactions and energy coupling\n- [Kinetics](#kintics) explain the protein kinetics in this simulation\n- [Implementation](#implementation) some implementation details worth mentioning\n\n### Genetics\n\nAll mechanisms are based on bacterial [transcription](<https://en.wikipedia.org/wiki/Transcription_(biology)>)\nand [translation](<https://en.wikipedia.org/wiki/Translation_(biology)>).\nA cell's [genome](https://en.wikipedia.org/wiki/Genome) is a chain of [nucleotides](https://en.wikipedia.org/wiki/Nucleotide) represented by a string of letters\n$\\\\{T;C;G;A\\\\}$. There are [start and stop codons](https://en.wikipedia.org/wiki/Genetic_code) which define [coding regions (CDSs)](https://en.wikipedia.org/wiki/Coding_region).\nTranscription can start at any start codon and will end when the first [in-frame](https://en.wikipedia.org/wiki/Reading_frame) stop codon encountered.\nCDSs without stop codon are not considered [[James NR 2016](https://pubmed.ncbi.nlm.nih.gov/27934701/)].\nEach CDS will then be translated into one protein, giving each cell a certain [proteome](https://en.wikipedia.org/wiki/Proteome).\nWhat each protein can do is defined by its [domains](https://en.wikipedia.org/wiki/Protein_domain).\n\nCurrently, there are three domain types: _catalytic, transporter, regulatory_.\nEach domain consists of a region of genetic code that defines the domain type itself\nand several regions that define its further specifications.\nWhat these specifications are depends on the domain type.\n\n_Catalytic_ domains can catalyze one of the user-defined reactions.\nSpecifications are the catalyzed reaction, affinities for substrates and products,\nmaximum velocity, its orientation (see [Energy](#energy)).\n\n_Transporter_ domains can move a molecule species across the cell membrane,\n_i.e._ from the outside world into the cell and _vice versa_.\nSpecifications are the molecule species, maximum velocity, its orientation (see [Energy](#energy)).\n\n_Regulatory_ domains can regulate a protein through an effector molecule.\nA protein with only a regulatory domain has no function.\nBut if the protein also has a catalytic or transporter domain, the regulatory\ndomain can up- or down-regulate this domain.\nSpecifications are the effector molecule species, whether it is an activating or inhibiting\neffector, the affinity to that effector.\n\nThe exact genetic code for these domains is set when the `Genetics` object is instantiated.\nBut a user can also override the exact sequence-to-domain mappings.\nThis would be _e.g._ the exact sequence which will encode a catalytic domain for a certain reaction, with certain affinities and velocities.\nIn principle this flexibility allows a cell to create complex networks including feedback loops,\noscillators, and cascades.\n\nFor more details see [magicsoup/genetics.py](./magicsoup/genetics.py).\nAlso see [Kinetics](#kinetics) for details about the domain kinetics and aggregations.\n\n### Chemistry\n\nAt the basis of this simulation one has to define which molecule species exist\nand which reactions are possible.\nOn a high level, a more complex chemistry increases the search space\nfor a cell but also allows it to create more complex networks.\n\nEvery defined reaction can occur in both directions ($substrates \\rightleftharpoons products$).\nIn which direction it will move for a particular cell and step is based on a mechanism\nbased on [Gibbs free energy](https://en.wikipedia.org/wiki/Gibbs_free_energy).\nEach molecule species has an energy value, similar in principle to the\n[Standard Gibbs free energy of formation](https://en.wikipedia.org/wiki/Standard_Gibbs_free_energy_of_formation).\nEvery reaction is regarded as the deconstruction of the substrates and the synthesis of the products.\nDuring deconstruction the energy of all substrates is released, during synthesis the energy of all substrates is consumed.\nThis energy difference is defined as\n\n$$\\Delta G = \\Delta G_0 + RT \\ln Q$$\n\nwhere $\\Delta G_0$ is the standard Gibbs free energy of the reaction, $R$ is the [gas constant](https://en.wikipedia.org/wiki/Gas_constant), $T$ is the absolute temperature,\n$Q$ is the [reaction quotient](https://en.wikipedia.org/wiki/Reaction_quotient).\nThe reaction that minimizes $\\Delta G$ will occur.\nSo, generally the reaction that deconstructs high energy molecules and synthesizes low energy molecules will likely happen ( $\\Delta G_0$ ).\nHowever, it will turn around if the ratio of products to substrates is too high ( $RT \\ln Q$ ).\nThere is an equilibrium $\\Delta G_0 = RT \\ln Q$ where the reaction stops.\nWhen this equilibrium is approached the reaction or transporter will slow down and finally halt.\n\nEach protein can have multiple domains and all domains of the same protein are energetically coupled.\nSo, an energetically unfavourable reaction can happen if at the same time another energetically\nfavourable reaction happens.\nTransporter domains are also involved this way.\nA transporter is seen as a reaction that converts an intracellular molecule species to its extracellular version (and _vice versa_).\nThus, for a transporter $\\Delta G_0$ is always zero only the reaction quotient term $RT \\ln Q$ is important.\nA transporter can drive a reaction while molecules are allowed to diffuse along\ntheir concentration gradient, or a reaction might drive a transporter to pump molecules\nagainst their concentration gratient.\n\nThe sum of all $\\Delta G$ of the protein domains dictates in which\ndirection the protein will work. In which orientation these domains are energetically coupled\nis defined in the domain itself as a region that encodes a boolean $\\\\{0;1\\\\}$.\nAll domains with orientation $0$ work from left to right, and _vice versa_ for $1$.\n_E.g._ if there are 2 catalytic domains $A \\rightleftharpoons B$ and $C \\rightleftharpoons D$,\nthey would become $A + C \\rightleftharpoons B + D$ if they have the same orientation,\nand $A + D \\rightleftharpoons B + C$ if not.\n\nFor more details see [magicsoup/kinetics.py](./magicsoup/kinetics.py) where all the logic\nfor translating domains into kinetic parameters lives.\nAlso see [Implementation](#implementation) for some implications that arise from implementation details.\n\n### Kinetics\n\nAll reactions in this simulation are based on [Michaelis-Menten-Kinetics](https://en.wikipedia.org/wiki/Michaelis%E2%80%93Menten_kinetics).\nIf a cell has one protein with one _catalytic domain_ that defines $S \\rightleftharpoons P$ it will create molecule species $P$ from $S$ with a rate of\n\n$$v = V_{max} \\frac{[S]}{[S] + K_m} = \\Delta [P] = -\\Delta [S]$$\n\nwhere $V_{max}$ is the maximum velocity of that reaction, $[S]$ is the amount of substrate available,\n$K_m$ is the Michaelis constant.\nWhen a reaction involves multiple substrate species and/or multiple catalytic domains are\naggregated this becomes\n\n$$v = V_{max} \\prod_{i} \\frac{[S_i]^{n_i}}{([S_i] + K_{mi})^{n_i}}$$\n\nwhere $[S_i]$ is the amount of substrate $i$ available, $n_i$ is the [stoichiometric coefficient](https://en.wikipedia.org/wiki/Chemical_equation#Structure) of substrate $i$, $K_{mi}$ is the Michaelis constant for substrate $i$.\nWhat exactly these values are is encoded in the domain itself (see [Genetics](#genetics)).\n\n_Transporter domains_ essentially work in the same way. They are defined as $[A_{int}] \\rightleftharpoons [A_{ext}]$ where $A_{int}$ is a molecule species $A$ inside the cell and $A_{ext}$ is the same molecule species outside the cell.\n\n_Regulator domains_ are also described by the same kinetic. However, they don't have $V_{max}$.\nTheir activity is defined by\n\n$$a = \\frac{[E]}{[E] + K_{mE}}$$\n\nwhere $[E]$ is the amount of effector molecule available, $K_{mE}$ is the Michaelis constant for that effector molecule.\nAs with multiple substrates, multiple regulatory domains are combined over a product.\nDepending on whether they are activating or inhibiting, they will be multiplied with $v$ in a different way thus creating a [non-competitive regulation](https://en.wikipedia.org/wiki/Non-competitive_inhibition).\nA protein with regulatory domains will have a regulated velocity of\n\n$$v = a_a (1 - a_i)V_{max} \\prod_{i} \\frac{[S_i]^{n_i}}{([S_i] + K_{mi})^{n_i}}$$\n\nwhere $a_a$ is the combined activity of all activating effectors and $a_i$ is the combined activity of all inhibiting effectors.\nAs effector activities are $a \\in [0;1)$ a regulatory effector cannot increase the maximum\nvelocity of a protein.\nAlso note that while an unregulated protein can always be active, a protein with an activating\nregulatory domain can only be active if the activating effector is present.\nSo, an activating regulatory domain can also switch off a protein.\n\n### Implementation\n\nMaking the simulation more performant is an oingoing effort.\nI want to get the frequency up to a thousand time steps per second for a simulation with around 100k cells.\nCurrently, the simulation leans on [PyTorch](https://pytorch.org/) to do that.\nMost operations are expressed as pytorch operations and can be moved to a GPU.\nHowever, there are still parts which are calculated in plain python.\nAs of now, these are the operations concerned with creating/mutating genomes, transcription and translation.\nThese parts are usually the performance bottlenecks.\n\n#### Low molecule abundances\n\nChanges in molecule abundances are calculated for every step based on protein velocities.\nThese protein velocities depend in one part on substrate abundances\n(Michaelis-Menten Kinetics as desribed in [Kinetics](#kinetics)).\nThus, generally as substrate abundances decrease, protein velocities decrease.\nAnd so, deconstruction rates of this molecule species decrease.\nFurthermore, as the ratio of products to substrates gets too high, the reaction stops or turns around\n(free Gibbs energy of the reaction as described in [Energy](#energy)).\nSo, generally proteins shouldn't attempt to deconstruct more substrate than possible.\nHowever, if a protein has a very high $V_{max}$ and a very low $K_M$ it can happen that\nduring one step it would deconstruct more substrate than actually available.\nThis can also happen if multiple proteins in the same cell would deconstruct the same molecule species.\n\nTo avoid deconstructing more substrate than available and creating negative molecule abundances there is a safety mechanism.\nFirst, the naive protein velocities $v$ are calculated and compared with substrate abundances.\nIf some $v$ attempts to deconstruct more substrate than available, it is reduced to\nby a factor to leave almost zero substrates (a small constant $\\varepsilon$ is kept).\nAll protein velocities in the same cell are reduced by the same factor.\nThis is because of possible dependencies between proteins.\nSay, protein P0 tried to do $A \\rightleftharpoons B$ with $v_{P0} = 2$, but only 1 of A was available.\nAt the same time another protein P1 in the same cell does $B \\rightleftharpoons C$ with $v_{P1} = 2$, with 0.5 of B available.\nIn the naive calculation P1 would be valid because P0 would create 2 B and so P1 can legitimately deconstruct 2 B.\nHowever, after the naive calculation P0 is slowed down with a factor of almost 0.5, which means\nit now deconstructs almost 1 A and synthesizes almost 1 B.\nNow, P1 became a downstream problem of reducing P0, as it doesn't have enough B.\nTo avoid calculating a dependency tree during each step for each cell, all proteins are slowed down by the same factor.\n\nDoing a lazy limit (_e.g._ `X.clamp(0.0)`) is also not an option.\nThis would mean a cell could deconstruct only 1 A while gaining 2 B.\nIt would create molecules and energy from nothing.\nThis sounds like an unlikely event, but the cells will exploit this (personal experience).\nSee `Kinetics.integrate_signals` in [magicsoup/kinetics.py](./magicsoup/kinetics.py) for more information.\n\n#### Integrating multiple domains\n\nI had to make a decision with $V_{Max}$ and $K_M$ when having proteins with multiple domains.\nWhen there are multiple _e.g._ catalytic domains, it might make sense to each give them a seperate\n$V_{Max}$. But then I would need to consider that different domains within the same protein\nwork at different rates. Thus, the whole energy coupling would become more tricky. _E.g._ should the protein be allowed to do 10x reaction 1 with $\\Delta G = -1.1$ to power 1x reaction 2 with $\\Delta G = 10$? To avoid such problems I decided to give any protein only a single $V_{Max}$. All $V_{Max}$ that might come from multiple domains are averaged to a single value. That means proteins with many domains tend to have less extreme values for $V_{Max}$.\n\nA similar problem arises with $K_M$: multiple domains can attempt to each give a different $K_M$ value to the same molecule species. _E.g._ there could be a catalytic domain that has molecule A as a substrate and a regulatory domain with molecule A as effector. In these cases I decided to also only have 1 value for $K_M$ for each molecule species. All $K_M$ values for the same molecule species in the same protein are averaged.\n\n#### Energetic Equilibrium\n\nTheoretically, a reaction should occur in one direction according to its free Gibbs energy $\\Delta G$. At some point $\\Delta G = 0$ is approached\nand the reaction should be in an equilibrium state where no appreciable difference in substrates and products is measurable anymore.\nAs transporters in this simulation also function like catalytic domains, the below is also true for transporters.\n\nAll reaction quotients are compared with their equilibrium constants and turned around if energetically unfavourable.\nThen, quotients and equilibrium constants are used again to calculate a factor for selectively slowing down proteins close to or at their equilibrium.\nThis factor is multiplied with the final protein velocity.\nIt is calculated with an arbitrary function:\n\n$$\nf(x) =\n\\begin{cases}\n  1 & if \\quad |x| >= 1 \\\\\n  |x| & if \\quad  0.1 < |x| < 1 \\\\\n  0 & otherwise\n\\end{cases}\n\\quad , \\quad\nx = \\ln Q - \\ln K_E = \\ln Q + \\frac{E}{RT}\n$$\n\nHowever, proteins with large $V_{max}$ and low $K_M$ can overshoot this equilibrium step.\nIn that case $\\ln Q \\gg \\ln K_E$ in one step, and $\\ln Q \\ll \\ln K_E$ in the next.\nTo avoid endless jumping back and forth around the equilibrium state $K_M$ of some domains are directional.\nDuring translation the value of $K_M$ for a specific domain is read from the nucleotide sequence.\nFor catalytic domains and transporter domains this value of $K_M$ is set for its substrate\nand its reciprocal $K_M^{-1}$ is set for its product.\nThis means if a protein was very sensitive to a substrate and overshot the equilibrium state,\nit will be very unsensitive to the product (which will then be the substrate).\nThus, the protein might quickly approach and overshoot the equilibrium state from one side,\nbut then slowly approach it from the other (and hopefully reach the $|x| < 1$ interval).\n\nOne implication or observation from this is, that it is not good to have huge values for $V_{max}$.\nThe range of values to draw $V_{max}$ from should not have values much higher than 10 per time step.\nIf one wants to simulate much higher protein velocities (such as a catalase)\nit would be better to just call `world.enzymatic_activity()` multiples times.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -311,7 +310,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16538734,
+        "last_serial": 16576752,
         "urls": [
             {
                 "comment_text": "",
@@ -352,6 +351,196 @@
                 "upload_time": "2023-01-23T21:58:57",
                 "upload_time_iso_8601": "2023-01-23T21:58:57.831689Z",
                 "url": "https://files.pythonhosted.org/packages/33/22/63c5ff3c180bb0f3033be3de8f624dc5aac1d59be6a54e37e09de727ce9f/magicsoup-0.0.4.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.5": {
+        "info": {
+            "author": "",
+            "author_email": "Marc <schweringmarc01@gmail.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Environment :: Console",
+                "Environment :: GPU",
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+                "Natural Language :: English",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Topic :: Education",
+                "Topic :: Games/Entertainment",
+                "Topic :: Scientific/Engineering",
+                "Typing :: Typed"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "magicsoup",
+            "package_url": "https://pypi.org/project/magicsoup/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/magicsoup/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/mRcSchwering/magic-soup/issues",
+                "Homepage": "https://github.com/mRcSchwering/magic-soup"
+            },
+            "release_url": "https://pypi.org/project/magicsoup/0.0.5/",
+            "requires_dist": null,
+            "requires_python": ">=3.9",
+            "summary": "Simulation for cell metabolic and transduction pathway evolution",
+            "version": "0.0.5",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16576752,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a002722acee418c62509e4b9d772d2cca008c7503c017b0dc96a01020ac14b52",
+                    "md5": "ed9d422b6ce21eea022b6de7e033507d",
+                    "sha256": "0439bd6fd3c5ffcde5d135193a7758f7ed4a3cb9bc9c0d515d8274789776b939"
+                },
+                "downloads": -1,
+                "filename": "magicsoup-0.0.5-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "ed9d422b6ce21eea022b6de7e033507d",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9",
+                "size": 47051,
+                "upload_time": "2023-01-26T15:20:15",
+                "upload_time_iso_8601": "2023-01-26T15:20:15.963008Z",
+                "url": "https://files.pythonhosted.org/packages/a0/02/722acee418c62509e4b9d772d2cca008c7503c017b0dc96a01020ac14b52/magicsoup-0.0.5-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d4c624293871a97c0f5cade83b336566b3e6b399a4f1447529b0b99e1a862a96",
+                    "md5": "9f916f28a240bc2ee5986a1a21136350",
+                    "sha256": "2f0b97898fcd85f29cb75471005b8c77ba99b9a6996e20fb8156ec19d6b63c60"
+                },
+                "downloads": -1,
+                "filename": "magicsoup-0.0.5.tar.gz",
+                "has_sig": false,
+                "md5_digest": "9f916f28a240bc2ee5986a1a21136350",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9",
+                "size": 45123,
+                "upload_time": "2023-01-26T15:20:17",
+                "upload_time_iso_8601": "2023-01-26T15:20:17.918958Z",
+                "url": "https://files.pythonhosted.org/packages/d4/c6/24293871a97c0f5cade83b336566b3e6b399a4f1447529b0b99e1a862a96/magicsoup-0.0.5.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.6": {
+        "info": {
+            "author": "",
+            "author_email": "Marc <schweringmarc01@gmail.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Environment :: Console",
+                "Environment :: GPU",
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+                "Natural Language :: English",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Topic :: Education",
+                "Topic :: Games/Entertainment",
+                "Topic :: Scientific/Engineering",
+                "Typing :: Typed"
+            ],
+            "description": "## Magicsoup\n\nThis is a game that simulates cell metabolic and transduction pathway evolution.\nDefine a 2D world with certain molecules and reactions.\nAdd a few cells and create evolutionary pressure by selectively replicating and killing them.\nThen run and see what random mutations can do.\n\n![monitoring run](https://raw.githubusercontent.com/mRcSchwering/magic-soup/main/tensorboard_example.png)\n_Watching an ongoing simulation using TensorBoard. In [this simulation](https://github.com/mRcSchwering/luca/tree/main/experiments/e1_co2_fixing) cells were made to fix CO2 from an artificial CO2 source in the middle of the map._\n\n### Installation\n\nFor CPU alone you can just do:\n\n```\npip install magicsoup\n```\n\nThis simulation relies on [PyTorch](https://pytorch.org/).\nYou can move almost all calculations to a GPU.\nTo setup pytorch correctly for your GPU see [Get Started (pytorch.org)](https://pytorch.org/get-started/locally/).\n\n\n### Example\n\nThe basic building blocks of what a cell can do are defined by the world's chemistry.\nThere are molecules and reactions that can convert these molecules.\nCells can develop proteins with domains that can transport these molecules,\ncatalyze the reactions, and be regulated by molecules.\nAny reaction or transport happens only if energetically favourable.\nBelow, I am defining the reaction $CO2 + NADPH \\rightleftharpoons formiat + NADP$.\nEach molecule species is defined with a fictional standard Gibbs free energy of formation.\n\n```python\nimport torch\nimport magicsoup as ms\n\nNADPH = ms.Molecule(\"NADPH\", 200 * 1e3)\nNADP = ms.Molecule(\"NADP\", 100 * 1e3)\nformiat = ms.Molecule(\"formiat\", 20 * 1e3)\nco2 = ms.Molecule(\"CO2\", 10 * 1e3)\n\nmolecules = [NADPH, NADP, formiat, co2]\nreactions = [([co2, NADPH], [formiat, NADP])]\n\nchemistry = ms.Chemistry(reactions=reactions, molecules=molecules)\nworld = ms.World(chemistry=chemistry)\n```\n\nBy coupling multiple domains within the same protein, energetically unfavourable actions\ncan be powered with the energy of energetically favourable ones.\nThese domains, their specifications, and how they are coupled in proteins, is all encoded in the cell's genome.\nHere, I am generating 100 cells with random genomes of 500 basepairs each and place them\nin random places on the 2D world map.\n\n```python\ngenomes = [ms.random_genome(s=500) for _ in range(100)]\nworld.add_random_cells(genomes=genomes)\n```\n\nCells discover new proteins by chance through mutations.\nIn the function below all cells experience 1E-3 random point mutations per nucleotide.\n10% of them will be indels.\n\n```python\ndef mutate_cells():\n    mutated = ms.point_mutations(seqs=[d.genome for d in world.cells])\n    world.update_cells(genome_idx_pairs=mutated)\n```\n\nEvolutionary pressure can be applied by selectively killing or replicating cells.\nHere, cells have an increased chance of dying when formiat gets too low\nand an increased chance of replicating when formiat gets high.\n\n```python\ndef sample(p: torch.Tensor) -> list[int]:\n    idxs = torch.argwhere(torch.bernoulli(p))\n    return idxs.flatten().tolist()\n\ndef kill_cells():\n    x = world.cell_molecules[:, 2]\n    idxs = sample(.01 / (.01 + x))\n    world.kill_cells(cell_idxs=idxs)\n\ndef replicate_cells():\n    x = world.cell_molecules[:, 2]\n    idxs = sample(x ** 3 / (x ** 3 + 20.0 ** 3))\n    world.replicate_cells(parent_idxs=idxs)\n```\n\nFinally, the simulation itself is run in a python loop by repetitively calling the different steps.\nWith `world.enzymatic_activity()` chemical reactions and molecule transport\nin cells advance by one time step.\n`world.diffuse_molecules()` lets molecules on the world map diffuse and permeate through cell membranes\n(if they can) by one time step.\n\n```python\nfor _ in range(1000):\n    world.enzymatic_activity()\n    kill_cells()\n    replicate_cells()\n    mutate_cells()\n    world.diffuse_molecules()\n    world.increment_cell_survival()\n```\n\nSee the [Docs](https://magic-soup.readthedocs.io/) for more examples and a description of all the mechanics of this simulation\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "magicsoup",
+            "package_url": "https://pypi.org/project/magicsoup/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/magicsoup/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/mRcSchwering/magic-soup/issues",
+                "Documentation": "https://magic-soup.readthedocs.io/",
+                "Homepage": "https://github.com/mRcSchwering/magic-soup"
+            },
+            "release_url": "https://pypi.org/project/magicsoup/0.0.6/",
+            "requires_dist": null,
+            "requires_python": ">=3.9",
+            "summary": "Simulation for cell metabolic and transduction pathway evolution",
+            "version": "0.0.6",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16576752,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "7bee3dac4b00d0dbc1b48328d3d4cc7d53ea9ab0a6beafc9243605bea68b147a",
+                    "md5": "e76244c5a2f916a4667ecf6d4a10a488",
+                    "sha256": "c5f9010223e838830299c8c804a61eaf7c1bca83b03197ef7a32bd5647160549"
+                },
+                "downloads": -1,
+                "filename": "magicsoup-0.0.6-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "e76244c5a2f916a4667ecf6d4a10a488",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9",
+                "size": 46748,
+                "upload_time": "2023-01-26T15:24:12",
+                "upload_time_iso_8601": "2023-01-26T15:24:12.305118Z",
+                "url": "https://files.pythonhosted.org/packages/7b/ee/3dac4b00d0dbc1b48328d3d4cc7d53ea9ab0a6beafc9243605bea68b147a/magicsoup-0.0.6-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "4ae736e776a473e9d631fdc5e5f4ac438e0c43cfa6825f273cccb31124a2bbe6",
+                    "md5": "b555f7dbeae7690fd1ca1456099ac464",
+                    "sha256": "a699944810997f71c814e7c647f4885cedea75a904fd5b934597ac9f6978a042"
+                },
+                "downloads": -1,
+                "filename": "magicsoup-0.0.6.tar.gz",
+                "has_sig": false,
+                "md5_digest": "b555f7dbeae7690fd1ca1456099ac464",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9",
+                "size": 44572,
+                "upload_time": "2023-01-26T15:24:15",
+                "upload_time_iso_8601": "2023-01-26T15:24:15.558134Z",
+                "url": "https://files.pythonhosted.org/packages/4a/e7/36e776a473e9d631fdc5e5f4ac438e0c43cfa6825f273cccb31124a2bbe6/magicsoup-0.0.6.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
