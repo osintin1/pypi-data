@@ -1,0 +1,91 @@
+{
+    "0.1.0": {
+        "info": {
+            "author": "Lewis Dunne",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# ROC Face\r\n\r\nThis is a Python package to compute basic signal detection theory measures and to fit theoretical recognition memory models to data using ROC curves.\r\n\r\nCurrently-supported models are those most frequently seen in the literature:\r\n- High Threshold\r\n- Equal-Variance Signal Detection\r\n- Unequal-Variance Signal Detection\r\n- Dual-Process Signal Detection\r\n\r\nThese models are fit to observed data by minimising the $G$, $\\chi^2$, log-likelihood, or sum of squared error statistics between observed and model-predicted data.\r\n\r\n# Setting Up\r\nThis package is not currently on PyPi, but will be soon. Once online:\r\n\r\n```$ pip install roc-face```\r\n\r\nThe dependencies can be found in the `requirements.txt` and this code needs them to run. I recommend using a virtual environment to isolate the dependencies from your base python installation (for more info [please see this](https://packaging.python.org/guides/installing-using-pip-and-virtual-environments/)).\r\n\r\nTo install them, `cd` to the directory with this code in it, and then run `$ pip install -r requirements.txt`.\r\n\r\n# Usage\r\n\r\n## Example 1: Basic signal detection theory measures\r\nWith a single true positive and false positive rate, compute the common measures of sensitivity and bias:\r\n\r\n```python\r\n>>> from roc_face import measures\r\n\r\n>>> measures.d_prime(0.75, 0.21)\r\n1.480910997214322\r\n\r\n>>> measures.c_bias(0.75, 0.21)\r\n0.06596574841107933\r\n```\r\nYou can also return a dictionary of measures in a similar way:\r\n```python\r\n>>> measures.compute_performance(tpr=0.75, fpr=0.21)\r\n{\r\n    'FPR': 0.21,\r\n    'TPR': 0.75,\r\n    'dprime': 1.480910997214322,\r\n    'cbias': 0.06596574841107933,\r\n    'aprime': 0.850886075949367,\r\n    'beta': 1.1026202605581668,\r\n}\r\n```\r\n\r\n## Example 2: Receiver operating characteristic (ROC) modelling\r\nGiven a set of responses to a set of signal and noise trials, the ROC and z-ROC plots of the observed frequencies can be viewed as follows.\r\n\r\n```python\r\n>>> import matplotlib.pyplot as plt\r\n>>> from roc_face import utils\r\n\r\n# Strongest \"signal\" <---> Strongest \"noise\"\r\n# All responses to signal-present trials\r\n>>> signal = [505,248,226,172,144,93]\r\n\r\n# All responses to signal-absent (i.e. noise) trials\r\n>>> noise = [115,185,304,523,551,397]\r\n\r\n>>> fig, ax = plt.subplots(1, 2)\r\n>>> utils.plot_roc(signal, noise, ax=ax[0])\r\n>>> utils.plot_zroc(signal, noise, poly=1, ax=ax[1])\r\n>>> ax[1].legend()\r\n>>> plt.show()\r\n```\r\n<img src=\"https://github.com/lcdunne/signal-detection/raw/develop/example/example_ROC_zROC.png\" alt=\"\" width=\"620\">\r\n\r\nThe `utils.plot_roc` and `utils.plot_zroc` functions are for convenience as \r\nthey carry out some minor plotting customisations (square axes, chance-line, \r\netc). The fitted line on the *z*-ROC in this example is a simple linear model, \r\nwhich is useful for interpreting the ROC data.\r\n\r\nWith the signal and noise data, the different models can be fitted.\r\n\r\n```python\r\n>>> from roc_face.models import SignalDetection\r\n\r\n# Create an equal- and unequal-variance signal detection models\r\n>>> evsd = SignalDetection(signal, noise)\r\n>>> uvsd = SignalDetection(signal, noise, equal_variance=False)\r\n```\r\n\r\nAfter creation, the models are fit as follows:\r\n\r\n```python\r\n# Fit the models using the G-test fit function\r\n>>> evsd.fit(verbose=True)\r\n(\r\n    {\r\n        'model': 'Equal Variance Signal Detection',\r\n        'success': True,\r\n        'method': 'G',\r\n        'statistic': 86.65649645461215,\r\n        'log_likelihood': -13560.04271197083,\r\n        'AIC': 27132.08542394166,\r\n        'BIC': 27171.729820697474,\r\n        'SSE': 0.0038210383584672968\r\n    },\r\n    {\r\n        'd': 1.3706692903039621,\r\n        'criteria': array([ 0.87497843,  0.40584089, -0.01393461, -0.48919362, -1.0589949 ])\r\n    }\r\n)\r\n```\r\nUsing `verbose=True` in the `fit` method prints out the results of the fitting procedure when it ends, along with the parameter estimates. After calling `fit`, they can also be accessed via `.results` and `.parameter_estimates`:\r\n```python\r\n>>> uvsd.fit()\r\n>>> uvsd.results\r\n{\r\n    'model': 'Unequal Variance Signal Detection',\r\n    'success': True,\r\n    'method': 'G',\r\n    'statistic': 0.9957013337195149,\r\n    'log_likelihood': -13517.212314410383,\r\n    'AIC': 27048.424628820765,\r\n    'BIC': 27094.676425035883,\r\n    'SSE': 0.00014501577579512347\r\n}\r\n>>> uvsd.parameter_estimates\r\n{\r\n    'd': 1.6023922394537697,\r\n    'scale': 1.32284210876227,\r\n    'criteria': array([ 0.95984187,  0.36806527, -0.12572417, -0.65421799, -1.2496735 ])\r\n}\r\n```\r\n\r\nThese models can also be compared to one another. Although it is common practice to compare with the AIC or BIC values (see the results), it can also be done with the `.compare` method:\r\n```python\r\n>>> evsd.compare(uvsd)\r\n('G(EVSD - UVSD)', 85.66079512089179, 1, 2.1360619666273588e-20)\r\n```\r\nThis shows that the UVSD provides a significantly better fit than the EVSD.\r\n\r\nFinally, we can just view the ROC data and the two fitted models as follows:\r\n\r\n```python\r\n>>> fig, ax = plt.subplots(dpi=120)\r\n>>> utils.plot_roc(signal, noise, c='k', ax=ax, label='data')\r\n>>> ax.plot(*evsd.curve, label='EVSD')\r\n>>> ax.plot(*uvsd.curve, label='UVSD')\r\n>>> ax.legend(loc='lower right')\r\n>>> plt.show()\r\n```\r\n<img src=\"https://github.com/lcdunne/signal-detection/raw/develop/example/example_EVSD_UVSD.png\" alt=\"\" width=\"480\">\r\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "signal detection theory,receiver operating characteristics,ROC,psychology",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "roc-face",
+            "package_url": "https://pypi.org/project/roc-face/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/roc-face/",
+            "project_urls": {
+                "repository": "https://github.com/lcdunne/roc-face"
+            },
+            "release_url": "https://pypi.org/project/roc-face/0.1.0/",
+            "requires_dist": [
+                "numpy",
+                "scipy"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "A package to fit models to recognition memory ROC data and compute signal detection measures.",
+            "version": "0.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16622129,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6633366c44fab8c4bc6d47b357cc8b543a81becca9a2b3b7048d04e951f724f1",
+                    "md5": "b4aef737f1d816378b9ac0fce25241b7",
+                    "sha256": "f575ebb5fe45365a3f14e8d378abe6b3057cdb1309b79cc2e80c7e44ee3a2e54"
+                },
+                "downloads": -1,
+                "filename": "roc_face-0.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "b4aef737f1d816378b9ac0fce25241b7",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 20680,
+                "upload_time": "2023-01-30T17:14:43",
+                "upload_time_iso_8601": "2023-01-30T17:14:43.292642Z",
+                "url": "https://files.pythonhosted.org/packages/66/33/366c44fab8c4bc6d47b357cc8b543a81becca9a2b3b7048d04e951f724f1/roc_face-0.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "83fbf037b7a460e9f27393864c217b0c2c719bcfd3caa2f33b1774a3ffaff5f3",
+                    "md5": "862286903ab1915f12c781952ee50d76",
+                    "sha256": "f192b481a8cf9707381b5109c97e9ae3f2de71fee39d62f84ddcc4e1cceead80"
+                },
+                "downloads": -1,
+                "filename": "roc_face-0.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "862286903ab1915f12c781952ee50d76",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 20385,
+                "upload_time": "2023-01-30T17:14:44",
+                "upload_time_iso_8601": "2023-01-30T17:14:44.871271Z",
+                "url": "https://files.pythonhosted.org/packages/83/fb/f037b7a460e9f27393864c217b0c2c719bcfd3caa2f33b1774a3ffaff5f3/roc_face-0.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
