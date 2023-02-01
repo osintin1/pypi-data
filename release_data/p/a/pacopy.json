@@ -49,7 +49,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16492467,
+        "last_serial": 16642320,
         "urls": [
             {
                 "comment_text": "",
@@ -357,7 +357,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16492467,
+        "last_serial": 16642320,
         "urls": [
             {
                 "comment_text": "",
@@ -456,7 +456,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16492467,
+        "last_serial": 16642320,
         "urls": [
             {
                 "comment_text": "",
@@ -534,7 +534,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16492467,
+        "last_serial": 16642320,
         "urls": [
             {
                 "comment_text": "",
@@ -578,7 +578,6 @@
                 "Topic :: Scientific/Engineering",
                 "Topic :: Scientific/Engineering :: Mathematics"
             ],
-            "description": "# pacopy\n\n[![PyPi Version](https://img.shields.io/pypi/v/pacopy.svg?style=flat-square)](https://pypi.org/project/pacopy/)\n[![PyPI pyversions](https://img.shields.io/pypi/pyversions/pacopy.svg?style=flat-square)](https://pypi.org/project/pacopy/)\n[![GitHub stars](https://img.shields.io/github/stars/nschloe/pacopy.svg?style=flat-square&logo=github&label=Stars&logoColor=white)](https://github.com/nschloe/pacopy)\n[![PyPi downloads](https://img.shields.io/pypi/dm/pacopy.svg?style=flat-square)](https://pypistats.org/packages/pacopy)\n\n[![Discord](https://img.shields.io/static/v1?logo=discord&logoColor=white&label=chat&message=on%20discord&color=7289da&style=flat-square)](https://discord.gg/hnTJ5MRX2Y)\n\npacopy provides various algorithms of [numerical parameter\ncontinuation](https://en.wikipedia.org/wiki/Numerical_continuation) for ODEs and PDEs in\nPython.\n\npacopy is backend-agnostic, so it doesn't matter if your problem is formulated with\n[NumPy](https://numpy.org/), [SciPy](https://scipy.org/),\n[FEniCS](https://fenicsproject.org/), [pyfvm](https://github.com/nschloe/pyfvm), or any\nother Python package. The only thing the user must provide is a class with some simple\nmethods, e.g., a function evaluation `f(u, lmbda)`, a Jacobian a solver\n`jacobian_solver(u, lmbda, rhs)` etc.\n\nInstall with\n\n```\npip install pacopy\n```\nTo get started, take a look at the examples below.\n\nSome pacopy documentation is available\n[here](https://pacopy.readthedocs.io/en/latest/?badge=latest).\n\n### Examples\n\n#### Basic scalar example\n\n<img src=\"https://nschloe.github.io/pacopy/simple.svg\" width=\"30%\">\n\nLet's start off with a problem where the solution space is scalar. We try to\nsolve `sin(x) - lambda` for different values of `lambda`, starting at 0.\n\n```python\nimport math\nimport matplotlib.pyplot as plt\nimport pacopy\n\n\nclass SimpleScalarProblem:\n    def inner(self, a, b):\n        \"\"\"The inner product in the problem domain. For scalars, this is just a\n        multiplication.\n        \"\"\"\n        return a * b\n\n    def norm2_r(self, a):\n        \"\"\"The norm in the range space; used to determine if a solution has been found.\"\"\"\n        return a**2\n\n    def f(self, u, lmbda):\n        \"\"\"The evaluation of the function to be solved\"\"\"\n        return math.sin(u) - lmbda\n\n    def df_dlmbda(self, u, lmbda):\n        \"\"\"The function's derivative with respect to the parameter. Used in Euler-Newton\n        continuation.\n        \"\"\"\n        return -1.0\n\n    def jacobian_solver(self, u, lmbda, rhs):\n        \"\"\"A solver for the Jacobian problem. For scalars, this is just a division.\"\"\"\n        return rhs / math.cos(u)\n\n\nproblem = SimpleScalarProblem()\n\nlmbda_list = []\nvalues_list = []\n\n\ndef callback(k, lmbda, sol):\n    # Use the callback for plotting, writing data to files etc.\n    lmbda_list.append(lmbda)\n    values_list.append(sol)\n\n\npacopy.euler_newton(\n    problem,\n    u0=0.0,\n    lmbda0=0.0,\n    callback=callback,\n    max_steps=20,\n    newton_tol=1.0e-10,\n    verbose=False,\n)\n\n# plot solution\nplt.plot(values_list, lmbda_list, \".-\")\nplt.xlabel(\"$u_1$\")\nplt.ylabel(\"$\\\\lambda$\")\nplt.show()\n```\n\n#### Simple 2D problem\n\n<img src=\"https://nschloe.github.io/pacopy/simple2d.svg\" width=\"30%\">\n\nA similarly simple example with two unknowns and a parameter. The inner product and\nJacobian solver are getting more interesting.\n\n```python\nimport matplotlib.pyplot as plt\nimport numpy as np\nimport pacopy\nimport scipy\nfrom mpl_toolkits.mplot3d import Axes3D\n\n\nclass SimpleProblem2D:\n    def inner(self, a, b):\n        return np.dot(a, b)\n\n    def norm2_r(self, a):\n        return np.dot(a, a)\n\n    def f(self, u, lmbda):\n        return np.array(\n            [\n                np.sin(u[0]) - lmbda - u[1] ** 2,\n                np.cos(u[1]) * u[1] - lmbda,\n            ]\n        )\n\n    def df_dlmbda(self, u, lmbda):\n        return -np.ones_like(u)\n\n    def jacobian_solver(self, u, lmbda, rhs):\n        A = np.array(\n            [\n                [np.cos(u[0]), -2 * u[1]],\n                [0.0, np.cos(u[1]) - np.sin(u[1]) * u[1]],\n            ]\n        )\n        return np.linalg.solve(A, rhs)\n\n\nproblem = SimpleProblem2D()\n# Initial guess and initial parameter value\nu0 = np.zeros(2)\nlmbda0 = 0.0\n\n# Init lists\nlmbda_list = []\nvalues_list = []\n\n\ndef callback(k, lmbda, sol):\n    lmbda_list.append(lmbda)\n    values_list.append(sol)\n\n\npacopy.euler_newton(problem, u0, lmbda0, callback, max_steps=50, newton_tol=1.0e-10)\n\n# plot solution\nfig = plt.figure()\nax = fig.add_subplot(111, projection=\"3d\")\nax.plot(*np.array(values_list).T, lmbda_list, \".-\")\nax.set_xlabel(\"$u_1$\")\nax.set_ylabel(\"$u_2$\")\nax.set_zlabel(\"$\\\\lambda$\")\n# plt.show()\nplt.savefig(\"simple2d.svg\", transparent=True, bbox_inches=\"tight\")\nplt.close()\n```\n\n#### Bratu\n\n<img src=\"https://nschloe.github.io/pacopy/bratu1d.png\" width=\"30%\">\n\nLet's deal with an actual PDE, the classical [Bratu\nproblem](https://en.wikipedia.org/wiki/Liouville%E2%80%93Bratu%E2%80%93Gelfand_equation)\nin 1D with Dirichlet boundary conditions. Now, the solution space isn't scalar, but a\nvector of length `n` (the values of the solution at given points on the 1D interval).\nWe now need numpy and scipy, the inner product and Jacobian solver are more complicated.\n\n```python\nimport matplotlib.pyplot as plt\nimport numpy as np\nimport pacopy\nimport scipy.sparse\nimport scipy.sparse.linalg\n\n\n# This is the classical finite-difference approximation\nclass Bratu1d:\n    def __init__(self, n):\n        self.n = n\n        h = 1.0 / (self.n - 1)\n\n        self.H = np.full(self.n, h)\n        self.H[0] = h / 2\n        self.H[-1] = h / 2\n\n        self.A = (\n            scipy.sparse.diags([-1.0, 2.0, -1.0], [-1, 0, 1], shape=(self.n, self.n))\n            / h**2\n        )\n\n    def inner(self, a, b):\n        \"\"\"The inner product of the problem. Can be np.dot(a, b), but factoring in\n        the mesh width stays true to the PDE.\n        \"\"\"\n        return np.dot(a, self.H * b)\n\n    def norm2_r(self, a):\n        \"\"\"The norm in the range space; used to determine if a solution has been found.\"\"\"\n        return np.dot(a, a)\n\n    def f(self, u, lmbda):\n        \"\"\"The evaluation of the function to be solved\"\"\"\n        out = self.A.dot(u) - lmbda * np.exp(u)\n        out[0] = u[0]\n        out[-1] = u[-1]\n        return out\n\n    def df_dlmbda(self, u, lmbda):\n        \"\"\"The function's derivative with respect to the parameter. Used in Euler-Newton\n        continuation.\n        \"\"\"\n        out = -np.exp(u)\n        out[0] = 0.0\n        out[-1] = 0.0\n        return out\n\n    def jacobian_solver(self, u, lmbda, rhs):\n        \"\"\"A solver for the Jacobian problem.\"\"\"\n        M = self.A.copy()\n        d = M.diagonal().copy()\n        d -= lmbda * np.exp(u)\n        M.setdiag(d)\n        # Dirichlet conditions\n        M.data[0][self.n - 2] = 0.0\n        M.data[1][0] = 1.0\n        M.data[1][self.n - 1] = 1.0\n        M.data[2][1] = 0.0\n        return scipy.sparse.linalg.spsolve(M.tocsr(), rhs)\n\n\nproblem = Bratu1d(51)\n# Initial guess and parameter value\nu0 = np.zeros(problem.n)\nlmbda0 = 0.0\n\nlmbda_list = []\nvalues_list = []\n\n\ndef callback(k, lmbda, sol):\n    # Use the callback for plotting, writing data to files etc.\n    fig = plt.figure()\n    ax1 = fig.add_subplot(111)\n    ax1.set_xlabel(\"$\\\\lambda$\")\n    ax1.set_ylabel(\"$||u||_2$\")\n    ax1.grid()\n\n    lmbda_list.append(lmbda)\n    # use the norm of the currentsolution for plotting on the y-axis\n    values_list.append(np.sqrt(problem.inner(sol, sol)))\n\n    ax1.plot(lmbda_list, values_list, \"-x\", color=\"C0\")\n    ax1.set_xlim(0.0, 4.0)\n    ax1.set_ylim(0.0, 6.0)\n    plt.close()\n\n\n# Natural parameter continuation\n# pacopy.natural(problem, u0, lmbda0, callback, max_steps=100)\n\npacopy.euler_newton(\n    problem, u0, lmbda0, callback, max_steps=500, max_num_retries=10, newton_tol=1.0e-10\n)\n```\n\n#### Ginzburg\u2013Landau\n\nhttps://user-images.githubusercontent.com/181628/146639709-90b6e6aa-48ba-418d-9aa4-ec5754f95b93.mp4\n\nThe [Ginzburg-Landau\nequations](https://en.wikipedia.org/wiki/Ginzburg%E2%80%93Landau_theory) model\nthe behavior of extreme type-II superconductors under a magnetic field. The\nabove example (to be found in full detail\n[here](tests/test_ginzburg_landau.py)) shows parameter continuation in the\nstrength of the magnetic field. The plot on the right-hand side shows the\ncomplex-valued solution using [cplot](https://github.com/nschloe/cplot).\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -612,7 +611,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16492467,
+        "last_serial": 16642320,
         "urls": [
             {
                 "comment_text": "",
@@ -632,6 +631,84 @@
                 "upload_time": "2023-01-19T20:39:08",
                 "upload_time_iso_8601": "2023-01-19T20:39:08.086165Z",
                 "url": "https://files.pythonhosted.org/packages/fd/27/6a30594e765e4ea7041a8f5b636e424883d1fbb9611cf289b06d5226ea65/pacopy-0.2.6-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.7": {
+        "info": {
+            "author": "",
+            "author_email": "Nico Schl\u00f6mer <nico.schloemer@gmail.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 5 - Production/Stable",
+                "Intended Audience :: Science/Research",
+                "License :: Other/Proprietary License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Scientific/Engineering",
+                "Topic :: Scientific/Engineering :: Mathematics"
+            ],
+            "description": "# pacopy\n\n[![PyPi Version](https://img.shields.io/pypi/v/pacopy.svg?style=flat-square)](https://pypi.org/project/pacopy/)\n[![PyPI pyversions](https://img.shields.io/pypi/pyversions/pacopy.svg?style=flat-square)](https://pypi.org/project/pacopy/)\n[![GitHub stars](https://img.shields.io/github/stars/nschloe/pacopy.svg?style=flat-square&logo=github&label=Stars&logoColor=white)](https://github.com/nschloe/pacopy)\n[![PyPi downloads](https://img.shields.io/pypi/dm/pacopy.svg?style=flat-square)](https://pypistats.org/packages/pacopy)\n\n[![Discord](https://img.shields.io/static/v1?logo=discord&logoColor=white&label=chat&message=on%20discord&color=7289da&style=flat-square)](https://discord.gg/hnTJ5MRX2Y)\n\npacopy provides various algorithms of [numerical parameter\ncontinuation](https://en.wikipedia.org/wiki/Numerical_continuation) for ODEs and PDEs in\nPython.\n\npacopy is backend-agnostic, so it doesn't matter if your problem is formulated with\n[NumPy](https://numpy.org/), [SciPy](https://scipy.org/),\n[FEniCS](https://fenicsproject.org/), [pyfvm](https://github.com/nschloe/pyfvm), or any\nother Python package. The only thing the user must provide is a class with some simple\nmethods, e.g., a function evaluation `f(u, lmbda)`, a Jacobian a solver\n`jacobian_solver(u, lmbda, rhs)` etc.\n\nInstall with\n\n```\npip install pacopy\n```\nTo get started, take a look at the examples below.\n\nSome pacopy documentation is available\n[here](https://pacopy.readthedocs.io/en/latest/?badge=latest).\n\n### Examples\n\n#### Basic scalar example\n\n<img src=\"https://nschloe.github.io/pacopy/simple.svg\" width=\"30%\">\n\nLet's start off with a problem where the solution space is scalar. We try to\nsolve `sin(x) - lambda` for different values of `lambda`, starting at 0.\n\n```python\nimport math\nimport matplotlib.pyplot as plt\nimport pacopy\n\n\nclass SimpleScalarProblem:\n    def inner(self, a, b):\n        \"\"\"The inner product in the problem domain. For scalars, this is just a\n        multiplication.\n        \"\"\"\n        return a * b\n\n    def norm2_r(self, a):\n        \"\"\"The norm in the range space; used to determine if a solution has been found.\"\"\"\n        return a**2\n\n    def f(self, u, lmbda):\n        \"\"\"The evaluation of the function to be solved\"\"\"\n        return math.sin(u) - lmbda\n\n    def df_dlmbda(self, u, lmbda):\n        \"\"\"The function's derivative with respect to the parameter. Used in Euler-Newton\n        continuation.\n        \"\"\"\n        return -1.0\n\n    def jacobian_solver(self, u, lmbda, rhs):\n        \"\"\"A solver for the Jacobian problem. For scalars, this is just a division.\"\"\"\n        return rhs / math.cos(u)\n\n\nproblem = SimpleScalarProblem()\n\nlmbda_list = []\nvalues_list = []\n\n\ndef callback(k, lmbda, sol):\n    # Use the callback for plotting, writing data to files etc.\n    lmbda_list.append(lmbda)\n    values_list.append(sol)\n\n\npacopy.euler_newton(\n    problem,\n    u0=0.0,\n    lmbda0=0.0,\n    callback=callback,\n    max_steps=20,\n    newton_tol=1.0e-10,\n    verbose=False,\n)\n\n# plot solution\nplt.plot(values_list, lmbda_list, \".-\")\nplt.xlabel(\"$u_1$\")\nplt.ylabel(\"$\\\\lambda$\")\nplt.show()\n```\n\n#### Simple 2D problem\n\n<img src=\"https://nschloe.github.io/pacopy/simple2d.svg\" width=\"30%\">\n\nA similarly simple example with two unknowns and a parameter. The inner product and\nJacobian solver are getting more interesting.\n\n```python\nimport matplotlib.pyplot as plt\nimport numpy as np\nimport pacopy\nimport scipy\nfrom mpl_toolkits.mplot3d import Axes3D\n\n\nclass SimpleProblem2D:\n    def inner(self, a, b):\n        return np.dot(a, b)\n\n    def norm2_r(self, a):\n        return np.dot(a, a)\n\n    def f(self, u, lmbda):\n        return np.array(\n            [\n                np.sin(u[0]) - lmbda - u[1] ** 2,\n                np.cos(u[1]) * u[1] - lmbda,\n            ]\n        )\n\n    def df_dlmbda(self, u, lmbda):\n        return -np.ones_like(u)\n\n    def jacobian_solver(self, u, lmbda, rhs):\n        A = np.array(\n            [\n                [np.cos(u[0]), -2 * u[1]],\n                [0.0, np.cos(u[1]) - np.sin(u[1]) * u[1]],\n            ]\n        )\n        return np.linalg.solve(A, rhs)\n\n\nproblem = SimpleProblem2D()\n# Initial guess and initial parameter value\nu0 = np.zeros(2)\nlmbda0 = 0.0\n\n# Init lists\nlmbda_list = []\nvalues_list = []\n\n\ndef callback(k, lmbda, sol):\n    lmbda_list.append(lmbda)\n    values_list.append(sol)\n\n\npacopy.euler_newton(problem, u0, lmbda0, callback, max_steps=50, newton_tol=1.0e-10)\n\n# plot solution\nfig = plt.figure()\nax = fig.add_subplot(111, projection=\"3d\")\nax.plot(*np.array(values_list).T, lmbda_list, \".-\")\nax.set_xlabel(\"$u_1$\")\nax.set_ylabel(\"$u_2$\")\nax.set_zlabel(\"$\\\\lambda$\")\n# plt.show()\nplt.savefig(\"simple2d.svg\", transparent=True, bbox_inches=\"tight\")\nplt.close()\n```\n\n#### Bratu\n\n<img src=\"https://nschloe.github.io/pacopy/bratu1d.png\" width=\"30%\">\n\nLet's deal with an actual PDE, the classical [Bratu\nproblem](https://en.wikipedia.org/wiki/Liouville%E2%80%93Bratu%E2%80%93Gelfand_equation)\nin 1D with Dirichlet boundary conditions. Now, the solution space isn't scalar, but a\nvector of length `n` (the values of the solution at given points on the 1D interval).\nWe now need numpy and scipy, the inner product and Jacobian solver are more complicated.\n\n```python\nimport matplotlib.pyplot as plt\nimport numpy as np\nimport pacopy\nimport scipy.sparse\nimport scipy.sparse.linalg\n\n\n# This is the classical finite-difference approximation\nclass Bratu1d:\n    def __init__(self, n):\n        self.n = n\n        h = 1.0 / (self.n - 1)\n\n        self.H = np.full(self.n, h)\n        self.H[0] = h / 2\n        self.H[-1] = h / 2\n\n        self.A = (\n            scipy.sparse.diags([-1.0, 2.0, -1.0], [-1, 0, 1], shape=(self.n, self.n))\n            / h**2\n        )\n\n    def inner(self, a, b):\n        \"\"\"The inner product of the problem. Can be np.dot(a, b), but factoring in\n        the mesh width stays true to the PDE.\n        \"\"\"\n        return np.dot(a, self.H * b)\n\n    def norm2_r(self, a):\n        \"\"\"The norm in the range space; used to determine if a solution has been found.\"\"\"\n        return np.dot(a, a)\n\n    def f(self, u, lmbda):\n        \"\"\"The evaluation of the function to be solved\"\"\"\n        out = self.A.dot(u) - lmbda * np.exp(u)\n        out[0] = u[0]\n        out[-1] = u[-1]\n        return out\n\n    def df_dlmbda(self, u, lmbda):\n        \"\"\"The function's derivative with respect to the parameter. Used in Euler-Newton\n        continuation.\n        \"\"\"\n        out = -np.exp(u)\n        out[0] = 0.0\n        out[-1] = 0.0\n        return out\n\n    def jacobian_solver(self, u, lmbda, rhs):\n        \"\"\"A solver for the Jacobian problem.\"\"\"\n        M = self.A.copy()\n        d = M.diagonal().copy()\n        d -= lmbda * np.exp(u)\n        M.setdiag(d)\n        # Dirichlet conditions\n        M.data[0][self.n - 2] = 0.0\n        M.data[1][0] = 1.0\n        M.data[1][self.n - 1] = 1.0\n        M.data[2][1] = 0.0\n        return scipy.sparse.linalg.spsolve(M.tocsr(), rhs)\n\n\nproblem = Bratu1d(51)\n# Initial guess and parameter value\nu0 = np.zeros(problem.n)\nlmbda0 = 0.0\n\nlmbda_list = []\nvalues_list = []\n\n\ndef callback(k, lmbda, sol):\n    # Use the callback for plotting, writing data to files etc.\n    fig = plt.figure()\n    ax1 = fig.add_subplot(111)\n    ax1.set_xlabel(\"$\\\\lambda$\")\n    ax1.set_ylabel(\"$||u||_2$\")\n    ax1.grid()\n\n    lmbda_list.append(lmbda)\n    # use the norm of the currentsolution for plotting on the y-axis\n    values_list.append(np.sqrt(problem.inner(sol, sol)))\n\n    ax1.plot(lmbda_list, values_list, \"-x\", color=\"C0\")\n    ax1.set_xlim(0.0, 4.0)\n    ax1.set_ylim(0.0, 6.0)\n    plt.close()\n\n\n# Natural parameter continuation\n# pacopy.natural(problem, u0, lmbda0, callback, max_steps=100)\n\npacopy.euler_newton(\n    problem, u0, lmbda0, callback, max_steps=500, max_num_retries=10, newton_tol=1.0e-10\n)\n```\n\n#### Ginzburg\u2013Landau\n\nhttps://user-images.githubusercontent.com/181628/146639709-90b6e6aa-48ba-418d-9aa4-ec5754f95b93.mp4\n\nThe [Ginzburg-Landau\nequations](https://en.wikipedia.org/wiki/Ginzburg%E2%80%93Landau_theory) model\nthe behavior of extreme type-II superconductors under a magnetic field. The\nabove example (to be found in full detail\n[here](tests/test_ginzburg_landau.py)) shows parameter continuation in the\nstrength of the magnetic field. The plot on the right-hand side shows the\ncomplex-valued solution using [cplot](https://github.com/nschloe/cplot).\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "mathematics,numerical continuation,numerical methods,differential equations,pde",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "pacopy",
+            "package_url": "https://pypi.org/project/pacopy/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/pacopy/",
+            "project_urls": {
+                "Homepage": "https://github.com/sigma-py/pacopy",
+                "Issues": "https://github.com/sigma-py/pacopy/issues"
+            },
+            "release_url": "https://pypi.org/project/pacopy/0.2.7/",
+            "requires_dist": [
+                "x21 (>=0.4.1,<0.5.0)",
+                "rich",
+                "typing-extensions ; python_version < \"3.8\""
+            ],
+            "requires_python": ">=3.7",
+            "summary": "Numerical continuation in Python",
+            "version": "0.2.7",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16642320,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "8678301bed6d52073b9dec477987ce9c4988e31aa48909e896028036d6c0164a",
+                    "md5": "3cf870da94e80bff04e100b7e798379d",
+                    "sha256": "2f998ce741b3d4d4f00dc9a7dcb27e7d3673acad20c48a4e45fda88b0b17d5b0"
+                },
+                "downloads": -1,
+                "filename": "pacopy-0.2.7-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "3cf870da94e80bff04e100b7e798379d",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 37707,
+                "upload_time": "2023-01-31T23:45:54",
+                "upload_time_iso_8601": "2023-01-31T23:45:54.271657Z",
+                "url": "https://files.pythonhosted.org/packages/86/78/301bed6d52073b9dec477987ce9c4988e31aa48909e896028036d6c0164a/pacopy-0.2.7-py3-none-any.whl",
                 "yanked": false,
                 "yanked_reason": null
             }

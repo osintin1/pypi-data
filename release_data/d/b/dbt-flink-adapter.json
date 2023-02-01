@@ -46,7 +46,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16513736,
+        "last_serial": 16634254,
         "urls": [
             {
                 "comment_text": "",
@@ -140,7 +140,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16513736,
+        "last_serial": 16634254,
         "urls": [
             {
                 "comment_text": "",
@@ -234,7 +234,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16513736,
+        "last_serial": 16634254,
         "urls": [
             {
                 "comment_text": "",
@@ -328,7 +328,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16513736,
+        "last_serial": 16634254,
         "urls": [
             {
                 "comment_text": "",
@@ -422,7 +422,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16513736,
+        "last_serial": 16634254,
         "urls": [
             {
                 "comment_text": "",
@@ -485,7 +485,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "# Flink dbt Adapter\n\nThis is an MVP of Flink DBT Adapter. It allows materializing of dbt models as Flink cluster streaming pipelines and batch jobs.\n\n## Prerequisites\n\n* Flink 1.16+ with Flink SQL Gateway\n* Python 3.8+ with pip\n* (Optionally) venv\n\n## Setup\n\nThis adapter is connecting to Flink SQL Gateway which is not started in Flink by default.\nPlease refer to [flink-doc/starting-the-sql-gateway](https://nightlies.apache.org/flink/flink-docs-release-1.16/docs/dev/table/sql-gateway/overview/#starting-the-sql-gateway)\non how to start SQL gateway in your cluster.\n\nFor testing and developing purposes you can use `envs/flink-1.16/docker-compose.yml` to start one node Flink cluster with SQL Gateway.\n\n```shell\n$ cd envs/flink-1.16\n$ docker compose up\n```\n\n### Install `dbt-flink-adapter`\n\nCreate virtual environment and install `dbt-flink-adapter` from [PyPI/dbt-flink-adapter](https://pypi.org/project/dbt-flink-adapter/) with `pip`\n\n```shell\n$ python3 -m venv ~/.virtualenvs/dbt-example1\n$ source ~/.virtualenvs/dbt-example1/bin/activate\n$ pip3 install dbt-flink-adapter\n$ dbt --version\n...\nPlugins:\n  - flink: x.y.z\n```\n\n### Create and initialize dbt project\n\nNavigate to directory in which you want to create your project. If you are using Flink with SQL Gateway started\nfrom docker-compose.yml file in this repo you can leave all values as defaults.\n\n```shell\n$  dbt init\nEnter a name for your project (letters, digits, underscore): example1\nWhich database would you like to use?\n[1] flink\n\nEnter a number: 1\nhost (Flink SQL Gateway host) [localhost]:\nport [8083]:\nsession_name [test_session]:\ndatabase (Flink catalog) [default_catalog]:\nschema (Flink database) [default_database]:\nthreads (1 or more) [1]:\n\n$ cd example1\n```\n\n## Creating and running dbt model\n\nOn how to create and run dbt model please refer to [dbt-docs](https://docs.getdbt.com/docs/build/projects).\nThis README will focus on things that are specific for this adapter.\n\n```shell\ndbt run\n```\n\n### Source\n\nIn typical use-case dbt connects and runs its ETL processes on database engine that already has connection with underlying persistence layer.\nIn case of Flink however it's only a processing engine, and we need to define connectivity with external persistence.\nTo do so we have to define sources in our dbt model.\n\n#### Connector properties\n\ndbt-flink-adapter will read `config/connector_properties` key and use it as connector properties.\n\n#### Type\n\nFlink supports sources in batch and streaming mode, use `type` to select what execution environment will be used during source creation.\n\n#### Watermark\n\nTo provide watermark pass `column` and `strategy` reference under `watermark` key in config.\n\nPlease refer to Flink documentation about possible watermark strategies: [flink-doc/watermark](https://nightlies.apache.org/flink/flink-docs-master/docs/dev/table/sql/create/#watermark)\n\n#### Example\n\n```yaml\nsources:\n  - name: my_source\n    tables:\n      - name: clickstream\n        config:\n          type: streaming\n          connector_properties:\n            connector: 'kafka'\n            'properties.bootstrap.servers': 'kafka:29092'\n            'topic': 'clickstream'\n          watermark:\n            column: event_timestamp\n            strategy: event_timestamp\n        columns:\n          - name: event_timestamp\n            data_type: TIMESTAMP(3)\n```\n\nSQL passed to Flink will look like:\n```sql\nCREATE TABLE IF NOT EXISTS my_source (\n  `event_timestamp` TIMESTAMP(3),\n  WATERMARK FOR event_timestamp AS event_timestamp\n) WITH (\n  'connector' = 'kafka',\n  'properties.bootstrap.servers' = 'kafka:29092',\n  'topic' = 'clickstream'\n)\n```\n\n### Model\n\nThis adapter currently supports two types of materialization *table* and *view*. Because in Flink table has to be\nassociated with a connector `type` and `connector_properties` have to be provided similar like in case of defining sources.\n\n#### Example\n\n`models.yml`\n\n```yaml\nmodels:\n  - name: my_model\n    config:\n      type: streaming\n      connector_properties:\n        connector: 'kafka'\n        'properties.bootstrap.servers': 'kafka:29092'\n        'topic': 'some-output'\n```\n\n`my_model.sql`\n\n```sql\nselect *\nfrom {{ source('my_source', 'clickstream') }}\nwhere event = 'some-event'\n```\n\n### Seed\n\ndbt-flink-adapter can use Flink to insert seed data in any Flink supported connector.\nSimilar like in case of sources and models you have to provide connector configuration.\n\n#### Example\n\n`seeds.yml`\n\n```yaml\nseeds:\n  - name: clickstream\n    config:\n      connector_properties:\n        connector: 'kafka'\n        'properties.bootstrap.servers': 'kafka:29092'\n        'topic': 'clickstream'\n```\n\n### Tests\n\nDbt also allows executing assertions in a form of tests to validate input data or model output if it does not contain abnormal values.\nAll generic tests are a select statement which is considered as passed when it did not found any rows.\n\nThe problem is how to define such thing in streaming pipeline? It is not possible to tell that in entire stream there are no such entries\nas stream by definition is infinite. What we can do however is to have run the test for some specific time and if in that time there are no\nabnormal values, test will be considered as passed.\n\nTo facilitate it dbt-flink-adapter when writing a sql query supports fetch_timeout_ms and mode directive.\n\n```sql\nselect /** fetch_timeout_ms(5000) mode('streaming') */\n  *\nfrom {{ ref('my_model')}}\nwhere\n  event <> 'some-event'\n```\n\nIn this example we are telling dbt-flink-adapter to fetch for 5 seconds in streaming mode.\n\n## Sessions\n\nOur interaction with Flink cluster is done in sessions any table and view created in one session will not be visible in another session.\nSession by default is only valid for 10 minutes. Because of that if you will run dbt test after more than 10 minutes from dbt run\nit will fail and in Flink logs you will find that it cannot find your tables. Currently, the only way to run this would be to rerun entire model.\n\nSession handler is stored in `~/.dbt/flink-session.yml` file, if you want to force new session you can simply delete that file.",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -514,7 +513,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16513736,
+        "last_serial": 16634254,
         "urls": [
             {
                 "comment_text": "",
@@ -534,6 +533,77 @@
                 "upload_time": "2023-01-21T17:18:08",
                 "upload_time_iso_8601": "2023-01-21T17:18:08.784015Z",
                 "url": "https://files.pythonhosted.org/packages/71/fd/ae09d1b2e4c9ab18ab8589723476cec7b8e309779dce3af27b7ec237ced0/dbt-flink-adapter-1.3.5.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.3.6": {
+        "info": {
+            "author": "GetInData",
+            "author_email": "office@getindata.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 5 - Production/Stable",
+                "License :: OSI Approved :: Apache Software License",
+                "Operating System :: MacOS :: MacOS X",
+                "Operating System :: Microsoft :: Windows",
+                "Operating System :: POSIX :: Linux",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# Flink dbt Adapter\n\n[![Python Version](https://img.shields.io/badge/python-3.8-blue.svg)](https://github.com/getindata/doge-datagen)\n[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)\n[![SemVer](https://img.shields.io/badge/semver-2.0.0-green)](https://semver.org/)\n[![PyPI version](https://badge.fury.io/py/dbt-flink-adapter.svg)](https://badge.fury.io/py/dbt-flink-adapter)\n[![Downloads](https://pepy.tech/badge/dbt-flink-adapter)](https://pepy.tech/badge/dbt-flink-adapter)\n\nThis is an MVP of Flink DBT Adapter. It allows materializing of dbt models as Flink cluster streaming pipelines and batch jobs.\n\n## Prerequisites\n\n* Flink 1.16+ with Flink SQL Gateway\n* Python 3.8+ with pip\n* (Optionally) venv\n\n## Setup\n\nThis adapter is connecting to Flink SQL Gateway which is not started in Flink by default.\nPlease refer to [flink-doc/starting-the-sql-gateway](https://nightlies.apache.org/flink/flink-docs-release-1.16/docs/dev/table/sql-gateway/overview/#starting-the-sql-gateway)\non how to start SQL gateway in your cluster.\n\nFor testing and developing purposes you can use `envs/flink-1.16/docker-compose.yml` to start one node Flink cluster with SQL Gateway.\n\n```shell\n$ cd envs/flink-1.16\n$ docker compose up\n```\n\n### Install `dbt-flink-adapter`\n\nCreate virtual environment and install `dbt-flink-adapter` from [PyPI/dbt-flink-adapter](https://pypi.org/project/dbt-flink-adapter/) with `pip`\n\n```shell\n$ python3 -m venv ~/.virtualenvs/dbt-example1\n$ source ~/.virtualenvs/dbt-example1/bin/activate\n$ pip3 install dbt-flink-adapter\n$ dbt --version\n...\nPlugins:\n  - flink: x.y.z\n```\n\n### Create and initialize dbt project\n\nNavigate to directory in which you want to create your project. If you are using Flink with SQL Gateway started\nfrom docker-compose.yml file in this repo you can leave all values as defaults.\n\n```shell\n$  dbt init\nEnter a name for your project (letters, digits, underscore): example1\nWhich database would you like to use?\n[1] flink\n\nEnter a number: 1\nhost (Flink SQL Gateway host) [localhost]:\nport [8083]:\nsession_name [test_session]:\ndatabase (Flink catalog) [default_catalog]:\nschema (Flink database) [default_database]:\nthreads (1 or more) [1]:\n\n$ cd example1\n```\n\n## Creating and running dbt model\n\nOn how to create and run dbt model please refer to [dbt-docs](https://docs.getdbt.com/docs/build/projects).\nThis README will focus on things that are specific for this adapter.\n\n```shell\ndbt run\n```\n\n### Source\n\nIn typical use-case dbt connects and runs its ETL processes on database engine that already has connection with underlying persistence layer.\nIn case of Flink however it's only a processing engine, and we need to define connectivity with external persistence.\nTo do so we have to define sources in our dbt model.\n\n#### Connector properties\n\ndbt-flink-adapter will read `config/connector_properties` key and use it as connector properties.\n\n#### Type\n\nFlink supports sources in batch and streaming mode, use `type` to select what execution environment will be used during source creation.\n\n#### Watermark\n\nTo provide watermark pass `column` and `strategy` reference under `watermark` key in config.\n\nPlease refer to Flink documentation about possible watermark strategies: [flink-doc/watermark](https://nightlies.apache.org/flink/flink-docs-master/docs/dev/table/sql/create/#watermark)\n\n#### Example\n\n```yaml\nsources:\n  - name: my_source\n    tables:\n      - name: clickstream\n        config:\n          type: streaming\n          connector_properties:\n            connector: 'kafka'\n            properties.bootstrap.servers: 'kafka:29092'\n            topic: 'clickstream'\n          watermark:\n            column: event_timestamp\n            strategy: event_timestamp\n        columns:\n          - name: event_timestamp\n            data_type: TIMESTAMP(3)\n```\n\nSQL passed to Flink will look like:\n```sql\nCREATE TABLE IF NOT EXISTS my_source (\n  `event_timestamp` TIMESTAMP(3),\n  WATERMARK FOR event_timestamp AS event_timestamp\n) WITH (\n  'connector' = 'kafka',\n  'properties.bootstrap.servers' = 'kafka:29092',\n  'topic' = 'clickstream'\n)\n```\n\n### Model\n\nThis adapter currently supports two types of materialization *table* and *view*. Because in Flink table has to be\nassociated with a connector `type` and `connector_properties` have to be provided similar like in case of defining sources.\n\n#### Example\n\n`models.yml`\n\n```yaml\nmodels:\n  - name: my_model\n    config:\n      type: streaming\n      connector_properties:\n        connector: 'kafka'\n        properties.bootstrap.servers: 'kafka:29092'\n        topic: 'some-output'\n```\n\n`my_model.sql`\n\n```sql\nselect *\nfrom {{ source('my_source', 'clickstream') }}\nwhere event = 'some-event'\n```\n\n### Seed\n\ndbt-flink-adapter can use Flink to insert seed data in any Flink supported connector.\nSimilar like in case of sources and models you have to provide connector configuration.\n\n#### Example\n\n`seeds.yml`\n\n```yaml\nseeds:\n  - name: clickstream\n    config:\n      connector_properties:\n        connector: 'kafka'\n        properties.bootstrap.servers: 'kafka:29092'\n        topic: 'clickstream'\n```\n\n### Tests\n\nDbt also allows executing assertions in a form of tests to validate input data or model output if it does not contain abnormal values.\nAll generic tests are a select statement which is considered as passed when it did not found any rows.\n\nThe problem is how to define such thing in streaming pipeline? It is not possible to tell that in entire stream there are no such entries\nas stream by definition is infinite. What we can do however is to have run the test for some specific time and if in that time there are no\nabnormal values, test will be considered as passed.\n\nTo facilitate it dbt-flink-adapter when writing a sql query supports fetch_timeout_ms and mode directive.\n\n```sql\nselect /** fetch_timeout_ms(5000) mode('streaming') */\n  *\nfrom {{ ref('my_model')}}\nwhere\n  event <> 'some-event'\n```\n\nIn this example we are telling dbt-flink-adapter to fetch for 5 seconds in streaming mode.\n\n### dbt_project.yml\n\nYou can extract common configurations of your model and sources into `dbt_project.yml` [dbt-docs/general-configuration](https://docs.getdbt.com/reference/model-configs#general-configurations).\nIf you define the same kay in `dbt_project.yml` and in your model or source dbt will always override entire key value.\nIn case you wish to extract some keys from under `connector_properties` you can specify configuration under `default_connector_properties`\nwhich will get merged with `connection_properies`.\n\n#### Example\n\n`dbt_project.yml`\n\n```yaml\nmodels:\n  example1:\n    +materialized: table\n    +type: streaming\n    +default_connector_properties:\n      connector: 'kafka'\n      properties.bootstrap.servers: 'kafka:29092'\n\nsources:\n  example1:\n    +type: streaming\n    +default_connector_properties:\n      connector: 'kafka'\n      properties.bootstrap.servers: 'kafka:29092'\n\nseeds:\n  example1:\n    +default_connector_properties:\n      connector: 'kafka'\n      properties.bootstrap.servers: 'kafka:29092'\n```\n\n`models.yml`\n\n```yaml\nmodels:\n  - name: my_model\n    config:\n      connector_properties:\n        topic: 'some-output'\n```\n\n`sources.yml`\n\n```yaml\nsources:\n  - name: my_source\n    tables:\n      - name: clickstream\n        config:\n          connector_properties:\n            topic: 'clickstream'\n          watermark:\n            column: event_timestamp\n            strategy: event_timestamp\n        columns:\n          - name: event_timestamp\n            data_type: TIMESTAMP(3)\n```\n\n`seeds.yml`\n\n```yaml\nseeds:\n  - name: clickstream\n    config:\n      connector_properties:\n        topic: 'clickstream'\n```\n\n## Sessions\n\nOur interaction with Flink cluster is done in sessions any table and view created in one session will not be visible in another session.\nSession by default is only valid for 10 minutes. Because of that if you will run dbt test after more than 10 minutes from dbt run\nit will fail and in Flink logs you will find that it cannot find your tables. Currently, the only way to run this would be to rerun entire model.\n\nSession handler is stored in `~/.dbt/flink-session.yml` file, if you want to force new session you can simply delete that file.\n\n## Releasing\n\nTo release new version first execute [prepare-release](https://github.com/getindata/flink-dbt-adapter/actions/workflows/prepare-release.yml) action.\nPlease keep in mind that major and minor version have to be exactly the same as major and minor version of dbt-core.\n\nThis action will create a release branch with bumped version and changelog prepared for release. It will also open a Pull Request to main branch if everything is ok with it - merge it.\n\nNext execute [publish](https://github.com/getindata/flink-dbt-adapter/actions/workflows/publish.yml) on branch that was just created by prepare-release action.",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/getindata/flink-dbt-adapter",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "dbt-flink-adapter",
+            "package_url": "https://pypi.org/project/dbt-flink-adapter/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/dbt-flink-adapter/",
+            "project_urls": {
+                "Homepage": "https://github.com/getindata/flink-dbt-adapter"
+            },
+            "release_url": "https://pypi.org/project/dbt-flink-adapter/1.3.6/",
+            "requires_dist": null,
+            "requires_python": ">=3.7",
+            "summary": "The Flink adapter plugin for dbt",
+            "version": "1.3.6",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16634254,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "589bdbd897c341fe9c25465c9915ac1a70a5ad0bc0fe9c4f746759e5d53279b8",
+                    "md5": "43f0421efbd095114b05f90a69fa8e12",
+                    "sha256": "97cb8cc9ef788c098713c41d034a782ffa026b64a553799a823989a35ddcf7d0"
+                },
+                "downloads": -1,
+                "filename": "dbt-flink-adapter-1.3.6.tar.gz",
+                "has_sig": false,
+                "md5_digest": "43f0421efbd095114b05f90a69fa8e12",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 25984,
+                "upload_time": "2023-01-31T13:11:29",
+                "upload_time_iso_8601": "2023-01-31T13:11:29.503171Z",
+                "url": "https://files.pythonhosted.org/packages/58/9b/dbd897c341fe9c25465c9915ac1a70a5ad0bc0fe9c4f746759e5d53279b8/dbt-flink-adapter-1.3.6.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
