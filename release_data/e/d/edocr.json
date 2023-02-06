@@ -9,7 +9,6 @@
                 "Operating System :: OS Independent",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "# keras-ocr [![Documentation Status](https://readthedocs.org/projects/keras-ocr/badge/?version=latest)](https://keras-ocr.readthedocs.io/en/latest/?badge=latest)\r\n\r\nThis is a slightly polished and packaged version of the [Keras CRNN implementation](https://github.com/kurapan/CRNN) and the published [CRAFT text detection model](https://github.com/clovaai/CRAFT-pytorch). It provides a high level API for training a text detection and OCR pipeline.\r\n\r\nPlease see [the documentation](https://keras-ocr.readthedocs.io/) for more examples, including for training a custom model.\r\n\r\n## Getting Started\r\n\r\n### Installation\r\n\r\n`keras-ocr` supports Python >= 3.6 and TensorFlow >= 2.0.0.\r\n\r\n```bash\r\n# To install from master\r\npip install git+https://github.com/faustomorales/keras-ocr.git#egg=keras-ocr\r\n\r\n# To install from PyPi\r\npip install keras-ocr\r\n```\r\n\r\n### Using\r\n\r\nThe package ships with an easy-to-use implementation of the CRAFT text detection model from [this repository](https://github.com/clovaai/CRAFT-pytorch) and the CRNN recognition model from [this repository](https://github.com/kurapan/CRNN).\r\n\r\n```python\r\nimport matplotlib.pyplot as plt\r\n\r\nimport keras_ocr\r\n\r\n# keras-ocr will automatically download pretrained\r\n# weights for the detector and recognizer.\r\npipeline = keras_ocr.pipeline.Pipeline()\r\n\r\n# Get a set of three example images\r\nimages = [\r\n    keras_ocr.tools.read(url) for url in [\r\n        'https://upload.wikimedia.org/wikipedia/commons/b/bd/Army_Reserves_Recruitment_Banner_MOD_45156284.jpg',\r\n        'https://upload.wikimedia.org/wikipedia/commons/e/e8/FseeG2QeLXo.jpg',\r\n        'https://upload.wikimedia.org/wikipedia/commons/b/b4/EUBanana-500x112.jpg'\r\n    ]\r\n]\r\n\r\n# Each list of predictions in prediction_groups is a list of\r\n# (word, box) tuples.\r\nprediction_groups = pipeline.recognize(images)\r\n\r\n# Plot the predictions\r\nfig, axs = plt.subplots(nrows=len(images), figsize=(20, 20))\r\nfor ax, image, predictions in zip(axs, images, prediction_groups):\r\n    keras_ocr.tools.drawAnnotations(image=image, predictions=predictions, ax=ax)\r\n```\r\n\r\n![example of labeled image](https://raw.githubusercontent.com/faustomorales/keras-ocr/master/docs/_static/readme_labeled.jpg)\r\n\r\n## Comparing keras-ocr and other OCR approaches\r\n\r\nYou may be wondering how the models in this package compare to existing cloud OCR APIs. We provide some metrics below and [the notebook](https://drive.google.com/file/d/1FMS3aUZnBU4Tc6bosBPnrjdMoSrjZXRp/view?usp=sharing) used to compute them using the first 1,000 images in the COCO-Text validation set. We limited it to 1,000 because the Google Cloud free tier is for 1,000 calls a month at the time of this writing. As always, caveats apply:\r\n\r\n- No guarantees apply to these numbers -- please beware and compute your own metrics independently to verify them. As of this writing, they should be considered a very rough first draft. Please open an issue if you find a mistake. In particular, the cloud APIs have a variety of options that one can use to improve their performance and the responses can be parsed in different ways. It is possible that I made some error in configuration or parsing. Again, please open an issue if you find a mistake!\r\n- We ignore punctuation and letter case because the out-of-the-box recognizer in keras-ocr (provided by [this independent repository](https://github.com/kurapan/CRNN)) does not support either. Note that both AWS Rekognition and Google Cloud Vision support punctuation as well as upper and lowercase characters.\r\n- We ignore non-English text.\r\n- We ignore illegible text.\r\n\r\n| model                                                                                                                         | latency | precision | recall |\r\n| ----------------------------------------------------------------------------------------------------------------------------- | ------- | --------- | ------ |\r\n| [AWS](https://github.com/faustomorales/keras-ocr/releases/download/v0.8.4/aws_annotations.json)                               | 719ms   | 0.45      | 0.48   |\r\n| [GCP](https://github.com/faustomorales/keras-ocr/releases/download/v0.8.4/google_annotations.json)                            | 388ms   | 0.53      | 0.58   |\r\n| [keras-ocr](https://github.com/faustomorales/keras-ocr/releases/download/v0.8.4/keras_ocr_annotations_scale_2.json) (scale=2) | 417ms   | 0.53      | 0.54   |\r\n| [keras-ocr](https://github.com/faustomorales/keras-ocr/releases/download/v0.8.4/keras_ocr_annotations_scale_3.json) (scale=3) | 699ms   | 0.5       | 0.59   |\r\n\r\n- Precision and recall were computed based on an intersection over union of 50% or higher and a text similarity to ground truth of 50% or higher.\r\n- `keras-ocr` latency values were computed using a Tesla P4 GPU on Google Colab. `scale` refers to the argument provided to `keras_ocr.pipelines.Pipeline()` which determines the upscaling applied to the image prior to inference.\r\n- Latency for the cloud providers was measured with sequential requests, so you can obtain significant speed improvements by making multiple simultaneous API requests.\r\n- Each of the entries provides a link to the JSON file containing the annotations made on each pass. You can use this with the notebook to compute metrics without having to make the API calls yourself (though you are encoraged to replicate it independently)!\r\n\r\n_Why not compare to Tesseract?_ In every configuration I tried, Tesseract did very poorly on this test. Tesseract performs best on scans of books, not on incidental scene text like that in this dataset.\r\n\r\n## Advanced Configuration\r\nBy default if a GPU is available Tensorflow tries to grab almost all of the available video memory, and this sucks if you're running multiple models with Tensorflow and Pytorch. Setting any value for the environment variable `MEMORY_GROWTH` will force Tensorflow to dynamically allocate only as much GPU memory as is needed.\r\n\r\nYou can also specify a limit per Tensorflow process by setting the environment variable `MEMORY_ALLOCATED` to any float, and this value is a float ratio of VRAM to the total amount present.\r\n\r\nTo apply these changes, call `keras_ocr.config.configure()` at the top of your file where you import `keras_ocr`.\r\n\r\n## Contributing\r\n\r\nTo work on the project, start by doing the following. These instructions probably do not yet work for Windows but if a Windows user has some ideas for how to fix that it would be greatly appreciated (I don't have a Windows machine to test on at the moment).\r\n\r\n```bash\r\n# Install local dependencies for\r\n# code completion, etc.\r\nmake init\r\n\r\n# Build the Docker container to run\r\n# tests and such.\r\nmake build\r\n```\r\n\r\n- You can get a JupyterLab server running to experiment with using `make lab`.\r\n- To run checks before committing code, you can use `make format-check type-check lint-check test`.\r\n- To view the documentation, use `make docs`.\r\n\r\nTo implement new features, please first file an issue proposing your change for discussion.\r\n\r\nTo report problems, please file an issue with sample code, expected results, actual results, and a complete traceback.\r\n\r\n## Troubleshooting\r\n\r\n- _This package is installing `opencv-python-headless` but I would prefer a different `opencv` flavor._ This is due to [aleju/imgaug#473](https://github.com/aleju/imgaug/issues/473). You can uninstall the unwanted OpenCV flavor after installing `keras-ocr`. We apologize for the inconvenience.\r\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -57,7 +56,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16668999,
+        "last_serial": 16710497,
         "urls": [
             {
                 "comment_text": "",
@@ -98,6 +97,194 @@
                 "upload_time": "2023-02-02T13:49:57",
                 "upload_time_iso_8601": "2023-02-02T13:49:57.901123Z",
                 "url": "https://files.pythonhosted.org/packages/dc/d8/0b5a44d921b4d9e93d6d24acfdf25bc22fe4367ecf9603c6c659f41f6f98/eDOCr-0.0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.2": {
+        "info": {
+            "author": "Javier Villena Toro",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "eDOCr",
+            "package_url": "https://pypi.org/project/eDOCr/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/eDOCr/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/javvi51/eDOCr/issues",
+                "Homepage": "https://github.com/javvi51/eDOCr"
+            },
+            "release_url": "https://pypi.org/project/eDOCr/0.0.2/",
+            "requires_dist": [
+                "opencv-python",
+                "tensorflow (>=2.0.0)",
+                "Pillow",
+                "shapely",
+                "anytree",
+                "scikit-image",
+                "scikit-learn",
+                "tqdm",
+                "validators",
+                "essential-generators",
+                "imgaug",
+                "fonttools",
+                "editdistance",
+                "pyclipper",
+                "efficientnet (==1.0.0)",
+                "pytest",
+                "pdf2image"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "OCR for Engineering Mechanical Drawings",
+            "version": "0.0.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16710497,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2746ed2025efe0cfc68350ff59ab530e1c9140ef8c2131a2c4d190d11912f822",
+                    "md5": "e801285454e4ced8da7dda201cb925d5",
+                    "sha256": "49b4a9a81202e565fb94ac7e9eedcc11872fea9c98db9f4e57f63a0aeea34889"
+                },
+                "downloads": -1,
+                "filename": "eDOCr-0.0.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "e801285454e4ced8da7dda201cb925d5",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 4369,
+                "upload_time": "2023-02-06T10:22:24",
+                "upload_time_iso_8601": "2023-02-06T10:22:24.816059Z",
+                "url": "https://files.pythonhosted.org/packages/27/46/ed2025efe0cfc68350ff59ab530e1c9140ef8c2131a2c4d190d11912f822/eDOCr-0.0.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.3": {
+        "info": {
+            "author": "Javier Villena Toro",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# eDOCr\r\n\r\neDOCr is a packaged version of [keras-ocr](https://github.com/faustomorales/keras-ocr) that facilitates end-to-end digitization of mechanical EDs. Developed for Windows OS and using Python as the primary programming language.\r\n\r\n## Getting Started\r\n\r\n### Installation\r\n\r\n`eDOCr` supports Python >= 3.6 and TensorFlow >= 2.0.0.\r\nInstall your prefered distribution platform, [Anaconda](https://www.anaconda.com/products/distribution) is recommended.\r\nOpen Anaconda Prompt and type the following commands:\r\n\r\n\r\n```bash\r\nconda create -n edocr -y\r\nconda activate edocr\r\n\r\n# To install from PyPi\r\nconda update pip\r\npip install eDOCr\r\n\r\n# To install from Source\r\ncd path/to/your/folder\r\ngit clone https://github.com/javvi51/eDOCr\r\ncd eDOCr\r\npip install -r requirements.txt\r\n```\r\n\r\n### Using \r\n\r\nThere are two ways of using eDOCr: from terminal and from your own python file.\r\n\r\n#### From Terminal:\r\n\r\nWe need to locate the ocr_it.py file in our system. If you have installed using pip, it will probably come in ```C:\\Users\\YOUR_USER\\.conda\\envs\\edocr\\Lib\\site-packages\\eDOCr\\ocr_it.py```. If you have installed from source, it will be at your selected folder. All you need to do is:\r\n\r\n```bash\r\npython PATH/TO/YOUR/FOLDER/eDOCr/ocr_it.py PATH/TO/YOUR/DRAWING/my_drawing.pdf\r\n\r\n```\r\n\r\nAdditional commands you can use are:\r\n\r\n```bash\r\n# Specify the destination path. By default, it is the same as your drawing.\r\n--dest-folder PATH/TO/YOUR/DESTINATION/FOLDER\r\n# Does the drawing have watermark you want to remove? By default, it is not considered.\r\n--water\r\n# Advance Setting: Set a custom threshold distance (in px.) for grouping detections. Default is 20px.\r\n--cluster 25\r\n```\r\n\r\n#### From your own python file\r\n\r\nMore customization is possible using your own python file, such as selecting a different model, alphabet or changing colors.\r\n\r\n```bash\r\n# Importing packages\r\nimport os\r\nfrom eDOCr import tools\r\nimport cv2\r\nimport string\r\nfrom skimage import io\r\n\r\n# Loading image and destination file\r\ndest_DIR = 'tests/test_Results'\r\nfile_path = 'tests/test_samples/Candle_holder.jpg'\r\nfilename = os.path.splitext(os.path.basename(file_path))[0]\r\nimg = cv2.imread(file_path)\r\n\r\n# Selecting alphabet and model (Note that alphabet and alphabet model need to match)\r\nGDT_symbols = '\u23e4\u23e5\u25cb\u232d\u2312\u2313\u23ca\u2220\u2afd\u232f\u2316\u25ce\u2197\u2330'\r\nFCF_symbols = '\u24ba\u24bb\u24c1\u24c2\u24c5\u24c8\u24c9\u24ca'\r\nExtra = '(),.+-\u00b1:/\u00b0\"\u2300'\r\n\r\nalphabet_dimensions = string.digits + 'AaBCDRGHhMmnx' + Extra\r\nmodel_dimensions = 'eDOCr/keras_ocr_models/models/recognizer_dimensions.h5'\r\nalphabet_infoblock = string.digits+string.ascii_letters+',.:-/'\r\nmodel_infoblock = 'eDOCr/keras_ocr_models/models/recognizer_infoblock.h5'\r\nalphabet_gdts = string.digits + ',.\u2300ABCD' + GDT_symbols\r\nmodel_gdts = 'eDOCr/keras_ocr_models/models/recognizer_gdts.h5'\r\n\r\n# Selecting personalized color palette and cluster setting\r\ncolor_palette = {'infoblock': (180, 220, 250), 'gdts': (94, 204, 243), 'dimensions': (93, 206, 175), 'frame': (167, 234, 82), 'flag': (241, 65, 36)}\r\ncluster_t = 20\r\n\r\n# eDOCr functions\r\nclass_list, img_boxes = tools.box_tree.findrect(img)\r\nboxes_infoblock, gdt_boxes, cl_frame, process_img = tools.img_process.process_rect(class_list, img)\r\nio.imsave(os.path.join(dest_DIR, filename + '_process.jpg'), process_img)\r\n\r\ninfoblock_dict = tools.pipeline_infoblock.read_infoblocks(boxes_infoblock, img, alphabet_infoblock, model_infoblock)\r\ngdt_dict = tools.pipeline_gdts.read_gdtbox1(gdt_boxes, alphabet_gdts, model_gdts, alphabet_dimensions, model_dimensions)\r\n \r\nprocess_img = os.path.join(dest_DIR, filename + '_process.jpg')\r\n\r\ndimension_dict = tools.pipeline_dimensions.read_dimensions(process_img, alphabet_dimensions, model_dimensions, cluster_t)\r\nmask_img = tools.output.mask_the_drawing(img, infoblock_dict, gdt_dict, dimension_dict, cl_frame, color_palette)\r\n\r\n# Record the results\r\nio.imsave(os.path.join(dest_DIR, filename + '_boxes.jpg'), img_boxes)\r\nio.imsave(os.path.join(dest_DIR, filename + '_mask.jpg'), mask_img)\r\ntools.output.record_data(dest_DIR, filename, infoblock_dict, gdt_dict, dimension_dict)\r\n```\r\n![example of labeled image](https://github.com/javvi51/eDOCr/blob/master/tests/test_Results/Candle_holder_mask.jpg)\r\n### Training a model on a custom alphabet\r\nFonts are not loaded if installing from pip. To train new models, please install from source.\r\n\r\nTo train a model in a custom alphabet, a python file is provided, so that the only steps needed are:\r\n\r\n\r\n```bash\r\n# Importing Packages\r\nimport os\r\nimport string\r\nfrom eDOCr import keras_ocr\r\nfrom eDOCr.keras_ocr_models import train_recognizer\r\n\r\n# Fixing paths and alphabet\r\nDIR = os.getcwd()\r\nrecognizer_basepath = os.path.join(DIR, 'eDOCr/Keras_OCR_models/models')\r\ndata_dir = './tests'\r\nalphabet = string.digits + 'AaBCDRGHhMmnx' + '().,+-\u00b1:/\u00b0\"\u2300'\r\n\r\n# Number of autogenerated samples\r\nsamples = 10000\r\n\r\n# Load white backgrounds and fonts\r\nbackgrounds = []\r\nfor i in range(0, samples):\r\n    backgrounds.append(os.path.join('./eDOCr/Keras_OCR_models/backgrounds/0.jpg'))\r\n\r\nfonts = []\r\nfor i in os.listdir(os.path.join(DIR, 'eDOCr/Keras_OCR_models/fonts')):\r\n    fonts.append(os.path.join('./eDOCr/Keras_OCR_models/fonts', i))\r\n\r\n# Choose a pretrained model if you like\r\n\r\npretrained_model = None \r\n#pretrained_model = os.path.join(recognizer_basepath,'recognizer_dimensions.h5')\r\n\r\n# Start Training \r\ntrain_recognizer.generate_n_train(alphabet, backgrounds, fonts, recognizer_basepath=recognizer_basepath, pretrained_model=pretrained_model)\r\n```\r\n\r\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "eDOCr",
+            "package_url": "https://pypi.org/project/eDOCr/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/eDOCr/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/javvi51/eDOCr/issues",
+                "Homepage": "https://github.com/javvi51/eDOCr"
+            },
+            "release_url": "https://pypi.org/project/eDOCr/0.0.3/",
+            "requires_dist": [
+                "opencv-python",
+                "tensorflow (>=2.0.0)",
+                "Pillow",
+                "shapely",
+                "anytree",
+                "scikit-image",
+                "scikit-learn",
+                "tqdm",
+                "validators",
+                "essential-generators",
+                "imgaug",
+                "fonttools",
+                "editdistance",
+                "pyclipper",
+                "efficientnet (==1.0.0)",
+                "pytest",
+                "pdf2image"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "OCR for Engineering Mechanical Drawings",
+            "version": "0.0.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16710497,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "61dda57b31ca32b98bcb94974776f48c2082587c219f17673376daca3dab6262",
+                    "md5": "18756ac8a7e6859065d540b7a355bf07",
+                    "sha256": "395c4ec541d5e2759858dd5a47d2bfdbbaa9dd0d1bedd2011e66b9d0cec1a073"
+                },
+                "downloads": -1,
+                "filename": "eDOCr-0.0.3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "18756ac8a7e6859065d540b7a355bf07",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 4369,
+                "upload_time": "2023-02-06T10:26:17",
+                "upload_time_iso_8601": "2023-02-06T10:26:17.387397Z",
+                "url": "https://files.pythonhosted.org/packages/61/dd/a57b31ca32b98bcb94974776f48c2082587c219f17673376daca3dab6262/eDOCr-0.0.3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f26dc1486c231946f638b189d4d4c276b43bb3e7b8986af55fc4674598154f99",
+                    "md5": "8721ba06d9ef80597b3a9c9d8a4f8c0e",
+                    "sha256": "cfaec722522bef0f4e9de913bb0229c04ab5b2e168d38be8e337ad3e604ece5d"
+                },
+                "downloads": -1,
+                "filename": "eDOCr-0.0.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "8721ba06d9ef80597b3a9c9d8a4f8c0e",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 4713,
+                "upload_time": "2023-02-06T10:26:19",
+                "upload_time_iso_8601": "2023-02-06T10:26:19.603471Z",
+                "url": "https://files.pythonhosted.org/packages/f2/6d/c1486c231946f638b189d4d4c276b43bb3e7b8986af55fc4674598154f99/eDOCr-0.0.3.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
