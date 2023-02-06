@@ -9,7 +9,6 @@
                 "Operating System :: OS Independent",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "<!-- omit in toc -->\n# Symphonypy\nPorting of [Symphony R](https://github.com/immunogenomics/symphony) package to Python\n\n- [Usage](#usage)\n  - [Preprocessing](#preprocessing)\n  - [Run symphony](#run-symphony)\n  - [Transfer labels](#transfer-labels)\n  - [Map UMAP](#map-umap)\n  - [Map tSNE with `openTSNE`](#map-tsne-with-opentsne)\n  \n  \n## Usage\n### Preprocessing\n```python\nimport scanpy as sc\nimport symphonypy as sp\n\n\nn_comps = 20\nbatch_key = \"donor\"\nn_top_genes = 2000\n\n\n# preprocess reference, e.g. HVG, normalize, log1p:\nsc.pp.highly_variable_genes(\n    adata_ref,\n    batch_key=batch_key,\n    n_top_genes=n_top_genes,\n    flavor=\"seurat_v3\",\n)\nsc.pp.normalize_total(adata_ref, target_sum=1e5)\nsc.pp.log1p(adata_ref)\nadata.raw = adata\n\n\n# preprocess query in the same way as reference:\nsc.pp.normalize_total(adata_query, target_sum=1e5)\nsc.pp.log1p(adata_query)\n\n\n# create reference embedding, e.g. PCA:\nsc.pp.scale(adata_ref, zero_center=True, max_value=10)\nadata_ref.X[adata_ref.X < -10] = -10 # for R Symphony-like preprocessing\nsc.tl.pca(adata_ref, n_comps=n_comps, zero_center=False)  # do not center again\n```\n### Run symphony\n```python\nharmony_kwargs = {\"sigma\": 0.1}\nlamb = 1\n\n\n# run Harmonypy or Harmony R,\n# if you want to integrate the reference dataset\n# (skip this, if there is no necessity \n# of batch correction in the reference):\nsp.pp.harmony_integrate(\n    adata_ref,\n    ref_basis_source=\"X_pca\",\n    ref_basis_adjusted=\"X_pca_harmony\",\n    ref_basis_loadings=\"PCs\",\n    flavor=\"python\",  # might be \"R\" (will run Harmony via rpy2)\n    key=batch_keys,\n    **harmony_kwargs,\n)\n# -> adata_ref.obsm[\"X_pca_harmony\"]\n# -> adata_ref.uns[\"harmony\"] (needed for the next step)\n\n\n# run symphonypy to map query to the reference's embedding:\nsp.tl.map_embedding(\n    adata_query,\n    adata_ref,\n    key=batch_key,  # could be list of batch keys\n    lamb=lamb,\n    use_genes_column=\"highly_variable\",\n    adjusted_basis_query=\"X_pca_harmony\",\n    query_basis_ref=\"X_pca_reference\",\n)\n# -> adata_query.obsm[\"X_pca_harmony\"]\n```\n### Transfer labels\n```python\nn_neighbours = 10\nlabels = [\"cell_type\", \"cell_subtype\"]  # any columns from adata_ref.obs\ntransferred_labels = [\"predicted_cell_type\", \"predicted_cell_subtype\"]\n\n# transfer labels via scipy kNN\nsp.tl.transfer_labels_kNN(\n    adata_query,\n    adata_ref,\n    labels,\n    # kNN args\n    n_neighbours,\n    query_labels=transferred_labels,\n    ref_basis=\"X_pca_harmony\",\n    query_basis=\"X_pca_harmony\",\n    # kNN kwargs\n    weights=\"distance\",\n)\n# -> adata_query.obs[:, transferred_labels]\n```\n### Map UMAP\n```python\n# map query to the reference's UMAP\n# build reference UMAP\nsc.pp.neighbors(\n    adata_ref,\n    n_pcs=n_comps,\n    n_neighbors=n_neighbours,\n    knn=True,\n    use_rep=\"X_pca_harmony\"\n)\nsc.tl.umap(adata_ref)\n# run ingest (same as sc.tl.ingest, but with setting to zero expressions of var_names missed in query)\nsp.tl.ingest(adata_query=adata_query, adata_ref=adata_ref, embedding_method=\"umap\")\n# -> adata_query.obsm[\"X_umap\"]\n```\n### Map tSNE with `openTSNE`\n```python\n# map query to the reference's tSNE\ntSNE = sp.tl.tsne(adata_ref, use_rep=\"X_pca_harmony\", return_model=True)\nsp.tl.tsne(adata_query, use_model=tSNE, use_rep=\"X_pca_harmony\")\n# -> adata_query.obsm[\"X_tsne\"]\n```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -42,7 +41,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16574450,
+        "last_serial": 16701971,
         "urls": [
             {
                 "comment_text": "",
@@ -83,6 +82,96 @@
                 "upload_time": "2023-01-26T11:48:01",
                 "upload_time_iso_8601": "2023-01-26T11:48:01.526800Z",
                 "url": "https://files.pythonhosted.org/packages/41/cf/9d7c83a085836202231876e5c2a1f1106304bb6d2c3f5970ca5e25ab1269/symphonypy-0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2": {
+        "info": {
+            "author": "Kseniya Petrova, Sergey Isaev",
+            "author_email": "praefrontalis@gmail.com, serj.hoop@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "<!-- omit in toc -->\n# Symphonypy\nPorting of [Symphony R](https://github.com/immunogenomics/symphony) package to Python\n\n- [Installation](#installation)\n- [Examples](#examples)\n- [Instructions](#instructions)\n  - [Step 1: Reference building](#step-1-reference-building)\n  - [Step 2: Query preprocessing and Symphony](#step-2-query-preprocessing-and-symphony)\n  - [Step 3: Label transfer](#step-3-label-transfer)\n  - [Step 4 (optional): Dimensionality reduction](#step-4-optional-dimensionality-reduction)\n- [Benchmarking](#benchmarking)\n\n\n## Installation\nSymphonypy package might be installed via pip:\n```\npip install symphonypy\n```\n\n## Examples\nHere are Jupyter-notebooks with simple examples of how to use symphonypy\n- with [pre-built references](notebooks/Symphonypy_precomputed.ipynb) from original Symphony,\n- with [reference building](notebooks/Symphonypy_simple_tutorial.ipynb) from scratch,\n- for [mapping to reference without harmony step](notebooks/Symphonypy_without_harmony_tutorial.ipynb).\n\n## Instructions\n### Step 1: Reference building\n```python\nsc.pp.normalize_total(adata_ref, target_sum=1e5)\nsc.pp.log1p(adata_ref)\nsc.pp.highly_variable_genes(\n    adata_ref,\n    batch_key=batch_key_ref,\n    n_top_genes=n_top_genes,\n)\nadata_ref.raw = adata_ref\nadata_ref = adata_ref[:, adata_ref.var.highly_variable]\nsc.pp.scale(adata_ref, max_value=10)\nsc.pp.pca(adata_ref, n_comps=30, zero_center=False)\n\n# You can skip Harmony if you have only one batch in reference\nsp.pp.harmony_integrate(adata_ref, key=batch_key_ref)  \n# -> adata_ref.obsm[\"X_pca_harmony\"] <- Harmony adjusted \"X_pca\"\n# -> adata_ref.uns[\"harmony\"] <- Harmony object for Symphony\n```\n\n### Step 2: Query preprocessing and Symphony\n```python\n# target_sum for normalize_total() should be the same as in reference\nsc.pp.normalize_total(adata_query, target_sum=1e5)\nsc.pp.log1p(adata_query)\n# Symphony\nsp.tl.map_embedding(adata_query, adata_ref, key=batch_key_query)\n# -> adata_query.obsm[\"X_pca_harmony\"] <- Symphony adjusted query's PCA\n```\n\n### Step 3: Label transfer\n```python\nsp.tl.transfer_labels_kNN(adata_query, adata_ref, labels)\n# -> adata_query.obs[labels] <- transferred labels (via sklearn kNN)\n```\n\n### Step 4 (optional): Dimensionality reduction\nWith UMAP:\n```python\nsc.pp.neighbors(adata_ref, use_rep=\"X_pca_harmony\")\nsc.tl.umap(adata_ref)\nsp.tl.ingest(adata_query, adata_ref)\n# -> adata_query.obsm[\"X_umap\"] <- mapped to the reference's UMAP coords\n```\n\nWith t-SNE (`openTSNE` should be installed, `pip install openTSNE`):\n```python\ntSNE_model = sp.tl.tsne(adata_ref, use_rep=\"X_pca_harmony\", return_model=True)\nsp.tl.tsne(adata_query, use_rep=\"X_pca_harmony\", use_model=tSNE_model)\n# -> adata_query.obsm[\"X_tsne\"] <- mapped to the reference's tSNE coords\n```\n\n## Benchmarking\n- Harmony (R) vs harmonypy benchmarking: [benchmarking/Benchmarking_harmony_PBMC_Satija.ipynb](benchmarking/Benchmarking_harmony_PBMC_Satija_CITEseq.ipynb)\n- Symphony (R) vs symphonypy benchmarking: [benchmarking/Benchmarking_symphony_PBMC.ipynb](benchmarking/Benchmarking_symphony_PBMC.ipynb)\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/potulabe/symphonypy",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "symphonypy",
+            "package_url": "https://pypi.org/project/symphonypy/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/symphonypy/",
+            "project_urls": {
+                "Homepage": "https://github.com/potulabe/symphonypy"
+            },
+            "release_url": "https://pypi.org/project/symphonypy/0.2/",
+            "requires_dist": [
+                "harmonypy",
+                "scanpy",
+                "scikit-learn"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "Porting of Symphony R package to Python",
+            "version": "0.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16701971,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "35832c9d9789054d5efcc3cd687f19f0c4e5c6bd925f0220e9fd702db43eb1fa",
+                    "md5": "64e1bb394d460dbba02a21507a4eb359",
+                    "sha256": "c8127a06b670ffa80d6ec541989440a8b99cac5c33308018b59f881b2a719eff"
+                },
+                "downloads": -1,
+                "filename": "symphonypy-0.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "64e1bb394d460dbba02a21507a4eb359",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 27258,
+                "upload_time": "2023-02-05T16:41:34",
+                "upload_time_iso_8601": "2023-02-05T16:41:34.527098Z",
+                "url": "https://files.pythonhosted.org/packages/35/83/2c9d9789054d5efcc3cd687f19f0c4e5c6bd925f0220e9fd702db43eb1fa/symphonypy-0.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "4ce311b50174fb80c5d5f6ccf5f8d053eeba51c4019d677752f4983d11113e1e",
+                    "md5": "dd7e32a35462025f8b29c839a8f38930",
+                    "sha256": "49b47248ad2ccdbfc88d0534556e9231970a9ff2873be31674da86aa50d91f18"
+                },
+                "downloads": -1,
+                "filename": "symphonypy-0.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "dd7e32a35462025f8b29c839a8f38930",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 26345,
+                "upload_time": "2023-02-05T16:41:35",
+                "upload_time_iso_8601": "2023-02-05T16:41:35.839453Z",
+                "url": "https://files.pythonhosted.org/packages/4c/e3/11b50174fb80c5d5f6ccf5f8d053eeba51c4019d677752f4983d11113e1e/symphonypy-0.2.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
