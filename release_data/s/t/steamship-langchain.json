@@ -5,7 +5,6 @@
             "author_email": "",
             "bugtrack_url": null,
             "classifiers": [],
-            "description": "# Steamship Python Client Library For Langchain (\ud83e\udd9c\ufe0f\ud83d\udd17)\n\nSteamship is the fastest way to build, ship, and use full-lifecycle language AI.\n\nThis repository contains langchain adapters for Steamship, enabling langchain developers\nto rapidly deploy their apps on Steamship to automatically get:\n\n- Production-ready API endpoint(s)\n- Horizontal scaling across dependencies / backends\n- Persistent storage of app state (including caches)\n- Built-in support for Authn/z \n- Multi-tenancy support\n- Seamless integration with other Steamship skills (ex: audio transcription) \n- Usage Metrics and Logging\n- And much more...\n\n## Installing\n\nInstall via pip:\n\n```commandline\npip install steamship-langchain\n```\n\n## Examples\n\nHere are a few examples of using langchain on Steamship.\n\nThe examples use temporary workspaces to provide full cleanup during experimentation.\n[Workspaces](https://docs.steamship.com/workspaces/index.html) provide a unit of tenant isolation within Steamship.\nFor production uses, persistent workspaces can be created and retrieved via `Steamship(workspace_handle=\"my_workspace\")` .\n\n> **NOTE**\n> Thesee examples omit `import` blocks. Please See the `examples/` directory for complete code. \n\n> **NOTE** \n> Client examples assume that the user has a Steamship API key and that it is exposed to the environment (see: [API Keys](#api-keys))\n\n### Basic Prompting\n\n#### Server Snippet\n\n```python\n@post(\"basic_prompt\")\ndef basic_prompt(self, user: str) -> str:\n    prompt = PromptTemplate(\n        input_variables=[\"user\"],\n        template=\"Create a welcome message for user {user} and thank them for using langchain on Steamship.\",\n    )\n    llm = SteamshipGPT(client=self.client, temperature=0.8)\n    return llm(prompt.format(user=user))\n```\n\n#### Client Snippet\n\n```python\nwith Steamship.temporary_workspace() as client:\n    api = client.use(\"my-langchain-app\")\n    print(api.invoke(\"/basic_prompt\", user=\"Han Solo\"))\n```\n\n### Self Ask With Search\n\n[![Run on Repl.it](https://replit.com/badge/github/@SteamshipDoug/Self-Ask-With-Search-with-LangChain-and-Steamship)](https://replit.com/@SteamshipDoug/Self-Ask-With-Search-with-LangChain-and-Steamship)\n\n#### Server Snippet\n\n```python\n@post(\"/self_ask_with_search\")\ndef self_ask_with_search(self, query: str) -> str:\n    llm = SteamshipGPT(client=self.client, temperature=0.0, cache=True)\n    serp_tool = SteamshipSERP(client=self.client, cache=True)\n    tools = [Tool(name=\"Intermediate Answer\", func=serp_tool.search)]\n    self_ask_with_search = initialize_agent(tools, llm, agent=\"self-ask-with-search\", verbose=False)\n    return self_ask_with_search.run(query)\n```\n\n#### Client Snippet\n\n```python\nwith Steamship.temporary_workspace() as client:\n    api = client.use(\"my-langchain-app\")\n    query = \"Who was president the last time the Twins won the World Series?\"\n    print(f\"Query: {query}\")\n    print(f\"Answer: {api.invoke('/self_ask_with_search', query=query)}\")\n```\n\n### ChatBot\n\nImplements a basic Chatbot (similar to ChatGPT) in Steamship with LangChain.\n\n[![Run on Repl.it](https://replit.com/badge/github/@SteamshipDoug/Persistent-ChatBot-with-LangChain-and-Steamship)](https://replit.com/@SteamshipDoug/Persistent-ChatBot-with-LangChain-and-Steamship)\n\n#### Server Snippet\n\n```python\n@post(\"/send_message\")\ndef send_message(self, message: str, chat_history_handle: str) -> str:\n    mem = SteamshipPersistentConversationWindowMemory(client=self.client,\n                                                      file_handle=chat_history_handle,\n                                                      k=2)\n    chatgpt = LLMChain(\n        llm=SteamshipGPT(client=self.client, temperature=0), \n        prompt=CHATBOT_PROMPT, \n        memory=mem,\n    )\n    \n    return chatgpt.predict(human_input=message)\n```\n\n#### Client Snippet\n\n```python\nwith Steamship.temporary_workspace() as client:\n    api = client.use(\"my-langchain-app\")\n    session_handle = \"foo-user-session-1234\"\n    while True:\n        msg = input(\"> \")\n        print(f\"{api.invoke('/send_message', message=msg, chat_history_handle=session_handle)}\")\n```\n\n### Summarize Audio (Async Chaining)\n\n#### Server Snippet\n```python\n\n@post(\"summarize_file\")\ndef summarize_file(self, file_handle: str) -> str:\n    file = File.get(self.client, handle=file_handle)\n    text_splitter = CharacterTextSplitter()\n    texts = []\n    for block in file.blocks:\n        texts.extend(text_splitter.split_text(block.text))\n    docs = [Document(page_content=t) for t in texts]\n    llm = SteamshipGPT(client=self.client, cache=True)\n    chain = load_summarize_chain(llm, chain_type=\"map_reduce\")\n    return chain.run(docs)\n\n@post(\"summarize_audio_file\")\ndef summarize_audio_file(self, audio_file_handle: str) -> Task[str]:\n    transcriber = self.client.use_plugin(\"whisper-s2t-blockifier\")\n    audio_file = File.get(self.client, handle=audio_file_handle)\n    transcribe_task = audio_file.blockify(plugin_instance=transcriber.handle)\n    return self.invoke_later(\"summarize_file\", wait_on_tasks=[transcribe_task], arguments={\"file_handle\": audio_file.handle})\n```\n\n#### Client Snippet\n```python\n\nchurchill_yt_url = \"https://www.youtube.com/watch?v=MkTw3_PmKtc\"\n\nwith Steamship.temporary_workspace() as client:\n    api = client.use(\"my-langchain-app\")\n    yt_importer = client.use_plugin(\"youtube-file-importer\")\n    audio_file = File.create_with_plugin(client=client,\n                                         plugin_instance=yt_importer.handle, \n                                         url=churchill_yt_url)\n    \n    summarize_task_response = api.invoke(\"/summarize_audio_file\", audio_file_handle=audio_file.handle)\n    summarize_task = Task(client=client, **summarize_task_response)\n    summarize_task.wait()\n\n    summary = base64.b64decode(summarize_task.output).decode(\"utf-8\")\n    print(f\"Summary: {summary}\")\n```\n\n### Question Answering with Sources (Embeddings)\n\n#### Server Snippet\n\n```python\ndef __init__(self, **kwargs):\n    super().__init__(**kwargs)\n    # create a persistent embedding store\n    self.index = self.client.use_plugin(\n        \"embedding-index\",\n        config={\n            \"embedder\": {\n                \"plugin_handle\": \"openai-embedder\",\n                \"fetch_if_exists\": True,\n                \"config\": {\n                    \"model\": \"text-similarity-curie-001\",\n                    \"dimensionality\": 4096,\n                }\n            }\n        },\n        fetch_if_exists=True,\n    )\n    \n@post(\"embed_file\")\ndef embed_file(self, file_handle: str) -> bool:\n    text_splitter = CharacterTextSplitter(chunk_size=500, chunk_overlap=0)\n    texts = []\n    file = File.get(self.client, handle=file_handle)\n    for block in file.blocks:\n        texts.extend(text_splitter.split_text(block.text))\n\n    items = [Tag(client=self.client, text=t, value={\"source\": f\"{file.handle}-offset-{i*500}\"})\n             for i, t in enumerate(texts)]\n\n    self.index.insert(items)\n    return True\n\n@post(\"search_embeddings\")\ndef search_embeddings(self, query: str, k: int) -> List[SearchResult]:\n    \"\"\"Return the `k` closest items in the embedding index.\"\"\"\n    search_results = self.index.search(query, k=k)\n    search_results.wait()\n    items = search_results.output.items\n    return items\n\n@post(\"/qa_with_sources\")\ndef qa_with_sources(self, query: str) -> Dict[str, Any]:\n    llm = SteamshipGPT(client=self.client, temperature=0, cache=True)\n    chain = load_qa_with_sources_chain(llm, chain_type=\"stuff\")\n    search_results = self.search_embeddings(query, k=4)\n    docs = [Document(page_content=result.tag.text, metadata={\"source\": result.tag.value.get(\"source\", \"unknown\")})\n            for result in search_results]\n    return chain({\"input_documents\": docs, \"question\": query})\n\n\n\n```\n\n#### Client Snippet\n\n```python\nwith Steamship.temporary_workspace() as client:\n    api = client.use(\"my-langchain-ap\")\n    \n    # Embed the State of the Union address\n    with open(\"state-of-the-union.txt\") as f:\n        sotu_file = File.create(self.client, blocks=[Block(text=f.readlines())])\n    \n    api.invoke(\"/embed_file\", file_handle=sotu_file)\n\n    # Issue Query\n    query = \"What did the president say about Justice Breyer?\"\n    print(f\"------\\nQuery: {query}\")\n    response = api.invoke('/qa_with_sources', query=query)\n    print(f\"Answer: {response['output_text']}\")\n\n    # Print source\n    # NB: assumes a single source is used in response\n    last_line = response['output_text'].splitlines()[-1:][0]\n    source = last_line[len(\"SOURCES: \"):]\n    print(f\"------\\nSource text ({source}):\")\n    for input_doc in response['input_documents']:\n        metadata = input_doc['metadata']\n        src = metadata['source']\n        if source == src:\n            print(input_doc['page_content'])\n            break\n```\n\n## API Keys\n\nSteamship API Keys provide access to our SDK for AI models, including OpenAI, GPT, Cohere, and more.\n\nGet your free API key here: https://steamship.com/account/api.\n\nOnce you have an API Key, you can :\n* Set the env var `STEAMSHIP_API_KEY` for your client\n* Pass it directly via `Steamship(api_key=)` or `Steamship.tempory_workspace(api_key=)`.\n\nAlternatively, you can run `ship login`, which will guide you through setting up your environment.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -38,7 +37,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16718325,
+        "last_serial": 16723942,
         "urls": [
             {
                 "comment_text": "",
@@ -79,6 +78,177 @@
                 "upload_time": "2023-02-06T23:02:31",
                 "upload_time_iso_8601": "2023-02-06T23:02:31.218373Z",
                 "url": "https://files.pythonhosted.org/packages/30/db/fe0e8a58caef206b8d0b4bb60ee3519d50b7dc1c0ddf47331bc7e8ac6237/steamship-langchain-0.0.4.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.5": {
+        "info": {
+            "author": "",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "steamship-langchain",
+            "package_url": "https://pypi.org/project/steamship-langchain/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/steamship-langchain/",
+            "project_urls": {
+                "Homepage": "https://steamship.com/"
+            },
+            "release_url": "https://pypi.org/project/steamship-langchain/0.0.5/",
+            "requires_dist": [
+                "steamship (==2.3.13)",
+                "langchain (==0.0.78)",
+                "transformers (==4.26.0)"
+            ],
+            "requires_python": "",
+            "summary": "The fastest way to deploy a production langchain API.",
+            "version": "0.0.5",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16723942,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "192aabdb9b47804fadeea7391eb2a7a353f883bfcd5089697c25cb3fd8a40d47",
+                    "md5": "8759d8316ca0ef0ab141a0fe8b2d8a84",
+                    "sha256": "7a8a315d5a78592bdea8f2002a9dee7c16555d0e957269c1a66c57f78b8eb790"
+                },
+                "downloads": -1,
+                "filename": "steamship_langchain-0.0.5-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "8759d8316ca0ef0ab141a0fe8b2d8a84",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 12788,
+                "upload_time": "2023-02-07T07:52:47",
+                "upload_time_iso_8601": "2023-02-07T07:52:47.091460Z",
+                "url": "https://files.pythonhosted.org/packages/19/2a/abdb9b47804fadeea7391eb2a7a353f883bfcd5089697c25cb3fd8a40d47/steamship_langchain-0.0.5-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "618e8419b3aee3e59b741ecc08a85393ef7e283b2d8612e8525f870f7cb97a16",
+                    "md5": "28ef64bf0b3136377bccf5048a207468",
+                    "sha256": "dd6c60a53336b3b7e64ff16396b29abf3717831dafc826ee48605a02ba6c399a"
+                },
+                "downloads": -1,
+                "filename": "steamship-langchain-0.0.5.tar.gz",
+                "has_sig": false,
+                "md5_digest": "28ef64bf0b3136377bccf5048a207468",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 26624,
+                "upload_time": "2023-02-07T07:52:49",
+                "upload_time_iso_8601": "2023-02-07T07:52:49.799834Z",
+                "url": "https://files.pythonhosted.org/packages/61/8e/8419b3aee3e59b741ecc08a85393ef7e283b2d8612e8525f870f7cb97a16/steamship-langchain-0.0.5.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.6": {
+        "info": {
+            "author": "",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "# Steamship Python Client Library For LangChain (\ud83e\udd9c\ufe0f\ud83d\udd17)\n\n[Steamship](https://steamship.com/) is the fastest way to build, ship, and use full-lifecycle language AI.\n\nThis repository contains [LangChain](https://langchain.readthedocs.io/en/latest/) adapters for Steamship, enabling \nLangChain developers to rapidly deploy their apps on Steamship to automatically get:\n\n- Production-ready API endpoint(s)\n- Horizontal scaling across dependencies / backends\n- Persistent storage of app state (including caches)\n- Built-in support for Authn/z \n- Multi-tenancy support\n- Seamless integration with other Steamship skills (ex: audio transcription) \n- Usage Metrics and Logging\n- And much more...\n\n## Installing\n\nInstall via pip:\n\n```commandline\npip install steamship-langchain\n```\n\n## Examples\n\nHere are a few examples of using LangChain on Steamship.\n\nThe examples use temporary workspaces to provide full cleanup during experimentation.\n[Workspaces](https://docs.steamship.com/workspaces/index.html) provide a unit of tenant isolation within Steamship.\nFor production uses, persistent workspaces can be created and retrieved via `Steamship(workspace_handle=\"my_workspace\")` .\n\n> **NOTE**\n> Thesee examples omit `import` blocks. Please See the `examples/` directory for complete code. \n\n> **NOTE** \n> Client examples assume that the user has a Steamship API key and that it is exposed to the environment (see: [API Keys](#api-keys))\n\n### Basic Prompting\n\nExample of a basic prompt using a Steamship LLM integration.\n\n[![Run on Repl.it](https://replit.com/badge/github/@SteamshipDoug/Simple-LangChain-Prompting-on-Steamship)](https://replit.com/@SteamshipDoug/Simple-LangChain-Prompting-on-Steamship)\n\n#### Server Snippet\n\n```python\n@post(\"greet\")\ndef greet(self, user: str) -> str:\n    prompt = PromptTemplate(\n      input_variables=[\"user\"],\n      template=\n      \"Create a welcome message for user {user}. Thank them for running their LangChain app on Steamship. \"\n      \"Encourage them to deploy their app via `ship deploy` when ready.\",\n    )\n    llm = SteamshipGPT(client=self.client, temperature=0.8)\n    return llm(prompt.format(user=user))\n```\n\n#### Client Snippet\n\n```python\nwith Steamship.temporary_workspace() as client:\n    api = client.use(\"my-langchain-app\")\n    while True:\n        name = input(\"Name: \")\n        print(f'{api.invoke(\"/greet\", user=name).strip()}\\n')\n```\n\n### Self Ask With Search\n\nExecutes the LangChain `self-ask-with-search` agent using production Steamship GPT LLM and SERP Tool.\n\n[![Run on Repl.it](https://replit.com/badge/github/@SteamshipDoug/Self-Ask-With-Search-with-LangChain-and-Steamship)](https://replit.com/@SteamshipDoug/Self-Ask-With-Search-with-LangChain-and-Steamship)\n\n#### Server Snippet\n\n```python\n@post(\"/self_ask_with_search\")\ndef self_ask_with_search(self, query: str) -> str:\n    llm = SteamshipGPT(client=self.client, temperature=0.0, cache=True)\n    serp_tool = SteamshipSERP(client=self.client, cache=True)\n    tools = [Tool(name=\"Intermediate Answer\", func=serp_tool.search)]\n    self_ask_with_search = initialize_agent(tools, llm, agent=\"self-ask-with-search\", verbose=False)\n    return self_ask_with_search.run(query)\n```\n\n#### Client Snippet\n\n```python\nwith Steamship.temporary_workspace() as client:\n    api = client.use(\"my-langchain-app\")\n    query = \"Who was president the last time the Twins won the World Series?\"\n    print(f\"Query: {query}\")\n    print(f\"Answer: {api.invoke('/self_ask_with_search', query=query)}\")\n```\n\n### ChatBot\n\nImplements a basic Chatbot (similar to ChatGPT) in Steamship with LangChain.\n\n[![Run on Repl.it](https://replit.com/badge/github/@SteamshipDoug/Persistent-ChatBot-with-LangChain-and-Steamship)](https://replit.com/@SteamshipDoug/Persistent-ChatBot-with-LangChain-and-Steamship)\n\n#### Server Snippet\n\n```python\n@post(\"/send_message\")\ndef send_message(self, message: str, chat_history_handle: str) -> str:\n    mem = SteamshipPersistentConversationWindowMemory(client=self.client,\n                                                      file_handle=chat_history_handle,\n                                                      k=2)\n    chatgpt = LLMChain(\n        llm=SteamshipGPT(client=self.client, temperature=0), \n        prompt=CHATBOT_PROMPT, \n        memory=mem,\n    )\n    \n    return chatgpt.predict(human_input=message)\n```\n\n#### Client Snippet\n\n```python\nwith Steamship.temporary_workspace() as client:\n    api = client.use(\"my-langchain-app\")\n    session_handle = \"foo-user-session-1234\"\n    while True:\n        msg = input(\"> \")\n        print(f\"{api.invoke('/send_message', message=msg, chat_history_handle=session_handle)}\")\n```\n\n### Summarize Audio (Async Chaining)\n\nThis provides an example of using LangChain to process audio transcriptions\nobtained via Steamship's speech-to-text plugins (here, we use Whisper).\n\nA brief introduction to the Task system (and Task dependencies, for chaining) is\nprovided in this example. Here, we use `task.wait()` style polling, but time-based\n`task.refresh()` style polling, etc., is also available.\n\n[![Run on Repl.it](https://replit.com/badge/github/@SteamshipDoug/Persistent-ChatBot-with-LangChain-and-Steamship)](https://replit.com/@SteamshipDoug/Persistent-ChatBot-with-LangChain-and-Steamship)\n\n#### Server Snippet\n```python\n\n@post(\"summarize_file\")\ndef summarize_file(self, file_handle: str) -> str:\n    file = File.get(self.client, handle=file_handle)\n    text_splitter = CharacterTextSplitter()\n    texts = []\n    for block in file.blocks:\n        texts.extend(text_splitter.split_text(block.text))\n    docs = [Document(page_content=t) for t in texts]\n    llm = SteamshipGPT(client=self.client, cache=True)\n    chain = load_summarize_chain(llm, chain_type=\"map_reduce\")\n    return chain.run(docs)\n\n@post(\"summarize_audio_file\")\ndef summarize_audio_file(self, audio_file_handle: str) -> Task[str]:\n    transcriber = self.client.use_plugin(\"whisper-s2t-blockifier\")\n    audio_file = File.get(self.client, handle=audio_file_handle)\n    transcribe_task = audio_file.blockify(plugin_instance=transcriber.handle)\n    return self.invoke_later(\"summarize_file\", wait_on_tasks=[transcribe_task], arguments={\"file_handle\": audio_file.handle})\n```\n\n#### Client Snippet\n```python\n\nchurchill_yt_url = \"https://www.youtube.com/watch?v=MkTw3_PmKtc\"\n\nwith Steamship.temporary_workspace() as client:\n    api = client.use(\"my-langchain-app\")\n    yt_importer = client.use_plugin(\"youtube-file-importer\")\n    import_task = File.create_with_plugin(client=client,\n                                         plugin_instance=yt_importer.handle, \n                                         url=churchill_yt_url)\n    import_task.wait()\n    audio_file = import_task.output\n    \n    summarize_task_response = api.invoke(\"/summarize_audio_file\", audio_file_handle=audio_file.handle)\n    summarize_task = Task(client=client, **summarize_task_response)\n    summarize_task.wait()\n    \n    if summarize_task.state == TaskState.succeeded:\n      summary = base64.b64decode(summarize_task.output).decode(\"utf-8\")\n      print(f\"Summary: {summary.strip()}\")\n```\n\n### Question Answering with Sources (Embeddings)\n\n#### Server Snippet\n\n```python\ndef __init__(self, **kwargs):\n    super().__init__(**kwargs)\n    # create a persistent embedding store\n    self.index = self.client.use_plugin(\n        \"embedding-index\",\n        config={\n            \"embedder\": {\n                \"plugin_handle\": \"openai-embedder\",\n                \"fetch_if_exists\": True,\n                \"config\": {\n                    \"model\": \"text-similarity-curie-001\",\n                    \"dimensionality\": 4096,\n                }\n            }\n        },\n        fetch_if_exists=True,\n    )\n    \n@post(\"embed_file\")\ndef embed_file(self, file_handle: str) -> bool:\n    text_splitter = CharacterTextSplitter(chunk_size=500, chunk_overlap=0)\n    texts = []\n    file = File.get(self.client, handle=file_handle)\n    for block in file.blocks:\n        texts.extend(text_splitter.split_text(block.text))\n\n    items = [Tag(client=self.client, text=t, value={\"source\": f\"{file.handle}-offset-{i*500}\"})\n             for i, t in enumerate(texts)]\n\n    self.index.insert(items)\n    return True\n\n@post(\"search_embeddings\")\ndef search_embeddings(self, query: str, k: int) -> List[SearchResult]:\n    \"\"\"Return the `k` closest items in the embedding index.\"\"\"\n    search_results = self.index.search(query, k=k)\n    search_results.wait()\n    items = search_results.output.items\n    return items\n\n@post(\"/qa_with_sources\")\ndef qa_with_sources(self, query: str) -> Dict[str, Any]:\n    llm = SteamshipGPT(client=self.client, temperature=0, cache=True)\n    chain = load_qa_with_sources_chain(llm, chain_type=\"stuff\")\n    search_results = self.search_embeddings(query, k=4)\n    docs = [Document(page_content=result.tag.text, metadata={\"source\": result.tag.value.get(\"source\", \"unknown\")})\n            for result in search_results]\n    return chain({\"input_documents\": docs, \"question\": query})\n\n\n\n```\n\n#### Client Snippet\n\n```python\nwith Steamship.temporary_workspace() as client:\n    api = client.use(\"my-langchain-ap\")\n    \n    # Embed the State of the Union address\n    with open(\"state-of-the-union.txt\") as f:\n        sotu_file = File.create(self.client, blocks=[Block(text=f.readlines())])\n    \n    api.invoke(\"/embed_file\", file_handle=sotu_file)\n\n    # Issue Query\n    query = \"What did the president say about Justice Breyer?\"\n    print(f\"------\\nQuery: {query}\")\n    response = api.invoke('/qa_with_sources', query=query)\n    print(f\"Answer: {response['output_text']}\")\n\n    # Print source\n    # NB: assumes a single source is used in response\n    last_line = response['output_text'].splitlines()[-1:][0]\n    source = last_line[len(\"SOURCES: \"):]\n    print(f\"------\\nSource text ({source}):\")\n    for input_doc in response['input_documents']:\n        metadata = input_doc['metadata']\n        src = metadata['source']\n        if source == src:\n            print(input_doc['page_content'])\n            break\n```\n\n## API Keys\n\nSteamship API Keys provide access to our SDK for AI models, including OpenAI, GPT, Cohere, Whisper, and more.\n\nGet your free API key here: https://steamship.com/account/api.\n\nOnce you have an API Key, you can :\n* Set the env var `STEAMSHIP_API_KEY` for your client\n* Pass it directly via `Steamship(api_key=)` or `Steamship.tempory_workspace(api_key=)`.\n\nAlternatively, you can run `ship login`, which will guide you through setting up your environment.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "steamship-langchain",
+            "package_url": "https://pypi.org/project/steamship-langchain/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/steamship-langchain/",
+            "project_urls": {
+                "Homepage": "https://steamship.com/"
+            },
+            "release_url": "https://pypi.org/project/steamship-langchain/0.0.6/",
+            "requires_dist": [
+                "steamship (==2.3.13)",
+                "langchain (==0.0.78)",
+                "tiktoken (==0.2.0)"
+            ],
+            "requires_python": "",
+            "summary": "The fastest way to deploy a production langchain API.",
+            "version": "0.0.6",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16723942,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ef915eee3bc27e417c763889e6aebdb777eb8d69341f8398ff0d67530fcb9364",
+                    "md5": "c4caf0c226e78daba37030f243c185a2",
+                    "sha256": "c9bf064d2a8c86ef02d08b39f8c8681748e828fe96790e701ee3086effc71dc8"
+                },
+                "downloads": -1,
+                "filename": "steamship_langchain-0.0.6-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "c4caf0c226e78daba37030f243c185a2",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 12853,
+                "upload_time": "2023-02-07T08:21:13",
+                "upload_time_iso_8601": "2023-02-07T08:21:13.912257Z",
+                "url": "https://files.pythonhosted.org/packages/ef/91/5eee3bc27e417c763889e6aebdb777eb8d69341f8398ff0d67530fcb9364/steamship_langchain-0.0.6-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5357b7d746918f9c8cbeaae819603fdc004e1d88887592971dc198e7c1058133",
+                    "md5": "6bd64a3d5428a4cb88c613858a90a1c0",
+                    "sha256": "a15d5539bbe9bae4ed00b2eca5fe10934d34650cd687dde34a51f78b8d390a25"
+                },
+                "downloads": -1,
+                "filename": "steamship-langchain-0.0.6.tar.gz",
+                "has_sig": false,
+                "md5_digest": "6bd64a3d5428a4cb88c613858a90a1c0",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 26690,
+                "upload_time": "2023-02-07T08:21:16",
+                "upload_time_iso_8601": "2023-02-07T08:21:16.587460Z",
+                "url": "https://files.pythonhosted.org/packages/53/57/b7d746918f9c8cbeaae819603fdc004e1d88887592971dc198e7c1058133/steamship-langchain-0.0.6.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
