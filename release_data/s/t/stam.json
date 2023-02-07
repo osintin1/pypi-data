@@ -1,0 +1,66 @@
+{
+    "0.0.2": {
+        "info": {
+            "author": "Maarten van Gompel <proycon@anaproy.nl>",
+            "author_email": "Maarten van Gompel <proycon@anaproy.nl>",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "[![Project Status: WIP \u2013 Initial development is in progress, but there has not yet been a stable, usable release suitable for the public.](https://www.repostatus.org/badges/latest/wip.svg)](https://www.repostatus.org/#wip)\n\n# STAM Python binding\n\n[STAM](https:/github.com/annotation/stam) is a data model for stand-off text annotation and described in detail [here](https://github.com/annotation/stam). This is a python library (to be more specific; a python binding written in Rust) to work with the model.\n\nThis library offers a higher-level interface than the underlying Rust library. Implementation is currently in a preliminary stage. We aim to implement the full model and most extensions.\n\n## Installation\n\n``$ pip install stam``\n\n## Usage\n\nImport the library\n\n```rust\nimport stam\n```\n\nLoading a STAM JSON file containing an annotation store:\n\n```python\nstore = stam.AnnotationStore(file=\"example.stam.json\")\n```\n\nThe annotation store is your workspace, it holds all resources, annotation sets\n(i.e. keys and annotation data) and of course the actual annotations. It is a\nmemory-based store and you can as much as you like into it (as long as it fits\nin memory:).\n\nRetrieving anything by ID:\n\n```python\nannotation = store.annotation(\"my-annotation\")\nresource = store.resource(\"my-resource\")\nannotationset = store.annotationset(\"my-annotationset\")\nkey = annotationset.key(\"my-key\")\ndata = = annotationset.annotationdata(\"my-data\")\n```\n\nIterating through all annotations in the store, and outputting a simple tab separated format:\n\n```python\nfor annotation in store.annotations():\n    # get the text to which this annotation refers (if any)\n    try:\n        text = str(annotation)\n    except stam.StamError:\n        text = \"n/a\"\n    for data in annotation:\n        print(\"\\t\".join(( annotation.id, data.key().id, str(data.value()), text)));\n```\n\n\nAdding a resource:\n\n```python\nresource = store.add_resource(filename=\"my-text.txt\")\n```\n\nCreate a store and annotations from scratch:\n\n```python\nfrom stam import AnnotationStore, Selector, AnnotationDataBuilder\n\nstore = AnnotationStore(id=\"test\")\nresource = store.add_resource(id=\"testres\", text=\"Hello world\")\nstore.annotate(id=\"A1\", \n                target=Selector.text(resource, Offset.simple(6,11)),\n                data=[AnnotationDataBuilder(id=\"D1\", key=\"pos\", value=\"noun\", annotationset=\"testdataset\")])\n```\n\nIn the above example, the `AnnotationDataSet` , `DataKey` and `AnnotationData`\nare created on-the-fly. You can also create them explicitly, as shown in the\nnext snippet, results in the exact same store:\n\n\n```python\nstore = AnnotationStore(id=\"test\")\nresource = store.add_resource(id=\"testres\", text=\"Hello world\")\nannotationset = store.add_annotationset(id=\"testdataset\")\nannotationset.add_key(\"pos\")\ndata = annotationset.add_data(\"pos\",\"noun\",\"D1\")\nself.store.annotate(id=\"A1\", \n    target=Selector.text(resource, Offset.simple(6,11)),\n    data=[AnnotationDataBuilder.link(data)])\n```\n\nHere we use `AnnotationDataBuilder.link()` to link to the existing annotation.\nProviding the full `AnnotationDataBuilder` as in the example before would have\nalso worked fine with the same end result, but would be less performant. The\nimplementation will ensure to reuse any already existing `AnnotationData` if\npossible, as not duplicating data is one of the core characteristics of the\nSTAM model.\n\nYou can serialize the entire annotation store (including all sets and annotations) to a STAM JSON file:\n\n```python\nstore.to_file(\"example.stam.json\")\n```\n\n## Differences between the rust library and python library and performance considerations\n\nAlthough this Python binding builds on the Rust library, the API it exposes\ndiffers in certain aspects to make it more pythonic and easier to work with.\nThis results in a higher-level API that hides some of the lower-level details\nthat are present in the Rust library. This approach does come at the cost of causing\nsome additional runtime overhead. \n\nIn this Python binding, most classes of the model (`Annotation`,\n`AnnotationData`, `DataKey`, etc..) are references to the annotation store\n(self-containing also a reference to the store itself). None of them can be\ninstantiated directly, but always via an `add_*()` or `annotate()` method which\nwill add them and return the reference. \n\nThese instances play a bigger role in the Python API than their equivalents in\nthe Rust API (which distinguishes owned data, borrowed data aka references and\nso-called handles). In the Rust API, methods for search are mostly implemented on the main\n`AnnotationStore` or `AnnotationDataSet`, reflecting the underlying ownership model more strictly.\nIn the Python API, they are implemented on the types themselves. Here's a comparison of some common methods:\n\n| Python API                       | Rust API                                            |\n|--------------------------------  | --------------------------------------------------- |\n| `Annotation.annotations()`       | `AnnotationStore::annotations_by_annotation()`      |\n| `Annotation.resources()`         | `AnnotationStore::resources_by_annotation()`        |\n| `Annotation.textselections()`    | `AnnotationStore::textselections_by_annotation()`   |\n| `Annotation.text()`              | `AnnotationStore::text_by_annotation()`             |\n| `TextResource.annotations()`     | `AnnotationStore::annotations_by_resource()`        |\n| `TextSelection.annotations()`    | `AnnotationStore::annotations_by_textselection()`   |\n| `DataKey.data()`                 | `AnnotationDataSet::data_by_key()`                  |\n| `DataKey.annotationset()`        | n/a                                                 |\n| `AnnotationData.annotationset()` | n/a                                                 |\n\nThe Rust methods will return iterators, references or handles whenever they\ncan, moreover it will do so safely. The Python API is often forced to make a\nlocal copy. For iterators it sometimes decides to let the entire underlying Rust\niterator run its course and then return the result as a whole as a tuple, rather than\nreturn a Python generator. Here you gain some speed at the cost of some memory.\n\nProbably needless to say, but using Rust directly will always be more\nperformant than using this Python binding. However, using this Python binding\nshould still be way more performant than if the whole thing were implemented in\nnative Python. The trick is in letting the binding work for you as much as\npossible, use higher-level methods whenever they are available rather than\nimplementing your logic in Python.\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n",
+            "description_content_type": "text/markdown; charset=UTF-8; variant=GFM",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/annotation/stam",
+            "keywords": "text-processing,annotation,linguistics,standoff,nlp",
+            "license": "GPL-3.0-only",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "stam",
+            "package_url": "https://pypi.org/project/stam/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/stam/",
+            "project_urls": {
+                "Homepage": "https://github.com/annotation/stam",
+                "Source Code": "https://github.com/annotation/stam-rust"
+            },
+            "release_url": "https://pypi.org/project/stam/0.0.2/",
+            "requires_dist": [
+                "pytest; extra == 'test'"
+            ],
+            "requires_python": "",
+            "summary": "STAM is a library for dealing with standoff annotations on text",
+            "version": "0.0.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16717587,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "522fbb33f5035191233032e105b415eb0109882da5a90d09143efecf7157fcdd",
+                    "md5": "02a710c6c70fef6ef72edb74df146aca",
+                    "sha256": "3ce83ea51dbb3a43df89fe3be378611b48467c04aad8080808f21633855172a5"
+                },
+                "downloads": -1,
+                "filename": "stam-0.0.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "02a710c6c70fef6ef72edb74df146aca",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 29767,
+                "upload_time": "2023-02-06T21:57:05",
+                "upload_time_iso_8601": "2023-02-06T21:57:05.371830Z",
+                "url": "https://files.pythonhosted.org/packages/52/2f/bb33f5035191233032e105b415eb0109882da5a90d09143efecf7157fcdd/stam-0.0.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
