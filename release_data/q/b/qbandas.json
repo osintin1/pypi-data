@@ -9,7 +9,6 @@
                 "Operating System :: OS Independent",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "# qBandas\n\nqBandas (QuickBase + Pandas) is a Python package designed to effeciently transfer tabular data between QuickBase applications and the popular Python data handling library Pandas. If you are new to Pandas, you can read more about it [here](https://pandas.pydata.org/).\n\nThe advantages of this approach over a QuickBase pipeline are:\n* Access to databases through Python libraries like [pyodbc](https://github.com/mkleehammer/pyodbc) and [SASPy](https://sassoftware.github.io/saspy/).\n* Greater control over features like error logging, data processing, automated reporting, and scheduling.\n* Significantly less performance impact on your QuickBase application.\n* Access tabular data from local sources. \n\nThe disadvantages of this approach compared to a pipeline are:\n* Typically longer time to deploy.\n* Requires knowledge of Python and Pandas.\n\n## Setup\n\nTo use this library, you will need to clone this repository to your project. This package is not currently avaiable from the Python Package Index. From your terminal run the following command. Note, you will need git installed to do this. You can find the lastest version [here](https://git-scm.com/).\n\n```bash\ngit clone https://github.com/jhopwood-jjk/qBandas.git\n```\n\nAlternatively, you can download this repo as a zip and place it in your project folder.\n\nTo use qBandas in your project, use the following import. Note the casing. \n\n```python\nimport qBandas.qbandas as qb\n```\n\n## Getting Started\n\nTo show you the ropes, I will do a walkthrough of uploading a DataFrame to QuickBase. If you are new to Python or Pandas, it might be a good idea to follow along with this example before you try to deploy this yourself. \n\n### 1) Get Your Data\n\nRead your tabular data into Python. The method you use for this is up to you. This step is one of the greatest strenghts of this method compared to a pipeline. I will simply hardcode mine. \n\n```python\nimport pandas as pd\n\ndata = {\n  \"name\": ['John', 'Michael', 'Jill'],\n  \"age\": [50, 40, 45]\n}\n\ndf = pd.DataFrame(data) # my data is in df\n```\n\n### 2) Gathering QuickBase Information\n\nUnder the hood, qBandas calls the QuickBase API. To make the API happy, we need to give it a few bits of information. This part of the process is done entirely in Quickbase. We do this step second because if you cannot gather these items (most likely a valid user token) then you cannot use this method. This might save you the headache doing everything only to find out that you don't have permission to upload. \n\nYou will need your:\n\n* QuickBase realm hostname \n    - Something like `\"example.quickbase.com\"`\n* Destination table ID \n    - This is the hash that comes after `/db/` in any QuickBase url. Each table has a unique identifier, and they can be found by visiting the table on the web.\n* Valid QuickBase user token\n    - Learn how to get one [here](https://developer.quickbase.com/auth).\n* Agent name (Optional, for documentation purposes)\n    - I am uploading names and ages, so I will call mine `\"name-age-upload\"`. I know, very creative.  \n\nYou can read more about how to gather each of these items [here](https://developer.quickbase.com). When you have these items, save them into variables for later use. \n\nI recommend storing the user token somewhat securely. There are many ways to do this and you are free to choose the one you like the best. One simple way to secure it is with an evironment varible. If you are interested, you can find out how to do it [from this stackoverflow post](https://stackoverflow.com/questions/4906977/how-can-i-access-environment-variables-in-python).\n\nHere is what I got for this example.\n\n```python\nimport os # user token is in an environment variable\nhostname = \"example.quickbase.com\"\ndbid = \"1234abcdef\"\ntoken = f\"QB-USER-TOKEN {os.environ['QB_USER_TOKEN']}\"\nagent = \"name-age-upload\"\n```\n\n### 3) Creating a Schema\n\nThe schema defines how qBandas will comunicate the data to QuickBase. For example, if you have a column of integers you could specify that column as `numeric`, `text`, or `duration`. Each of those __column types__ leads to a slightly different handling of the data. Be sure to choose the one you want for your data. See the docs of `qb.transform()` for a comprehensive list of column types and their arguments. \n\nThe first step in creating a schema is making sure that your data is _parsable_. If your Dataframe contains crazy fragmented or unstructured data, it will most likely need to be cleaned before you continue. Check that your columns contain only data that can be parsed by the specified column types. \n\nThere are several ways to define a schema--and even ways to run qBandas without specifying a schema directly--but the method I recommend most people use is creating a `schema.json` file. The syntax for this file is simple. Inside of curly braces, each column name is a key for a string value which takes the format `\"<FID> <column type> <args>\"`. \n\n`<FID>` specifies which column on QuickBase corresponds to which column in your Dataframe. Make sure the column types on QuickBase match the ones you specify. You can gather your FIDs by looking at the QuickBase table's schema. \n\nIf your dataset is large, you may find the method `qb.fastSchema()` helpful for this step. \n\nEDIT: New in version 0.0.4 is the ability to generate a `.json` schema file through the command line!\n\nHere is what I got.\n\n<div style=\"margin:0;\"><b>schema.json</b></div>\n\n```json\n{\n    \"name\": \"6 text\",\n    \"age\": \"7 numeric\"    \n}\n```\n\nI can read this schema into Python.\n\n```python\nschema = qb.read_schema('schema.json')\n```\n\n### 4) Sending the Data\n\nNow that we have a dataset and a matching schema, we can transform the data into a format that the QuickBase API can understand. These last steps are the steps most likely to throw errors. The formatting of the data in these calls is somewhat spesific, so be sure to read any error messages carefully; they will tell you what is wrong.\n\nIn this call we create a list of payloads to send. The data is segmented into chunks to keep the requests under 10MB, the API's maximum request size. For data sets with less than 20,000 records, by default you will get get a single payload. If your data is decently wide you may still encounter problems hitting the maximum request size. In this case, adjust the kwarg `size` to keep each request size down. \n\n```python\npayloads = qb.full_transform(df, schema)\n```\n\nThe final step is to send your payloads to your QuickBase application. The code for this part offers alot of flexibility, but I will show the simplest option.\n\n```python\nfor payload in payloads:\n    r = qb.send_records(payload, dbid, hostname, agent, token)\n    print(qb.pretty_str(r))\n    r.raise_for_status()\n```\n\nWe just loop through each payload and send it with the info we gathered earlier. \n\nThat's it! As long as `r.raise_for_status()` doesn't throw an error, your records will be in your QuickBase application. ",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -23,14 +22,14 @@
             "license": "",
             "maintainer": "",
             "maintainer_email": "",
-            "name": "qBandas",
-            "package_url": "https://pypi.org/project/qBandas/",
+            "name": "qbandas",
+            "package_url": "https://pypi.org/project/qbandas/",
             "platform": null,
-            "project_url": "https://pypi.org/project/qBandas/",
+            "project_url": "https://pypi.org/project/qbandas/",
             "project_urls": {
                 "Homepage": "https://github.com/jhopwood-jjk/qBandas"
             },
-            "release_url": "https://pypi.org/project/qBandas/0.0.4/",
+            "release_url": "https://pypi.org/project/qbandas/0.0.4/",
             "requires_dist": null,
             "requires_python": ">=3.7",
             "summary": "Integrates the popular data handling library Pandas and the QuickBase API",
@@ -38,7 +37,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16714956,
+        "last_serial": 16731806,
         "urls": [
             {
                 "comment_text": "",
@@ -79,6 +78,262 @@
                 "upload_time": "2023-02-06T17:45:13",
                 "upload_time_iso_8601": "2023-02-06T17:45:13.578915Z",
                 "url": "https://files.pythonhosted.org/packages/d2/d8/c6f64fb2f278a5fcd4c7390b0016bc96ceb4eae7fe72eb685193c86a71e3/qbandas-0.0.4.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.5": {
+        "info": {
+            "author": "Joshua Hopwood",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "qbandas",
+            "package_url": "https://pypi.org/project/qbandas/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/qbandas/",
+            "project_urls": {
+                "Homepage": "https://github.com/jhopwood-jjk/qBandas"
+            },
+            "release_url": "https://pypi.org/project/qbandas/0.0.5/",
+            "requires_dist": null,
+            "requires_python": ">=3.7",
+            "summary": "Integrates the popular data handling library Pandas and the QuickBase API",
+            "version": "0.0.5",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16731806,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "233b0151cf91c81065ffda86da0d6bd240d9e95ad38311686eb2cb5db07e7728",
+                    "md5": "5c87f135928680c458a4e24c0dcb6f60",
+                    "sha256": "05e07d37ecaf5cef8960bad97337e25423e561d6098138530b11c405b2aa8958"
+                },
+                "downloads": -1,
+                "filename": "qbandas-0.0.5-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "5c87f135928680c458a4e24c0dcb6f60",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 12295,
+                "upload_time": "2023-02-07T16:16:03",
+                "upload_time_iso_8601": "2023-02-07T16:16:03.226360Z",
+                "url": "https://files.pythonhosted.org/packages/23/3b/0151cf91c81065ffda86da0d6bd240d9e95ad38311686eb2cb5db07e7728/qbandas-0.0.5-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "fde2198f32002ec086d09547cbf48938a97b3718bf7473f80606bc52699915a9",
+                    "md5": "4f73e3ee32b806a04e2a00dbb42d2659",
+                    "sha256": "466c11b178c9371f2a8a40d9fe5c296129b720ecbda1029f7d4518980753fb14"
+                },
+                "downloads": -1,
+                "filename": "qbandas-0.0.5.tar.gz",
+                "has_sig": false,
+                "md5_digest": "4f73e3ee32b806a04e2a00dbb42d2659",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 11662,
+                "upload_time": "2023-02-07T16:16:04",
+                "upload_time_iso_8601": "2023-02-07T16:16:04.336009Z",
+                "url": "https://files.pythonhosted.org/packages/fd/e2/198f32002ec086d09547cbf48938a97b3718bf7473f80606bc52699915a9/qbandas-0.0.5.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.0": {
+        "info": {
+            "author": "Joshua Hopwood",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "qbandas",
+            "package_url": "https://pypi.org/project/qbandas/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/qbandas/",
+            "project_urls": {
+                "Homepage": "https://github.com/jhopwood-jjk/qBandas"
+            },
+            "release_url": "https://pypi.org/project/qbandas/0.1.0/",
+            "requires_dist": null,
+            "requires_python": ">=3.7",
+            "summary": "Integrates the popular data handling library Pandas and the QuickBase API",
+            "version": "0.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16731806,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "cac0c68159848e54ce08895a539efa9f1b8f7a7eb29c9da7f132687f2e846205",
+                    "md5": "b839a1d962be2a44805831e1bc1a1a9b",
+                    "sha256": "3d9e02a9cda488158832c44b0c96956725b5a61d2269a1af5da77b12f59ec331"
+                },
+                "downloads": -1,
+                "filename": "qbandas-0.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "b839a1d962be2a44805831e1bc1a1a9b",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 12296,
+                "upload_time": "2023-02-07T16:51:53",
+                "upload_time_iso_8601": "2023-02-07T16:51:53.377206Z",
+                "url": "https://files.pythonhosted.org/packages/ca/c0/c68159848e54ce08895a539efa9f1b8f7a7eb29c9da7f132687f2e846205/qbandas-0.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f8b4dab9fbccc4c3582fe8bf792242d25f62b0c37c9673e02dce4250be8fdc9e",
+                    "md5": "537a59b49637a56478d256ceb3b42af8",
+                    "sha256": "4d6e6cf4b0731b9a85b991fc49612c94f6ae6160d2313edcc8907551727bbbb9"
+                },
+                "downloads": -1,
+                "filename": "qbandas-0.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "537a59b49637a56478d256ceb3b42af8",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 11488,
+                "upload_time": "2023-02-07T16:51:54",
+                "upload_time_iso_8601": "2023-02-07T16:51:54.476632Z",
+                "url": "https://files.pythonhosted.org/packages/f8/b4/dab9fbccc4c3582fe8bf792242d25f62b0c37c9673e02dce4250be8fdc9e/qbandas-0.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.1": {
+        "info": {
+            "author": "Joshua Hopwood",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# qBandas\n\nqBandas (QuickBase + Pandas) is a Python package designed to effeciently transfer tabular data between QuickBase applications and the popular Python data handling library Pandas. If you are new to Pandas, you can read more about it [here](https://pandas.pydata.org/).\n\nThe advantages of this approach over a QuickBase pipeline are:\n* Access to databases through Python libraries like [pyodbc](https://github.com/mkleehammer/pyodbc) and [SASPy](https://sassoftware.github.io/saspy/).\n* Greater control over features like error logging, data processing, automated reporting, and scheduling.\n* Significantly less performance impact on your QuickBase application.\n* Access tabular data from local sources. \n\nThe disadvantages of this approach compared to a pipeline are:\n* Typically longer time to deploy.\n* Requires knowledge of Python and Pandas.\n\n## Setup\n\nTo use this library, simply get it from pypi. First, update your pip.\n\n```bash\npython3 -m pip install --upgrade pip\n```\nThen install qBandas. \n\n```bash\npython3 -m pip install qbandas\n```\n\nYou can now use it through import.\n\n```python\nimport qbandas as qb\n```\n\nAlternatively, you can clone this repository to your project. From your terminal run the following command. Note, you will need git installed to do this. You can find the lastest version [here](https://git-scm.com/).\n\n```bash\ngit clone https://github.com/jhopwood-jjk/qBandas.git\n```\n\nIf you don't like the other aproahes, you can download this repo as a zip and place it in your project folder. This is probably the worst method, but it works. \n\nFor the last two methods, to use qBandas in your project, use the following import. Note the casing. \n\n```python\nimport qBandas.qbandas as qb\n```\n\n## Getting Started\n\nTo show you the ropes, I will do a walkthrough of uploading a DataFrame to QuickBase. If you are new to Python or Pandas, it might be a good idea to follow along with this example before you try to deploy this yourself. Unfortunately, there are no example QuickBase apps to send data to, but everything else is doable.\n\n### 1) Get Your Data\n\nRead your tabular data into Python. The method you use for this is up to you. This step is one of the greatest strenghts of this method compared to a pipeline. I will simply hardcode mine. \n\n```python\nimport pandas as pd\n\ndata = {\n  \"name\": ['John', 'Michael', 'Jill'],\n  \"age\": [50, 40, 45],\n  \"phone\": [\"(555) 123-456\", \"(123) 999-4321\", \"(675) 555-1234x777\"]\n}\n\ndf = pd.DataFrame(data) # my data is in df\n```\n\n### 2) Gathering QuickBase Information\n\nUnder the hood, qBandas calls the QuickBase API. To make the API happy, we need to give it a few bits of information. We do this step early-on because if you cannot gather these items,then you cannot use this method. This might save you the headache doing everything only to find out that you don't have permission to upload. \n\nYou will need your:\n\n* QuickBase realm hostname \n    - Something like `\"example.quickbase.com\"`\n* Destination table DBID\n    - This is the hash that comes after `/db/` in any QuickBase url. Each table has a unique identifier, and they can be found by visiting the table on the web.\n* QuickBase user token\n    - Learn how to get one [here](https://developer.quickbase.com/auth).\n\nYou can read more about how to gather each of these items [here](https://developer.quickbase.com). When you have these items, we will save them into an info dictonary.\n\n>   __Additional Consideration__ \\\n    You might want to store the user token somewhat securely. There are many ways to do this, and you are free to choose the one you like the best. One simple way to \"secure\" it is with an evironment varible. If you are interested, you can find out how to do it [from this stackoverflow post](https://stackoverflow.com/questions/4906977/how-can-i-access-environment-variables-in-python).\n\nHere is what I got for this example.\n\n```python\nimport os # user token is in an environment variable\ninfo = {\n    \"QB-Realm-Hostname\": \"example.quickbase.com\",\n    \"DBID\": \"abcdef123\",\n    \"Authorization\": f\"QB-USER-TOKEN {os.environ['QB_USER_TOKEN']}\"\n}\n```\n\n### 3) Creating a Schema\n\nThe schema defines how qBandas will comunicate the data to QuickBase. For example, if you have a column of integers you could specify that column as `numeric`, `text`, or `duration`. Each of those __column types__ leads to a slightly different handling of the data. Be sure to choose the one you want for your data. The schema also defines the column mapping from your DataFrame to QuickBase. It does this by specifying the QuickBase field ID for each column. To create your mapping, you can find your field IDs in your table's [field list](https://helpv2.quickbase.com/hc/en-us/articles/4570416261524-About-the-field-list-). \n\nTo find a complete list of supported column types and their behaviors, run the following command. Note, you will have to do the pip install method for this to work. \n\n```bash\npython3 -m qbandas --col-types\n```\n\nThe first step in creating a schema is making sure that your data is _parsable_. If your Dataframe contains crazy fragmented or unstructured data, it will most likely need to be cleaned before you continue. \n\nYou will be creating your schema in a `.json` file; the default name for this file is `schema.json`. You have two _fast_ options for creating a schema. \n\n1. Have a sample of your data in a `.csv`, `.tsv`, or other delimited format. Run the command below. \n    ```bash\n    python3 -m qbandas --create-schema -d path/to/data/file \n    ```\n    This will create a template `schema.json` file in your current directory. Then, all you need to do is adjust the field IDs and s few column types. \n2. Have your data in a DataFrame and pass it into `qb.write_schema()` along with a writable file object. The file will get the template schema for your dataframe. \n\nIf for some reason you cannot do the above methods and your dataset is large, good luck. \n\nHere is what I got. Notice the aditional argument for the phone column. \n\n<div style=\"margin:0;\"><b>schema.json</b></div>\n\n```json\n{\n    \"name\": \"6 text\",\n    \"age\": \"7 numeric\",\n    \"phone\": \"8 phone-number '(###) ###-####x####'\n}\n```\n\nFinally, I can read this schema into Python.\n\n```python\nschema = qb.read_schema('schema.json')\n```\n\n### 4) Sending the Data\n\nNow that we have a dataset and a matching schema, we can transform the data into a format that the QuickBase API can understand, and send it. This last step is the most likely to throw errors. The formatting of the data in this call is spesific as we've seen above, so be sure to read any error messages carefully; they will tell you what is wrong.\n\nTo send the DataFrame, call `qb.upload()`.\n\n```python \nqb.upload(df, schema, info)\n```",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "qbandas",
+            "package_url": "https://pypi.org/project/qbandas/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/qbandas/",
+            "project_urls": {
+                "Homepage": "https://github.com/jhopwood-jjk/qBandas"
+            },
+            "release_url": "https://pypi.org/project/qbandas/0.1.1/",
+            "requires_dist": null,
+            "requires_python": ">=3.7",
+            "summary": "Integrates the popular data handling library Pandas and the QuickBase API",
+            "version": "0.1.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16731806,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3819adcb044fb9227dbeea337e84bed21907295adbcd110669465d49b0c93f72",
+                    "md5": "71952d3c470283ded5767167f90fa393",
+                    "sha256": "812a03f77c6ae56b6468e91d9735e2d8a983cb7cdee402a2b0074cabacfdeac9"
+                },
+                "downloads": -1,
+                "filename": "qbandas-0.1.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "71952d3c470283ded5767167f90fa393",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 12093,
+                "upload_time": "2023-02-07T18:09:16",
+                "upload_time_iso_8601": "2023-02-07T18:09:16.566704Z",
+                "url": "https://files.pythonhosted.org/packages/38/19/adcb044fb9227dbeea337e84bed21907295adbcd110669465d49b0c93f72/qbandas-0.1.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "4f6e39b1b1785cdc29b7fa1ffc21ad90a36f84c61a8d84510d2c7ce300d89aec",
+                    "md5": "b26140260d44e9d089e10aa91bb3fb4a",
+                    "sha256": "8601da2ba3e83bc8b68c155e70edef5b7f8071b34f74d493a8c514198610594e"
+                },
+                "downloads": -1,
+                "filename": "qbandas-0.1.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "b26140260d44e9d089e10aa91bb3fb4a",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 11282,
+                "upload_time": "2023-02-07T18:09:17",
+                "upload_time_iso_8601": "2023-02-07T18:09:17.645127Z",
+                "url": "https://files.pythonhosted.org/packages/4f/6e/39b1b1785cdc29b7fa1ffc21ad90a36f84c61a8d84510d2c7ce300d89aec/qbandas-0.1.1.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
