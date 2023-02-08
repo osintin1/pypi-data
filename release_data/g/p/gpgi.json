@@ -39,7 +39,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16684071,
+        "last_serial": 16744705,
         "urls": [
             {
                 "comment_text": "",
@@ -105,7 +105,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16684071,
+        "last_serial": 16744705,
         "urls": [
             {
                 "comment_text": "",
@@ -171,7 +171,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16684071,
+        "last_serial": 16744705,
         "urls": [
             {
                 "comment_text": "",
@@ -237,7 +237,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16684071,
+        "last_serial": 16744705,
         "urls": [
             {
                 "comment_text": "",
@@ -303,7 +303,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16684071,
+        "last_serial": 16744705,
         "urls": [
             {
                 "comment_text": "",
@@ -378,7 +378,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16684071,
+        "last_serial": 16744705,
         "urls": [
             {
                 "comment_text": "",
@@ -705,7 +705,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16684071,
+        "last_serial": 16744705,
         "urls": [
             {
                 "comment_text": "",
@@ -1033,7 +1033,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16684071,
+        "last_serial": 16744705,
         "urls": [
             {
                 "comment_text": "",
@@ -1361,7 +1361,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16684071,
+        "last_serial": 16744705,
         "urls": [
             {
                 "comment_text": "",
@@ -1651,7 +1651,6 @@
                 "Programming Language :: Python :: 3",
                 "Programming Language :: Python :: 3 :: Only"
             ],
-            "description": "# GPGI\n[![PyPI](https://img.shields.io/pypi/v/gpgi.svg?logo=pypi&logoColor=white&label=PyPI)](https://pypi.org/project/gpgi/)\n[![PyPI](https://img.shields.io/badge/requires-Python%20\u2265%203.8-blue?logo=python&logoColor=white)](https://pypi.org/project/gpgi/)\n[![pre-commit.ci status](https://results.pre-commit.ci/badge/github/neutrinoceros/gpgi/main.svg)](https://results.pre-commit.ci/latest/github/neutrinoceros/gpgi/main)\n[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)\n[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/charliermarsh/ruff/main/assets/badge/v1.json)](https://github.com/charliermarsh/ruff)\n\nA **G**eneric **P**article + **G**rid data **I**nterface\n\nThis small Python library implements fundamental grid deposition algorithms to\nanalyse (rectilinear) grid + particle datasets, with an emphasize on\nperformance. Core algorithms are implemented as Cython extensions.\n\n## Table of Contents\n\n<!-- toc -->\n\n- [Installation](#installation)\n- [Supported applications](#supported-applications)\n  * [Supported deposition methods](#supported-deposition-methods)\n  * [Supported geometries](#supported-geometries)\n- [Time complexity](#time-complexity)\n- [Usage](#usage)\n  * [Supplying arbitrary metadata](#supplying-arbitrary-metadata)\n  * [Boundary conditions](#boundary-conditions)\n    + [Builtin recipes](#builtin-recipes)\n    + [Define custom recipes](#define-custom-recipes)\n  * [Weight fields (Depositing intensive quantities)](#weight-fields-depositing-intensive-quantities)\n- [Deposition algorithm](#deposition-algorithm)\n\n<!-- tocstop -->\n\n## Installation\n\n```shell\npython -m pip install --upgrade pip\npython -m pip install gpgi\n```\n\n## Supported applications\n\nA rectilinear grid is defined as 1D arrays representing cell left edges in each directions. Note that the last point of such an array is interpreted as the right edge of the rightmost cell, so for instance, a 1D grid containing 100 cells is defined by 101 edges.\n\nParticles are defined as points that live on the grid.\n\nDeposition is the action of going from particule description\nto a grid description of a field.\nIt is useful to analyze, compare and combine simulation data that exists in a combination of the two formalisms.\nThis process is not reversible as it degrades information.\n\nFor instance, here's a simple overlay of a particle set (red dots)\nagainst a background that represents the deposited particle count.\n<p align=\"center\">\n    <img src=\"https://raw.githubusercontent.com/neutrinoceros/gpgi/main/tests/pytest_mpl_baseline/test_2D_deposit_ngp.png\" width=\"600\"></a>\n</p>\n\nThis example illustrates the simplest possible deposition method \"Particle in Cell\", in which each particle contributes only to the cell\nthat contains it.\n\nMore refined methods are also available.\n### Supported deposition methods\n| method name             | abreviated name | order |\n|-------------------------|:---------------:|:-----:|\n| Nearest Grid Point      | NGP             | 0     |\n| Cloud in Cell           | CIC             | 1     |\n| Triangular Shaped Cloud | TSC             | 2     |\n\n### Supported geometries\n| geometry name | axes order                  |\n|---------------|-----------------------------|\n| cartesian     | x, y, z                     |\n| polar         | radius, z, azimuth          |\n| cylindrical   | radius, azimuth, z          |\n| spherical     | radius, colatitude, azimuth |\n| equatorial    | radius, azimuth, latitude   |\n\n## Time complexity\n\nAn important step in perfoming deposition is to associate particle indices to cell indices. This step is called \"particle indexing\".\nIn directions where the grid is uniformly stepped (if any), indexing a particle is an O(1) operation.\nIn the more general case, indexing is performed by bisection, which is a O(log(nx))) operation (where nx represents the number of cells in the direction of interest).\n\n\n## Usage\n\nThe API consists in a `load` function, which returns a `Dataset` object.\n\n**Load** data\n\n```python\nimport numpy as np\nimport gpgi\n\nnx = ny = 64\nnparticles = 600_000\n\nprng = np.random.RandomState(0)\nds = gpgi.load(\n    geometry=\"cartesian\",\n    grid={\n        \"cell_edges\": {\n            \"x\": np.linspace(-1, 1, nx),\n            \"y\": np.linspace(-1, 1, ny),\n        },\n    },\n    particles={\n        \"coordinates\": {\n            \"x\": 2 * (prng.normal(0.5, 0.25, nparticles) % 1 - 0.5),\n            \"y\": 2 * (prng.normal(0.5, 0.25, nparticles) % 1 - 0.5),\n        },\n        \"fields\": {\n            \"mass\": np.ones(nparticles),\n        },\n    },\n)\n```\nThe `Dataset` object holds a `grid` and a `particles` attribute,\nwhich both hold a `fields` attribute for accessing their data.\nBut more importantly, the `Dataset` has a `deposit` method to\ntranslate particle fields to the grid formalism.\n\n**Deposit Particle fields on the grid**\n\n```python\nparticle_mass = ds.deposit(\"mass\", method=\"nearest_grid_point\")  # or \"ngp\" for shorts\n```\n\n**Visualize**\nIn this example we'll use `matplotlib` for rendering, but note that `matplotlib` is not a dependency to `gpgi`\n```python\nimport matplotlib.pyplot as plt\n\nfig, ax = plt.subplots()\nax.set(aspect=1, xlabel=\"x\", ylabel=\"y\")\n\nim = ax.pcolormesh(\n    \"x\",\n    \"y\",\n    particle_mass.T,\n    data=ds.grid.cell_edges,\n    cmap=\"viridis\",\n)\nfig.colorbar(im, ax=ax)\n```\n\n<p align=\"center\">\n    <img src=\"https://raw.githubusercontent.com/neutrinoceros/gpgi/main/tests/pytest_mpl_baseline/test_readme_example.png\" width=\"600\"></a>\n</p>\n\nThe example script given here takes about a second (top to bottom).\n\n\n### Supplying arbitrary metadata\n*new in gpgi 0.4.0*\n\n`Dataset` objects have a special attribute `metadata` which is a dictionary with string keys.\nThis attribute is meant to hold any special metadata that may be relevant for labelling or processing (e.g. simulation time, author, ...).\nMetadata can be supplied at load time as\n```python\nds = gpgi.load(\n    geometry=\"cartesian\",\n    grid=...,\n    particles=...,\n    metadata={\"simulation_time\": 12.5, \"author\": \"Cl\u00e9ment Robert\"}\n)\n```\n\n\n### Boundary conditions\n*new in gpgi 0.5.0*\n\nWith CIC and TSC deposition, particles contribute to cells neighbouring the one\nthat contains them. For particles that live in the outermost layer of the\ndomain, this means some of their contribution is lost. This behaviour\ncorresponds to the default `'open'` boundary condition, but `gpgi` has builtin\nsupport for more conservative boundary conditions.\n\nBoundary conditions can selected per field, per axis and per side. Builtin\nrecipes all perform linear combinations of ghost layers (same-side and opposite\nside) and active domain layers (same-side and opposite side), and replace the\nsame-side active layer with the result.\n\nUser-selected boundary conditions take the form of an optional argument to\n`Dataset.deposit`, as dictionnary with keys being axes names, and values being\n2-tuples of boundary conditions names (for left and right side respectively).\nFor instance, here's how one would require periodic boundary conditions on all axes:\n\n```python\nds.deposit(\n    \"mass\",\n    method=\"cic\",\n    boundaries={\n        \"x\": (\"periodic\", \"periodic\"),\n        \"y\": (\"periodic\", \"periodic\"),\n    }\n)\n```\nUnspecified axes will use the default `'open'` boundary.\n\n\n#### Builtin recipes\n\n| boundary conditions     | description                                            | conservative ? |\n|-------------------------|--------------------------------------------------------|:--------------:|\n| open (default)          | no special treatment                                   | no             |\n| periodic                | add opposite ghost layer to the active domain          | yes            |\n| wall                    | add same-side ghost layer to the active domain         | yes            |\n| antisymmetric           | substract same-side ghost layer from the active domain | no             |\n\n#### Define custom recipes\n\n`gpgi`'s boundary recipes can be customized. Let's illustrate this feature with a simple example.\nSay we want to fix the value of the deposited field in some outer layer.\nThis is done by defining a new function on the user side:\n\n```python\ndef ones(\n    same_side_active_layer,\n    same_side_ghost_layer,\n    opposite_side_active_layer,\n    opposite_side_ghost_layer,\n    weight_same_side_active_layer,\n    weight_same_side_ghost_layer,\n    weight_opposite_side_active_layer,\n    weight_opposite_side_ghost_layer,\n    side,\n    metadata,\n):\n   return 1.0\n```\nwhere all first eight arguments are `numpy.ndarray` objects with the same shape (which includes ghost padding !),\nto which the return value must be broadcastable, `side` can only be either\n`\"left\"` or `\"right\"`, and `metadata` is the special `Dataset.metadata`\nattribute. Not all arguments need be used in the body of the function, but this\nsignature is required.\n\nThe method must then be registered as a boundary condition recipe as\n```python\nds.boundary_recipes.register(\"ones\", ones)\n```\nwhere the associated key (here `\"ones\"`) is arbitrary. The recipe can now be\nused exactly as builtin ones, and all of them can be mixed arbitrarily.\n```python\nds.deposit(\n    \"mass\",\n    method=\"cic\",\n    boundaries={\n        \"x\": (\"ones\", \"wall\"),\n        \"y\": (\"periodic\", \"periodic\"),\n    }\n)\n```\n\nNote that all first eight arguments in a boundary recipe function should\nrepresent an *extensive* physical quantity (as opposed to *intensive*). When\ndepositing an *intensive* quantity `u`, a weight field `w` should be supplied\n(see next section), in which case, the first four arguments represent `u*w` and\nthe following four represent *w*, so that *u* can still be obtained within the\nfunction as a ratio if needed.\n\n\n\n\n\n\n### Weight fields (Depositing intensive quantities)\n*new in gpgi 0.7.0*\n\nFundamentally, deposition algorithms construct on-grid fields by performing\n*summations*. An implication is that the physical quantities being deposited are\nrequired to be *extensive* (like mass or momentum). *Intensive* quantities (like\nvelocity or temperature) require additional operations, and necessitate the use\nof an additional *weight field*.\n\nThis section provides showcases their *usage*. For a detailled explanation of the deposition algorithm for intensive quantities, see [Deposition algorithm](#deposition-algorithm).\n\nIn order to deposit an *intensive* field (e.g., `vx`), an additional `weight_field` argument must be provided as\n```python\nds.deposit(\n    \"vx\",\n    method=\"cic\",\n    boundaries={\n        \"y\": (\"periodic\", \"periodic\"),\n        \"x\": (\"antisymmetric\", \"antisymmetric\"),\n    },\n    weight_field=\"mass\",\n    weight_field_boundaries={\n        \"y\": (\"periodic\", \"periodic\"),\n        \"x\": (\"open\", \"open\"),\n    },\n)\n```\n\nBoundary recipes may be also associated to the weight field with the\n`weight_field_boundaries` argument. This arguments becomes *required* if\n`boundaries` and `weight_field` are both provided.\n\nCall `help(ds.deposit)` for more detail.\n\n\n\n## Deposition algorithm\n\nThis section provides details on the general deposition algorithm, as\nimplemented in `gpgi`.\n\nWithout loss of generality, we will illustrate how  an *intensive* field (`v`)\nis deposited, since this case requires the most computational steps. As it\nhappens, depositing an *extensive* field (`w`) separately is actually part of\nthe algorithm.\n\n**Definitions**\n\n- `v` is an intensive field that we want to deposit on the grid\n- `w` is an extensive field that will be used as weights\n- `u = v * w` is an extensive equivalent to `v` (conceptually, if `v` is a velocity and `w` is a mass, `u` corresponds to a momentum)\n\n`u(i)`, `v(i)` and `w(i)` are defined for each particle `i`.\n\nWe note `U(x)`, `V(x)` and `W(x)` the corresponding on-grid fields, where `V(x)`\nis the final output of the algorithm. These are defined at grid cell centers\n`x`, within the *active domain*.\n\nLast, we note `U'(x)`, `V'(x)` and `W'(x)` the *raw* deposited fields, meaning\nno special treatment is applied to the outermost layers (boundary conditions).\nThese are defined at grid cell centers, *including one ghost layer* that will be\nused to apply boundary conditions.\n\n**Algorithm**\n\n1) `W'` and `U'` are computed as\n```\nW'(x) = \u03a3 c(i,x) w(i)\nU'(x) = \u03a3 c(i,x) w(i) v(i)\n```\nwhere `c(i,x)` are geometric coefficients associated with the deposition method. Taking the nearest grid point (NGP) method for illustration, `c(i,x) = 1` if particle `i` is contained in the cell whose center is `x`, and `c(i,x) = 0` elsewhere.\n\n2) boundary conditions are applied\n```\nW(x) = W_BCO(W', 1, metadata)\nU(x) = U_BCO(U', W', metadata)\n```\nwhere `W_BCO` and `U_BCO` denote arbitrary boundary condition operators\nassociated with `W` and `U` respectively, and which take 3 arguments,\nrepresenting the field to be transformed, its associated weight field and a\nwildcard `metadata` argument which may contain any additional data relevant to\nthe operator.\n\nNote `1` is used a placeholder \"weight\" for `W`, for symmetry reasons: all boundary condition operators must expose a similar interface, as explained in [Define custom recipes](#define-custom-recipes).\n\n3) Finally, `V(x)` is obtained as\n```\nV(x) = (U/W)(x)\n```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -1682,7 +1681,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16684071,
+        "last_serial": 16744705,
         "urls": [
             {
                 "comment_text": "",
@@ -1954,6 +1953,327 @@
                 "upload_time": "2023-02-03T16:06:39",
                 "upload_time_iso_8601": "2023-02-03T16:06:39.946469Z",
                 "url": "https://files.pythonhosted.org/packages/82/ac/3f1a576e84a4782e7c0e2ba4f3804759979d1b7ce0431e564af7b3f58452/gpgi-0.8.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.9.0": {
+        "info": {
+            "author": "C.M.T. Robert",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+                "Programming Language :: Cython",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3 :: Only"
+            ],
+            "description": "# GPGI\n[![PyPI](https://img.shields.io/pypi/v/gpgi.svg?logo=pypi&logoColor=white&label=PyPI)](https://pypi.org/project/gpgi/)\n[![PyPI](https://img.shields.io/badge/requires-Python%20\u2265%203.8-blue?logo=python&logoColor=white)](https://pypi.org/project/gpgi/)\n[![pre-commit.ci status](https://results.pre-commit.ci/badge/github/neutrinoceros/gpgi/main.svg)](https://results.pre-commit.ci/latest/github/neutrinoceros/gpgi/main)\n[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)\n[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/charliermarsh/ruff/main/assets/badge/v1.json)](https://github.com/charliermarsh/ruff)\n\nA **G**eneric **P**article + **G**rid data **I**nterface\n\nThis small Python library implements fundamental grid deposition algorithms to\nanalyse (rectilinear) grid + particle datasets, with an emphasize on\nperformance. Core algorithms are implemented as Cython extensions.\n\n## Table of Contents\n\n<!-- toc -->\n\n- [Installation](#installation)\n- [Supported applications](#supported-applications)\n  * [Supported deposition methods](#supported-deposition-methods)\n  * [Supported geometries](#supported-geometries)\n- [Time complexity](#time-complexity)\n- [Usage](#usage)\n  * [Supplying arbitrary metadata](#supplying-arbitrary-metadata)\n  * [Boundary conditions](#boundary-conditions)\n    + [Builtin recipes](#builtin-recipes)\n    + [Define custom recipes](#define-custom-recipes)\n  * [Weight fields (Depositing intensive quantities)](#weight-fields-depositing-intensive-quantities)\n- [Deposition algorithm](#deposition-algorithm)\n\n<!-- tocstop -->\n\n## Installation\n\n```shell\npython -m pip install --upgrade pip\npython -m pip install gpgi\n```\n\n## Supported applications\n\nA rectilinear grid is defined as 1D arrays representing cell left edges in each directions. Note that the last point of such an array is interpreted as the right edge of the rightmost cell, so for instance, a 1D grid containing 100 cells is defined by 101 edges.\n\nParticles are defined as points that live within the grid's bounds.\n\nDeposition is the action of going from particle description\nto a grid description of a field.\nIt is useful to analyze, compare and combine simulation data that exists in a combination of the two formalisms.\nThis process is not reversible as it degrades information.\n\nFor instance, here's a simple overlay of a particle set (red dots)\nagainst a background that represents the deposited particle count.\n<p align=\"center\">\n    <img src=\"https://raw.githubusercontent.com/neutrinoceros/gpgi/main/tests/pytest_mpl_baseline/test_2D_deposit_ngp.png\" width=\"600\"></a>\n</p>\n\nThis example illustrates the simplest possible deposition method \"Particle in Cell\", in which each particle contributes only to the cell\nthat contains it.\n\nMore refined methods are also available.\n### Supported deposition methods\n| method name             | abreviated name | order |\n|-------------------------|:---------------:|:-----:|\n| Nearest Grid Point      | NGP             | 0     |\n| Cloud in Cell           | CIC             | 1     |\n| Triangular Shaped Cloud | TSC             | 2     |\n\n### Supported geometries\n| geometry name | axes order                  |\n|---------------|-----------------------------|\n| cartesian     | x, y, z                     |\n| polar         | radius, z, azimuth          |\n| cylindrical   | radius, azimuth, z          |\n| spherical     | radius, colatitude, azimuth |\n| equatorial    | radius, azimuth, latitude   |\n\n## Time complexity\n\nAn important step in perfoming deposition is to associate particle indices to cell indices. This step is called \"particle indexing\".\nIn directions where the grid is uniformly stepped (if any), indexing a particle is an O(1) operation.\nIn the more general case, indexing is performed by bisection, which is a O(log(nx))) operation (where nx represents the number of cells in the direction of interest).\n\n\n## Usage\n\nThe API consists in a `load` function, which returns a `Dataset` object.\n\n**Load** data\n\n```python\nimport numpy as np\nimport gpgi\n\nnx = ny = 64\nnparticles = 600_000\n\nprng = np.random.RandomState(0)\nds = gpgi.load(\n    geometry=\"cartesian\",\n    grid={\n        \"cell_edges\": {\n            \"x\": np.linspace(-1, 1, nx),\n            \"y\": np.linspace(-1, 1, ny),\n        },\n    },\n    particles={\n        \"coordinates\": {\n            \"x\": 2 * (prng.normal(0.5, 0.25, nparticles) % 1 - 0.5),\n            \"y\": 2 * (prng.normal(0.5, 0.25, nparticles) % 1 - 0.5),\n        },\n        \"fields\": {\n            \"mass\": np.ones(nparticles),\n        },\n    },\n)\n```\nThe `Dataset` object holds a `grid` and a `particles` attribute,\nwhich both hold a `fields` attribute for accessing their data.\nBut more importantly, the `Dataset` has a `deposit` method to\ntranslate particle fields to the grid formalism.\n\n**Deposit Particle fields on the grid**\n\n```python\nparticle_mass = ds.deposit(\"mass\", method=\"nearest_grid_point\")  # or \"ngp\" for shorts\n```\n\n**Visualize**\nIn this example we'll use `matplotlib` for rendering, but note that `matplotlib` is not a dependency to `gpgi`\n```python\nimport matplotlib.pyplot as plt\n\nfig, ax = plt.subplots()\nax.set(aspect=1, xlabel=\"x\", ylabel=\"y\")\n\nim = ax.pcolormesh(\n    \"x\",\n    \"y\",\n    particle_mass.T,\n    data=ds.grid.cell_edges,\n    cmap=\"viridis\",\n)\nfig.colorbar(im, ax=ax)\n```\n\n<p align=\"center\">\n    <img src=\"https://raw.githubusercontent.com/neutrinoceros/gpgi/main/tests/pytest_mpl_baseline/test_readme_example.png\" width=\"600\"></a>\n</p>\n\nThe example script given here takes about a second (top to bottom).\n\n\n### Supplying arbitrary metadata\n*new in gpgi 0.4.0*\n\n`Dataset` objects have a special attribute `metadata` which is a dictionary with string keys.\nThis attribute is meant to hold any special metadata that may be relevant for labelling or processing (e.g. simulation time, author, ...).\nMetadata can be supplied at load time as\n```python\nds = gpgi.load(\n    geometry=\"cartesian\",\n    grid=...,\n    particles=...,\n    metadata={\"simulation_time\": 12.5, \"author\": \"Cl\u00e9ment Robert\"}\n)\n```\n\n\n### Boundary conditions\n*new in gpgi 0.5.0*\n\nWith CIC and TSC deposition, particles contribute to cells neighbouring the one\nthat contains them. For particles that live in the outermost layer of the\ndomain, this means some of their contribution is lost. This behaviour\ncorresponds to the default `'open'` boundary condition, but `gpgi` has builtin\nsupport for more conservative boundary conditions.\n\nBoundary conditions can selected per field, per axis and per side. Builtin\nrecipes all perform linear combinations of ghost layers (same-side and opposite\nside) and active domain layers (same-side and opposite side), and replace the\nsame-side active layer with the result.\n\nUser-selected boundary conditions take the form of an optional argument to\n`Dataset.deposit`, as dictionnary with keys being axes names, and values being\n2-tuples of boundary conditions names (for left and right side respectively).\nFor instance, here's how one would require periodic boundary conditions on all axes:\n\n```python\nds.deposit(\n    \"mass\",\n    method=\"cic\",\n    boundaries={\n        \"x\": (\"periodic\", \"periodic\"),\n        \"y\": (\"periodic\", \"periodic\"),\n    }\n)\n```\nUnspecified axes will use the default `'open'` boundary.\n\n\n#### Builtin recipes\n\n| boundary conditions     | description                                            | conservative ? |\n|-------------------------|--------------------------------------------------------|:--------------:|\n| open (default)          | no special treatment                                   | no             |\n| periodic                | add opposite ghost layer to the active domain          | yes            |\n| wall                    | add same-side ghost layer to the active domain         | yes            |\n| antisymmetric           | substract same-side ghost layer from the active domain | no             |\n\n#### Define custom recipes\n\n`gpgi`'s boundary recipes can be customized. Let's illustrate this feature with a simple example.\nSay we want to fix the value of the deposited field in some outer layer.\nThis is done by defining a new function on the user side:\n\n```python\ndef ones(\n    same_side_active_layer,\n    same_side_ghost_layer,\n    opposite_side_active_layer,\n    opposite_side_ghost_layer,\n    weight_same_side_active_layer,\n    weight_same_side_ghost_layer,\n    weight_opposite_side_active_layer,\n    weight_opposite_side_ghost_layer,\n    side,\n    metadata,\n):\n   return 1.0\n```\nwhere all first eight arguments are `numpy.ndarray` objects with the same shape (which includes ghost padding !),\nto which the return value must be broadcastable, `side` can only be either\n`\"left\"` or `\"right\"`, and `metadata` is the special `Dataset.metadata`\nattribute. Not all arguments need be used in the body of the function, but this\nsignature is required.\n\nThe method must then be registered as a boundary condition recipe as\n```python\nds.boundary_recipes.register(\"ones\", ones)\n```\nwhere the associated key (here `\"ones\"`) is arbitrary. The recipe can now be\nused exactly as builtin ones, and all of them can be mixed arbitrarily.\n```python\nds.deposit(\n    \"mass\",\n    method=\"cic\",\n    boundaries={\n        \"x\": (\"ones\", \"wall\"),\n        \"y\": (\"periodic\", \"periodic\"),\n    }\n)\n```\n\nNote that all first eight arguments in a boundary recipe function should\nrepresent an *extensive* physical quantity (as opposed to *intensive*). When\ndepositing an *intensive* quantity `u`, a weight field `w` should be supplied\n(see next section), in which case, the first four arguments represent `u*w` and\nthe following four represent *w*, so that *u* can still be obtained within the\nfunction as a ratio if needed.\n\n\n\n\n\n\n### Weight fields (Depositing intensive quantities)\n*new in gpgi 0.7.0*\n\nFundamentally, deposition algorithms construct on-grid fields by performing\n*summations*. An implication is that the physical quantities being deposited are\nrequired to be *extensive* (like mass or momentum). *Intensive* quantities (like\nvelocity or temperature) require additional operations, and necessitate the use\nof an additional *weight field*.\n\nThis section provides showcases their *usage*. For a detailled explanation of the deposition algorithm for intensive quantities, see [Deposition algorithm](#deposition-algorithm).\n\nIn order to deposit an *intensive* field (e.g., `vx`), an additional `weight_field` argument must be provided as\n```python\nds.deposit(\n    \"vx\",\n    method=\"cic\",\n    boundaries={\n        \"y\": (\"periodic\", \"periodic\"),\n        \"x\": (\"antisymmetric\", \"antisymmetric\"),\n    },\n    weight_field=\"mass\",\n    weight_field_boundaries={\n        \"y\": (\"periodic\", \"periodic\"),\n        \"x\": (\"open\", \"open\"),\n    },\n)\n```\n\nBoundary recipes may be also associated to the weight field with the\n`weight_field_boundaries` argument. This arguments becomes *required* if\n`boundaries` and `weight_field` are both provided.\n\nCall `help(ds.deposit)` for more detail.\n\n\n\n## Deposition algorithm\n\nThis section provides details on the general deposition algorithm, as\nimplemented in `gpgi`.\n\nWithout loss of generality, we will illustrate how  an *intensive* field (`v`)\nis deposited, since this case requires the most computational steps. As it\nhappens, depositing an *extensive* field (`w`) separately is actually part of\nthe algorithm.\n\n**Definitions**\n\n- `v` is an intensive field that we want to deposit on the grid\n- `w` is an extensive field that will be used as weights\n- `u = v * w` is an extensive equivalent to `v` (conceptually, if `v` is a velocity and `w` is a mass, `u` corresponds to a momentum)\n\n`u(i)`, `v(i)` and `w(i)` are defined for each particle `i`.\n\nWe note `U(x)`, `V(x)` and `W(x)` the corresponding on-grid fields, where `V(x)`\nis the final output of the algorithm. These are defined at grid cell centers\n`x`, within the *active domain*.\n\nLast, we note `U'(x)`, `V'(x)` and `W'(x)` the *raw* deposited fields, meaning\nno special treatment is applied to the outermost layers (boundary conditions).\nThese are defined at grid cell centers, *including one ghost layer* that will be\nused to apply boundary conditions.\n\n**Algorithm**\n\n1) `W'` and `U'` are computed as\n```\nW'(x) = \u03a3 c(i,x) w(i)\nU'(x) = \u03a3 c(i,x) w(i) v(i)\n```\nwhere `c(i,x)` are geometric coefficients associated with the deposition method. Taking the nearest grid point (NGP) method for illustration, `c(i,x) = 1` if particle `i` is contained in the cell whose center is `x`, and `c(i,x) = 0` elsewhere.\n\n2) boundary conditions are applied\n```\nW(x) = W_BCO(W', 1, metadata)\nU(x) = U_BCO(U', W', metadata)\n```\nwhere `W_BCO` and `U_BCO` denote arbitrary boundary condition operators\nassociated with `W` and `U` respectively, and which take 3 arguments,\nrepresenting the field to be transformed, its associated weight field and a\nwildcard `metadata` argument which may contain any additional data relevant to\nthe operator.\n\nNote `1` is used a placeholder \"weight\" for `W`, for symmetry reasons: all boundary condition operators must expose a similar interface, as explained in [Define custom recipes](#define-custom-recipes).\n\n3) Finally, `V(x)` is obtained as\n```\nV(x) = (U/W)(x)\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "GPL-3.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "gpgi",
+            "package_url": "https://pypi.org/project/gpgi/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/gpgi/",
+            "project_urls": {
+                "Homepage": "https://github.com/neutrinoceros/gpgi"
+            },
+            "release_url": "https://pypi.org/project/gpgi/0.9.0/",
+            "requires_dist": [
+                "numpy (>=1.18)"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "A Generic Particle+Grid Interface",
+            "version": "0.9.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16744705,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5985fc1616d435c014c0aabf7702f6e6edb31d35a68d0f3a08a53a8324d37fc5",
+                    "md5": "a8bd2a8ad7480af975fe14f4cea47ca2",
+                    "sha256": "4587a4152cbaf33649d64eb7407e09cd386faa6be690ecee9ee0beb25488eacc"
+                },
+                "downloads": -1,
+                "filename": "gpgi-0.9.0-cp310-cp310-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "a8bd2a8ad7480af975fe14f4cea47ca2",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.8",
+                "size": 244979,
+                "upload_time": "2023-02-08T10:34:15",
+                "upload_time_iso_8601": "2023-02-08T10:34:15.623975Z",
+                "url": "https://files.pythonhosted.org/packages/59/85/fc1616d435c014c0aabf7702f6e6edb31d35a68d0f3a08a53a8324d37fc5/gpgi-0.9.0-cp310-cp310-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "bdddc5e8b29821d4c05d78846ad7c1de748921f74956b6ed666dfa8883af9c91",
+                    "md5": "17663ba594a3c304de9938c2dcc24c84",
+                    "sha256": "b3f776419a6218a70199943d49563707d9d8b1be037832a3f8c986e265c898a2"
+                },
+                "downloads": -1,
+                "filename": "gpgi-0.9.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "17663ba594a3c304de9938c2dcc24c84",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.8",
+                "size": 1250636,
+                "upload_time": "2023-02-08T10:34:16",
+                "upload_time_iso_8601": "2023-02-08T10:34:16.950087Z",
+                "url": "https://files.pythonhosted.org/packages/bd/dd/c5e8b29821d4c05d78846ad7c1de748921f74956b6ed666dfa8883af9c91/gpgi-0.9.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "72b7534659c8b3bff75c380aaf869243bd892859a24fd1222ad4cde72de027eb",
+                    "md5": "1fb517a5652210f55ef8742fa10b8bc8",
+                    "sha256": "c313b75585f7461d68c119828f2c9a5593fad7afd01af1b93ffd6a49a931d8bb"
+                },
+                "downloads": -1,
+                "filename": "gpgi-0.9.0-cp310-cp310-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "1fb517a5652210f55ef8742fa10b8bc8",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.8",
+                "size": 205345,
+                "upload_time": "2023-02-08T10:34:18",
+                "upload_time_iso_8601": "2023-02-08T10:34:18.501203Z",
+                "url": "https://files.pythonhosted.org/packages/72/b7/534659c8b3bff75c380aaf869243bd892859a24fd1222ad4cde72de027eb/gpgi-0.9.0-cp310-cp310-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ffbd552ce5681a9b0ea869bd9114127ad6de7ba8f6f6e3c3dc40bbf9ad585f34",
+                    "md5": "a3652d110a1e5e8830b256b9362bb6ea",
+                    "sha256": "cae104a02c0343db8535ba022bfcda078b8d1ff44d253c49bfdab45c46539fe5"
+                },
+                "downloads": -1,
+                "filename": "gpgi-0.9.0-cp311-cp311-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "a3652d110a1e5e8830b256b9362bb6ea",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.8",
+                "size": 241093,
+                "upload_time": "2023-02-08T10:34:19",
+                "upload_time_iso_8601": "2023-02-08T10:34:19.621409Z",
+                "url": "https://files.pythonhosted.org/packages/ff/bd/552ce5681a9b0ea869bd9114127ad6de7ba8f6f6e3c3dc40bbf9ad585f34/gpgi-0.9.0-cp311-cp311-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e899f9f34fa076eba3492f6e70ae9c390cf806516c0f65f715ac80bbbc385fb5",
+                    "md5": "20eb1be283b9b160a3f0b9fded995045",
+                    "sha256": "b347d7c8cec23ef47e577dc7492a89fb728513b322b55d28209e689eef32b055"
+                },
+                "downloads": -1,
+                "filename": "gpgi-0.9.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "20eb1be283b9b160a3f0b9fded995045",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.8",
+                "size": 1310214,
+                "upload_time": "2023-02-08T10:34:20",
+                "upload_time_iso_8601": "2023-02-08T10:34:20.725097Z",
+                "url": "https://files.pythonhosted.org/packages/e8/99/f9f34fa076eba3492f6e70ae9c390cf806516c0f65f715ac80bbbc385fb5/gpgi-0.9.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "fe19304930ccc767bea8a22b324bf7f526b5e55c6537e28cf453944737858abb",
+                    "md5": "7ace9e3c74d704f8e4f13db66fb0d16d",
+                    "sha256": "dc05808944c2f5cbc27f88b08b3f91e64f0d65e8baefa7a3d2623f0a723fc69d"
+                },
+                "downloads": -1,
+                "filename": "gpgi-0.9.0-cp311-cp311-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "7ace9e3c74d704f8e4f13db66fb0d16d",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.8",
+                "size": 203429,
+                "upload_time": "2023-02-08T10:34:22",
+                "upload_time_iso_8601": "2023-02-08T10:34:22.571931Z",
+                "url": "https://files.pythonhosted.org/packages/fe/19/304930ccc767bea8a22b324bf7f526b5e55c6537e28cf453944737858abb/gpgi-0.9.0-cp311-cp311-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2c8d4d41139725a0e1bf9fd5e0b149e295e2830567ff0c621be0f7f8b3c1627a",
+                    "md5": "0d253c0f99e5bd8273701c08d35fb9e7",
+                    "sha256": "e346f0374006ad3d0a3736f4cf0b155e363a7d3863266411867a6bbe255c5f78"
+                },
+                "downloads": -1,
+                "filename": "gpgi-0.9.0-cp38-cp38-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "0d253c0f99e5bd8273701c08d35fb9e7",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.8",
+                "size": 240486,
+                "upload_time": "2023-02-08T10:34:23",
+                "upload_time_iso_8601": "2023-02-08T10:34:23.911259Z",
+                "url": "https://files.pythonhosted.org/packages/2c/8d/4d41139725a0e1bf9fd5e0b149e295e2830567ff0c621be0f7f8b3c1627a/gpgi-0.9.0-cp38-cp38-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "efe0bcf361dcc600f92a0556ac0bf8e376f6b02c2be2a7f18e2eff2de204fbd1",
+                    "md5": "4c2d34991a97070ced83e7a483e3afe4",
+                    "sha256": "d552bce4f324cb942af906492351947453ec6e862adeab0b11af7ae5b21272e1"
+                },
+                "downloads": -1,
+                "filename": "gpgi-0.9.0-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "4c2d34991a97070ced83e7a483e3afe4",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.8",
+                "size": 1310524,
+                "upload_time": "2023-02-08T10:34:25",
+                "upload_time_iso_8601": "2023-02-08T10:34:25.515955Z",
+                "url": "https://files.pythonhosted.org/packages/ef/e0/bcf361dcc600f92a0556ac0bf8e376f6b02c2be2a7f18e2eff2de204fbd1/gpgi-0.9.0-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f5143610c5b3436f07abdb9f275992f12a8c00a88e13d64c708654ab17e216a5",
+                    "md5": "f2282e7babe7a92bd0753e5015b7563b",
+                    "sha256": "8199fa736428d38fcfec2b45e160ac2e5fa4ca36af7ac59a050bfb47a43fd7de"
+                },
+                "downloads": -1,
+                "filename": "gpgi-0.9.0-cp38-cp38-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "f2282e7babe7a92bd0753e5015b7563b",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.8",
+                "size": 207401,
+                "upload_time": "2023-02-08T10:34:27",
+                "upload_time_iso_8601": "2023-02-08T10:34:27.250978Z",
+                "url": "https://files.pythonhosted.org/packages/f5/14/3610c5b3436f07abdb9f275992f12a8c00a88e13d64c708654ab17e216a5/gpgi-0.9.0-cp38-cp38-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f3f3511e2b971d1bec92ebfa48852f7ac61ae735aee3e1ecfa866cb7df9617d7",
+                    "md5": "44b8bfed7346618ace01ed18aea895e7",
+                    "sha256": "cddb09d5ea592e043d2ddcca341aaabe1e08bcc54c976d02bb9d4a9a9a178122"
+                },
+                "downloads": -1,
+                "filename": "gpgi-0.9.0-cp39-cp39-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "44b8bfed7346618ace01ed18aea895e7",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.8",
+                "size": 243519,
+                "upload_time": "2023-02-08T10:34:28",
+                "upload_time_iso_8601": "2023-02-08T10:34:28.458154Z",
+                "url": "https://files.pythonhosted.org/packages/f3/f3/511e2b971d1bec92ebfa48852f7ac61ae735aee3e1ecfa866cb7df9617d7/gpgi-0.9.0-cp39-cp39-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "22adffb26415109ffd5021972741376d316b7e6f9d4143fb1985553d3d35f9b0",
+                    "md5": "15666c65b8e1282ae9bf2c998b2537c0",
+                    "sha256": "f127c1e35f54b04e1085268e262bdc7c7cda2fbe57755afdf32dd01e00b0d188"
+                },
+                "downloads": -1,
+                "filename": "gpgi-0.9.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "15666c65b8e1282ae9bf2c998b2537c0",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.8",
+                "size": 1284230,
+                "upload_time": "2023-02-08T10:34:29",
+                "upload_time_iso_8601": "2023-02-08T10:34:29.715379Z",
+                "url": "https://files.pythonhosted.org/packages/22/ad/ffb26415109ffd5021972741376d316b7e6f9d4143fb1985553d3d35f9b0/gpgi-0.9.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "87676aa11259496ab7e30464b83514061ffeff3a23fff2684aee83572e6b159e",
+                    "md5": "1052826814c677f2383d1edc8e41f8bc",
+                    "sha256": "3787258f6b0ebb60ef954dff9805783e116f79f80f05a27874c71200a1503e82"
+                },
+                "downloads": -1,
+                "filename": "gpgi-0.9.0-cp39-cp39-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "1052826814c677f2383d1edc8e41f8bc",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.8",
+                "size": 207023,
+                "upload_time": "2023-02-08T10:34:31",
+                "upload_time_iso_8601": "2023-02-08T10:34:31.576325Z",
+                "url": "https://files.pythonhosted.org/packages/87/67/6aa11259496ab7e30464b83514061ffeff3a23fff2684aee83572e6b159e/gpgi-0.9.0-cp39-cp39-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "29b93370a5b0452ffc05508351fcc1ddca65ccfd476c70d3c6d6320a14277c75",
+                    "md5": "1b7fa2804b9937c6d43933373bb6513f",
+                    "sha256": "53853ff3f200687d4a5b7959a22311cf75b8b7d9e7734093bdbf322a43c9a4f8"
+                },
+                "downloads": -1,
+                "filename": "gpgi-0.9.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "1b7fa2804b9937c6d43933373bb6513f",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 352082,
+                "upload_time": "2023-02-08T10:34:32",
+                "upload_time_iso_8601": "2023-02-08T10:34:32.759478Z",
+                "url": "https://files.pythonhosted.org/packages/29/b9/3370a5b0452ffc05508351fcc1ddca65ccfd476c70d3c6d6320a14277c75/gpgi-0.9.0.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
