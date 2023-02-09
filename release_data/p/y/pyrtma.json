@@ -38,7 +38,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16380045,
+        "last_serial": 16750638,
         "urls": [
             {
                 "comment_text": "",
@@ -124,7 +124,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16380045,
+        "last_serial": 16750638,
         "urls": [
             {
                 "comment_text": "",
@@ -210,7 +210,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16380045,
+        "last_serial": 16750638,
         "urls": [
             {
                 "comment_text": "",
@@ -267,7 +267,6 @@
                 "Operating System :: OS Independent",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "# pyrtma [![Python package](https://github.com/pitt-rnel/pyrtma/actions/workflows/python-package.yml/badge.svg)](https://github.com/pitt-rnel/pyrtma/actions/workflows/python-package.yml)\r\n\r\nRTMA/Dragonfly client written in python with no external dependencies. Based on and compatible with [Dragonfly Messaging](https://github.com/pitt-rnel/rnel_dragonfly)\r\n\r\n## Installation\r\n\r\npyrtma is [available on PyPI](https://pypi.org/project/pyrtma/)\r\n```shell\r\n$ pip install pyrtma\r\n```\r\n\r\n## Usage\r\n\r\n### Launch Manager\r\n\r\n```shell\r\n$ python -m pyrtma.manager -a \"127.0.0.1\"\r\n```\r\n\r\n### Create a message in message.h\r\n\r\nThe recommended way of creating messages is to define them in a C header file (.h file).\r\n\r\n```c\r\n// message.h\r\n\r\n// Module IDs\r\n#define MID_PERSON_PUBLISHER 112\r\n#define MID_PERSON_SUBSCRIBER 113\r\n\r\n// Message IDs\r\n#define MT_PERSON_MESSAGE 1234\r\n#define MT_ANOTHER_EXAMPLE 5678\r\n\r\n// We can define other constants as well\r\n#define STR_SIZE 32 \r\n\r\n\r\n// Message definitions\r\ntypedef struct {\r\n\tchar name[STR_SIZE];\r\n\tint age;\r\n} MDF_PERSON_MESSAGE;\r\n\r\ntypedef struct {\r\n\tchar value_str[STR_SIZE];\r\n\tint value_int;\r\n    float value_float;\r\n    double value_double\r\n} MDF_ANOTHER_EXAMPLE;\r\n```\r\n\r\nRun the following command to compile the header file into Python types and files. This will output a message.py file.\r\n\r\n```shell\r\n$ python -m pyrtma.compile -i message.h -o message.py\r\n```\r\n\r\n```python\r\n# message.py\r\nimport ctypes\r\nimport pyrtma\r\nfrom pyrtma.constants import *\r\n\r\n# User Constants: message.h\r\nSTR_SIZE = 32\r\n\r\n# User Message IDs: message.h\r\nMT_PERSON_MESSAGE = 1234\r\nMT_ANOTHER_EXAMPLE = 5678\r\n\r\n# User Module IDs: message.h\r\nMID_PERSON_PUBLISHER = 112\r\nMID_PERSON_SUBSCRIBER = 113\r\n\r\n# User Type Definitions: message.h\r\n# User Message Definitions: message.h\r\n\r\n\r\n@pyrtma.msg_def\r\nclass MDF_PERSON_MESSAGE(pyrtma.MessageData):\r\n    _pack_ = True\r\n    _fields_ = [\r\n        (\"name\", ctypes.c_char * STR_SIZE),\r\n        (\"age\", ctypes.c_long)\r\n    ]\r\n    type_id = MT_PERSON_MESSAGE\r\n    type_name = \"PERSON_MESSAGE\"\r\n\r\n\r\n\r\n@pyrtma.msg_def\r\nclass MDF_ANOTHER_EXAMPLE(pyrtma.MessageData):\r\n    _pack_ = True\r\n    _fields_ = [\r\n        (\"value_str\", ctypes.c_char * STR_SIZE),\r\n        (\"value_int\", ctypes.c_long),\r\n        (\"value_float\", ctypes.c_float),\r\n        (\"value_double\", ctypes.c_double)\r\n    ]\r\n    type_id = MT_ANOTHER_EXAMPLE\r\n    type_name = \"ANOTHER_EXAMPLE\"\r\n```\r\n*Note: Messages can also be defined in a Python file without the compile step*\r\n\r\n### Create a publisher module in publisher.py\r\n```python\r\n# publisher.py\r\nimport message\r\nimport pyrtma\r\nimport time\r\n\r\nmod = pyrtma.Client(module_id=message.MID_PERSON_PUBLISHER)\r\n\r\n# Connect to the manager\r\nmod.connect(server_name=\"127.0.0.1:7111\")\r\n\r\n# Create an instance of the person message and populate with data\r\nmsg = message.MDF_PERSON_MESSAGE()\r\nmsg.name = \"Alice\"  # str gets converted to c_char\r\nmsg.age = 42\r\n\r\n# Send the person message every second\r\nwhile True:\r\n    print(\"Sending message\")\r\n    mod.send_message(msg)\r\n    time.sleep(1)\r\n```\r\n\r\n### Create a subscriber module in subscriber.py\r\n\r\n```python\r\n# subscriber.py\r\nimport message\r\nimport pyrtma\r\n\r\n# Keeping module_id blank makes Manager dynamically create a module id.\r\n# This is default behavior.\r\nmod = pyrtma.Client()\r\n\r\n# Connect to the manager\r\nmod.connect(server_name=\"127.0.0.1:7111\")\r\n\r\n# Subscribe to the person message and pyrtma's exit message (when manager is closed)\r\nmod.subscribe([message.MT_PERSON_MESSAGE, pyrtma.MT_EXIT])\r\n\r\nwhile True:\r\n    try:\r\n        # Read a message. We can specify a time. -1 means it will block until\r\n        # a message is received\r\n        msg = mod.read_message(timeout=-1)\r\n        if msg is not None:\r\n\r\n            # Find out what kind of message we received\r\n            # We can check the message id\r\n            if msg.type_id == message.MDF_PERSON_MESSAGE.type_id:\r\n                name = msg.data.name  # c_char get converted to str\r\n                age = msg.data.age\r\n                print(f\"Hello my name is {name} and I am {age} years old\")\r\n\r\n            # Or we can check the message name\r\n            elif msg.name == \"EXIT\":\r\n                print(\"Goodbye.\")\r\n                break\r\n\r\n    except KeyboardInterrupt:\r\n        break\r\n```\r\n\r\n### Launch the publisher\r\n```shell\r\n$ python publisher.py\r\n```\r\n\r\n### Launch the subscriber\r\nYou should see the message 'Hello my name is Alice and I am 42 years old' print in your shell\r\n```shell\r\n$ python subscriber.py\r\n```\r\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -297,7 +296,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16380045,
+        "last_serial": 16750638,
         "urls": [
             {
                 "comment_text": "",
@@ -338,6 +337,93 @@
                 "upload_time": "2023-01-10T20:48:55",
                 "upload_time_iso_8601": "2023-01-10T20:48:55.298704Z",
                 "url": "https://files.pythonhosted.org/packages/d5/f8/b50cd5656fda9309e49572d5cd19fa82c2853e95e7d1301427776086893f/pyrtma-1.2.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.2.1": {
+        "info": {
+            "author": "",
+            "author_email": "David Weir <dmw109@pitt.edu>, Jeff Weiss <jmw182@pitt.edu>, Tyler Madonna <tjm159@pitt.edu>, Tyler Simpson <tws21@pitt.edu>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# pyrtma [![Python package](https://github.com/pitt-rnel/pyrtma/actions/workflows/python-package.yml/badge.svg)](https://github.com/pitt-rnel/pyrtma/actions/workflows/python-package.yml)\n\nRTMA/Dragonfly client written in python with no external dependencies. Based on and compatible with [Dragonfly Messaging](https://github.com/pitt-rnel/rnel_dragonfly)\n\n## Installation\n\npyrtma is [available on PyPI](https://pypi.org/project/pyrtma/)\n```shell\n$ pip install pyrtma\n```\n\n## Usage\n\n### Launch Manager\n\n```shell\n$ python -m pyrtma.manager -a \"127.0.0.1\"\n```\n\n### Create a message in message.h\n\nThe recommended way of creating messages is to define them in a C header file (.h file).\n\n```c\n// message.h\n\n// Module IDs\n#define MID_PERSON_PUBLISHER 112\n#define MID_PERSON_SUBSCRIBER 113\n\n// Message IDs\n#define MT_PERSON_MESSAGE 1234\n#define MT_ANOTHER_EXAMPLE 5678\n\n// We can define other constants as well\n#define STR_SIZE 32 \n\n\n// Message definitions\ntypedef struct {\n\tchar name[STR_SIZE];\n\tint age;\n} MDF_PERSON_MESSAGE;\n\ntypedef struct {\n\tchar value_str[STR_SIZE];\n\tint value_int;\n    float value_float;\n    double value_double\n} MDF_ANOTHER_EXAMPLE;\n```\n\nRun the following command to compile the header file into Python types and files. This will output a message.py file.\n\n```shell\n$ python -m pyrtma.compile -i message.h -o message.py\n```\n\n```python\n# message.py\nimport ctypes\nimport pyrtma\nfrom pyrtma.constants import *\n\n# User Constants: message.h\nSTR_SIZE = 32\n\n# User Message IDs: message.h\nMT_PERSON_MESSAGE = 1234\nMT_ANOTHER_EXAMPLE = 5678\n\n# User Module IDs: message.h\nMID_PERSON_PUBLISHER = 112\nMID_PERSON_SUBSCRIBER = 113\n\n# User Type Definitions: message.h\n# User Message Definitions: message.h\n\n\n@pyrtma.msg_def\nclass MDF_PERSON_MESSAGE(pyrtma.MessageData):\n    _pack_ = True\n    _fields_ = [\n        (\"name\", ctypes.c_char * STR_SIZE),\n        (\"age\", ctypes.c_long)\n    ]\n    type_id = MT_PERSON_MESSAGE\n    type_name = \"PERSON_MESSAGE\"\n\n\n\n@pyrtma.msg_def\nclass MDF_ANOTHER_EXAMPLE(pyrtma.MessageData):\n    _pack_ = True\n    _fields_ = [\n        (\"value_str\", ctypes.c_char * STR_SIZE),\n        (\"value_int\", ctypes.c_long),\n        (\"value_float\", ctypes.c_float),\n        (\"value_double\", ctypes.c_double)\n    ]\n    type_id = MT_ANOTHER_EXAMPLE\n    type_name = \"ANOTHER_EXAMPLE\"\n```\n*Note: Messages can also be defined in a Python file without the compile step*\n\n### Create a publisher module in publisher.py\n```python\n# publisher.py\nimport message\nimport pyrtma\nimport time\n\nmod = pyrtma.Client(module_id=message.MID_PERSON_PUBLISHER)\n\n# Connect to the manager\nmod.connect(server_name=\"127.0.0.1:7111\")\n\n# Create an instance of the person message and populate with data\nmsg = message.MDF_PERSON_MESSAGE()\nmsg.name = \"Alice\"  # str gets converted to c_char\nmsg.age = 42\n\n# Send the person message every second\nwhile True:\n    print(\"Sending message\")\n    mod.send_message(msg)\n    time.sleep(1)\n```\n\n### Create a subscriber module in subscriber.py\n\n```python\n# subscriber.py\nimport message\nimport pyrtma\n\n# Keeping module_id blank makes Manager dynamically create a module id.\n# This is default behavior.\nmod = pyrtma.Client()\n\n# Connect to the manager\nmod.connect(server_name=\"127.0.0.1:7111\")\n\n# Subscribe to the person message and pyrtma's exit message (when manager is closed)\nmod.subscribe([message.MT_PERSON_MESSAGE, pyrtma.MT_EXIT])\n\nwhile True:\n    try:\n        # Read a message. We can specify a time. -1 means it will block until\n        # a message is received\n        msg = mod.read_message(timeout=-1)\n        if msg is not None:\n\n            # Find out what kind of message we received\n            # We can check the message id\n            if msg.type_id == message.MDF_PERSON_MESSAGE.type_id:\n                name = msg.data.name  # c_char get converted to str\n                age = msg.data.age\n                print(f\"Hello my name is {name} and I am {age} years old\")\n\n            # Or we can check the message name\n            elif msg.name == \"EXIT\":\n                print(\"Goodbye.\")\n                break\n\n    except KeyboardInterrupt:\n        break\n```\n\n### Launch the publisher\n```shell\n$ python publisher.py\n```\n\n### Launch the subscriber\nYou should see the message 'Hello my name is Alice and I am 42 years old' print in your shell\n```shell\n$ python subscriber.py\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "pyrtma",
+            "package_url": "https://pypi.org/project/pyrtma/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/pyrtma/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/pitt-rnel/pyrtma/issues",
+                "Homepage": "https://github.com/pitt-rnel/pyrtma"
+            },
+            "release_url": "https://pypi.org/project/pyrtma/1.2.1/",
+            "requires_dist": null,
+            "requires_python": ">=3.7",
+            "summary": "A Python client for RTMA/Dragonfly",
+            "version": "1.2.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16750638,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "37278e6bee4db33d6926ae8001978d865af80e682280f3af9c2b163cad8d98a7",
+                    "md5": "3d5b4f6d666a2df597fb4880d29ad2b8",
+                    "sha256": "076eb5fc3ac03497a8fc505eed6fb73e1cec2b578bc8a22acfec48d80cbd9834"
+                },
+                "downloads": -1,
+                "filename": "pyrtma-1.2.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "3d5b4f6d666a2df597fb4880d29ad2b8",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 18338,
+                "upload_time": "2023-02-08T16:54:04",
+                "upload_time_iso_8601": "2023-02-08T16:54:04.485736Z",
+                "url": "https://files.pythonhosted.org/packages/37/27/8e6bee4db33d6926ae8001978d865af80e682280f3af9c2b163cad8d98a7/pyrtma-1.2.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6b4041d0fa3529afeef8e897bc1660bea2d9dccf8f46ad3f48bce21cde26593f",
+                    "md5": "ec62925822986ff9d99bd5671230a9c5",
+                    "sha256": "263850036b6dff836c646a33d426341a27902b7de04890c966d53493e3348d65"
+                },
+                "downloads": -1,
+                "filename": "pyrtma-1.2.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "ec62925822986ff9d99bd5671230a9c5",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 19594,
+                "upload_time": "2023-02-08T16:54:05",
+                "upload_time_iso_8601": "2023-02-08T16:54:05.836064Z",
+                "url": "https://files.pythonhosted.org/packages/6b/40/41d0fa3529afeef8e897bc1660bea2d9dccf8f46ad3f48bce21cde26593f/pyrtma-1.2.1.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

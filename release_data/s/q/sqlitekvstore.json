@@ -1,0 +1,86 @@
+{
+    "0.2.1": {
+        "info": {
+            "author": null,
+            "author_email": "Rhet Turnbull <rturnbull+git@gmail.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License"
+            ],
+            "description": "# Sqlite Key Value Store\n\nThis is a simple key value store backed by sqlite. It is intended for cases where you need to persistently store small amounts of data. All code is dependency free and contained in a single file.  100% test coverage and 100% mypy type checking.\n\n## Rationale\n\nI write a lot python command line utilities, some of which need to persistently store data, for example, to resume a previous operation. After experimenting with different solutions, such as plain JSON, I've found that sqlite offers an optimal mix of performance, portability, and ease of use. However, I got tired of writing the same boilerplate code over and over to create and use a simple sqlite database hence this package. There are a [number of other python sqlite key value stores](https://github.com/search?l=Python&q=sqlite+key+value&type=Repositories) out there, but none of them were exactly what I was looking for so I rolled my own.\n\n## Other Solutions\n\nIf you need a simple key value store, consider the [dbm](https://docs.python.org/3/library/dbm.html) or [shelve](https://docs.python.org/3/library/shelve.html) packages which are part of the Python standard library.  If you need a more full featured solution, consider [diskcache](https://github.com/grantjenks/python-diskcache) which is a high-performance disk-backed cache.\n\n## Installation\n\n### PyPI\n\n```bash\npip install sqlitekvstore\n```\n\n### Manual\n\nAll the code is contained in a single file, `sqlitekvstore.py` which you can copy to your project.  Alternatively, you can copy it to your python path and import it.\n\n## Usage\n\n### Basic Usage\n\n```pycon\n>>> from sqlitekvstore import SQLiteKVStore\n>>> kv = SQLiteKVStore(\"data.db\")\n>>> kv.set(\"foo\", \"bar\")\n>>> kv.get(\"foo\")\n'bar'\n>>> len(kv)\n1\n>>> \"foo\" in kv\nTrue\n>>> \"baz\" in kv\nFalse\n>>> kv.delete(\"foo\")\n>>> kv.get(\"foo\")\n>>> kv.close()\n>>>\n```\n\n### Context Manager\n\nYou can use SQLiteKVStore as a context manager to automatically close the database when you're done with it. If you don't do this, you'll need to call `close()` yourself.\n\n```pycon\n>>> from sqlitekvstore import SQLiteKVStore\n>>> with SQLiteKVStore(\"data.db\") as kv:\n...     kv.set(\"foo\", \"bar\")\n...     assert kv.get(\"foo\") == \"bar\"\n...\n>>>\n```\n\n### Dictionary Interface\n\nSQLiteKVStore supports the standard dictionary interface.\n\n```pycon\n>>> from sqlitekvstore import SQLiteKVStore\n>>> kv = SQLiteKVStore(\"data.db\")\n>>> kv[\"foo\"] = \"bar\"\n>>> kv[\"foo\"]\n'bar'\n>>> kv[\"qux\"] = \"baz\"\n>>> for k in kv:\n...     print(k, kv[k])\n...\nfoo bar\nqux baz\n>>> for k in kv.keys():\n...     print(k)\n...\nfoo\nqux\n>>> for v in kv.values():\n...     print(v)\n...\nbar\nbaz\n>>> for k, v in kv.items():\n...     print(k, v)\n...\nfoo bar\nqux baz\n>>> del kv[\"foo\"]\n>>> kv.pop(\"qux\")\n'baz'\n>>>\n```\n\n### Default Values\n\nYou can provide a default value to `get()` to return if the key doesn't exist. Note that this does not create the key in the database.\n\n```pycon\n>>> from sqlitekvstore import SQLiteKVStore\n>>> kv = SQLiteKVStore(\"data.db\")\n>>> kv.set(\"foo\", \"bar\")\n>>> kv.get(\"foo\")\n'bar'\n>>> kv.get(\"FOO\")\n>>> kv.get(\"FOO\", \"BAR\")\n'BAR'\n>>> kv.get(\"FOO\")\n>>>\n```\n\n### Custom Value Types\n\nKeys must be a type supported by sqlite (strings, bytes, integers, or floats). Values can be any type as long as you provide a serializer/deserializer function that converts your values to an appropriate type. Here's an example using JSON:\n\n```pycon\n>>> from sqlitekvstore import SQLiteKVStore\n>>> import json\n>>> kv = SQLiteKVStore(\"data.db\", serialize=json.dumps, deserialize=json.loads)\n>>> kv[\"foo\"] = {\"bax\": \"buz\"}\n>>> kv[\"foo\"]\n{'bax': 'buz'}\n>>>\n```\n\nAnd here's an example using pickle:\n\n```pycon\n>>> from sqlitekvstore import SQLiteKVStore\n>>> import pickle\n>>> import datetime\n>>> kv = SQLiteKVStore(\"pickle.db\", serialize=pickle.dumps, deserialize=pickle.loads)\n>>> kv[\"date1\"] = datetime.datetime(2022,8,30,0,0,0)\n>>> kv[\"date1\"]\ndatetime.datetime(2022, 8, 30, 0, 0)\n>>>\n```\n\n### Database `.about` Property\n\n`SQLiteKVStore.about` is an optional property that can be used to set/get a description of the database.  This is useful for when you later discover a sqlite database laying around and want to inspect it to know what it was used for.  If not set, `.about` will return an empty string.\n\n```pycon\n>>> from sqlitekvstore import SQLiteKVStore\n>>> kv = SQLiteKVStore(\"data.db\")\n>>> kv.about = \"This is my key-value database\"\n>>> kv.about\n'This is my key-value database'\n>>>\n```\n\n### Database `.path` Property\n\n`SQLiteKVStore.path` is a read-only property that returns the path to the database file.\n\n```pycon\n>>> from sqlitekvstore import SQLiteKVStore\n>>> kv = SQLiteKVStore(\"data.db\")\n>>> kv.path\n'data.db'\n>>>\n```\n\n### Performance\n\n#### WAL Mode\n\nBy default, [SQLite WAL mode](https://www.sqlite.org/wal.html) is not enabled. Enabling this will provide much better performance, particularly when writing a lot of key/value pairs.  You can enable WAL mode by passing `wal=True` to the constructor.  This is not enabled by default because WAL mode causes SQLite to create additional journal files alongside the database file and for simple use cases, I prefer to maintain a single database file.\n\n```pycon\n>>> from sqlitekvstore import SQLiteKVStore\n>>> kv = SQLiteKVStore(\"data.db\", wal=True)\n>>> kv.set(\"foo\", \"bar\")\n>>> kv.get(\"foo\")\n'bar'\n>>> kv.close()\n>>>\n```\n\nAs a point of reference, here are the results of inserting and then reading 10,000 key/value pairs into a database with/without WAL mode enabled on my fairly old Macbook laptop:\n\n    Without WAL Mode\n    Insert 10000 keys in 18.17 seconds\n    Get 10000 keys in 0.35 seconds\n    Total 18.52 seconds\n\n    WAL Mode\n    Insert 10000 keys in 2.48 seconds\n    Get 10000 keys in 0.14 seconds\n    Total 2.62 seconds\n\n#### `set_many()`\n\nIf you need to set many key/value pairs at once, you can use the `set_many()` method. This is much faster than calling `set()` in a loop because `set()` commits to the database after each call.  `set_many()` takes an iterable of (key, value) tuples or a dictionary of key:value pairs.\n\n```pycon\n>>> from sqlitekvstore import SQLiteKVStore\n>>> kv = SQLiteKVStore(\"data_many.db\")\n>>> kv.set_many([(\"foo\", \"bar\"), (\"quz\", \"qax\")])\n>>> kv.get(\"foo\")\n'bar'\n>>> kv.get(\"quz\")\n'qax'\n>>> kv.set_many({\"fizz\": \"buzz\", \"fuzz\": \"bizz\"})\n>>> kv.get(\"fizz\")\n'buzz'\n>>> kv.get(\"fuzz\")\n'bizz'\n>>>\n```\n\n### Other Features\n\n#### `vacuum()` Method\n\nIf you insert/delete/update *a lot* of keys you may want to vacuum the database to reclaim unused space.  This can be done by calling `vacuum()`.  Reference [SQLite vacuum command](https://www.sqlite.org/lang_vacuum.html).\n\n```pycon\n>>> from sqlitekvstore import SQLiteKVStore\n>>> kv = SQLiteKVStore(\"data.db\")\n>>> kv.vacuum()\n>>>\n```\n\n#### `wipe()` Method\n\nIf you need to delete all keys from the database, you can call `wipe()`.\n\n```pycon\n>>> from sqlitekvstore import SQLiteKVStore\n>>> kv = SQLiteKVStore(\"data.db\")\n>>> kv.set(\"foo\", \"bar\")\n>>> kv.get(\"foo\")\n'bar'\n>>> kv.wipe()\n>>> kv.get(\"foo\")\n>>>\n```\n\n## Limitations and Implementation Notes\n\n* Keys must be a type directly supported by sqlite, e.g. strings, bytes, integers, or floats.\n* Keys must be unique.\n* Values must be a type directly supported by sqlite, e.g. strings, bytes, integers, or floats however you may be provide a custom serializer/deserializer to serialize/deserialize your values to `SQLiteKVStore.__init__()` and this will be used for all operations.\n* Keys and values are stored using using sqlite's `BLOB` type.\n* There is only a single data table.  To use multiple tables, you would need to create a new `SQLiteKVStore` instance for each table.  You could also use a single table and prefix your keys with a table name, e.g. `table1:foo` and `table2:foo`.\n* To keep the database a single file, WAL mode is not enabled by default. If you need to store many keys, you should enable WAL mode which will significantly improve performance but will also create additional journal files for your database.  Once you have enabled WAL mode on a database, it will stay enabled for that database even if you set `wal=False` in the constructor.\n\n## Schema\n\nThe database schema is simple:\n\n```sql\nCREATE TABLE _about (id INTEGER PRIMARY KEY, description TEXT);\nCREATE TABLE data (key BLOB PRIMARY KEY NOT NULL, value BLOB);\nCREATE UNIQUE INDEX idx_key ON data (key);\n```\n\n## Testing\n\n100% test coverage. 100% mypy type checking.\n\n## License\n\nCopyright (c) 2022, Rhet Turnbull, All rights reserved.\n\nLicensed under the MIT License.\n\n## Contributing\n\nContributions are welcome. Please open an issue or pull request if you find a bug or want to contribute.\n\n### Installation for Contributors\n\n* Fork and clone your fork\n* `pip install poetry`\n* `poetry install`\n* Edit `sqlitekvstore.py` to add features/fix bugs\n* Edit `test_sqlitekvstore.py` to add/update tests\n* `black sqlitekvstore.py test_sqlitekvstore.py`\n* `flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics`\n* `flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics`\n* `poetry run pytest --mypy --cov --doctest-glob=\"README.md\"`\n* Open a pull request to contribute your changes\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": null,
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": null,
+            "keywords": null,
+            "license": null,
+            "maintainer": null,
+            "maintainer_email": null,
+            "name": "sqlitekvstore",
+            "package_url": "https://pypi.org/project/sqlitekvstore/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/sqlitekvstore/",
+            "project_urls": {
+                "Home": "https://github.com/RhetTbull/sqlitekvstore"
+            },
+            "release_url": "https://pypi.org/project/sqlitekvstore/0.2.1/",
+            "requires_dist": null,
+            "requires_python": null,
+            "summary": "Simple key-value store using sqlite3",
+            "version": "0.2.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16747284,
+        "urls": [
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "fee80033bff12be4dee3763a6ef4ab7bee8df52d37a2534b470af4fa93d4fba9",
+                    "md5": "65d4e1537ba866b083629787d4aa5cb4",
+                    "sha256": "68cd496d01240be105ef08059d8f9dd3c05320cc879ae4fd4653fc38ada3e2fc"
+                },
+                "downloads": -1,
+                "filename": "sqlitekvstore-0.2.1-py2.py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "65d4e1537ba866b083629787d4aa5cb4",
+                "packagetype": "bdist_wheel",
+                "python_version": "py2.py3",
+                "requires_python": null,
+                "size": 7360,
+                "upload_time": "2023-02-08T14:26:38",
+                "upload_time_iso_8601": "2023-02-08T14:26:38.156370Z",
+                "url": "https://files.pythonhosted.org/packages/fe/e8/0033bff12be4dee3763a6ef4ab7bee8df52d37a2534b470af4fa93d4fba9/sqlitekvstore-0.2.1-py2.py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "ff3c4f71e3419115188c67154edbea2ad61be93e8c6a029e702d83668ab68ee6",
+                    "md5": "f042fc7880f9fedaff771f0a8eb1543c",
+                    "sha256": "50b273fa9a21ee58247a335bf2bba57466d0a37f1042cf43d5eca4ed237fb830"
+                },
+                "downloads": -1,
+                "filename": "sqlitekvstore-0.2.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "f042fc7880f9fedaff771f0a8eb1543c",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 26915,
+                "upload_time": "2023-02-08T14:26:39",
+                "upload_time_iso_8601": "2023-02-08T14:26:39.940127Z",
+                "url": "https://files.pythonhosted.org/packages/ff/3c/4f71e3419115188c67154edbea2ad61be93e8c6a029e702d83668ab68ee6/sqlitekvstore-0.2.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
