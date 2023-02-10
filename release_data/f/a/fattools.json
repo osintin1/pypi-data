@@ -1,0 +1,94 @@
+{
+    "1.0.6": {
+        "info": {
+            "author": "",
+            "author_email": "maxpat78 <maxpat78@yahoo.it>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Environment :: Win32 (MS Windows)",
+                "Intended Audience :: Developers",
+                "Intended Audience :: System Administrators",
+                "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+                "Programming Language :: Python :: 3",
+                "Topic :: System :: Filesystems"
+            ],
+            "description": "FATtools3\r\n=========\r\n\r\nInstall using pip install .\r\n\r\nBorn to re-sort directory entries in a FAT32 root table to cope with some hardware MP3 players' limits, it now provides full read/write support in Python 3 (both 32- and 64-bit) for FAT12/16/32 and exFAT filesystems, for hacking and recovering purposes.\r\n\r\nIt is able to open disk partitioned with both MBR or GPT and to help in partitioning.\r\nIt can transparently create, read and write Dynamic and Differencing VHD, VHDX[1], VDI and VMDK disk images.\r\nIt can handle RAW disk images and BytesIO \"RamDisk\" images, also.\r\n\r\nFollowing features are implemented (mostly in Python, with a few ctypes calls to handle Win32 disks natively; compatibility with Linux is not regularly tested):\r\n- sector aligned read/writes with both file images and real disks\r\n- sector based caching mechanism (for both reading and writing) to speed-up FAT and directory table operations\r\n- run length encoded map (with tuples and dictionaries) of free clusters, free directory slots, allocated cluster chains\r\n- transparent reading and writing of FAT12/16/32 and exFAT filesystems with FS boot-sector auto recognizer\r\n- MBR and GPT partitions handling\r\n- Long File Name and Unicode support\r\n- tools to open, create, rename, list and delete files and directories, and to partition disks\r\n- facilities to sort, clean and shrink directory tables\r\n- file fragmentation calculator\r\n- mkfat tool to properly (partition and) apply a FAT12/16/32 or exFAT filesystem to a block device (file or disk) and let CHKDSK be happy with it (included exFAT compressed Up-Case table generator)\r\n\r\n*Obviously, since a filesystem is an extremely complex and delicate matter, and big bugs may lay around, you'll USE IT TOTALLY AT YOUR OWN RISK!* But it seems quite stable and useable, now.\r\n\r\nThe most fragile area (and, thus, subject to bugs) was the caching mechanism, that operates in different ways:\r\n- intercepting small I/O (<= 512 bytes), which is cached in a small circular buffer. Bigger I/O bypasses the cache; when the cache is full, all dirty sectors are committed to disk and the cache buffer is zeroed. Sectors and buffers are paired with Python builtin dictionaries: this permits a good (from a Pythonic perspective) I/O speed during FAT and directory tables access;\r\n- maintaining a dictionary of pre-decoded FAT indexes, to improve the speed of repetitive access to cluster chains;\r\n- maintaining a dictionary of short and long names (paired with their respective directory slots) for each directory table, to speed up searches and updates in directory tables;\r\n- maintaining a RLE map of free clusters, free directory slots and allocated cluster chains, to dramatically improve speed of allocation and file access. \r\n\r\n*Actually, the I/O speed is closer to system's one.*\r\n\r\nCode is GPLed (look at GPL.TXT inside folder).\r\n\r\n\r\n[1] VHDX Log support is actually limited to replaying capability.\r\n\r\n\r\n\r\nSample usage (see inside 'test' directory for more samples).\r\n\r\n\r\n# At a glance\r\n\r\nThe package installs a `fattools` script, you can use this to do simple command line operations. \r\n\r\n- to create a dynamic 1TB VHD disk image with a single GPT partition and format it with exFAT from command line:\r\n```\r\nfattools mkvdisk -s 1T image.vhd\r\nfattools mkfat -t exfat -p gpt image.vhd\r\n```\r\n\r\n- to create a differencing VDI disk image from command line:\r\n```\r\nfattools mkvdisk -b image.vdi delta.vdi\r\n```\r\n\r\n- to list contents in a disk image, copy items to/from it and erase them (command line, too):\r\n```\r\nfattools ls image1.vhd/py* image2.vdi/py*\r\nfattools cp C:\\Python39\\Lib\\site-packages image.vhd/Python39/Lib\r\nfattools cp image.vhd/Python39 C:\\ProgramData\r\nfattools rm image.vhd/Python39\r\n```\r\n\r\n- to open an existing plain or VHD disk image, or real disk:\r\n```\r\n# -*- coding: cp1252 -*-\r\nfrom FATtools.Volume import *\r\ndisk = vopen('MyDiskImage.img', 'r+b', 'disk')\r\n```\r\n\r\n- to make a single GPT partition from all disk space:\r\n```\r\nfrom FATtools import partutils\r\ngpt = partutils.partition(disk)\r\n```\r\n\r\n- to format such partition with the exFAT file system:\r\n```\r\nfrom FATtools import mkfat, Volume\r\npart = Volume.vopen('MyDiskImage.img', 'r+b', 'partition0')\r\nmkfat.exfat_mkfs(part, part.size)\r\n```\r\n\r\n- to order root directory table in USB drive X:\r\n```\r\n# -*- coding: cp1252 -*-\r\nfrom FATtools.Volume import *\r\n\r\n# Assuming we have DirA, DirB, DirC in this disk order into X:\r\nroot = vopen('X:', 'r+b')\r\n\r\nnew_order = '''DirB\r\nDirC\r\nDirA'''\r\n\r\nroot._sortby.fix = new_order.split('\\n') # uses built-in directory sort algorithm\r\nroot.sort(root._sortby) # user-defined order, in _sortby.fix list\r\nroot.sort() # default ordering (alphabetical)\r\n```\r\n\r\n- mixed access with Python and FATtools from the same script:\r\n```\r\n# -*- coding: cp1252 -*-\r\nfrom FATtools.Volume import vopen, vclose\r\nfrom FATtools.mkfat import exfat_mkfs\r\nfrom os.path import join\r\nimport os\r\n\r\nreal_fat_fs = 'F:' # replace with mount point of your file system\r\n\r\n# Open and format with FATtools\r\nfs = vopen(real_fat_fs, 'r+b',what='disk')\r\nexfat_mkfs(fs, fs.size)\r\nvclose(fs)\r\n\r\n# Write some files with Python and list them\r\nT = ('c','a','b','d')\r\nfor t in T:\r\n   open(join(real_fat_fs, t+'.txt'), 'w').write('This is a sample \"%s.txt\" file.'%t)\r\n\r\nprint(os.listdir(real_fat_fs+'/'))\r\n\r\n# Open again, and sort root with FATtools\r\nfs = vopen(real_fat_fs, 'r+b')\r\nfs.sort()\r\nvclose(fs)\r\n\r\n# Check new table order with Python\r\nprint(os.listdir(real_fat_fs+'/'))\r\n```\r\n\r\n- (almost) same as above:\r\n```\r\n# -*- coding: cp1252 -*-\r\nfrom FATtools.Volume import vopen, vclose\r\nfrom FATtools.mkfat import exfat_mkfs\r\nfrom FATtools.partutils import partition\r\n\r\n# Open & create GPT partition\r\no = vopen('\\\\\\\\.\\\\PhysicalDrive1', 'r+b',what='disk')\r\nprint('Partitioning...')\r\npartition(o, 'mbr')\r\nvclose(o)\r\n\r\n# Reopen and format with EXFAT\r\no = vopen('\\\\\\\\.\\\\PhysicalDrive1', 'r+b',what='partition0')\r\nprint('Formatting...')\r\nexfat_mkfs(o, o.size)\r\nvclose(o) # auto-close partition AND disk\r\n\r\n# Reopen FS and write\r\nprint('Writing...')\r\no = vopen('\\\\\\\\.\\\\PhysicalDrive1', 'r+b')\r\n\r\n# Write some files with FATtools and sort them\r\nT = ('c','a','b','d')\r\nfor t in T:\r\n   f = o.create(t+'.txt')\r\n   f.write(b'This is a sample \"%s.txt\" file.'%bytes(t,'ascii'))\r\n   f.close()\r\no.sort()\r\nvclose(o)\r\n```\r\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "FAT,disk,image",
+            "license": "GPL",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "FATtools",
+            "package_url": "https://pypi.org/project/FATtools/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/FATtools/",
+            "project_urls": {
+                "homepage": "https://github.com/maxpat78/FATtools",
+                "repository": "https://github.com/maxpat78/FATtools.git"
+            },
+            "release_url": "https://pypi.org/project/FATtools/1.0.6/",
+            "requires_dist": [
+                "hexdump"
+            ],
+            "requires_python": ">=3.5",
+            "summary": "Pure python tools for accessing FAT filesystem images and disks",
+            "version": "1.0.6",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16769784,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f80d46764b778dbf51fc4742bab7081aa7426429cf9efd0b6ca4e1acba367c65",
+                    "md5": "bbc62e5a2c281f8d1d2afe4b795a600a",
+                    "sha256": "1d13372edef3bd07eb875ef86e4c9e43d4f9a61e95097099a3e554d81f5614cf"
+                },
+                "downloads": -1,
+                "filename": "FATtools-1.0.6-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "bbc62e5a2c281f8d1d2afe4b795a600a",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.5",
+                "size": 117956,
+                "upload_time": "2023-02-09T15:09:49",
+                "upload_time_iso_8601": "2023-02-09T15:09:49.533939Z",
+                "url": "https://files.pythonhosted.org/packages/f8/0d/46764b778dbf51fc4742bab7081aa7426429cf9efd0b6ca4e1acba367c65/FATtools-1.0.6-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "b8941e38d0cfda9f4f1fc29a93baff900e936a2af77dac68f0af10c78e9a8ae5",
+                    "md5": "8eb1f34895a621bbc27416c01c22806d",
+                    "sha256": "249f6c828674ae3524dced3ba98211b28ff230d430bce3982ac179e53c621ad4"
+                },
+                "downloads": -1,
+                "filename": "FATtools-1.0.6.tar.gz",
+                "has_sig": false,
+                "md5_digest": "8eb1f34895a621bbc27416c01c22806d",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.5",
+                "size": 218624,
+                "upload_time": "2023-02-09T15:09:52",
+                "upload_time_iso_8601": "2023-02-09T15:09:52.261059Z",
+                "url": "https://files.pythonhosted.org/packages/b8/94/1e38d0cfda9f4f1fc29a93baff900e936a2af77dac68f0af10c78e9a8ae5/FATtools-1.0.6.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
