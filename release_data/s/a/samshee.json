@@ -1,0 +1,72 @@
+{
+    "0.0.6": {
+        "info": {
+            "author": "",
+            "author_email": "Jakob Simeth <jakob.simeth@ukr.de>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 2 - Pre-Alpha",
+                "Intended Audience :: Developers",
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Topic :: Scientific/Engineering :: Bio-Informatics"
+            ],
+            "description": "# Samshee\n\nA schema-agnostic parser and writer for illumina\u00ae sample sheets v2 and similar documents.\n\n## Features\n\n- parsing and writing illumina\u00ae Sample Sheet v2 files.\n- encoding to and parsing from json\n- customizable validation, ships with a default validation schema that follows illumina\u00ae specs\n\n## Examples\n\n### Reading, modifying and writing\n``` python\nfrom samshee.samplesheetv2 import SampleSheetV2, read_samplesheetv2\nsheet = read_samplesheetv2(filename)\nprint(sheet)\n\nsheet.header['RunName'] = 'a_new_name'\nwith open(filename + '.new', \"w\") as fh:\n    sheet.write(fh)\n```\n\n### Validation: Add validators when constructing the sample sheet:\n``` python\nfrom samshee.samplesheetv2 import SampleSheetV2, read_samplesheetv2\nimport samshee.validation\nsheet = read_samplesheetv2(filename, validation = [\nsamshee.validation.illuminasamplesheetv2schema,\nsamshee.validation.illuminasamplesheetv2logic,\nlambda doc: samshee.validation.check_index_distance(doc, 3)\n])\n\nsheet.applications['BCLConvert']['data'][0]['Index'] = 'ACTGACTG'\nsheet.applications['BCLConvert']['data'][1]['Index'] = 'ACTGACTT'\n\n# will fail, because check_index_distance will fail when exporting the sheet:\nwith open(filename + '.new', \"w\") as fh:\n    sheet.write(fh)\n```\n\nThis will give\n\n``` \nException: anonymous validation function #2 raised validation error: Minimal index distance is 1 between the indices ACTGACTG and ACTGACTT which is less than the expected minimal index distance of 3\n```\n\nThe first two validators (`illuminasamplesheetv2schema` and `illuminasamplesheetv2logic`) are highly recommended and are meant to enforce illumina\u00ae specifications so that the sample sheet is accepted by their tools.\n\n## SectionedSheet\nA sectioned sheet is a text file that contains one or more ordered sections in ini-file-like syntax. Every section starts with a section header, enclosed in square brackets, e.g. `[Reads]`. Any string on the same line after the section header is ignored.\n\nText following the line containing a section header until the start of a new section or EOF is part of the section.\n\nEvery section can either be a settings section, or a data section. Sections that end with \"settings\" or that are called \"Header\" or \"Reads\" are assumed to be settings by default. Any other section is assumed to be a data section.\n\nA settings section is a set of key-value pairs, separated by a comma. Additional fields are ignored.\n\nA data section is in CSV format with one header line, i.e. the first line of a data section determines the field names of the objects. Every row in the same section following the header defines one object with the fields given in the header.\n\nA SectionedSheet is a relatively free format and no input validation other than what is absolutely necessary to parse a file is performed.\n\n## SampleSheetV2\nA SampleSheetV2 is a SectionedSheet that contains a defined set of sections and some required fields within these sections, see validation below. Every section that is not a \"Header\" or a \"Reads\" section refers to an \"application\" that may have settings or data sections, or both. The respective sections are named `[<Application>_Settings]` and `[<Application>_Data]`.\n\n\n## Reading and writing\nUse the functions `read_sectionedsheet` and `read_samplesheetv2`. Construction from strings is possible, too, use `parse_sectionedsheet` and `parse_samplesheetv2`.\n\nBoth SampleSheetV2 as well as SectionedSheet implement `__str__` and can be converted to a string using `str(sheet)`. Usually, the schema is revalidated at this point.\n\n## Validation\nUsing `samshee.validation.validate`, `SectionedSheet`s can be validated using both json schema definitions and functions that may raise exceptions. The listed validators are processed one-by-one, i.e., if the SectionedSheet passes the first validator, it will be handed on to the next, etc. This means that validators later in the queue may make the assumptions that earlier validators have run successfully.\n\nA SampleSheetV2 is constructed from a SectionedSheet that passes a sequence of validation steps. By default these are `illuminasamplesheetv2schema` and `illuminasamplesheetv2logic`. They are highly recommended and meant to enforce illumina\u00ae specifications so that the sample sheet is accepted by their tools. These validators are based on the [Sample Sheet v2 Settings document](https://support-docs.illumina.com/IN/NextSeq10002000/Content/SHARE/SampleSheetv2/SampleSheetValidation_fNS_m2000_m1000.htm) that provides admissible values and required fields for the `Header`, `Reads` settings as well as for the `Sequencing` and `BCLConvert` \"Applications\".\n\nValidation of a sample sheet only happens at construction (unless `validators = None` or `[]`), but intentionally not when a sample sheet is manipulated to allow for intermediate states that would not pass validation (e.g. conflicting values for `Reads.Index1` and `BCLConvert.OverrideCycles`). However, by default, validation is performed when the sample sheet is rendered to a string or written out. This ensures that all output adheres to all listed validators.\n\nFurther custom validation beyond the illumina\u00ae spec can happen by json schema validation or calling a function with the SectionedSheet as an argument, i.e.\n\n``` python\ndef my_validator(doc: SectionedSheet) -> None:\n    if 'myapp' not in doc:\n        raise Exception('sheet does not include settings for myapp.')\n```\n\nThis would be equivalent to a json-schema\n\n``` json\n{\n    \"type\": \"object\",\n    \"required\": [\"myapp\"]\n}\n```\n\nMuch more complicated use cases are possible, enforcing naming conventions on samples, etc.\n\nThe following example would guarantee that the sample shield will adhere to illumina\u00ae standards and to our own defined schema (in this case that it has a section \"myapp\"):\n\n``` python\nfrom samshee import SectionedSheet, SampleSheetV2, read_sectionedsheet\nfrom samshee.validation import illuminasamplesheetv2schema, illuminasamplesheetv2logic\n\ndef my_validation_function(sectionedsheet : SectionedSheet) -> None:\n    # do checks here and raise exceptions.\n    if 'myapp' not in doc:\n        raise Exception('sheet does not include settings for myapp.')\n    \nmy_schema = {} # any json schema\n    \nsecsheet = read_sectionedsheet(filename)\nsamplesheet = SampleSheetV2(secsheet, validation = [illuminasamplesheetv2schema, illuminasamplesheetv2logic, my_validation_function, my_schema])\n```\n\nJson schemata must follow the [json-schema spec](https://json-schema.org/draft/2020-12/json-schema-validation.html), functions may perform any operations and are expected to raise exceptions if a SectionedSheet is invalid.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT License  Copyright \u00a9 2023 Jakob Simeth  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.  THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. ",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "samshee",
+            "package_url": "https://pypi.org/project/samshee/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/samshee/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/lit-regensburg/samshee/issues",
+                "Homepage": "https://github.com/lit-regensburg/samshee"
+            },
+            "release_url": "https://pypi.org/project/samshee/0.0.6/",
+            "requires_dist": null,
+            "requires_python": ">=3.8",
+            "summary": "A schema-agnostic parser and writer for illumina sample sheets v2.",
+            "version": "0.0.6",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16833136,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "117f9b5df4d82744594efc92dd766746b55053c351f5e45f2f798e45fbf81dcf",
+                    "md5": "cc0c83a2e29656e213b86d52bfb3ac72",
+                    "sha256": "b488040ac547efd6ef8167aa2bfd58f7d7d6712b8e266892266adb3de45a5413"
+                },
+                "downloads": -1,
+                "filename": "samshee-0.0.6.tar.gz",
+                "has_sig": false,
+                "md5_digest": "cc0c83a2e29656e213b86d52bfb3ac72",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 14911,
+                "upload_time": "2023-02-13T06:33:07",
+                "upload_time_iso_8601": "2023-02-13T06:33:07.372362Z",
+                "url": "https://files.pythonhosted.org/packages/11/7f/9b5df4d82744594efc92dd766746b55053c351f5e45f2f798e45fbf81dcf/samshee-0.0.6.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
