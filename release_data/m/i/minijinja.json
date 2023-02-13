@@ -43,7 +43,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16602349,
+        "last_serial": 16827712,
         "urls": [
             {
                 "comment_text": null,
@@ -260,7 +260,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16602349,
+        "last_serial": 16827712,
         "urls": [
             {
                 "comment_text": null,
@@ -447,7 +447,6 @@
                 "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
                 "Topic :: Text Processing :: Markup :: HTML"
             ],
-            "description": "<div align=\"center\">\n  <img src=\"https://github.com/mitsuhiko/minijinja/raw/main/artwork/logo.png\" alt=\"\" width=320>\n  <p><strong>MiniJinja for Python: a powerful template engine for Rust and Python</strong></p>\n\n[![Build Status](https://github.com/mitsuhiko/minijinja/workflows/Tests/badge.svg?branch=main)](https://github.com/mitsuhiko/minijinja/actions?query=workflow%3ATests)\n[![License](https://img.shields.io/github/license/mitsuhiko/minijinja)](https://github.com/mitsuhiko/minijinja/blob/main/LICENSE)\n[![Crates.io](https://img.shields.io/crates/d/minijinja.svg)](https://crates.io/crates/minijinja)\n[![rustc 1.61.0](https://img.shields.io/badge/rust-1.61%2B-orange.svg)](https://img.shields.io/badge/rust-1.61%2B-orange.svg)\n[![Documentation](https://docs.rs/minijinja/badge.svg)](https://docs.rs/minijinja)\n\n</div>\n\n`minijinja-py` is an experimental binding of\n[MiniJinja](https://github.com/mitsuhiko/minijinja) to Python.  It has somewhat\nlimited functionality compared to the Rust version.  These bindings use\n[maturin](https://www.maturin.rs/) and [pyo3](https://pyo3.rs/).\n\nYou might want to use MiniJinja instead of Jinja2 when the full feature set\nof Jinja2 is not required and you want to have the same rendering experience\nof a data set between Rust and Python.\n\nWith these bindings MiniJinja can render some Python objects and values\nthat are passed to templates, but there are clear limitations with regards\nto what can be done.\n\nTo install MiniJinja for Python you can fetch the package [from PyPI](https://pypi.org/project/minijinja/):\n\n```\n$ pip install minijinja\n```\n\n## Basic API\n\nThe basic API is hidden behind the `Environment` object.  It behaves almost entirely\nlike in `minijinja` with some Python specific changes.  For instance instead of\n`env.set_debug(True)` you use `env.debug = True`.  Additionally instead of using\n`add_template` or attaching a `source` you either pass a dictionary of templates\ndirectly to the environment or a `loader` function.\n\n```python\nfrom minijinja import Environment\n\nenv = Environment(templates={\n    \"template_name\": \"Template source\"\n})\n```\n\nTo render a template you can use the `render_template` method:\n\n```python\nresult = env.render_template('template_name', var1=\"value 1\", var2=\"value 2\")\nprint(result)\n```\n\n## Purpose\n\nMiniJinja attemps a certain level of compatibiliy with Jinja2, but it does not\ntry to achieve this at all costs.  As a result you will notice that quite a few\ntemplates will refuse to render with MiniJinja despite the fact that they probably\nlook quite innocent.  It is however possible to write templates that render to the\nsame results for both Jinja2 and MiniJinja.  This raises the question why you might\nwant to use MiniJinja.\n\nThe main benefit would be to achieve the exact same results in both Rust and Python.\nAdditionally MiniJinja has a stronger sandbox than Jinja2 and might perform ever so\nslightly better in some situations.  However you should be aware that due to the\nmarshalling that needs to happen in either direction there is a certain amount of\nloss of information.\n\n## Dynamic Template Loading\n\nMiniJinja's Python bindings inherit the underlying behavior of how MiniJinja loads\ntemplates.  Templates are loaded on first use and then cached.  The templates are\nloaded via a \"source\" (called `loader` in MiniJinja's Python bindings).  To trigger\na reload you can call `env.reload()` or alternatively set `env.reload_before_render`\nto `True`.\n\n```python\ndef my_loader(name):\n    segments = []\n    for segment in name.split(\"/\"):\n        if \"\\\\\" in segment or segment in (\".\", \"..\"):\n            return None\n        segments.append(segment)\n    try:\n        with open(os.path.join(TEMPLATES, *segments)) as f:\n            return f.read()\n    except (IOError, OSError):\n        pass\n\nenv = Environment(loader=my_loader)\nenv.reload_before_render = True\nprint(env.render_template(\"index.html\"))\n```\n\nAlternatively templates can manually be loaded and unloaded with `env.add_template`\nand `env.remove_template`.\n\n## Auto Escaping\n\nThe default behavior is to use auto escaping file files ending in `.html`.  You can\ncustomize this behavior by overriding the `auto_escape_callback`:\n\n```python\nenv = Environment(auto_escape_callback=lambda x: x.endswith((\".html\", \".foo\")))\n```\n\nMiniJinja uses [markupsafe](https://github.com/pallets/markupsafe) if it's available\non the Python side.  It will honor `__html__`.\n\n## State Access\n\nFunctions passed to the environment such as filters or global functions can\noptionally have the template state passed by using the `pass_state` parameter.\nThis is similar to `pass_context` in Jinja2.  It can be used to look at the\nname of the template or to look up variables in the context.\n\n```python\nfrom minijinja import pass_state\n\n@pass_state\ndef my_filter(state, value):\n    return state.lookup(\"a_variable\") + value\n\nenv.add_filter(\"add_a_variable\", my_filter)\n```\n\n## Runtime Behavior\n\nMiniJinja uses it's own runtime model which is not matching the Python\nruntime model.  As a result there are clear gaps in beahvior between the\ntwo and only limited effort is made to bridge them.  For instance you will\nbe able to call some methods of types, but for instance builtins such as\ndicts and lists do not expose their methods on the MiniJinja side.  This\nmeans that it's very intentional that if you pass a dictionary to MiniJinja,\nthe Python `.items()` method is unavailable.\n\nHere is what this means for some basic types:\n\n* Python dictionaries and lists (as well as other objects that behave as sequences)\n  appear in the MiniJinja side as native lists.  They do not expose any specific\n  other behavior and when they move back to the Python side they will appear as basic\n  lists.  Specifically this means that a tuple (which does not exist in MiniJinja)\n  when moving from Python to MiniJinja turns into a list and will remain a list when\n  it moves back.\n* Python objects are represented in MiniJinja similarly to dicts, but they retain all\n  their meaningful Python APIs.  This means they stringify via `__str__` and they\n  allow the MiniJinja code to call their non-underscored methods.  Note that there is\n  no extra security layer in use at the moment so take care of what you pass there.\n* MiniJinja's python binding understand what `__html__` is when it exists on a string\n  subclass.  This means that a `markupsafe.Markup` object will appear as safe string in\n  MiniJinja.  This information can also flow back to Python again.\n\n## Sponsor\n\nIf you like the project and find it useful you can [become a\nsponsor](https://github.com/sponsors/mitsuhiko).\n\n## License and Links\n\n- [Documentation](https://docs.rs/minijinja/)\n- [Examples](https://github.com/mitsuhiko/minijinja/tree/main/examples)\n- [Issue Tracker](https://github.com/mitsuhiko/minijinja/issues)\n- [MiniJinja Playground](https://mitsuhiko.github.io/minijinja-playground/)\n- License: [Apache-2.0](https://github.com/mitsuhiko/minijinja/blob/main/LICENSE)\n\n",
             "description_content_type": "text/markdown; charset=UTF-8; variant=GFM",
             "docs_url": null,
             "download_url": null,
@@ -478,7 +477,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16602349,
+        "last_serial": 16827712,
         "urls": [
             {
                 "comment_text": null,
@@ -645,6 +644,224 @@
                 "upload_time": "2023-01-28T17:14:55",
                 "upload_time_iso_8601": "2023-01-28T17:14:55.239020Z",
                 "url": "https://files.pythonhosted.org/packages/81/8f/a3a1483d5515d100097b2197dc609e17a91b6254eb72d9cbaa46355c9f2a/minijinja-0.30.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.30.3": {
+        "info": {
+            "author": null,
+            "author_email": "Armin Ronacher <armin.ronacher@active-4.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Environment :: Web Environment",
+                "License :: OSI Approved :: Apache Software License",
+                "Programming Language :: Python :: Implementation :: CPython",
+                "Programming Language :: Python :: Implementation :: PyPy",
+                "Programming Language :: Rust",
+                "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+                "Topic :: Text Processing :: Markup :: HTML"
+            ],
+            "description": "<div align=\"center\">\n  <img src=\"https://github.com/mitsuhiko/minijinja/raw/main/artwork/logo.png\" alt=\"\" width=320>\n  <p><strong>MiniJinja for Python: a powerful template engine for Rust and Python</strong></p>\n\n[![Build Status](https://github.com/mitsuhiko/minijinja/workflows/Tests/badge.svg?branch=main)](https://github.com/mitsuhiko/minijinja/actions?query=workflow%3ATests)\n[![License](https://img.shields.io/github/license/mitsuhiko/minijinja)](https://github.com/mitsuhiko/minijinja/blob/main/LICENSE)\n[![Crates.io](https://img.shields.io/crates/d/minijinja.svg)](https://crates.io/crates/minijinja)\n[![rustc 1.61.0](https://img.shields.io/badge/rust-1.61%2B-orange.svg)](https://img.shields.io/badge/rust-1.61%2B-orange.svg)\n[![Documentation](https://docs.rs/minijinja/badge.svg)](https://docs.rs/minijinja)\n\n</div>\n\n`minijinja-py` is an experimental binding of\n[MiniJinja](https://github.com/mitsuhiko/minijinja) to Python.  It has somewhat\nlimited functionality compared to the Rust version.  These bindings use\n[maturin](https://www.maturin.rs/) and [pyo3](https://pyo3.rs/).\n\nYou might want to use MiniJinja instead of Jinja2 when the full feature set\nof Jinja2 is not required and you want to have the same rendering experience\nof a data set between Rust and Python.\n\nWith these bindings MiniJinja can render some Python objects and values\nthat are passed to templates, but there are clear limitations with regards\nto what can be done.\n\nTo install MiniJinja for Python you can fetch the package [from PyPI](https://pypi.org/project/minijinja/):\n\n```\n$ pip install minijinja\n```\n\n## Basic API\n\nThe basic API is hidden behind the `Environment` object.  It behaves almost entirely\nlike in `minijinja` with some Python specific changes.  For instance instead of\n`env.set_debug(True)` you use `env.debug = True`.  Additionally instead of using\n`add_template` or attaching a `source` you either pass a dictionary of templates\ndirectly to the environment or a `loader` function.\n\n```python\nfrom minijinja import Environment\n\nenv = Environment(templates={\n    \"template_name\": \"Template source\"\n})\n```\n\nTo render a template you can use the `render_template` method:\n\n```python\nresult = env.render_template('template_name', var1=\"value 1\", var2=\"value 2\")\nprint(result)\n```\n\n## Purpose\n\nMiniJinja attemps a certain level of compatibiliy with Jinja2, but it does not\ntry to achieve this at all costs.  As a result you will notice that quite a few\ntemplates will refuse to render with MiniJinja despite the fact that they probably\nlook quite innocent.  It is however possible to write templates that render to the\nsame results for both Jinja2 and MiniJinja.  This raises the question why you might\nwant to use MiniJinja.\n\nThe main benefit would be to achieve the exact same results in both Rust and Python.\nAdditionally MiniJinja has a stronger sandbox than Jinja2 and might perform ever so\nslightly better in some situations.  However you should be aware that due to the\nmarshalling that needs to happen in either direction there is a certain amount of\nloss of information.\n\n## Dynamic Template Loading\n\nMiniJinja's Python bindings inherit the underlying behavior of how MiniJinja loads\ntemplates.  Templates are loaded on first use and then cached.  The templates are\nloaded via a \"source\" (called `loader` in MiniJinja's Python bindings).  To trigger\na reload you can call `env.reload()` or alternatively set `env.reload_before_render`\nto `True`.\n\n```python\ndef my_loader(name):\n    segments = []\n    for segment in name.split(\"/\"):\n        if \"\\\\\" in segment or segment in (\".\", \"..\"):\n            return None\n        segments.append(segment)\n    try:\n        with open(os.path.join(TEMPLATES, *segments)) as f:\n            return f.read()\n    except (IOError, OSError):\n        pass\n\nenv = Environment(loader=my_loader)\nenv.reload_before_render = True\nprint(env.render_template(\"index.html\"))\n```\n\nAlternatively templates can manually be loaded and unloaded with `env.add_template`\nand `env.remove_template`.\n\n## Auto Escaping\n\nThe default behavior is to use auto escaping file files ending in `.html`.  You can\ncustomize this behavior by overriding the `auto_escape_callback`:\n\n```python\nenv = Environment(auto_escape_callback=lambda x: x.endswith((\".html\", \".foo\")))\n```\n\nMiniJinja uses [markupsafe](https://github.com/pallets/markupsafe) if it's available\non the Python side.  It will honor `__html__`.\n\n## State Access\n\nFunctions passed to the environment such as filters or global functions can\noptionally have the template state passed by using the `pass_state` parameter.\nThis is similar to `pass_context` in Jinja2.  It can be used to look at the\nname of the template or to look up variables in the context.\n\n```python\nfrom minijinja import pass_state\n\n@pass_state\ndef my_filter(state, value):\n    return state.lookup(\"a_variable\") + value\n\nenv.add_filter(\"add_a_variable\", my_filter)\n```\n\n## Runtime Behavior\n\nMiniJinja uses it's own runtime model which is not matching the Python\nruntime model.  As a result there are clear gaps in beahvior between the\ntwo and only limited effort is made to bridge them.  For instance you will\nbe able to call some methods of types, but for instance builtins such as\ndicts and lists do not expose their methods on the MiniJinja side.  This\nmeans that it's very intentional that if you pass a dictionary to MiniJinja,\nthe Python `.items()` method is unavailable.\n\nHere is what this means for some basic types:\n\n* Python dictionaries and lists (as well as other objects that behave as sequences)\n  appear in the MiniJinja side as native lists.  They do not expose any specific\n  other behavior and when they move back to the Python side they will appear as basic\n  lists.  Specifically this means that a tuple (which does not exist in MiniJinja)\n  when moving from Python to MiniJinja turns into a list and will remain a list when\n  it moves back.\n* Python objects are represented in MiniJinja similarly to dicts, but they retain all\n  their meaningful Python APIs.  This means they stringify via `__str__` and they\n  allow the MiniJinja code to call their non-underscored methods.  Note that there is\n  no extra security layer in use at the moment so take care of what you pass there.\n* MiniJinja's python binding understand what `__html__` is when it exists on a string\n  subclass.  This means that a `markupsafe.Markup` object will appear as safe string in\n  MiniJinja.  This information can also flow back to Python again.\n\n## Sponsor\n\nIf you like the project and find it useful you can [become a\nsponsor](https://github.com/sponsors/mitsuhiko).\n\n## License and Links\n\n- [Documentation](https://docs.rs/minijinja/)\n- [Examples](https://github.com/mitsuhiko/minijinja/tree/main/examples)\n- [Issue Tracker](https://github.com/mitsuhiko/minijinja/issues)\n- [MiniJinja Playground](https://mitsuhiko.github.io/minijinja-playground/)\n- License: [Apache-2.0](https://github.com/mitsuhiko/minijinja/blob/main/LICENSE)\n\n",
+            "description_content_type": "text/markdown; charset=UTF-8; variant=GFM",
+            "docs_url": null,
+            "download_url": null,
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": null,
+            "keywords": "jinja,template-engine",
+            "license": null,
+            "maintainer": null,
+            "maintainer_email": "Armin Ronacher <armin.ronacher@active-4.com>",
+            "name": "minijinja",
+            "package_url": "https://pypi.org/project/minijinja/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/minijinja/",
+            "project_urls": {
+                "Donate": "https://github.com/sponsors/mitsuhiko",
+                "Issue Tracker": "https://github.com/mitsuhiko/minijinja/issues",
+                "Repository": "https://github.com/mitsuhiko/minijinja"
+            },
+            "release_url": "https://pypi.org/project/minijinja/0.30.3/",
+            "requires_dist": null,
+            "requires_python": ">=3.8",
+            "summary": "An experimental Python binding of the Rust MiniJinja template engine.",
+            "version": "0.30.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16827712,
+        "urls": [
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "560f84a48afaee71bb456204242204c3cd33df5cb1d4b0b3c624a063ead90640",
+                    "md5": "95b415406f8af0a8befd8eb010066264",
+                    "sha256": "177d74e6e19cd343ea58797b285b710dac8c06c9c5ef8c02916d58c7df4dd2d0"
+                },
+                "downloads": -1,
+                "filename": "minijinja-0.30.3-cp38-abi3-macosx_10_9_x86_64.macosx_11_0_arm64.macosx_10_9_universal2.whl",
+                "has_sig": false,
+                "md5_digest": "95b415406f8af0a8befd8eb010066264",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.8",
+                "size": 1259685,
+                "upload_time": "2023-02-12T21:18:57",
+                "upload_time_iso_8601": "2023-02-12T21:18:57.346876Z",
+                "url": "https://files.pythonhosted.org/packages/56/0f/84a48afaee71bb456204242204c3cd33df5cb1d4b0b3c624a063ead90640/minijinja-0.30.3-cp38-abi3-macosx_10_9_x86_64.macosx_11_0_arm64.macosx_10_9_universal2.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "a5cf4fabb4d43eb224be054fdacea6b88ecc67627a29ef9e58794ea596a263ac",
+                    "md5": "86ea0fe9a9dda88f6fd604de0fdabc25",
+                    "sha256": "94eca7aff7825ab257ed966f255ce885a33e87ac53a4447917acc74c294129d5"
+                },
+                "downloads": -1,
+                "filename": "minijinja-0.30.3-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                "has_sig": false,
+                "md5_digest": "86ea0fe9a9dda88f6fd604de0fdabc25",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.8",
+                "size": 625670,
+                "upload_time": "2023-02-12T21:19:00",
+                "upload_time_iso_8601": "2023-02-12T21:19:00.750611Z",
+                "url": "https://files.pythonhosted.org/packages/a5/cf/4fabb4d43eb224be054fdacea6b88ecc67627a29ef9e58794ea596a263ac/minijinja-0.30.3-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "b9a7cb14cb4e23d88227d17a759dd13b58ab8f2af85824b200c4c39e0a6488a2",
+                    "md5": "d4b6ad87dcccaa2ba552ded118416c15",
+                    "sha256": "d7f1993553c17a1000a411f40a4a27300e4df35b512d4c3087d7bb83af5f58ae"
+                },
+                "downloads": -1,
+                "filename": "minijinja-0.30.3-cp38-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl",
+                "has_sig": false,
+                "md5_digest": "d4b6ad87dcccaa2ba552ded118416c15",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.8",
+                "size": 628128,
+                "upload_time": "2023-02-12T21:19:03",
+                "upload_time_iso_8601": "2023-02-12T21:19:03.701533Z",
+                "url": "https://files.pythonhosted.org/packages/b9/a7/cb14cb4e23d88227d17a759dd13b58ab8f2af85824b200c4c39e0a6488a2/minijinja-0.30.3-cp38-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "b807428d404ae56c3e57431d7e9f80e6c709e90e796cfd9156bab0352b221465",
+                    "md5": "d78d97c3d8600804f04870b45fe6dd76",
+                    "sha256": "60478e5a1d946d57195d01554b6072817ec00916f862e648eb5d199f5e0a5de2"
+                },
+                "downloads": -1,
+                "filename": "minijinja-0.30.3-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "d78d97c3d8600804f04870b45fe6dd76",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.8",
+                "size": 674731,
+                "upload_time": "2023-02-12T21:19:09",
+                "upload_time_iso_8601": "2023-02-12T21:19:09.488381Z",
+                "url": "https://files.pythonhosted.org/packages/b8/07/428d404ae56c3e57431d7e9f80e6c709e90e796cfd9156bab0352b221465/minijinja-0.30.3-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "1b8ee529678a419e6b601e566e7c6573a055a7383adc8fa70164de9e15eb1224",
+                    "md5": "49a8507d9ef44c288be8e71985fb752e",
+                    "sha256": "45b18d63730b2468f308370b29f1433c9380bc12d85846871a70f8292ee6cf24"
+                },
+                "downloads": -1,
+                "filename": "minijinja-0.30.3-cp38-abi3-manylinux_2_5_i686.manylinux1_i686.whl",
+                "has_sig": false,
+                "md5_digest": "49a8507d9ef44c288be8e71985fb752e",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.8",
+                "size": 739152,
+                "upload_time": "2023-02-12T21:19:12",
+                "upload_time_iso_8601": "2023-02-12T21:19:12.878055Z",
+                "url": "https://files.pythonhosted.org/packages/1b/8e/e529678a419e6b601e566e7c6573a055a7383adc8fa70164de9e15eb1224/minijinja-0.30.3-cp38-abi3-manylinux_2_5_i686.manylinux1_i686.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "161c7e8f22ce9769c5547842460f0ab31d7fe0c9bd26439217425ed6b0b4cba1",
+                    "md5": "c00153074dbe525d984e85a25171f569",
+                    "sha256": "5a6e6f92371216814b14983aad2874cd6678f5cac07f3096f8cabd3abe9bf965"
+                },
+                "downloads": -1,
+                "filename": "minijinja-0.30.3-cp38-abi3-win32.whl",
+                "has_sig": false,
+                "md5_digest": "c00153074dbe525d984e85a25171f569",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.8",
+                "size": 564946,
+                "upload_time": "2023-02-12T21:19:15",
+                "upload_time_iso_8601": "2023-02-12T21:19:15.993142Z",
+                "url": "https://files.pythonhosted.org/packages/16/1c/7e8f22ce9769c5547842460f0ab31d7fe0c9bd26439217425ed6b0b4cba1/minijinja-0.30.3-cp38-abi3-win32.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "1127d3b97b23f41bd8f3b30c60c0e18824f0a69e53e2af0a1fecaa9de0679aa6",
+                    "md5": "ed6e8dada6b2e843dd210ea0119edfcc",
+                    "sha256": "1c734ca27714df9e4335afa2e05811e6607436aa95f7eadc1fd85c3fd6ce23c1"
+                },
+                "downloads": -1,
+                "filename": "minijinja-0.30.3-cp38-abi3-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "ed6e8dada6b2e843dd210ea0119edfcc",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.8",
+                "size": 584520,
+                "upload_time": "2023-02-12T21:19:18",
+                "upload_time_iso_8601": "2023-02-12T21:19:18.564940Z",
+                "url": "https://files.pythonhosted.org/packages/11/27/d3b97b23f41bd8f3b30c60c0e18824f0a69e53e2af0a1fecaa9de0679aa6/minijinja-0.30.3-cp38-abi3-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "c5753fef1c03caaf9045363f7381c493deb0fb646f469a87978e621838a01dc3",
+                    "md5": "28bd99ac5d689291e0e777d567a74983",
+                    "sha256": "56e1eabe7ebe31c9be053eddd2b8bd8c7bceb12d257ecba092e4610ba73c42d1"
+                },
+                "downloads": -1,
+                "filename": "minijinja-0.30.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "28bd99ac5d689291e0e777d567a74983",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 152389,
+                "upload_time": "2023-02-12T21:19:20",
+                "upload_time_iso_8601": "2023-02-12T21:19:20.706244Z",
+                "url": "https://files.pythonhosted.org/packages/c5/75/3fef1c03caaf9045363f7381c493deb0fb646f469a87978e621838a01dc3/minijinja-0.30.3.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
