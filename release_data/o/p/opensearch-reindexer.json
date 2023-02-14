@@ -38,7 +38,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16814595,
+        "last_serial": 16847201,
         "urls": [
             {
                 "comment_text": "",
@@ -127,7 +127,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16814595,
+        "last_serial": 16847201,
         "urls": [
             {
                 "comment_text": "",
@@ -216,7 +216,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16814595,
+        "last_serial": 16847201,
         "urls": [
             {
                 "comment_text": "",
@@ -305,7 +305,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16814595,
+        "last_serial": 16847201,
         "urls": [
             {
                 "comment_text": "",
@@ -394,7 +394,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16814595,
+        "last_serial": 16847201,
         "urls": [
             {
                 "comment_text": "",
@@ -483,7 +483,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16814595,
+        "last_serial": 16847201,
         "urls": [
             {
                 "comment_text": "",
@@ -572,7 +572,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16814595,
+        "last_serial": 16847201,
         "urls": [
             {
                 "comment_text": "",
@@ -629,7 +629,6 @@
                 "Programming Language :: Python :: 3.10",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "# opensearch-reindexer\n[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/Swiple/opensearch-reindexer/graphs/commit-activity)\n[![codecov](https://codecov.io/gh/Swiple/opensearch-reindexer/branch/main/graph/badge.svg?token=PA9WIZYX5Q)](https://codecov.io/gh/Swiple/opensearch-reindexer)\n\n`opensearch-reindexer` is a Python library that serves to help streamline reindexing data from one OpenSearch \nindex to another using either the native OpenSearch Reindex API or Python, the OpenSearch Scroll API and Bulk inserts.\n\n## Features\n* Native OpenSearch Reindex API and Python based reindexing using OpenSearch Scroll API\n* Migrate data from one index to another in the same cluster\n* Migrate data from one index to another in a different cluster\n* Migration history\n* Run multiple migrations one after another\n* Transform documents using native OpenSearch Reindex API or Python using Scoll API and Bulk inserts\n* Source indices/data is never modified or removed\n\n## Getting started\n\n### 1. Install opensearch-reindexer\n\n`pip install opensearch-reindexer`\n\nor\n\n`poetry add opensearch-reindexer`\n\n### 2. Initialize project\n\n`reindexer init`\n\n### 3. Configure your source_client in `./migrations/env.py`\nYou only need to configure `destination_client` if you are migrating data from one cluster to another.\n\n### 4. Create `reindexer_version` index\n\n`reindexer init-index`\n\nThis will use your `source_client` to create a new index named 'reindexer_version' and insert a new document specifying the revision version.\n`{\"versionNum\": 0}`. `reindexer_version` is used to keep track of which revisions have been run.\n\nWhen reindexing from one cluster to another, migrations should be run first (step 8) before initializing the destination cluster with:\n`reindexer init-index`\n\n### 5. Create revision (repeat if you have multiple indices)\nTwo revision types are supported, `painless` which uses the native OpenSearch Reindex API, and `python` which using\nthe OpenSearch Scroll API and Bulk inserts. `painless` revisions are recommended as they are more performant than \n`python` revisions. You don't have to use one or the other; `./migrations/versions/` can contain a combination of \nboth `painless` and `python` revisions.\n\n#### To create a `painless` revision run:\n\n`reindexer revision 'my revision name'`\n\n#### To create a `python` revision run:\n\n`reindexer revision 'my revision name' --language python`\n\nThis will create a new revision file in `./migrations/versions`.\n\nNote: \n1. revision files should not be removed and their names should not be changed once created.\n2. `./migration/migration_template_painless.py` and `./migration/migration_template_python.py` are referenced for each revision.\nYou can modify them if you find yourself making the same changes to revision files.\n\n### 6. Modify your revision file \nNavigate to your revision file `./migrations/versions/1_my_revision_name.py`\n\n#### Painless\n\nModify `source` and `destination` in `REINDEX_BODY`, you can optionally set `DESTINATION_MAPPINGS`.\n\nNote: If you only want to create the index, set the source index to `None` e.g. `\"source\": {\"index\": \"reindexer_revision_1\"},`\n\nTo transform data as data is reindexed, you can use \npainless scripts. For example, the following will convert data in field \"c\" from an object to a JSON string \nbefore inserting it into index `destination`.\n\n```python\nREINDEX_BODY = {\n    \"source\": {\"index\": \"reindexer_revision_1\"},\n    \"dest\": {\"index\": \"reindexer_revision_2\"},\n    \"script\": {\n        \"lang\": \"painless\",\n        \"source\": \"\"\"\n        def jsonString = '{';\n        int counter = 1;\n        int size = ctx._source.c.size();\n        for (def entry : ctx._source.c.entrySet()) {\n          jsonString += '\"'+entry.getKey()+'\":'+'\"'+entry.getValue()+'\"';\n          if (counter != size) {\n            jsonString += ',';\n          }\n          counter++;\n        }\n        jsonString += '}';\n        ctx._source.c = jsonString;\n        \"\"\"\n    }\n}\n```\nFor more information on `REINDEX_BODY` see https://opensearch.org/docs/latest/opensearch/reindex-data/\n\n#### Python\nModify `SOURCE_INDEX` and `DESTINATION_INDEX`, you can optionally set `DESTINATION_MAPPINGS`.\n\nNote: If you only want to create the index, set the source index to `None` e.g. `\"source\": {\"index\": \"reindexer_revision_1\"},`\n\nTo modify documents as they are being re-indexed to the destination index, update `def transform_document`. For example:\n```python\nclass Migration(BaseMigration):\n    def transform_document(self, doc: dict) -> dict:\n        # Modify this method to transform each document before being inserted into destination index.\n        import json\n        doc['c'] = json.dumps(doc['c'])\n        return doc\n```\n### 7. See an ordered list of revisions that have not be executed\n`reindexer list`\n\n#### 8. Run your migrations\n`reindexer run`\n\nNote: When `reindexer run` is executed, it will compare revision versions in `./migrations/versions/...` to the version number in `reindexer_version` index of the source cluster.\nAll revisions that have not been run will be run one after another. \n\n\n## FAQ \ud83d\udcac \ud83d\ude4b \n#### How do I start using `OpenSearch reindexer` in a new project?\nTo start using `OpenSearch reindexer`, simply follow the steps outlined in the getting started guide.\n\n#### What happens if multiple revisions need to be executed?\n`OpenSearch reindexer` compares the remote version in the `reindexer_version` index on your OpenSearch cluster to your local version. \nAny versions that have not been executed will be executed one after another.\n\n#### How to handle multiple indices?\nCreate a revision for each index and follow the same steps as you would for a single index.\n\n#### How do I migrate from another schema management tool to `OpenSearch reindexer`?\nTo migrate to `OpenSearch reindexer`, follow steps 1-6 in the getting started guide, repeating steps 5 and 6 for each \nindex. Set the source index to None during step 6 to create the destination index if it doesn't exist, or if it already \nexists, proceed to the next revision.\n\n#### Downloading a project that uses `OpenSearch reindexer`\nIf the `reindexer_version` index on the OpenSearch cluster is up-to-date, running `reindexer run` won't do anything.\nHowever, if the OpenSearch cluster hasn't been initialized, run `reindexer init-index` followed by `reindexer run` to \ncreate and initialize the `reindexer_version` index and run all migrations.\n\n#### Reindexing data from one OpenSearch cluster to another\nFollow the same steps for reindexing data to the same cluster, but update the \"destination_client\" in `./migrations/env.py`.\n\nOnce you have reindexed all indices from one cluster to another, update the source and destination clients.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -662,7 +661,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16814595,
+        "last_serial": 16847201,
         "urls": [
             {
                 "comment_text": "",
@@ -703,6 +702,274 @@
                 "upload_time": "2023-02-11T20:23:59",
                 "upload_time_iso_8601": "2023-02-11T20:23:59.016765Z",
                 "url": "https://files.pythonhosted.org/packages/5a/3e/db423bb16f6a87ad9879de597eadf7f32327091b37f3c10b062eaa2e52dc/opensearch-reindexer-2.0.0.dev5.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "2.0.0.dev6": {
+        "info": {
+            "author": "Kenton Parton",
+            "author_email": "kparton@swiple.io",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/Swiple/opensearch-reindexer",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "opensearch-reindexer",
+            "package_url": "https://pypi.org/project/opensearch-reindexer/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/opensearch-reindexer/",
+            "project_urls": {
+                "Homepage": "https://github.com/Swiple/opensearch-reindexer",
+                "Repository": "https://github.com/Swiple/opensearch-reindexer"
+            },
+            "release_url": "https://pypi.org/project/opensearch-reindexer/2.0.0.dev6/",
+            "requires_dist": [
+                "typer[all] (>=0.7.0,<0.8.0)",
+                "opensearch-py (>=2.0.0,<3.0.0)"
+            ],
+            "requires_python": ">=3.9,<4.0",
+            "summary": "`opensearch-reindex` is a Python library that serves to help streamline reindexing data from one OpenSearch index to another.",
+            "version": "2.0.0.dev6",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16847201,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c17fc790f2f94b942030db5bfcf2037707f7fb352c182d59033720345ee01c66",
+                    "md5": "35f5aa8dce02804e15a152b3728bb01b",
+                    "sha256": "1e9ed56658bb29743edcbd42b555b3eed864473a2c44d55b23c413690ebaf5ff"
+                },
+                "downloads": -1,
+                "filename": "opensearch_reindexer-2.0.0.dev6-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "35f5aa8dce02804e15a152b3728bb01b",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9,<4.0",
+                "size": 10001,
+                "upload_time": "2023-02-13T18:00:03",
+                "upload_time_iso_8601": "2023-02-13T18:00:03.877288Z",
+                "url": "https://files.pythonhosted.org/packages/c1/7f/c790f2f94b942030db5bfcf2037707f7fb352c182d59033720345ee01c66/opensearch_reindexer-2.0.0.dev6-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a5145c3c8b09d04f1635e835cff694ca7cf259ff323798478415f3c4e3ced8ae",
+                    "md5": "a313df15a106ff262fb1c8df15e57f43",
+                    "sha256": "adaf8a76d86d4a2afbafad31a79a10a2ece2129d898560172595a6b416908fec"
+                },
+                "downloads": -1,
+                "filename": "opensearch-reindexer-2.0.0.dev6.tar.gz",
+                "has_sig": false,
+                "md5_digest": "a313df15a106ff262fb1c8df15e57f43",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9,<4.0",
+                "size": 10935,
+                "upload_time": "2023-02-13T18:00:01",
+                "upload_time_iso_8601": "2023-02-13T18:00:01.982737Z",
+                "url": "https://files.pythonhosted.org/packages/a5/14/5c3c8b09d04f1635e835cff694ca7cf259ff323798478415f3c4e3ced8ae/opensearch-reindexer-2.0.0.dev6.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "2.0.0.dev7": {
+        "info": {
+            "author": "Kenton Parton",
+            "author_email": "kparton@swiple.io",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/Swiple/opensearch-reindexer",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "opensearch-reindexer",
+            "package_url": "https://pypi.org/project/opensearch-reindexer/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/opensearch-reindexer/",
+            "project_urls": {
+                "Homepage": "https://github.com/Swiple/opensearch-reindexer",
+                "Repository": "https://github.com/Swiple/opensearch-reindexer"
+            },
+            "release_url": "https://pypi.org/project/opensearch-reindexer/2.0.0.dev7/",
+            "requires_dist": [
+                "typer[all] (>=0.7.0,<0.8.0)",
+                "opensearch-py (>=2.0.0,<3.0.0)"
+            ],
+            "requires_python": ">=3.9,<4.0",
+            "summary": "`opensearch-reindex` is a Python library that serves to help streamline reindexing data from one OpenSearch index to another.",
+            "version": "2.0.0.dev7",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16847201,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "8ab127f27fb0c1d8900248c56e641c28ad072ca5e6de8f9b536e81a0a9812300",
+                    "md5": "132502871bdc38124596098bb7122f8d",
+                    "sha256": "95aef4c84b05436e4cc8f0039366cbcbc20797308791d82dc8f28a1776bf5e42"
+                },
+                "downloads": -1,
+                "filename": "opensearch_reindexer-2.0.0.dev7-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "132502871bdc38124596098bb7122f8d",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9,<4.0",
+                "size": 10004,
+                "upload_time": "2023-02-13T23:11:46",
+                "upload_time_iso_8601": "2023-02-13T23:11:46.389965Z",
+                "url": "https://files.pythonhosted.org/packages/8a/b1/27f27fb0c1d8900248c56e641c28ad072ca5e6de8f9b536e81a0a9812300/opensearch_reindexer-2.0.0.dev7-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c493fe99d3db4afd65008eaa7bc6cf834fa7ac65e0e4f97e9414185226495d93",
+                    "md5": "fc418032ad6f7e68c73532e9996b5f67",
+                    "sha256": "cc2b9cdeb550a971c75381a290a1fb880d7145ade0ff1a1a087f57afce071715"
+                },
+                "downloads": -1,
+                "filename": "opensearch-reindexer-2.0.0.dev7.tar.gz",
+                "has_sig": false,
+                "md5_digest": "fc418032ad6f7e68c73532e9996b5f67",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9,<4.0",
+                "size": 10936,
+                "upload_time": "2023-02-13T23:11:44",
+                "upload_time_iso_8601": "2023-02-13T23:11:44.911979Z",
+                "url": "https://files.pythonhosted.org/packages/c4/93/fe99d3db4afd65008eaa7bc6cf834fa7ac65e0e4f97e9414185226495d93/opensearch-reindexer-2.0.0.dev7.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "2.0.0.dev8": {
+        "info": {
+            "author": "Kenton Parton",
+            "author_email": "kparton@swiple.io",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# opensearch-reindexer\n[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/Swiple/opensearch-reindexer/graphs/commit-activity)\n[![codecov](https://codecov.io/gh/Swiple/opensearch-reindexer/branch/main/graph/badge.svg?token=PA9WIZYX5Q)](https://codecov.io/gh/Swiple/opensearch-reindexer)\n\n`opensearch-reindexer` is a Python library that serves to help streamline reindexing data from one OpenSearch \nindex to another using either the native OpenSearch Reindex API or Python, the OpenSearch Scroll API and Bulk inserts.\n\n## Features\n* Native OpenSearch Reindex API and Python based reindexing using OpenSearch Scroll API\n* Migrate data from one index to another in the same cluster\n* Migrate data from one index to another in a different cluster\n* Migration history\n* Run multiple migrations one after another\n* Transform documents using native OpenSearch Reindex API or Python using Scoll API and Bulk inserts\n* Source indices/data is never modified or removed\n\n## Getting started\n\n### 1. Install opensearch-reindexer\n\n`pip install opensearch-reindexer`\n\nor\n\n`poetry add opensearch-reindexer`\n\n### 2. Initialize project\n\n`reindexer init`\n\n### 3. Configure your source_client in `./migrations/env.py`\nYou only need to configure `destination_client` if you are migrating data from one cluster to another.\n\n### 4. Create `reindexer_version` index\n\n`reindexer init-index`\n\nThis will use your `source_client` to create a new index named 'reindexer_version' and insert a new document specifying the revision version.\n`{\"versionNum\": 0}`. `reindexer_version` is used to keep track of which revisions have been run.\n\nWhen reindexing from one cluster to another, migrations should be run first (step 8) before initializing the destination cluster with:\n`reindexer init-index`\n\n### 5. Create revision (repeat if you have multiple indices)\nTwo revision types are supported, `painless` which uses the native OpenSearch Reindex API, and `python` which using\nthe OpenSearch Scroll API and Bulk inserts. `painless` revisions are recommended as they are more performant than \n`python` revisions. You don't have to use one or the other; `./migrations/versions/` can contain a combination of \nboth `painless` and `python` revisions.\n\n#### To create a `painless` revision run:\n\n`reindexer revision 'my revision name'`\n\n#### To create a `python` revision run:\n\n`reindexer revision 'my revision name' --language python`\n\nThis will create a new revision file in `./migrations/versions`.\n\nNote: \n1. revision files should not be removed and their names should not be changed once created.\n2. `./migration/migration_template_painless.py` and `./migration/migration_template_python.py` are referenced for each revision.\nYou can modify them if you find yourself making the same changes to revision files.\n\n### 6. Modify your revision file \nNavigate to your revision file `./migrations/versions/1_my_revision_name.py`\n\n#### Painless\n\nModify `source` and `destination` in `REINDEX_BODY`, you can optionally set `DESTINATION_MAPPINGS`.\n\nNote: If you only want to create the index, set the source index to `None` e.g. `\"source\": {\"index\": \"reindexer_revision_1\"},`\n\nTo transform data as data is reindexed, you can use \npainless scripts. For example, the following will convert data in field \"c\" from an object to a JSON string \nbefore inserting it into index `destination`.\n\n```python\nREINDEX_BODY = {\n    \"source\": {\"index\": \"reindexer_revision_1\"},\n    \"dest\": {\"index\": \"reindexer_revision_2\"},\n    \"script\": {\n        \"lang\": \"painless\",\n        \"source\": \"\"\"\n        def jsonString = '{';\n        int counter = 1;\n        int size = ctx._source.c.size();\n        for (def entry : ctx._source.c.entrySet()) {\n          jsonString += '\"'+entry.getKey()+'\":'+'\"'+entry.getValue()+'\"';\n          if (counter != size) {\n            jsonString += ',';\n          }\n          counter++;\n        }\n        jsonString += '}';\n        ctx._source.c = jsonString;\n        \"\"\"\n    }\n}\n```\nFor more information on `REINDEX_BODY` see https://opensearch.org/docs/latest/opensearch/reindex-data/\n\n#### Python\nModify `SOURCE_INDEX` and `DESTINATION_INDEX`, you can optionally set `DESTINATION_MAPPINGS`.\n\nNote: If you only want to create the index, set the source index to `None` e.g. `\"source\": {\"index\": \"reindexer_revision_1\"},`\n\nTo modify documents as they are being re-indexed to the destination index, update `def transform_document`. For example:\n```python\nclass Migration(BaseMigration):\n    def transform_document(self, doc: dict) -> dict:\n        # Modify this method to transform each document before being inserted into destination index.\n        import json\n        doc['c'] = json.dumps(doc['c'])\n        return doc\n```\n### 7. See an ordered list of revisions that have not be executed\n`reindexer list`\n\n#### 8. Run your migrations\n`reindexer run`\n\nNote: When `reindexer run` is executed, it will compare revision versions in `./migrations/versions/...` to the version number in `reindexer_version` index of the source cluster.\nAll revisions that have not been run will be run one after another. \n\n\n## FAQ \ud83d\udcac \ud83d\ude4b \n#### How do I start using `OpenSearch reindexer` in a new project?\nTo start using `OpenSearch reindexer`, simply follow the steps outlined in the getting started guide.\n\n#### What happens if multiple revisions need to be executed?\n`OpenSearch reindexer` compares the remote version in the `reindexer_version` index on your OpenSearch cluster to your local version. \nAny versions that have not been executed will be executed one after another.\n\n#### How to handle multiple indices?\nCreate a revision for each index and follow the same steps as you would for a single index.\n\n#### How do I migrate from another schema management tool to `OpenSearch reindexer`?\nTo migrate to `OpenSearch reindexer`, follow steps 1-6 in the getting started guide, repeating steps 5 and 6 for each \nindex. Set the source index to None during step 6 to create the destination index if it doesn't exist, or if it already \nexists, proceed to the next revision.\n\n#### Downloading a project that uses `OpenSearch reindexer`\nIf the `reindexer_version` index on the OpenSearch cluster is up-to-date, running `reindexer run` won't do anything.\nHowever, if the OpenSearch cluster hasn't been initialized, run `reindexer init-index` followed by `reindexer run` to \ncreate and initialize the `reindexer_version` index and run all migrations.\n\n#### Reindexing data from one OpenSearch cluster to another\nFollow the same steps for reindexing data to the same cluster, but update the \"destination_client\" in `./migrations/env.py`.\n\nOnce you have reindexed all indices from one cluster to another, update the source and destination clients.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/Swiple/opensearch-reindexer",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "opensearch-reindexer",
+            "package_url": "https://pypi.org/project/opensearch-reindexer/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/opensearch-reindexer/",
+            "project_urls": {
+                "Homepage": "https://github.com/Swiple/opensearch-reindexer",
+                "Repository": "https://github.com/Swiple/opensearch-reindexer"
+            },
+            "release_url": "https://pypi.org/project/opensearch-reindexer/2.0.0.dev8/",
+            "requires_dist": [
+                "typer[all] (>=0.7.0,<0.8.0)",
+                "opensearch-py (>=2.0.0,<3.0.0)"
+            ],
+            "requires_python": ">=3.9,<4.0",
+            "summary": "`opensearch-reindex` is a Python library that serves to help streamline reindexing data from one OpenSearch index to another.",
+            "version": "2.0.0.dev8",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16847201,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6f76072e7f748c2fe825602903144cff1abb9b61b3f3a4a29fcc0317f9248599",
+                    "md5": "7024dcd73f3e5ad7ef96000306e1523a",
+                    "sha256": "c80e0c917f23dedbcba653d43d60c74c0b0edfd1021e24d4a2164ce6db28f0c3"
+                },
+                "downloads": -1,
+                "filename": "opensearch_reindexer-2.0.0.dev8-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "7024dcd73f3e5ad7ef96000306e1523a",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9,<4.0",
+                "size": 10004,
+                "upload_time": "2023-02-13T23:17:42",
+                "upload_time_iso_8601": "2023-02-13T23:17:42.559946Z",
+                "url": "https://files.pythonhosted.org/packages/6f/76/072e7f748c2fe825602903144cff1abb9b61b3f3a4a29fcc0317f9248599/opensearch_reindexer-2.0.0.dev8-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "abd242f7520cc0968f02faddf5a3157fca195689315d722762c2ebf098d3481d",
+                    "md5": "d29827f8445d627a2a29d4a8d4a30830",
+                    "sha256": "6c98e9746ea3f6d7a2ae9a0e234a02a4a6d0e361da169119c0933f61a1e7211f"
+                },
+                "downloads": -1,
+                "filename": "opensearch-reindexer-2.0.0.dev8.tar.gz",
+                "has_sig": false,
+                "md5_digest": "d29827f8445d627a2a29d4a8d4a30830",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9,<4.0",
+                "size": 10936,
+                "upload_time": "2023-02-13T23:17:41",
+                "upload_time_iso_8601": "2023-02-13T23:17:41.123689Z",
+                "url": "https://files.pythonhosted.org/packages/ab/d2/42f7520cc0968f02faddf5a3157fca195689315d722762c2ebf098d3481d/opensearch-reindexer-2.0.0.dev8.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
