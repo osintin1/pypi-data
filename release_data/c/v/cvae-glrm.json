@@ -1,5 +1,5 @@
 {
-    "1.0.0": {
+    "1.0.1": {
         "info": {
             "author": "Ningshan Li",
             "author_email": "hill103.2@gmail.com",
@@ -10,7 +10,7 @@
                 "Operating System :: OS Independent",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "# CVAE-GLRM\nCVAE-GLRM (conditional variational autoencoder - graph Laplacian regularized model) is a two-step **hybrid** machine learning and regression method considering platform effect, spatial information and sparsity in **deconvolution** of spatial transcriptomic data using reference single-cell RNA sequencing data from same tissue type.\n\n## Installation\n\nWe provided **Docker** and **Singularity** images of CVAE-GLRM\n\n```bash\n# For Docker\ndocker pull az7jh2/trftarget:0.3.2\n# For Singularity\nsingularity build trftarget-0.3.2.sif docker://az7jh2/trftarget:0.3.2\n```\n\nTo test the installation (should print the version of tRFtarget-pipeline)\n\n```bash\n# For Docker\ndocker run -it --rm az7jh2/trftarget:0.3.2 tRFtarget -v\n# For Singularity\nsingularity exec trftarget-0.3.2.sif tRFtarget -v\n```\n\n## Usage\n\n### Command\n\nThe command to run tRFtarget-pipeline with default setting is:\n\n```bash\n# For Docker\ndocker run -it --rm -v <path>:/data az7jh2/trftarget:0.3.2 tRFtarget -q <query_fasta_file_name> -t <target_fasta_file_name> -n 1 --e_rnahybrid -15 --e_intarna 0 -b 1 -s 6\n# For Singularity\nsingularity exec -B <path>:/data trftarget-0.3.2.sif tRFtarget -q <query_fasta_file_name> -t <target_fasta_file_name> -n 1 --e_rnahybrid -15 --e_intarna 0 -b 1 -s 6\n```\n\n`<path>` is the valid and **absolute** path of the folder in the host machine to be mounted in the Docker/Singularity image for data exchanging (`readlink -f` can be used to get the absolute path of one folder)\n\n `<query_fasta_file_name>` and `<target_fasta_file_name>` are the file names (**Without path**) of *FASTA* files of query small RNAs and target RNAs respectively. both of them are required to be located in the `<path>` folder\n\n### Input\n\n* A *FASTA* file of query small RNAs. Compressed file (such as `.gz`) currently not supported\n* A *FASTA* file of target RNAs (optional). Compressed file (such as `.gz`) currently not supported. If not provided, use 100,218 Protein-coding transcript sequences (GRCh38.p13) as target RNAs instead\n\n### All options\n\n| Option              | Description                |\n| ------------------- | -------------------------- |\n| `-h` or`--help`     | print help messages        |\n| `-v` or `--version` | print version of CVAE-GLRM |\n\n#### Input options\n\n| Option                | Description                                                  |\n| --------------------- | ------------------------------------------------------------ |\n| `-q` or `--query`     | input csv file of raw nUMI counts of **spatial transcriptomic** data (spots * genes), with absolute or relative path. Rows as spots and columns as genes. Row header as spot barcodes and column header as gene symbols are both required |\n| `-r` or `--ref`       | input csv file of raw nUMI counts of **scRNA-seq** data (cells * genes), with absolute or relative path. Rows as cells and columns as genes. Row header as cell barcodes and column header as gene symbols are both required |\n| `-c` or `--ref_anno`  | input csv file of **cell-type annotations** for all cells in scRNA-seq data, with absolute or relative path. Rows as cells and only 1 column as cell-type annotation. Row header as cell barcodes and column header as cell-types are both required. |\n| `-m` or `--maker`     | input csv file of already curated **cell-type marker gene expression** (cell-types * genes; already normalized by sequencing depth), with absolute or relative path. Rows as cell-types and columns as genes. Row header as cell-type names and column header as gene symbols are both required. If marker gene expression is provided, the built-in differential analysis will be skipped and genes from this csv file will be directly used for cell-type deconvolution, as well as CVAE building. If not provided, Wilcoxon rank sum test will be performed to select cell-type marker genes. |\n| `-a` or `--adjacency` | input csv file of **Adjacency Matrix** of spots in spatial transcriptomic data (spots * spots), with absolute or relative path. In Adjacency Matrix, entry value **1** represents corresponding two spots are adjacent spots according to the definition of neighborhood, while value **0** for non-adjacent spots. All diagonal entries are set as 0. Row header and column header as spot barcodes are both required. And the spot order should be consist with row order in spatial data. Default value is None. |\n\n#### Output options\n\n| Option             | Description                                                  |\n| ------------------ | ------------------------------------------------------------ |\n| `-o` or `--output` | name of csv file of the cell-type deconvolution result. Only specify the file name WITHOUT path. If ignored, the result file will be named as \"celltype_proportions.csv\" |\n\n#### General options\n\n| Option              | Description                                                  |\n| ------------------- | ------------------------------------------------------------ |\n| `-n` or `--n_cores` | number of CPU cores used for parallel computing. Default value is 1, i.e. no parallel computing |\n| `--threshold`       | threshold for hard thresholding the estimated cell-type proportions, i.e. for one spot, estimated cell-type proportions smaller than this threshold value will be set to 0, then re-normalize all proportions of this spot to sum as 1. Default value is 0, which means no hard thresholding |\n| `--use_cvae`        | control whether to build Conditional Variational Autoencoder (CVAE) to remove the platform effect between spatial transcriptomic and scRNA-seq data (true/false). Default value is true. Building CVAE requires raw nUMI counts and corresponding cell-type annotation of scRNA-seq data specified |\n| `--diagnosis`       | if true, provide more output files related to CVAE building and hyper-parameter selection for diagnosis. Default value is false |\n| `--verbose`         | control whether to print more info such as output of each ADMM iteration step during program running (true/false). Default value is true |\n\n#### Cell-type marker identification options\n\n| Option               | Description                                                  |\n| -------------------- | ------------------------------------------------------------ |\n| `--n_marker_per_cmp` | number of selected TOP cell-type specified marker genes for each comparison of ONE cell-type against another ONE cell-type using Wilcoxon rank sum test. Default number is 30. For each comparison, genes with a FDR adjusted p value < 0.05 will be selected first, then these marker genes will be sorted by a combined rank of log fold change and pct.1/pct.2, and finally pick up specified number of gene with TOP ranks |\n\n#### CVAE related options\n\n| Option                   | Description                                                  |\n| ------------------------ | ------------------------------------------------------------ |\n| `--n_hv_gene`            | number of highly variable genes identified in reference scRNA-seq data, and these HV genes will be used together with identified cell-type marker genes for building CVAE. Default number is 1,000. If the actual number of genes in scRNA-seq data is less than the specified value, all available genes in scRNA-seq data will be used for building CVAE |\n| `--pseudo_spot_min_cell` | minimum value of cells in one pseudo-spot when combining cells into pseudo-spots. Default value is 2 |\n| `--pseudo_spot_max_cell` | maximum value of cells in one pseudo-spot when combining cells into pseudo-spots. Default value is 8 |\n| `--seq_depth_scaler`     | a scaler of scRNA-seq sequencing depth to transform CVAE decoded values (sequencing depth normalized gene expressions) back to raw nUMI counts. Default value is 10,000 for all cells |\n| `--cvae_input_scaler`    | maximum value of the scaled input for CVAE input layer. Default value is 10, i.e. linearly scale all the sequencing depth normalized gene expressions to range [0, 10] |\n| `--cvae_init_lr`         | initial learning rate for training CVAE. Default value is 0.003. Although learning rate will decreasing automatically during training, large initial learning rate will cause training failure at the very beginning of training. If loss function value do NOT monotonically decrease, please try smaller initial learning rate |\n| `--redo_de`              | control whether to redo Differential analysis on CVAE transformed scRNA-seq gene expressions to get a new set of marker gene list of cell-types (true/false). Default value is true. It's recommended to redo Differential analysis since CVAE transformation may change the marker gene profile of cell-types |\n| `--seed`                 | seed value of TensorFlow to control the randomness in building CVAE. Default value is 383 |\n\n#### GLRM hyper-parameter related options\n\n| Option                 | Description                                                  |\n| ---------------------- | ------------------------------------------------------------ |\n| `--lambda_r`           | hyper-parameter for **adaptive Lasso**. Default value is None, i.e. use cross-validation to find the optimal value. The list of `lambda_r` candidates will has total `lambda_r_range_k` values, and candidate values will be evenly selected on a log scale (geometric progression) from range [`lambda_r_range_min`, `lambda_r_range_max`]. If `lambda_r` is specified as a valid value, then `lambda_r_range_k`, `lambda_r_range_min` and `lambda_r_range_max` will be ignored |\n| `--lambda_r_range_min` | minimum value of the range of `lambda_r` candidates used for hyper-parameter selection. Default value is 0.1 |\n| `--lambda_r_range_max` | maximum value of the range of `lambda_r` candidates used for hyper-parameter selection. Default value is 100 |\n| `--lambda_r_range_k`   | number of `lambda_r` candidates used for hyper-parameter selection. Default value is 8 (including the values of `lambda_r_range_min` and `lambda_r_range_max`) |\n| `--lambda_g`           | hyper-parameter for **graph Laplacian constrain**, which depends on the edge weights used in the graph created from the Adjacency Matrix. Default value is None, i.e. use cross-validation to find the optimal value. The list of `lambda_g` candidates will has total `lambda_g_range_k` values, and candidate values will be evenly selected on a log scale (geometric progression) from range [`lambda_g_range_min`, `lambda_g_range_max`]. If `lambda_g` is specified as a valid value, then `lambda_g_range_k`, `lambda_g_range_min` and `lambda_g_range_max` will be ignored |\n| `--lambda_g_range_min` | minimum value of the range of `lambda_g` candidates used for hyper-parameter selection. Default value is 0.1 |\n| `--lambda_g_range_max` | maximum value of the range of `lambda_g` candidates used for hyper-parameter selection. Default value is 100 |\n| `--lambda_g_range_k`   | number of `lambda_g` candidates used for hyper-parameter selection. Default value is 8 (including the values of `lambda_g_range_min` and `lambda_g_range_max`) |\n",
+            "description": "# CVAE-GLRM\n![GitHub release (latest by date)](https://img.shields.io/github/v/release/az7jh2/CVAE-GLRM)![PyPI](https://img.shields.io/pypi/v/cvae-glrm)![Conda](https://img.shields.io/conda/v/bioconda/cvae-glrm)![Docker Image Version (latest by date)](https://img.shields.io/docker/v/az7jh2/cvae-glrm?label=docker)![Read the Docs (version)](https://img.shields.io/readthedocs/cvae-glrm/latest)\n\nCVAE-GLRM (**C**onditional **V**ariational **A**uto**E**ncoder - **G**raph **L**aplacian **R**egularized **M**odel) is a two-step **hybrid** machine learning and regression method considering platform effect, spatial information and sparsity in **deconvolution** of spatial transcriptomic data using reference single-cell RNA sequencing data from same tissue type.\n\n**Full documentation** for CVAE-GLRM is available on [Read the Docs](https://cvae-glrm.readthedocs.io/en/latest/).\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -24,14 +24,14 @@
             "license": "",
             "maintainer": "",
             "maintainer_email": "",
-            "name": "CVAE-GLRM",
-            "package_url": "https://pypi.org/project/CVAE-GLRM/",
+            "name": "cvae-glrm",
+            "package_url": "https://pypi.org/project/cvae-glrm/",
             "platform": null,
-            "project_url": "https://pypi.org/project/CVAE-GLRM/",
+            "project_url": "https://pypi.org/project/cvae-glrm/",
             "project_urls": {
                 "Homepage": "https://github.com/az7jh2/CVAE-GLRM"
             },
-            "release_url": "https://pypi.org/project/CVAE-GLRM/1.0.0/",
+            "release_url": "https://pypi.org/project/cvae-glrm/1.0.1/",
             "requires_dist": [
                 "scipy (==1.8.1)",
                 "pandas (==1.4.3)",
@@ -50,52 +50,52 @@
                 "adjustText (==0.7.3)"
             ],
             "requires_python": ">=3.9.12",
-            "summary": "conditional variational autoencoder - graph Laplacian regularized model.",
-            "version": "1.0.0",
+            "summary": "Conditional Variational AutoEncoder - Graph Laplacian Regularized Model",
+            "version": "1.0.1",
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16853336,
+        "last_serial": 16856284,
         "urls": [
             {
                 "comment_text": "",
                 "digests": {
-                    "blake2b_256": "289d4b1cbdc9910fd8c6d7bed2c23112f056c33a7e308a37030162c86253d04e",
-                    "md5": "1e427a59fadddbdacb5bad1932d68208",
-                    "sha256": "57468d81cc7eadd8a442e1734567975347a0a12f6d1c82c75d1b085f83bf4636"
+                    "blake2b_256": "bd7f12c18d11a8484285bfe7e2471e7c6c874b7f28ebde2ebc7475be3ae4a174",
+                    "md5": "6d9b860532e710550161bf0ed2665931",
+                    "sha256": "e14cdd8afc37da76f7c2f968a748fd7d12f1780c66f2fc60497d6c17488a8202"
                 },
                 "downloads": -1,
-                "filename": "CVAE_GLRM-1.0.0-py3-none-any.whl",
+                "filename": "cvae_glrm-1.0.1-py3-none-any.whl",
                 "has_sig": false,
-                "md5_digest": "1e427a59fadddbdacb5bad1932d68208",
+                "md5_digest": "6d9b860532e710550161bf0ed2665931",
                 "packagetype": "bdist_wheel",
                 "python_version": "py3",
                 "requires_python": ">=3.9.12",
-                "size": 5606,
-                "upload_time": "2023-02-14T09:06:04",
-                "upload_time_iso_8601": "2023-02-14T09:06:04.935491Z",
-                "url": "https://files.pythonhosted.org/packages/28/9d/4b1cbdc9910fd8c6d7bed2c23112f056c33a7e308a37030162c86253d04e/CVAE_GLRM-1.0.0-py3-none-any.whl",
+                "size": 63316,
+                "upload_time": "2023-02-14T14:03:56",
+                "upload_time_iso_8601": "2023-02-14T14:03:56.504965Z",
+                "url": "https://files.pythonhosted.org/packages/bd/7f/12c18d11a8484285bfe7e2471e7c6c874b7f28ebde2ebc7475be3ae4a174/cvae_glrm-1.0.1-py3-none-any.whl",
                 "yanked": false,
                 "yanked_reason": null
             },
             {
                 "comment_text": "",
                 "digests": {
-                    "blake2b_256": "4af428493d89d06f061a5b7a9d9617a12e8c7e48a8a0c6c4fc7c98146397ac57",
-                    "md5": "5b16c8abb0dabe0c5bc3a672b3052b95",
-                    "sha256": "a42809bbc650d2a7391b64174d9fb59245b96a627d2758f38727514ae6fd2d50"
+                    "blake2b_256": "3076fc8b1afdb02243e4dd159157984ace9d5f52d00983d8543c608946052162",
+                    "md5": "7b65d8850bd4bdf5a76ea8fb33b5f973",
+                    "sha256": "e933ecbbcfbba722794f9bafa064fba51055c704cd1273bfae48fad86653a2f1"
                 },
                 "downloads": -1,
-                "filename": "CVAE-GLRM-1.0.0.tar.gz",
+                "filename": "cvae-glrm-1.0.1.tar.gz",
                 "has_sig": false,
-                "md5_digest": "5b16c8abb0dabe0c5bc3a672b3052b95",
+                "md5_digest": "7b65d8850bd4bdf5a76ea8fb33b5f973",
                 "packagetype": "sdist",
                 "python_version": "source",
                 "requires_python": ">=3.9.12",
-                "size": 6645,
-                "upload_time": "2023-02-14T09:06:06",
-                "upload_time_iso_8601": "2023-02-14T09:06:06.643462Z",
-                "url": "https://files.pythonhosted.org/packages/4a/f4/28493d89d06f061a5b7a9d9617a12e8c7e48a8a0c6c4fc7c98146397ac57/CVAE-GLRM-1.0.0.tar.gz",
+                "size": 56540,
+                "upload_time": "2023-02-14T14:03:58",
+                "upload_time_iso_8601": "2023-02-14T14:03:58.179965Z",
+                "url": "https://files.pythonhosted.org/packages/30/76/fc8b1afdb02243e4dd159157984ace9d5f52d00983d8543c608946052162/cvae-glrm-1.0.1.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
