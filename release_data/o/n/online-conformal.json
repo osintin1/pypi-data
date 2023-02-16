@@ -1,0 +1,91 @@
+{
+    "1.0.0": {
+        "info": {
+            "author": "Aadyot Bhatnagar",
+            "author_email": "abhatnagar@salesforce.com",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "# Improved Online Conformal Prediction via Strongly Adaptive Online Learning\nThis library implements numerous algorithms which perform conformal prediction on data with arbitrary distribution\nshifts over time. This is the official implementation for the [paper](https://arxiv.org/abs/2302.07869) Bhatnagar et al.,\n\"Improved Online Conformal Prediction via Strongly Adaptive Online Learning,\" 2023. We include reference implementations\nfor the proposed methods Strongly Adaptive Online Conformal Prediction (SAOCP) and Scale-Free Online Gradient Descent\n(SF-OGD), as well as Split Conformal Prediction ([Vovk et al., 1999](https://dl.acm.org/doi/10.5555/645528.657641)),\nNon-Exchangeable Conformal Prediction ([Barber et al., 2022](https://arxiv.org/pdf/2202.13415.pdf)), and \nFully Adaptive Conformal Inference (FACI, [Gibbs & Candes, 2022](https://arxiv.org/pdf/2208.08401.pdf)).\n\n## Replicating Our Experiments\nFirst install the `online_conformal` package by cloning this repo and calling ``pip install .``.\nTo run our time series forecasting experiments, first clone the [Merlion](https://github.com/salesforce/Merlion) repo\nand install their `ts_datasets` package. Then, you can call\n```shell\npython time_series.py --model <model> --dataset <dataset> --njobs <njobs>\n```\nwhere `<model>` can be one of `LGBM`, `ARIMA`, or `Prophet`; `<dataset>` can be one of\n`M4_Hourly`, `M4_Daily`, `M4_Weekly`, or `NN5_Daily`; and `<njobs>` indicates the number of \nparallel cores you wish to parallelize the file with. The results will be written to a sub-directory\n`results`.\n\nTo run our experiments on image classification under distribution shift, first install [PyTorch](https://pytorch.org/).\nThen, you can call\n```shell\npython vision.py --dataset <dataset>\n```\nwhere dataset is one of `ImageNet` or `TinyImageNet`. Various intermediate results will be written to\nsub-folders, and checkpointing (e.g. for model training) is automatic.\n\n## Using Our Code\nTo use our code, first install the `online_conformal` package by calling ``pip install online_conformal``. \nYou can alternatively install the package from source by cloning this repo and calling ``pip install .``.\n\nEach online conformal prediction method is implemented as its own class in the package. All methods share a common API.\nFor time series forecasting, we leverage models implemented in [Merlion](https://github.com/salesforce/Merlion).\nBelow, we demonstrate how to use `SAOCP` to create prediction intervals for multi-horizon time series forecasting.\nThe update loop is a simplified version of calling\n`saocp.forecast(time_series=test_data.iloc[:horizon], time_series_prev=train_data)`, whose implementation you can find\n[here](https://github.com/salesforce/online_conformal/blob/main/online_conformal/base.py#L116).\n\n```python\nimport pandas as pd\nfrom merlion.models.factory import ModelFactory\nfrom merlion.utils import TimeSeries\nfrom online_conformal.dataset import M4\nfrom online_conformal.saocp import SAOCP\n\n# Get some time series data as pandas.DataFrames\ndata = M4(\"Hourly\")[0]\ntrain_data, test_data = data[\"train_data\"], data[\"test_data\"]\n# Initialize a Merlion model for time series forecasting\nmodel = ModelFactory.create(name=\"LGBMForecaster\")\n# Initialize the SAOCP wrapper on top of the model. This splits the data \n# into train/calibration splits, trains the model on the train split, \n# and initializes SAOCP's internal state on the calibration split.\n# The target coverage is 90% here, but you can adjust this freely.\n# We also do 24-step-ahead forecasting by setting horizon=24.\nhorizon = 24\nsaocp = SAOCP(model=model, train_data=train_data, coverage=0.9,\n              calib_frac=0.2, horizon=horizon)\n\n# Get the model's 24-step-ahead prediction, and convert it to prediction intervals\nyhat, _ = saocp.model.forecast(horizon, time_series_prev=TimeSeries.from_pd(train_data))\ndelta_lb, delta_ub = zip(*[saocp.predict(horizon=h + 1) for h in range(horizon)])\nyhat = yhat.to_pd().iloc[:, 0]\nlb, ub = yhat + delta_lb, yhat + delta_ub\n\n# Update SAOCP's internal state based on the next 24 observations\nprev = train_data.iloc[:-horizon + 1]\ntime_series = pd.concat((train_data.iloc[-horizon + 1:], test_data.iloc[:horizon]))\nfor i in range(len(time_series)):\n    # Predict yhat_{t-H+i+1}, ..., yhat_{t-H+i+H} = f(y_1, ..., y_{t-H+i}) \n    y = time_series.iloc[i:i + horizon, 0]\n    yhat, _ = saocp.model.forecast(y.index, time_series_prev=TimeSeries.from_pd(prev))\n    yhat = yhat.to_pd().iloc[:, 0]\n    # Use h-step prediction of yhat_{t-k+h} to update SAOCP's h-step prediction interval\n    for h in range(len(y)):\n        if i >= h:\n            saocp.update(ground_truth=y[h:h + 1], forecast=yhat[h:h + 1], horizon=h + 1)\n    prev = pd.concat((prev, time_series.iloc[i:i+1]))\n```\n\nFor other use cases, you can initialize `saocp = SAOCP(model=None, train_data=None, max_scale=max_scale, coverage=0.9)`.\nHere, `max_scale` indicates the largest value you expect the conformal score to take. Then, you can obtain the conformal\nscore corresponding to 90% (or your desired level of coverage) by calling `score = saocp.predict(horizon=1)[1]`, and\nyou can use this value to compute the prediction set `{y: S(X_t, y) < score}` using your own custom code. Finally, after\nyou observe the true conformal score `new_score = S(X_t, Y_t)`, you can update the conformal predictor by calling \n`saocp.update(ground_truth=pd.Series([new_score]), forecast=pd.Series([0]), horizon=1)`. \n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "Apache 2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "online-conformal",
+            "package_url": "https://pypi.org/project/online-conformal/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/online-conformal/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/online-conformal/1.0.0/",
+            "requires_dist": [
+                "datasets",
+                "jinja2 (>=3.0)",
+                "matplotlib",
+                "numpy",
+                "pandas",
+                "salesforce-merlion",
+                "scipy",
+                "tqdm"
+            ],
+            "requires_python": "",
+            "summary": "A library for time series conformal prediction",
+            "version": "1.0.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16882760,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2033df3447ab108034557e2afad44b500f029c8a92873d9f9659b2492b5c2eb7",
+                    "md5": "68841a81936c9cd4a6c46ee50f707a79",
+                    "sha256": "1b7c2ec8eb9707f6f04fb186daa367bdc9b9673260d7913deaec6ae3579f6cef"
+                },
+                "downloads": -1,
+                "filename": "online_conformal-1.0.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "68841a81936c9cd4a6c46ee50f707a79",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 7576,
+                "upload_time": "2023-02-16T01:59:15",
+                "upload_time_iso_8601": "2023-02-16T01:59:15.774624Z",
+                "url": "https://files.pythonhosted.org/packages/20/33/df3447ab108034557e2afad44b500f029c8a92873d9f9659b2492b5c2eb7/online_conformal-1.0.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d6c2c436c01cf12394988d9db04cd69f4e26ce2de1cd4d01a983495d153de9e5",
+                    "md5": "e031c3fb4c984a47e75c456a4377e35d",
+                    "sha256": "c940f92289287f72fe14f54dd687cd9c94b5e37e7513627945be9ebb45ad24a6"
+                },
+                "downloads": -1,
+                "filename": "online_conformal-1.0.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "e031c3fb4c984a47e75c456a4377e35d",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 9953,
+                "upload_time": "2023-02-16T01:59:17",
+                "upload_time_iso_8601": "2023-02-16T01:59:17.607508Z",
+                "url": "https://files.pythonhosted.org/packages/d6/c2/c436c01cf12394988d9db04cd69f4e26ce2de1cd4d01a983495d153de9e5/online_conformal-1.0.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
