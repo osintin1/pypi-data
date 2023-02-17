@@ -38,7 +38,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16853693,
+        "last_serial": 16892177,
         "urls": [
             {
                 "comment_text": "",
@@ -95,7 +95,6 @@
                 "Operating System :: OS Independent",
                 "Programming Language :: Python"
             ],
-            "description": "# PipelineIntegrity library\r\n[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/vb64/pipeline.integrity/pep257.yml?label=Pep257&style=plastic&branch=main)](https://github.com/vb64/pipeline.integrity/actions?query=workflow%3Apep257)\r\n[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/vb64/pipeline.integrity/py2.yml?label=Python%202.7&style=plastic&branch=main)](https://github.com/vb64/pipeline.integrity/actions?query=workflow%3Apy2)\r\n[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/vb64/pipeline.integrity/py3.yml?label=Python%203.7-3.10&style=plastic&branch=main)](https://github.com/vb64/pipeline.integrity/actions?query=workflow%3Apy3)\r\n[![Codacy Badge](https://app.codacy.com/project/badge/Grade/73597c448da3417599eb3f21bcb7136b)](https://www.codacy.com/gh/vb64/pipeline.integrity/dashboard?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=vb64/pipeline.integrity&amp;utm_campaign=Badge_Grade)\r\n[![Codacy Badge](https://app.codacy.com/project/badge/Coverage/73597c448da3417599eb3f21bcb7136b)](https://www.codacy.com/gh/vb64/pipeline.integrity/dashboard?utm_source=github.com&utm_medium=referral&utm_content=vb64/pipeline.integrity&utm_campaign=Badge_Coverage)\r\n\r\n[In Russian](READMEru.md)\r\n\r\nFree, open source PipelineIntegrity library designed to calculate the degree of danger\r\nof pipeline metal loss defects according to the [ASME B31G method](https://law.resource.org/pub/us/cfr/ibr/002/asme.b31g.1991.pdf).\r\n\r\n![ASME B31G method](pipeline_integrity/method/asme_b31g/img/fig_1_1.png)\r\n\r\n## Installation\r\n\r\n```bash\r\npip install pipeline-integrity\r\n```\r\n\r\n## Usage\r\n\r\nA pipe under pressure, with a length, diameter and wall thickness from specified material.\r\n\r\n```python\r\nfrom pipeline_integrity.material import Material\r\nfrom pipeline_integrity.pipe import Pipe\r\n\r\npipe = Pipe(\r\n  440,  # length, inches\r\n  56,  # diameter, inches\r\n  0.63,  # wall thickness, inches\r\n  Material(  # pipe material\r\n    \"Steel\",\r\n    52000  # SMYS, psi\r\n  ),\r\n  900  # pressure, psi\r\n)\r\n)\r\n```\r\n\r\nMetal loss defect with a specified position on the pipe and a specified depth.\r\n\r\n```python\r\ndefect = pipe.add_metal_loss(\r\n  40,  # the defect starts at a distance of 40 inches from the beginning of the pipe\r\n  4,  # defect length 4 inches\r\n  10,  # along the circumference of the pipe, the defect begins\r\n       # at 10 arc minutes from the top of the pipe\r\n  20,  # the size of the defect along the circumference is 20 arc minutes\r\n  0.039  # defect depth 0.039 inches\r\n)\r\n```\r\n\r\nContext for calculating the degree of severity of the defect according to the ASME B31G method\r\n\r\n```python\r\nfrom pipeline_integrity.method.asme_b31g import Context\r\n\r\nasme = Context(defect)\r\n```\r\n\r\nDefect depth less than 10% wall thickness, no danger.\r\n\r\n```python\r\nfrom pipeline_integrity.method.asme_b31g import State\r\n\r\nassert defect.depth == 0.039\r\nassert pipe.wallthickness == 0.63\r\nassert asme.pipe_state() == State.Ok\r\n```\r\n\r\nThe depth of the defect is more than 80% of the pipe wall thickness, repair or replacement of the pipe is necessary.\r\n\r\n```python\r\ndefect.depth = 0.6\r\nassert asme.pipe_state() == State.Replace\r\n```\r\n\r\nThe depth of the defect is 50% of the pipe wall thickness, but the length of the defect\r\ndoes not exceed its maximum allowable length.\r\nThe defect is not dangerous.\r\n\r\n```python\r\ndefect.depth = 0.31\r\nassert defect.length == 4\r\nassert round(asme.defect_max_length()) == 5\r\nassert asme.pipe_state() == State.Safe\r\n```\r\n\r\nA defect with a length of 20 inches and a depth of 50% of the pipe wall thickness\r\nrequires repair at the specified working pressure in the pipe.\r\n\r\n```python\r\ndefect.length = 20\r\nassert asme.pipe_state() == State.Repair\r\n```\r\n\r\nWhen the operating pressure is reduced to a safe value, the defect does not require repair.\r\n\r\n```python\r\nassert pipe.maop == 900\r\nassert round(asme.safe_pressure, 2) == 700.68\r\npipe.maop = 700\r\nassert asme.pipe_state(is_explain=True) == State.Defected\r\n```\r\n\r\nIf you call `pipe_state` method with parameter `is_explain=True`,\r\nthen you can get explanation in text form.\r\n\r\n```python\r\nasme.explain()\r\n```\r\n\r\n```text\r\nThe relative defect depth == defect depth / pipe wall thickness * 100%.\r\n0.31 / 0.63 * 100 = 49.206\r\nCalculation of the maximum allowable defect length.\r\nParameter B.\r\nThe relative defect depth 49.206 more than 17.5%.\r\nB = sqrt(pow(0.492 / (1.1 * 0.492 - 0.15), 2) - 1) = 0.763\r\nL = 1.12 * B * sqrt(diameter * wallthickness)L = 1.12 * 0.763 * sqrt(56 * 0.63) = 5.073\r\nThe length of the defect 20 exceed the maximum allowable length 5.073.\r\nIt is necessary to calculate the allowable pressure for defect.\r\nCalculation of the maximum allowable pressure.\r\nParameter A for defect length 20.\r\nA = 0.823 * defect_length / sqrt(diameter * wallthickness)\r\nA = 0.823 * 20 / sqrt(56 * 0.63) = 2.771\r\nDesign pressure.\r\nDesign_press = 2 * material_smys * wallthickness * design_factor * temperature_factor / diam.\r\nDesign_press = 2 * 52000 * 0.63 * 0.72 * 1 / 56 = 842.4.\r\nParameter A less than 4.\r\na_pow = sqrt(pow(a_param, 2) + 1).\r\na_pow = sqrt(pow(2.771, 2) + 1) = 2.946.\r\nSafe_press = 1.1 * design_press * ((1 - 2/3 * rel_depth) / (1 - 2/3 * rel_depth / a_pow)).\r\nSafe_press = 1.1 * 842.4 * ((1 - 2/3 * 0.492) / (1 - 2/3 * 0.492 / 2.946)) = 700.683.\r\nUse safe pressure 700.683 as maximum allowable pressure.\r\nThe working pressure 700 does not exceed the allowable pressure 700.683.\r\nThe defect is not dangerous.\r\n```\r\n\r\n## Development\r\n\r\n```\r\n$ git clone git@github.com:vb64/pipeline.integrity.git\r\n$ cd pipeline.integrity\r\n```\r\nWith Python 3:\r\n```\r\n$ make setup PYTHON_BIN=/path/to/python3\r\n$ make tests\r\n```\r\nWith Python 2:\r\n```\r\n$ make setup2 PYTHON_BIN=/path/to/python2\r\n$ make tests2\r\n```\r\n\r\n\r\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -125,7 +124,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16853693,
+        "last_serial": 16892177,
         "urls": [
             {
                 "comment_text": "",
@@ -166,6 +165,95 @@
                 "upload_time": "2023-02-14T09:34:41",
                 "upload_time_iso_8601": "2023-02-14T09:34:41.262134Z",
                 "url": "https://files.pythonhosted.org/packages/c1/74/0ae6e21e9c508e69aba9dc3c54c4e98dd8dba9e6adf62c4e7db44ca1efb0/pipeline_integrity-1.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.2": {
+        "info": {
+            "author": "Vitaly Bogomolov",
+            "author_email": "mail@vitaly-bogomolov.ru",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python"
+            ],
+            "description": "# PipelineIntegrity library\r\n[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/vb64/pipeline.integrity/pep257.yml?label=Pep257&style=plastic&branch=main)](https://github.com/vb64/pipeline.integrity/actions?query=workflow%3Apep257)\r\n[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/vb64/pipeline.integrity/py2.yml?label=Python%202.7&style=plastic&branch=main)](https://github.com/vb64/pipeline.integrity/actions?query=workflow%3Apy2)\r\n[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/vb64/pipeline.integrity/py3.yml?label=Python%203.7-3.10&style=plastic&branch=main)](https://github.com/vb64/pipeline.integrity/actions?query=workflow%3Apy3)\r\n[![Codacy Badge](https://app.codacy.com/project/badge/Grade/73597c448da3417599eb3f21bcb7136b)](https://www.codacy.com/gh/vb64/pipeline.integrity/dashboard?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=vb64/pipeline.integrity&amp;utm_campaign=Badge_Grade)\r\n[![Codacy Badge](https://app.codacy.com/project/badge/Coverage/73597c448da3417599eb3f21bcb7136b)](https://www.codacy.com/gh/vb64/pipeline.integrity/dashboard?utm_source=github.com&utm_medium=referral&utm_content=vb64/pipeline.integrity&utm_campaign=Badge_Coverage)\r\n\r\n[In Russian](READMEru.md)\r\n\r\nFree, open source PipelineIntegrity library designed to calculate the degree of danger\r\nof pipeline metal loss defects according to the [ASME B31G method](https://law.resource.org/pub/us/cfr/ibr/002/asme.b31g.1991.pdf).\r\n\r\n![ASME B31G method](pipeline_integrity/method/asme_b31g/img/fig_1_1.png)\r\n\r\n## Installation\r\n\r\n```bash\r\npip install pipeline-integrity\r\n```\r\n\r\n## Usage\r\n\r\nA pipe under pressure, with a length, diameter and wall thickness from specified material.\r\n\r\n```python\r\nfrom pipeline_integrity.material import Material\r\nfrom pipeline_integrity.pipe import Pipe\r\n\r\npipe = Pipe(\r\n  440,  # length, inches\r\n  56,  # diameter, inches\r\n  0.63,  # wall thickness, inches\r\n  Material(  # pipe material\r\n    \"Steel\",\r\n    52000  # SMYS, psi\r\n  ),\r\n  900  # pressure, psi\r\n)\r\n)\r\n```\r\n\r\nMetal loss defect with a specified position on the pipe and a specified depth.\r\n\r\n```python\r\ndefect = pipe.add_metal_loss(\r\n  40,  # the defect starts at a distance of 40 inches from the beginning of the pipe\r\n  4,  # defect length 4 inches\r\n  10,  # along the circumference of the pipe, the defect begins\r\n       # at 10 arc minutes from the top of the pipe\r\n  20,  # the size of the defect along the circumference is 20 arc minutes\r\n  0.039  # defect depth 0.039 inches\r\n)\r\n```\r\n\r\nContext for calculating the degree of severity of the defect according to the ASME B31G method\r\n\r\n```python\r\nfrom pipeline_integrity.method.asme_b31g import Context\r\n\r\nasme = Context(defect)\r\n```\r\n\r\nDefect depth less than 10% wall thickness, no danger.\r\n\r\n```python\r\nfrom pipeline_integrity.method.asme_b31g import State\r\n\r\nassert defect.depth == 0.039\r\nassert pipe.wallthickness == 0.63\r\nassert asme.pipe_state() == State.Ok\r\n```\r\n\r\nThe depth of the defect is more than 80% of the pipe wall thickness, repair or replacement of the pipe is necessary.\r\n\r\n```python\r\ndefect.depth = 0.6\r\nassert asme.pipe_state() == State.Replace\r\n```\r\n\r\nThe depth of the defect is 50% of the pipe wall thickness, but the length of the defect\r\ndoes not exceed its maximum allowable length.\r\nThe defect is not dangerous.\r\n\r\n```python\r\ndefect.depth = 0.31\r\nassert defect.length == 4\r\nassert round(asme.defect_max_length()) == 5\r\nassert asme.pipe_state() == State.Safe\r\n```\r\n\r\nA defect with a length of 20 inches and a depth of 50% of the pipe wall thickness\r\nrequires repair at the specified working pressure in the pipe.\r\n\r\n```python\r\ndefect.length = 20\r\nassert asme.pipe_state() == State.Repair\r\n```\r\n\r\nWhen the operating pressure is reduced to a safe value, the defect does not require repair.\r\n\r\n```python\r\nassert pipe.maop == 900\r\nassert round(asme.safe_pressure, 2) == 700.68\r\npipe.maop = 700\r\nassert asme.pipe_state(is_explain=True) == State.Defected\r\n```\r\n\r\nIf you call `pipe_state` method with parameter `is_explain=True`,\r\nthen you can get explanation in text form.\r\n\r\n```python\r\nasme.explain()\r\n```\r\n\r\n```text\r\nThe relative defect depth == defect depth / pipe wall thickness * 100%.\r\n0.31 / 0.63 * 100 = 49.206\r\nCalculation of the maximum allowable defect length.\r\nParameter B.\r\nThe relative defect depth 49.206 more than 17.5%.\r\nB = sqrt(pow(0.492 / (1.1 * 0.492 - 0.15), 2) - 1) = 0.763\r\nL = 1.12 * B * sqrt(diameter * wallthickness)L = 1.12 * 0.763 * sqrt(56 * 0.63) = 5.073\r\nThe length of the defect 20 exceed the maximum allowable length 5.073.\r\nIt is necessary to calculate the allowable pressure for defect.\r\nCalculation of the maximum allowable pressure.\r\nParameter A for defect length 20.\r\nA = 0.823 * defect_length / sqrt(diameter * wallthickness)\r\nA = 0.823 * 20 / sqrt(56 * 0.63) = 2.771\r\nDesign pressure.\r\nDesign_press = 2 * material_smys * wallthickness * design_factor * temperature_factor / diam.\r\nDesign_press = 2 * 52000 * 0.63 * 0.72 * 1 / 56 = 842.4.\r\nParameter A less than 4.\r\na_pow = sqrt(pow(a_param, 2) + 1).\r\na_pow = sqrt(pow(2.771, 2) + 1) = 2.946.\r\nSafe_press = 1.1 * design_press * ((1 - 2/3 * rel_depth) / (1 - 2/3 * rel_depth / a_pow)).\r\nSafe_press = 1.1 * 842.4 * ((1 - 2/3 * 0.492) / (1 - 2/3 * 0.492 / 2.946)) = 700.683.\r\nUse safe pressure 700.683 as maximum allowable pressure.\r\nThe working pressure 700 does not exceed the allowable pressure 700.683.\r\nThe defect is not dangerous.\r\n```\r\n\r\n## Development\r\n\r\n```\r\n$ git clone git@github.com:vb64/pipeline.integrity.git\r\n$ cd pipeline.integrity\r\n```\r\nWith Python 3:\r\n```\r\n$ make setup PYTHON_BIN=/path/to/python3\r\n$ make tests\r\n```\r\nWith Python 2:\r\n```\r\n$ make setup2 PYTHON_BIN=/path/to/python2\r\n$ make tests2\r\n```\r\n\r\n\r\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/vb64/pipeline.integrity",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "pipeline-integrity",
+            "package_url": "https://pypi.org/project/pipeline-integrity/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/pipeline-integrity/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/vb64/pipeline.integrity/issues",
+                "Homepage": "https://github.com/vb64/pipeline.integrity"
+            },
+            "release_url": "https://pypi.org/project/pipeline-integrity/1.2/",
+            "requires_dist": [
+                "py23"
+            ],
+            "requires_python": "",
+            "summary": "Pipeline integrity calculation",
+            "version": "1.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16892177,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a2a674ffac9a09e8b8772b789601c50adb9f779714b52f3837fc305b644072b2",
+                    "md5": "d19207d4e79ffed8bda270125e4cbf0e",
+                    "sha256": "639ba85c8ed43fe1403bfb2aafc044670a85d8082db7c8e77b1c9caba1ac0b65"
+                },
+                "downloads": -1,
+                "filename": "pipeline_integrity-1.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "d19207d4e79ffed8bda270125e4cbf0e",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 943705,
+                "upload_time": "2023-02-16T19:05:34",
+                "upload_time_iso_8601": "2023-02-16T19:05:34.908976Z",
+                "url": "https://files.pythonhosted.org/packages/a2/a6/74ffac9a09e8b8772b789601c50adb9f779714b52f3837fc305b644072b2/pipeline_integrity-1.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "987eb61ee3809249cef7fc2ec2c6de5d2b0983e00db3f7d21cd2738c2a9887db",
+                    "md5": "c895cdb08440f02aa5c9bba06ad9b427",
+                    "sha256": "bb8ac218ffdd002eed7dd705d0abacfd83abb10dc0f561244678fdcf4dbcb7ea"
+                },
+                "downloads": -1,
+                "filename": "pipeline_integrity-1.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "c895cdb08440f02aa5c9bba06ad9b427",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 942962,
+                "upload_time": "2023-02-16T19:05:36",
+                "upload_time_iso_8601": "2023-02-16T19:05:36.880011Z",
+                "url": "https://files.pythonhosted.org/packages/98/7e/b61ee3809249cef7fc2ec2c6de5d2b0983e00db3f7d21cd2738c2a9887db/pipeline_integrity-1.2.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

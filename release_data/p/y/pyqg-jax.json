@@ -20,7 +20,6 @@
                 "Topic :: Scientific/Engineering :: Atmospheric Science",
                 "Topic :: Scientific/Engineering :: Physics"
             ],
-            "description": "# PyQG JAX Port\n\nThis is a partial port of [PyQG](https://github.com/pyqg/pyqg) to\n[JAX](https://github.com/google/jax) which enables GPU acceleration,\nbatching, automatic differentiation, etc.\n\n\u26a0\ufe0f **Warning:** this is a partial, early stage port. There may be bugs\nand other numerical issues. Only part of the `QGModel` has been\nported, and the API will very likely evolve as work continues.\n\n## Installation\nInstall from PyPI using pip:\n```console\n$ python -m pip install pyqg-jax\n```\nThis should install required dependencies, but JAX itself may require\nspecial attention. Follow the [JAX installation\ninstructions](https://github.com/google/jax#installation).\n\n## Usage\nDocumentation is a work in progress. The parameters `QGModel`\nimplemented here are the same as for the model in the original PyQG,\nso consult the [pyqg\ndocumentation](https://pyqg.readthedocs.io/en/latest/) for details.\n\nHowever, there are a few overarching changes used to make the models\nJAX-compatible:\n\n1. The model state is now a separate, immutable object rather than\n   being attributes of the `QGModel` class\n\n2. Time-stepping is now separated from the models. Use\n   `steppers.AB3Stepper` for the same time stepping as in the original\n   `QGModel`.\n\n3. Random initialization requires an explicit `key` variable as with\n   all JAX random number generation.\n\nThe `QGModel` uses double precision (`float64`) values for part of its\ncomputation regardless of the precision setting. Make sure JAX is set\nto enable 64-bit. [See the\ndocumentation](https://jax.readthedocs.io/en/latest/notebooks/Common_Gotchas_in_JAX.html#double-64bit-precision)\nfor details. One option is to set the following environment variables:\n```bash\nexport JAX_ENABLE_X64=True\nexport JAX_DEFAULT_DTYPE_BITS=32\n```\nor use the [`%env`\nmagic](https://ipython.readthedocs.io/en/stable/interactive/magics.html#magic-env)\nin a Jupyter notebook.\n\n### Short Example\nA short example initializing a `QGModel` and taking a single step.\n```pycon\n>>> import pyqg_jax\n>>> import jax\n>>> # Construct model and time-stepper\n>>> stepped_model = pyqg_jax.steppers.SteppedModel(\n...     model=pyqg_jax.qg_model.QGModel(),\n...     stepper=pyqg_jax.steppers.AB3Stepper(dt=3600.0),\n... )\n>>> # Initialize the model state, and wrap in the time-stepping state\n>>> stepper_state = stepped_model.create_initial_state(\n...     jax.random.PRNGKey(0)\n... )\n>>> # Compute next state\n>>> next_stepper_state = stepped_model.step_model(stepper_state)\n>>> # Extract the result\n>>> final_q = next_stepper_state.state.q\n```\nFor repeated time-stepping combine `stepper.apply_updates` with\n[`jax.lax.scan`](https://jax.readthedocs.io/en/latest/_autosummary/jax.lax.scan.html).\n\n### Useful Methods and attributes\nA subset of methods and attributes available on common objects\n- For `pyqg_jax.qg_model.QGModel`\n  - `create_initial_state(jax.random.PRNGKey) -> PseudoSpectralState`: Randomly initializes the model\n  - `get_full_state(PseudoSpectralState) -> FullPseudoSpectralState`: Expands the state, computing other attributes from `q`\n  - `get_updates(PseudoSpectralState) -> PseudoSpectralState`: Computes time updates for `qh`. Combine with a time-stepper\n- For `pyqg_jax.steppers.AB3Stepper(dt=float)`\n  - `initialize_stepper_state(PseudoSpectralState) -> AB3State[PseudoSpectralState]`: Initialize a time-stepper state around a model state\n  - `apply_updates(AB3State[PseudoSpectralState], updates=PseudoSpectralState) -> AB3State[PseudoSpectralState]`: Apply model updates to a time stepper state\n- For `pyqg_jax.steppers.AB3State`\n  - `state`: extract the `PseudoSpectralState` at the current time\n  - `t`: the current time\n  - `tc`: the current step counter\n- For `pyqg_jax.steppers.SteppedModel(model, stepper)`\n  - `create_initial_state(key=jax.random.PRNGKey) -> StepperState[PseudoSpectralState]`: Create a new, random, state ready to step\n  - `initialize_stepper_state(PseudoSpectralState) -> StepperState[PseudoSpectralState]`: Wraps an existing model state to prepare it for time stepping\n  - `step_model(StepperState[PseudoSpectralState]) -> StepperState[PseudoSpectralState]`: Steps the model forward, and handles filtering\n  - `get_full_state(StepperState[PseudoSpectralState]) -> FullPseudoSpectralState`: Extracts the state and expands it, computing all attributes from `q`\n- For `pyqg_jax.state.PseudoSpectralState`\n  - `q`: The potential vorticity\n  - `qh`: Spectral form of potential vorticity\n  - `update(q=, qh=) -> PseudoSpectralState`: Return a new `PseudoSpectralState` with the given value replacements\n- For `pyqg_jax.state.FullPseudoSpectralState`\n  - `dqhdt`: Spectral updates for `qh`\n  - `state`: The inner `PseudoSpectralState`\n  - `update(q=, qh=, dqhdt=, ...) -> PseudoSpectralState`: Return a new `FullPseudoSpectralState` with the given value replacements\n\n## License\nThe code in this repository is distributed under the MIT license. See\nLICENSE.txt for the license text.\n\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -54,7 +53,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16880296,
+        "last_serial": 16891783,
         "urls": [
             {
                 "comment_text": "",
@@ -95,6 +94,108 @@
                 "upload_time": "2023-02-16T00:07:29",
                 "upload_time_iso_8601": "2023-02-16T00:07:29.145921Z",
                 "url": "https://files.pythonhosted.org/packages/82/c6/335e29e21b950f0cae010ac7af385507dd67cda636438aa00d73dac7d72e/pyqg-jax-0.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.0": {
+        "info": {
+            "author": "Karl Otness",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 2 - Pre-Alpha",
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Scientific/Engineering",
+                "Topic :: Scientific/Engineering :: Atmospheric Science",
+                "Topic :: Scientific/Engineering :: Physics"
+            ],
+            "description": "# PyQG JAX Port\n\n[![PyQG-JAX on PyPI](https://img.shields.io/pypi/v/pyqg-jax)][pypi]\n[![Tests](https://github.com/karlotness/pyqg-jax/actions/workflows/test.yml/badge.svg)][tests]\n\nThis is a partial port of [PyQG](https://github.com/pyqg/pyqg) to\n[JAX](https://github.com/google/jax) which enables GPU acceleration,\nbatching, automatic differentiation, etc.\n\n\u26a0\ufe0f **Warning:** this is a partial, early stage port. There may be bugs\nand other numerical issues. Only part of the `QGModel` has been\nported, and the API will very likely evolve as work continues.\n\n## Installation\nInstall from PyPI using pip:\n```console\n$ python -m pip install pyqg-jax\n```\nThis should install required dependencies, but JAX itself may require\nspecial attention. Follow the [JAX installation\ninstructions](https://github.com/google/jax#installation).\n\n## Usage\nDocumentation is a work in progress. The parameters `QGModel`\nimplemented here are the same as for the model in the original PyQG,\nso consult the [pyqg\ndocumentation](https://pyqg.readthedocs.io/en/latest/) for details.\n\nHowever, there are a few overarching changes used to make the models\nJAX-compatible:\n\n1. The model state is now a separate, immutable object rather than\n   being attributes of the `QGModel` class\n\n2. Time-stepping is now separated from the models. Use\n   `steppers.AB3Stepper` for the same time stepping as in the original\n   `QGModel`.\n\n3. Random initialization requires an explicit `key` variable as with\n   all JAX random number generation.\n\nThe `QGModel` uses double precision (`float64`) values for part of its\ncomputation regardless of the precision setting. Make sure JAX is set\nto enable 64-bit. [See the\ndocumentation](https://jax.readthedocs.io/en/latest/notebooks/Common_Gotchas_in_JAX.html#double-64bit-precision)\nfor details. One option is to set the following environment variables:\n```bash\nexport JAX_ENABLE_X64=True\nexport JAX_DEFAULT_DTYPE_BITS=32\n```\nor use the [`%env`\nmagic](https://ipython.readthedocs.io/en/stable/interactive/magics.html#magic-env)\nin a Jupyter notebook.\n\n### Short Example\nA short example initializing a `QGModel`, adding a parameterization,\nand taking a single step.\n```pycon\n>>> import pyqg_jax\n>>> import jax\n>>> # Construct model, parameterization, and time-stepper\n>>> stepped_model = pyqg_jax.steppers.SteppedModel(\n...     model=pyqg_jax.parameterizations.smagorinsky.apply_parameterization(\n...         pyqg_jax.qg_model.QGModel(),\n...         constant=0.08,\n...     ),\n...     stepper=pyqg_jax.steppers.AB3Stepper(dt=3600.0),\n... )\n>>> # Initialize the model state (wrapped in stepper and parameterization state)\n>>> stepper_state = stepped_model.create_initial_state(\n...     jax.random.PRNGKey(0)\n... )\n>>> # Compute next state\n>>> next_stepper_state = stepped_model.step_model(stepper_state)\n>>> # Unwrap the result from the stepper and parameterization\n>>> next_param_state = next_stepper_state.state\n>>> next_model_state = next_param_state.model_state\n>>> final_q = next_model_state.q\n```\nFor repeated time-stepping combine `step_model` with\n[`jax.lax.scan`](https://jax.readthedocs.io/en/latest/_autosummary/jax.lax.scan.html).\n\n### Useful Methods and attributes\nA subset of methods and attributes available on common objects\n- For `pyqg_jax.qg_model.QGModel`\n  - `create_initial_state(jax.random.PRNGKey) -> PseudoSpectralState`: Randomly initializes the model\n  - `get_full_state(PseudoSpectralState) -> FullPseudoSpectralState`: Expands the state, computing other attributes from `q`\n  - `get_updates(PseudoSpectralState) -> PseudoSpectralState`: Computes time updates for `qh`. Combine with a time-stepper\n- For `pyqg_jax.steppers.AB3Stepper(dt=float)`\n  - `initialize_stepper_state(PseudoSpectralState) -> AB3State[PseudoSpectralState]`: Initialize a time-stepper state around a model state\n  - `apply_updates(AB3State[PseudoSpectralState], updates=PseudoSpectralState) -> AB3State[PseudoSpectralState]`: Apply model updates to a time stepper state\n- For `pyqg_jax.steppers.AB3State`\n  - `state`: extract the `PseudoSpectralState` at the current time\n  - `t`: the current time\n  - `tc`: the current step counter\n- For `pyqg_jax.steppers.SteppedModel(model, stepper)`\n  - `create_initial_state(key=jax.random.PRNGKey) -> StepperState[PseudoSpectralState]`: Create a new, random, state ready to step\n  - `initialize_stepper_state(PseudoSpectralState) -> StepperState[PseudoSpectralState]`: Wraps an existing model state to prepare it for time stepping\n  - `step_model(StepperState[PseudoSpectralState]) -> StepperState[PseudoSpectralState]`: Steps the model forward, and handles filtering\n  - `get_full_state(StepperState[PseudoSpectralState]) -> FullPseudoSpectralState`: Extracts the state and expands it, computing all attributes from `q`\n- For `pyqg_jax.state.PseudoSpectralState`\n  - `q`: The potential vorticity\n  - `qh`: Spectral form of potential vorticity\n  - `update(q=, qh=) -> PseudoSpectralState`: Return a new `PseudoSpectralState` with the given value replacements\n- For `pyqg_jax.state.FullPseudoSpectralState`\n  - `dqhdt`: Spectral updates for `qh`\n  - `state`: The inner `PseudoSpectralState`\n  - `update(q=, qh=, dqhdt=, ...) -> PseudoSpectralState`: Return a new `FullPseudoSpectralState` with the given value replacements\n\n## License\nThe code in this repository is distributed under the MIT license. See\nLICENSE.txt for the license text.\n\n[pypi]: https://pypi.org/project/pyqg-jax\n[tests]: https://github.com/karlotness/pyqg-jax/actions\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "pyqg-jax",
+            "package_url": "https://pypi.org/project/pyqg-jax/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/pyqg-jax/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/karlotness/pyqg-jax/issues",
+                "Homepage": "https://github.com/karlotness/pyqg-jax",
+                "Source Code": "https://github.com/karlotness/pyqg-jax"
+            },
+            "release_url": "https://pypi.org/project/pyqg-jax/0.2.0/",
+            "requires_dist": [
+                "jax>=0.3.21",
+                "jaxtyping"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "Quasigeostrophic model in JAX (port of PyQG)",
+            "version": "0.2.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16891783,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "7d7073b09ba44c0dba3de5dfd576bfa726d8d3e07b50d1d964639ed908425173",
+                    "md5": "5ae3954d3cb63bc9efd8565026636020",
+                    "sha256": "41ae5d673a96b7a84e0853b6e8cb75e025fa000d728cb109feaf553402ecf52e"
+                },
+                "downloads": -1,
+                "filename": "pyqg_jax-0.2.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "5ae3954d3cb63bc9efd8565026636020",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 15827,
+                "upload_time": "2023-02-16T18:23:09",
+                "upload_time_iso_8601": "2023-02-16T18:23:09.335670Z",
+                "url": "https://files.pythonhosted.org/packages/7d/70/73b09ba44c0dba3de5dfd576bfa726d8d3e07b50d1d964639ed908425173/pyqg_jax-0.2.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "8b730840f4ab7467354f7bac23ba19072e22b5a3158b321aab7aff9f899a6ef8",
+                    "md5": "9a4e6c0270b8a1bdc40c2151d8e4decd",
+                    "sha256": "d8c4941af667a56dca8eafe28da780ee4bdc72f4d43f27a3db7017f02c14dbf1"
+                },
+                "downloads": -1,
+                "filename": "pyqg-jax-0.2.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "9a4e6c0270b8a1bdc40c2151d8e4decd",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 16101,
+                "upload_time": "2023-02-16T18:23:10",
+                "upload_time_iso_8601": "2023-02-16T18:23:10.532934Z",
+                "url": "https://files.pythonhosted.org/packages/8b/73/0840f4ab7467354f7bac23ba19072e22b5a3158b321aab7aff9f899a6ef8/pyqg-jax-0.2.0.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
