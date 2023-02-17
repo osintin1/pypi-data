@@ -39,7 +39,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16880818,
+        "last_serial": 16900099,
         "urls": [
             {
                 "comment_text": "",
@@ -798,7 +798,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16880818,
+        "last_serial": 16900099,
         "urls": [
             {
                 "comment_text": "",
@@ -1529,7 +1529,6 @@
                 "Programming Language :: Python :: 3.9",
                 "Topic :: Scientific/Engineering :: Artificial Intelligence"
             ],
-            "description": "# Flashlight Text Python Bindings\n### Quickstart\n\nFlashlight Text is available on PyPI **without KenLM support** using:\n```bash\npip install flashlight-text  # without KenLM support\n```\nFor now, building from source is required for KenLM support. We'll be adding KenLM support to the PyPI package soon.\n\n#### Contents\n- [Installation](#installation)\n  * [Dependencies](#dependencies)\n  * [Build Instructions](#build-instructions)\n  * [Advanced Options](#advanced-options)\n- [Python API Documentation](#python-api-documentation)\n  * [Beam search decoder](#beam-search-decoder)\n  * [Beam search decoding with your own language model](#decoding-with-your-own-language-model)\n- [Examples](#examples)\n\n## Installation\n### Dependencies\nWe require `python >= 3.6` with the following packages installed:\n- [cmake](https://cmake.org/) >= 3.16, and `make`\n- [KenLM](https://github.com/kpu/kenlm)\n\n### Build Instructions\n\nOnce the dependencies are satisfied, from the project root, use:\n```\npip install .\n```\n\nUsing the environment variable `USE_KENLM=0` removes the KenLM dependency but precludes using the decoder with a language model unless you write C++/`pybind11` bindings for your own language model.\n\nInstall in editable mode for development:\n```\npip install -e .\n```\n\n(`pypi` installation coming soon)\n\n**Note:** if you encounter errors, you'll probably have to `rm -rf build dist` before retrying the install.\n\n## Python API Documentation\n\n### Beam Search Decoder\nBindings for the lexicon and lexicon-free beam search decoders are supported for CTC/ASG models only (no seq2seq model support). Out-of-the-box language model support includes KenLM; users can define custom a language model in Python and use it for decoding; see the [documentation](#define-your-own-language-model-for-beam-search-decoding) below.\n\nTo run decoder one first should define options:\n```python\n    from flashlight.lib.text.decoder import LexiconDecoderOptions, LexiconFreeDecoderOptions\n\n    # for lexicon-based decoder\n    options = LexiconDecoderOptions(\n        beam_size, # number of top hypothesis to preserve at each decoding step\n        token_beam_size, # restrict number of tokens by top am scores (if you have a huge token set)\n        beam_threshold, # preserve a hypothesis only if its score is not far away from the current best hypothesis score\n        lm_weight, # language model weight for LM score\n        word_score, # score for words appearance in the transcription\n        unk_score, # score for unknown word appearance in the transcription\n        sil_score, # score for silence appearance in the transcription\n        log_add, # the way how to combine scores during hypotheses merging (log add operation, max)\n        criterion_type # supports only CriterionType.ASG or CriterionType.CTC\n    )\n    # for lexicon free-based decoder\n    options = LexiconFreeDecoderOptions(\n        beam_size, # number of top hypothesis to preserve at each decoding step\n        token_beam_size, # restrict number of tokens by top am scores (if you have a huge token set)\n        beam_threshold, # preserve a hypothesis only if its score is not far away from the current best hypothesis score\n        lm_weight, # language model weight for LM score\n        sil_score, # score for silence appearance in the transcription\n        log_add, # the way how to combine scores during hypotheses merging (log add operation, max)\n        criterion_type # supports only CriterionType.ASG or CriterionType.CTC\n    )\n```\n\nNow, prepare a tokens dictionary (tokens for which a model\nreturns probability for each frame) and a lexicon (mapping between words and their spellings within a tokens set).\n\nFor further details on tokens and lexicon file formats, see the [Data Preparation](https://github.com/flashlight/flashlight/tree/master/flashlight/app/asr#data-preparation) documentation in [Flashlight](https://github.com/flashlight/flashlight).\n\n```python\nfrom flashlight.lib.text.dictionary import Dictionary, load_words, create_word_dict\n\ntokens_dict = Dictionary(\"path/tokens.txt\")\n# for ASG add used repetition symbols, for example\n# token_dict.add_entry(\"1\")\n# token_dict.add_entry(\"2\")\n\nlexicon = load_words(\"path/lexicon.txt\") # returns LexiconMap\nword_dict = create_word_dict(lexicon) # returns Dictionary\n```\n\nTo create a KenLM language model, use:\n\n```python\nfrom flashlight.lib.text.decoder import KenLM\nlm = KenLM(\"path/lm.arpa\", word_dict) # or \"path/lm.bin\"\n```\n\nGet the unknown and silence token indices from the token and word dictionaries to pass to the decoder:\n\n```python\nsil_idx = token_dict.get_index(\"|\")\nunk_idx = word_dict.get_index(\"<unk>\")\n```\n\nNow, define the lexicon `Trie` to restrict the beam search decoder search:\n\n```python\nfrom flashlight.lib.text.decoder import Trie, SmearingMode\nfrom flashlight.lib.text.dictionary import pack_replabels\n\ntrie = Trie(token_dict.index_size(), sil_idx)\nstart_state = lm.start(False)\n\ndef tkn_to_idx(spelling: list, token_dict : Dictionary, maxReps : int = 0):\n    result = []\n    for token in spelling:\n        result.append(token_dict.get_index(token))\n    return pack_replabels(result, token_dict, maxReps)\n\n\nfor word, spellings in lexicon.items():\n    usr_idx = word_dict.get_index(word)\n    _, score = lm.score(start_state, usr_idx)\n    for spelling in spellings:\n        # convert spelling string into vector of indices\n        spelling_idxs = tkn_to_idx(spelling, token_dict, 1)\n        trie.insert(spelling_idxs, usr_idx, score)\n\n    trie.smear(SmearingMode.MAX) # propagate word score to each spelling node to have some lm proxy score in each node.\n```\n\nFinally, we can run lexicon-based decoder:\n\n```python\nimport numpy\nfrom flashlight.lib.text.decoder import LexiconDecoder\n\n\nblank_idx = token_dict.get_index(\"#\") # for CTC\ntransitions = numpy.zeros((token_dict.index_size(), token_dict.index_size()) # for ASG fill up with correct values\nis_token_lm = False # we use word-level LM\ndecoder = LexiconDecoder(options, trie, lm, sil_idx, blank_idx, unk_idx, transitions, is_token_lm)\n# emissions is numpy.array of emitting model predictions with shape [T, N], where T is time, N is number of tokens\nresults = decoder.decode(emissions.ctypes.data, T, N)\n# results[i].tokens contains tokens sequence (with length T)\n# results[i].score contains score of the hypothesis\n# results is sorted array with the best hypothesis stored with index=0.\n```\n\n### Decoding with your own language model\nOne can define custom language model in python and use it for beam search decoding.\n\nTo store language model state, derive from the `LMState` base class and define additional data corresponding to each state by creating `dict(LMState, info)` inside the language model class:\n\n```python\nimport numpy\nfrom flashlight.lib.text.decoder import LM\n\n\nclass MyPyLM(LM):\n    mapping_states = dict() # store simple additional int for each state\n\n    def __init__(self):\n        LM.__init__(self)\n\n    def start(self, start_with_nothing):\n        state = LMState()\n        self.mapping_states[state] = 0\n        return state\n\n    def score(self, state : LMState, token_index : int):\n        \"\"\"\n        Evaluate language model based on the current lm state and new word\n        Parameters:\n        -----------\n        state: current lm state\n        token_index: index of the word\n                    (can be lexicon index then you should store inside LM the\n                    mapping between indices of lexicon and lm, or lm index of a word)\n\n        Returns:\n        --------\n        (LMState, float): pair of (new state, score for the current word)\n        \"\"\"\n        outstate = state.child(token_index)\n        if outstate not in self.mapping_states:\n            self.mapping_states[outstate] = self.mapping_states[state] + 1\n        return (outstate, -numpy.random.random())\n\n    def finish(self, state: LMState):\n        \"\"\"\n        Evaluate eos for language model based on the current lm state\n\n        Returns:\n        --------\n        (LMState, float): pair of (new state, score for the current word)\n        \"\"\"\n        outstate = state.child(-1)\n        if outstate not in self.mapping_states:\n            self.mapping_states[outstate] = self.mapping_states[state] + 1\n        return (outstate, -1)\n```\n\nLMState is a C++ base class for language model state. Its `compare` method (for comparing one state with another) is used inside the beam search decoder.\nIt also has a `LMState child(int index)` method which returns a state obtained by following the token with this index from current state.\n\nAll LM states are organized as a trie. We use the `child` method in python to properly create this trie (which will be used inside the decoder to compare states) and can store additional state data in `mapping_states`.\n\nThis language model can be used as follows. Here, we print the state and its additional stored info inside `lm.mapping_states`:\n\n```python\ncustom_lm = MyLM()\n\nstate = custom_lm.start(True)\nprint(state, custom_lm.mapping_states[state])\n\nfor i in range(5):\n    state, score = custom_lm.score(state, i)\n    print(state, custom_lm.mapping_states[state], score)\n\nstate, score = custom_lm.finish(state)\nprint(state, custom_lm.mapping_states[state], score)\n```\n\nand for the decoder:\n\n```python\ndecoder = LexiconDecoder(options, trie, custom_lm, sil_idx, blank_inx, unk_idx, transitions, False)\n```\n\n## Tests and Examples\n\nAn integration test for Python decoder bindings can be found in `bindings/python/test/test_decoder.py`. To run, use:\n```bash\ncd bindings/python/test\npython3 -m unittest discover -v .\n```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -1558,7 +1557,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16880818,
+        "last_serial": 16900099,
         "urls": [
             {
                 "comment_text": "",
@@ -2397,6 +2396,766 @@
                 "upload_time": "2023-02-16T00:36:40",
                 "upload_time_iso_8601": "2023-02-16T00:36:40.279465Z",
                 "url": "https://files.pythonhosted.org/packages/ec/f9/d00f7e580d1e2d04424828634accb249b8353efa5d9c534bb730353d1426/flashlight-text-0.0.1.dev271.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.2.dev272": {
+        "info": {
+            "author": "Jacob Kahn",
+            "author_email": "jacobkahn1@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Scientific/Engineering :: Artificial Intelligence"
+            ],
+            "description": "# Flashlight Text Python Bindings\n### Quickstart\n\nFlashlight Text is available on PyPI **without KenLM support** using:\n```bash\npip install flashlight-text  # without KenLM support\n```\nFor now, building from source is required for KenLM support. We'll be adding KenLM support to the PyPI package soon.\n\n#### Contents\n- [Installation](#installation)\n  * [Dependencies](#dependencies)\n  * [Build Instructions](#build-instructions)\n  * [Advanced Options](#advanced-options)\n- [Python API Documentation](#python-api-documentation)\n  * [Beam search decoder](#beam-search-decoder)\n  * [Beam search decoding with your own language model](#decoding-with-your-own-language-model)\n- [Examples](#examples)\n\n## Installation\n### Dependencies\nWe require `python >= 3.6` with the following packages installed:\n- [cmake](https://cmake.org/) >= 3.16, and `make`\n- [KenLM](https://github.com/kpu/kenlm)\n\n### Build Instructions\n\nOnce the dependencies are satisfied, from the project root, use:\n```\npip install .\n```\n\nUsing the environment variable `USE_KENLM=0` removes the KenLM dependency but precludes using the decoder with a language model unless you write C++/`pybind11` bindings for your own language model.\n\nInstall in editable mode for development:\n```\npip install -e .\n```\n\n(`pypi` installation coming soon)\n\n**Note:** if you encounter errors, you'll probably have to `rm -rf build dist` before retrying the install.\n\n## Python API Documentation\n\n### Beam Search Decoder\nBindings for the lexicon and lexicon-free beam search decoders are supported for CTC/ASG models only (no seq2seq model support). Out-of-the-box language model support includes KenLM; users can define custom a language model in Python and use it for decoding; see the [documentation](#define-your-own-language-model-for-beam-search-decoding) below.\n\nTo run decoder one first should define options:\n```python\n    from flashlight.lib.text.decoder import LexiconDecoderOptions, LexiconFreeDecoderOptions\n\n    # for lexicon-based decoder\n    options = LexiconDecoderOptions(\n        beam_size, # number of top hypothesis to preserve at each decoding step\n        token_beam_size, # restrict number of tokens by top am scores (if you have a huge token set)\n        beam_threshold, # preserve a hypothesis only if its score is not far away from the current best hypothesis score\n        lm_weight, # language model weight for LM score\n        word_score, # score for words appearance in the transcription\n        unk_score, # score for unknown word appearance in the transcription\n        sil_score, # score for silence appearance in the transcription\n        log_add, # the way how to combine scores during hypotheses merging (log add operation, max)\n        criterion_type # supports only CriterionType.ASG or CriterionType.CTC\n    )\n    # for lexicon free-based decoder\n    options = LexiconFreeDecoderOptions(\n        beam_size, # number of top hypothesis to preserve at each decoding step\n        token_beam_size, # restrict number of tokens by top am scores (if you have a huge token set)\n        beam_threshold, # preserve a hypothesis only if its score is not far away from the current best hypothesis score\n        lm_weight, # language model weight for LM score\n        sil_score, # score for silence appearance in the transcription\n        log_add, # the way how to combine scores during hypotheses merging (log add operation, max)\n        criterion_type # supports only CriterionType.ASG or CriterionType.CTC\n    )\n```\n\nNow, prepare a tokens dictionary (tokens for which a model\nreturns probability for each frame) and a lexicon (mapping between words and their spellings within a tokens set).\n\nFor further details on tokens and lexicon file formats, see the [Data Preparation](https://github.com/flashlight/flashlight/tree/master/flashlight/app/asr#data-preparation) documentation in [Flashlight](https://github.com/flashlight/flashlight).\n\n```python\nfrom flashlight.lib.text.dictionary import Dictionary, load_words, create_word_dict\n\ntokens_dict = Dictionary(\"path/tokens.txt\")\n# for ASG add used repetition symbols, for example\n# token_dict.add_entry(\"1\")\n# token_dict.add_entry(\"2\")\n\nlexicon = load_words(\"path/lexicon.txt\") # returns LexiconMap\nword_dict = create_word_dict(lexicon) # returns Dictionary\n```\n\nTo create a KenLM language model, use:\n\n```python\nfrom flashlight.lib.text.decoder import KenLM\nlm = KenLM(\"path/lm.arpa\", word_dict) # or \"path/lm.bin\"\n```\n\nGet the unknown and silence token indices from the token and word dictionaries to pass to the decoder:\n\n```python\nsil_idx = token_dict.get_index(\"|\")\nunk_idx = word_dict.get_index(\"<unk>\")\n```\n\nNow, define the lexicon `Trie` to restrict the beam search decoder search:\n\n```python\nfrom flashlight.lib.text.decoder import Trie, SmearingMode\nfrom flashlight.lib.text.dictionary import pack_replabels\n\ntrie = Trie(token_dict.index_size(), sil_idx)\nstart_state = lm.start(False)\n\ndef tkn_to_idx(spelling: list, token_dict : Dictionary, maxReps : int = 0):\n    result = []\n    for token in spelling:\n        result.append(token_dict.get_index(token))\n    return pack_replabels(result, token_dict, maxReps)\n\n\nfor word, spellings in lexicon.items():\n    usr_idx = word_dict.get_index(word)\n    _, score = lm.score(start_state, usr_idx)\n    for spelling in spellings:\n        # convert spelling string into vector of indices\n        spelling_idxs = tkn_to_idx(spelling, token_dict, 1)\n        trie.insert(spelling_idxs, usr_idx, score)\n\n    trie.smear(SmearingMode.MAX) # propagate word score to each spelling node to have some lm proxy score in each node.\n```\n\nFinally, we can run lexicon-based decoder:\n\n```python\nimport numpy\nfrom flashlight.lib.text.decoder import LexiconDecoder\n\n\nblank_idx = token_dict.get_index(\"#\") # for CTC\ntransitions = numpy.zeros((token_dict.index_size(), token_dict.index_size()) # for ASG fill up with correct values\nis_token_lm = False # we use word-level LM\ndecoder = LexiconDecoder(options, trie, lm, sil_idx, blank_idx, unk_idx, transitions, is_token_lm)\n# emissions is numpy.array of emitting model predictions with shape [T, N], where T is time, N is number of tokens\nresults = decoder.decode(emissions.ctypes.data, T, N)\n# results[i].tokens contains tokens sequence (with length T)\n# results[i].score contains score of the hypothesis\n# results is sorted array with the best hypothesis stored with index=0.\n```\n\n### Decoding with your own language model\nOne can define custom language model in python and use it for beam search decoding.\n\nTo store language model state, derive from the `LMState` base class and define additional data corresponding to each state by creating `dict(LMState, info)` inside the language model class:\n\n```python\nimport numpy\nfrom flashlight.lib.text.decoder import LM\n\n\nclass MyPyLM(LM):\n    mapping_states = dict() # store simple additional int for each state\n\n    def __init__(self):\n        LM.__init__(self)\n\n    def start(self, start_with_nothing):\n        state = LMState()\n        self.mapping_states[state] = 0\n        return state\n\n    def score(self, state : LMState, token_index : int):\n        \"\"\"\n        Evaluate language model based on the current lm state and new word\n        Parameters:\n        -----------\n        state: current lm state\n        token_index: index of the word\n                    (can be lexicon index then you should store inside LM the\n                    mapping between indices of lexicon and lm, or lm index of a word)\n\n        Returns:\n        --------\n        (LMState, float): pair of (new state, score for the current word)\n        \"\"\"\n        outstate = state.child(token_index)\n        if outstate not in self.mapping_states:\n            self.mapping_states[outstate] = self.mapping_states[state] + 1\n        return (outstate, -numpy.random.random())\n\n    def finish(self, state: LMState):\n        \"\"\"\n        Evaluate eos for language model based on the current lm state\n\n        Returns:\n        --------\n        (LMState, float): pair of (new state, score for the current word)\n        \"\"\"\n        outstate = state.child(-1)\n        if outstate not in self.mapping_states:\n            self.mapping_states[outstate] = self.mapping_states[state] + 1\n        return (outstate, -1)\n```\n\nLMState is a C++ base class for language model state. Its `compare` method (for comparing one state with another) is used inside the beam search decoder.\nIt also has a `LMState child(int index)` method which returns a state obtained by following the token with this index from current state.\n\nAll LM states are organized as a trie. We use the `child` method in python to properly create this trie (which will be used inside the decoder to compare states) and can store additional state data in `mapping_states`.\n\nThis language model can be used as follows. Here, we print the state and its additional stored info inside `lm.mapping_states`:\n\n```python\ncustom_lm = MyLM()\n\nstate = custom_lm.start(True)\nprint(state, custom_lm.mapping_states[state])\n\nfor i in range(5):\n    state, score = custom_lm.score(state, i)\n    print(state, custom_lm.mapping_states[state], score)\n\nstate, score = custom_lm.finish(state)\nprint(state, custom_lm.mapping_states[state], score)\n```\n\nand for the decoder:\n\n```python\ndecoder = LexiconDecoder(options, trie, custom_lm, sil_idx, blank_inx, unk_idx, transitions, False)\n```\n\n## Tests and Examples\n\nAn integration test for Python decoder bindings can be found in `bindings/python/test/test_decoder.py`. To run, use:\n```bash\ncd bindings/python/test\npython3 -m unittest discover -v .\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/flashlight/text",
+            "keywords": "",
+            "license": "BSD licensed, as found in the LICENSE file",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "flashlight-text",
+            "package_url": "https://pypi.org/project/flashlight-text/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/flashlight-text/",
+            "project_urls": {
+                "Homepage": "https://github.com/flashlight/text"
+            },
+            "release_url": "https://pypi.org/project/flashlight-text/0.0.2.dev272/",
+            "requires_dist": null,
+            "requires_python": ">=3.6",
+            "summary": "Flashlight Text bindings for Python",
+            "version": "0.0.2.dev272",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16900099,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "912a3f52626dd64416b3cde9535af2ae9292f7eeb9164de72ad2dc9676c03f31",
+                    "md5": "3399bfd046ed7fb5576205c2c5df4cfd",
+                    "sha256": "4928df810ae83e786740cdfeeb770c82560a49daf36fdc79bcd2e35a5b9bf5b4"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-cp310-cp310-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "3399bfd046ed7fb5576205c2c5df4cfd",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.6",
+                "size": 990626,
+                "upload_time": "2023-02-17T08:42:23",
+                "upload_time_iso_8601": "2023-02-17T08:42:23.486237Z",
+                "url": "https://files.pythonhosted.org/packages/91/2a/3f52626dd64416b3cde9535af2ae9292f7eeb9164de72ad2dc9676c03f31/flashlight_text-0.0.2.dev272-cp310-cp310-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f5786ba405e6322095633f3982d98d6e981559ed2770d0c674180d513ac11ff1",
+                    "md5": "5018a58409258ee9f0c1acc4aa315fb6",
+                    "sha256": "661bed449b2dae5994855b1dca01bcec5a902a4ced68e8f3a1b6bb8def60e49f"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "5018a58409258ee9f0c1acc4aa315fb6",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.6",
+                "size": 1284082,
+                "upload_time": "2023-02-17T08:42:25",
+                "upload_time_iso_8601": "2023-02-17T08:42:25.635585Z",
+                "url": "https://files.pythonhosted.org/packages/f5/78/6ba405e6322095633f3982d98d6e981559ed2770d0c674180d513ac11ff1/flashlight_text-0.0.2.dev272-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "8d3657592ad03482bf012fa2d0c8c588d53162a517294e668d652d7605f7d2ee",
+                    "md5": "9acf782f274b04212efa566a70ace1ee",
+                    "sha256": "5bc12db64cbd01ccb1e7b356042b7b0945314b299c03faf162f4d0a08af5e2ec"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-cp310-cp310-musllinux_1_1_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "9acf782f274b04212efa566a70ace1ee",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.6",
+                "size": 1655041,
+                "upload_time": "2023-02-17T08:42:26",
+                "upload_time_iso_8601": "2023-02-17T08:42:26.971235Z",
+                "url": "https://files.pythonhosted.org/packages/8d/36/57592ad03482bf012fa2d0c8c588d53162a517294e668d652d7605f7d2ee/flashlight_text-0.0.2.dev272-cp310-cp310-musllinux_1_1_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "fa0f07420f38100f0a38e847f0b55760448f7f66c339a67634781901fdb63299",
+                    "md5": "90adc7abbd0e8ed77424d76806827b30",
+                    "sha256": "e8493ddc8222919d07433b00f9b8a20874f218f2a9aceb0b361be096fdbf3b28"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-cp310-cp310-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "90adc7abbd0e8ed77424d76806827b30",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.6",
+                "size": 616391,
+                "upload_time": "2023-02-17T08:42:28",
+                "upload_time_iso_8601": "2023-02-17T08:42:28.761241Z",
+                "url": "https://files.pythonhosted.org/packages/fa/0f/07420f38100f0a38e847f0b55760448f7f66c339a67634781901fdb63299/flashlight_text-0.0.2.dev272-cp310-cp310-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "0cde6a13ae9e85563a117cb1b28a8c1dfa985a57c6811d039717f377970bff7b",
+                    "md5": "cf6e93b1ebea9415a8411862fb88d8dc",
+                    "sha256": "33b73c102da546448ce431b6939de2ffb3e2d6fc264ace4525fcafdc2ca15fe6"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-cp311-cp311-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "cf6e93b1ebea9415a8411862fb88d8dc",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.6",
+                "size": 990490,
+                "upload_time": "2023-02-17T08:42:30",
+                "upload_time_iso_8601": "2023-02-17T08:42:30.539045Z",
+                "url": "https://files.pythonhosted.org/packages/0c/de/6a13ae9e85563a117cb1b28a8c1dfa985a57c6811d039717f377970bff7b/flashlight_text-0.0.2.dev272-cp311-cp311-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "af9541401cac4061e321f395e480ca6fd26b17350fa9782abc148743f478a0ed",
+                    "md5": "b37dbdd1a94ed82be53e69690fc43978",
+                    "sha256": "72af16f0dca823258fd5ff848f1186512bc5a25b9cfce23720c09026321ec85c"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "b37dbdd1a94ed82be53e69690fc43978",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.6",
+                "size": 1283706,
+                "upload_time": "2023-02-17T08:42:32",
+                "upload_time_iso_8601": "2023-02-17T08:42:32.185584Z",
+                "url": "https://files.pythonhosted.org/packages/af/95/41401cac4061e321f395e480ca6fd26b17350fa9782abc148743f478a0ed/flashlight_text-0.0.2.dev272-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "830e533649fefd0a527dc3ddccc59d1da3132f20ea7cfe6365a6daeb08cfc077",
+                    "md5": "7eff4efa3517b0ccdf5f935e25ae1660",
+                    "sha256": "06f8b8da1f5b105122263230beee8cb82a37a0dc63c57065376f5df8d061ee81"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-cp311-cp311-musllinux_1_1_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "7eff4efa3517b0ccdf5f935e25ae1660",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.6",
+                "size": 1654534,
+                "upload_time": "2023-02-17T08:42:34",
+                "upload_time_iso_8601": "2023-02-17T08:42:34.044526Z",
+                "url": "https://files.pythonhosted.org/packages/83/0e/533649fefd0a527dc3ddccc59d1da3132f20ea7cfe6365a6daeb08cfc077/flashlight_text-0.0.2.dev272-cp311-cp311-musllinux_1_1_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e5d10485b31fa84769a0a64238f01b3ec9e7e3db3a02cab688cea596c1608f4b",
+                    "md5": "5bbb4b39d4c59f602bbe07ed754d47cf",
+                    "sha256": "3b572dcf226b3b116e0b2b03399b5ebeb2081ea393e3dbb20e6c43b44125329e"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-cp311-cp311-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "5bbb4b39d4c59f602bbe07ed754d47cf",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.6",
+                "size": 616096,
+                "upload_time": "2023-02-17T08:42:35",
+                "upload_time_iso_8601": "2023-02-17T08:42:35.604857Z",
+                "url": "https://files.pythonhosted.org/packages/e5/d1/0485b31fa84769a0a64238f01b3ec9e7e3db3a02cab688cea596c1608f4b/flashlight_text-0.0.2.dev272-cp311-cp311-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "36b05dcd1d9109939e0c5102d32106d6e22ef4a4343398e3b5a558fa510635bd",
+                    "md5": "14f7e539dcdf0d2b939d282628951900",
+                    "sha256": "cd507a7ebdfe66dc90d4a8e995afb2d68a1111442125c9f52a02edeaabed6f1c"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-cp36-cp36m-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "14f7e539dcdf0d2b939d282628951900",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp36",
+                "requires_python": ">=3.6",
+                "size": 984777,
+                "upload_time": "2023-02-17T08:42:37",
+                "upload_time_iso_8601": "2023-02-17T08:42:37.076796Z",
+                "url": "https://files.pythonhosted.org/packages/36/b0/5dcd1d9109939e0c5102d32106d6e22ef4a4343398e3b5a558fa510635bd/flashlight_text-0.0.2.dev272-cp36-cp36m-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "994cd13626942b323ec80fc718ebe1c5fed075f532ad2197ad24c783516c2bc7",
+                    "md5": "af9a2c51cbb7794289205b624117af97",
+                    "sha256": "b7f1b1f4f9e74b97fefcc47919db780ee60f65a18db97731cdd653dc999ba689"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-cp36-cp36m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "af9a2c51cbb7794289205b624117af97",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp36",
+                "requires_python": ">=3.6",
+                "size": 1295957,
+                "upload_time": "2023-02-17T08:42:39",
+                "upload_time_iso_8601": "2023-02-17T08:42:39.292411Z",
+                "url": "https://files.pythonhosted.org/packages/99/4c/d13626942b323ec80fc718ebe1c5fed075f532ad2197ad24c783516c2bc7/flashlight_text-0.0.2.dev272-cp36-cp36m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "bc974f6657f153dffa3859b153f31ca420fe67058de93838e691232222752165",
+                    "md5": "710d6a197dafecb490f106cac2a5fd52",
+                    "sha256": "940faa3d40a1e3b2412108edf8e463c2edbb2de5332016f2f010ee5a29f440d2"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-cp36-cp36m-musllinux_1_1_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "710d6a197dafecb490f106cac2a5fd52",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp36",
+                "requires_python": ">=3.6",
+                "size": 1669070,
+                "upload_time": "2023-02-17T08:42:40",
+                "upload_time_iso_8601": "2023-02-17T08:42:40.615788Z",
+                "url": "https://files.pythonhosted.org/packages/bc/97/4f6657f153dffa3859b153f31ca420fe67058de93838e691232222752165/flashlight_text-0.0.2.dev272-cp36-cp36m-musllinux_1_1_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2b923cca67839b704c3de0d666f330b248ec554d593412bf811ea2489d11b881",
+                    "md5": "1bfcced2fde2e6540164b53eb8813211",
+                    "sha256": "ff9f7618c7b36a6028003c262317e27b397b7ac563891408a1ba1c63edc44cc9"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-cp36-cp36m-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "1bfcced2fde2e6540164b53eb8813211",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp36",
+                "requires_python": ">=3.6",
+                "size": 614497,
+                "upload_time": "2023-02-17T08:42:41",
+                "upload_time_iso_8601": "2023-02-17T08:42:41.875782Z",
+                "url": "https://files.pythonhosted.org/packages/2b/92/3cca67839b704c3de0d666f330b248ec554d593412bf811ea2489d11b881/flashlight_text-0.0.2.dev272-cp36-cp36m-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "8dff30782a5dc6c0e6406eef8518626402fda7b65fb9b487da188db0b0c99ab7",
+                    "md5": "58b8301690405513203e5b476daaf681",
+                    "sha256": "f767a47a525892bc534218675082863040947d350b5de823856c23ff19a514fc"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-cp37-cp37m-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "58b8301690405513203e5b476daaf681",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.6",
+                "size": 984641,
+                "upload_time": "2023-02-17T08:42:44",
+                "upload_time_iso_8601": "2023-02-17T08:42:44.228356Z",
+                "url": "https://files.pythonhosted.org/packages/8d/ff/30782a5dc6c0e6406eef8518626402fda7b65fb9b487da188db0b0c99ab7/flashlight_text-0.0.2.dev272-cp37-cp37m-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "98d0fec51c1dba1ca320897bedd9eb02dc21faea65092fc69eb7888d7399dde3",
+                    "md5": "fbeb4c5768c247d2244e013927b33daa",
+                    "sha256": "0a85a7c74887c2b67e426a2ea6c88ae3860c9df7cff930c310084b9026f1fbe8"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "fbeb4c5768c247d2244e013927b33daa",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.6",
+                "size": 1296790,
+                "upload_time": "2023-02-17T08:42:46",
+                "upload_time_iso_8601": "2023-02-17T08:42:46.385287Z",
+                "url": "https://files.pythonhosted.org/packages/98/d0/fec51c1dba1ca320897bedd9eb02dc21faea65092fc69eb7888d7399dde3/flashlight_text-0.0.2.dev272-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "b526f803a33113d1abcb1f8a004f7294bfb24ce9a2d2628db92b2a6e5d453bdc",
+                    "md5": "1e7903881998e76d9f3257ee6109a012",
+                    "sha256": "b099f83e17965eb2cb0ea6339425d09e3f265f6b5eb3800000a37bd63db91318"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-cp37-cp37m-musllinux_1_1_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "1e7903881998e76d9f3257ee6109a012",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.6",
+                "size": 1669344,
+                "upload_time": "2023-02-17T08:42:47",
+                "upload_time_iso_8601": "2023-02-17T08:42:47.949573Z",
+                "url": "https://files.pythonhosted.org/packages/b5/26/f803a33113d1abcb1f8a004f7294bfb24ce9a2d2628db92b2a6e5d453bdc/flashlight_text-0.0.2.dev272-cp37-cp37m-musllinux_1_1_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "8e073b92de7e955eb5ab4f3583d5b1845859d52d02f6bb410cd0a3a6666ea0ae",
+                    "md5": "7b3a7f6fd2061a1715a085dc6bcd18e5",
+                    "sha256": "1b3619469c79e2f91fe28d77a6ac128074a502a4954d875ba1d4b11dea3b69f9"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-cp37-cp37m-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "7b3a7f6fd2061a1715a085dc6bcd18e5",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.6",
+                "size": 614615,
+                "upload_time": "2023-02-17T08:42:49",
+                "upload_time_iso_8601": "2023-02-17T08:42:49.752817Z",
+                "url": "https://files.pythonhosted.org/packages/8e/07/3b92de7e955eb5ab4f3583d5b1845859d52d02f6bb410cd0a3a6666ea0ae/flashlight_text-0.0.2.dev272-cp37-cp37m-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "7b29495104af69444e4f5d1142feed249177c5045437aee4989009d18fd267d3",
+                    "md5": "b896f73893ae147fa9b932fe85351e64",
+                    "sha256": "7f9b5570f3f5e8357630f7d3aa60d72fd1be4ac870f0e14ee6825af93a22e530"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-cp38-cp38-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "b896f73893ae147fa9b932fe85351e64",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.6",
+                "size": 990418,
+                "upload_time": "2023-02-17T08:42:51",
+                "upload_time_iso_8601": "2023-02-17T08:42:51.175544Z",
+                "url": "https://files.pythonhosted.org/packages/7b/29/495104af69444e4f5d1142feed249177c5045437aee4989009d18fd267d3/flashlight_text-0.0.2.dev272-cp38-cp38-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "1dea386e5e98bb35512b6eef097bd2f26b180a48433af13c2cce7c9112cc1226",
+                    "md5": "94c92c215ec522c6eeb3e9ed3a6a110a",
+                    "sha256": "1ba5ecae2da34704c84a64630849418454e8b611a2ee236530bca8187150f625"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "94c92c215ec522c6eeb3e9ed3a6a110a",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.6",
+                "size": 1283390,
+                "upload_time": "2023-02-17T08:42:53",
+                "upload_time_iso_8601": "2023-02-17T08:42:53.340532Z",
+                "url": "https://files.pythonhosted.org/packages/1d/ea/386e5e98bb35512b6eef097bd2f26b180a48433af13c2cce7c9112cc1226/flashlight_text-0.0.2.dev272-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "1c88fc9aec4bb261557a8ae0995c4dcfc8d93a6dcaefc6fc9813c090cfc2bfee",
+                    "md5": "46b960e70377bd8f1b617e5d06d02e49",
+                    "sha256": "db4e4351198bfe560f380836936f3e74ec12880029b73703bb7b03658de92d11"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-cp38-cp38-musllinux_1_1_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "46b960e70377bd8f1b617e5d06d02e49",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.6",
+                "size": 1654534,
+                "upload_time": "2023-02-17T08:42:54",
+                "upload_time_iso_8601": "2023-02-17T08:42:54.800053Z",
+                "url": "https://files.pythonhosted.org/packages/1c/88/fc9aec4bb261557a8ae0995c4dcfc8d93a6dcaefc6fc9813c090cfc2bfee/flashlight_text-0.0.2.dev272-cp38-cp38-musllinux_1_1_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f764df1eb555fb06a9646e4191cd415b260b5594b8f858684fad830bacc766dc",
+                    "md5": "0b9494d585038e1dcf6cf1be273ce7f8",
+                    "sha256": "a1712bf17010377d8b5ec097fff0bcc6c47de87bca76e70521b74cc1094e29e0"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-cp38-cp38-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "0b9494d585038e1dcf6cf1be273ce7f8",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.6",
+                "size": 615994,
+                "upload_time": "2023-02-17T08:42:56",
+                "upload_time_iso_8601": "2023-02-17T08:42:56.857808Z",
+                "url": "https://files.pythonhosted.org/packages/f7/64/df1eb555fb06a9646e4191cd415b260b5594b8f858684fad830bacc766dc/flashlight_text-0.0.2.dev272-cp38-cp38-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "918a37b02d33816f0599449dfd9d4504a6728afd456f498a3db2bfda943d205f",
+                    "md5": "ced59ecbef8b61125766ae3aa733a1b2",
+                    "sha256": "5214c9922fece751489cc5481b5d1dd3265ff8c64ecc21b0bdfd477dd2c19120"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-cp39-cp39-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "ced59ecbef8b61125766ae3aa733a1b2",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.6",
+                "size": 990949,
+                "upload_time": "2023-02-17T08:42:58",
+                "upload_time_iso_8601": "2023-02-17T08:42:58.795487Z",
+                "url": "https://files.pythonhosted.org/packages/91/8a/37b02d33816f0599449dfd9d4504a6728afd456f498a3db2bfda943d205f/flashlight_text-0.0.2.dev272-cp39-cp39-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "127b7fad834ab707dd34b9ed0ac6e3f16c2a1c277d0d2216fd7800c89964da4d",
+                    "md5": "5bac9097fec64436429d986aec11d089",
+                    "sha256": "345951261f1d69d2fad9dca05c4a4911886362dc260f4fe2c1ba5ee992b7be09"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "5bac9097fec64436429d986aec11d089",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.6",
+                "size": 1284748,
+                "upload_time": "2023-02-17T08:43:00",
+                "upload_time_iso_8601": "2023-02-17T08:43:00.769920Z",
+                "url": "https://files.pythonhosted.org/packages/12/7b/7fad834ab707dd34b9ed0ac6e3f16c2a1c277d0d2216fd7800c89964da4d/flashlight_text-0.0.2.dev272-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "425eed427d91d19949af57078c5a8ec909d4b80d096ffbfa2b20bfa1ec02e245",
+                    "md5": "d40a20e3a6ba3cc66434861c0e195be7",
+                    "sha256": "2d1cacb4d80e12b896ad9133410e5474da6c5ff30ef7ac4266bd3e906218f172"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-cp39-cp39-musllinux_1_1_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "d40a20e3a6ba3cc66434861c0e195be7",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.6",
+                "size": 1655625,
+                "upload_time": "2023-02-17T08:43:02",
+                "upload_time_iso_8601": "2023-02-17T08:43:02.184648Z",
+                "url": "https://files.pythonhosted.org/packages/42/5e/ed427d91d19949af57078c5a8ec909d4b80d096ffbfa2b20bfa1ec02e245/flashlight_text-0.0.2.dev272-cp39-cp39-musllinux_1_1_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "fd1969af931f0dd84cc65a5c3bb2ad0a609ce0e8437594a2bf0f46d38ab9f414",
+                    "md5": "2505770f13cb2847c5605749a2d8dfab",
+                    "sha256": "0d333d8f48bca8e3df2d55a222abb550491800a86615c1c41f52a10ace7e509d"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-cp39-cp39-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "2505770f13cb2847c5605749a2d8dfab",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.6",
+                "size": 616664,
+                "upload_time": "2023-02-17T08:43:03",
+                "upload_time_iso_8601": "2023-02-17T08:43:03.567998Z",
+                "url": "https://files.pythonhosted.org/packages/fd/19/69af931f0dd84cc65a5c3bb2ad0a609ce0e8437594a2bf0f46d38ab9f414/flashlight_text-0.0.2.dev272-cp39-cp39-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "732c07d1b74a6f5e6fcebcf86ed0b002e4b9f49c0549aabb954aec439de0c843",
+                    "md5": "08be82d8ca34ef56997c5e2972d981ee",
+                    "sha256": "9aa97db5d1f542a13367075613b4d30dc05ca1262666d1a11a74c8a176a0cc56"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-pp37-pypy37_pp73-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "08be82d8ca34ef56997c5e2972d981ee",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp37",
+                "requires_python": ">=3.6",
+                "size": 990271,
+                "upload_time": "2023-02-17T08:43:05",
+                "upload_time_iso_8601": "2023-02-17T08:43:05.495403Z",
+                "url": "https://files.pythonhosted.org/packages/73/2c/07d1b74a6f5e6fcebcf86ed0b002e4b9f49c0549aabb954aec439de0c843/flashlight_text-0.0.2.dev272-pp37-pypy37_pp73-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "4cca1e67ccd61464d4eb56ee98843ee73461c564b8bc9be3cc8baace1fdf4252",
+                    "md5": "8ea63ebec63f20b59dd3e7a3d624eed8",
+                    "sha256": "ebb0c9a87151b0605ef2270391677e58fcd65a73504455b7ba67e4ad35f73efa"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-pp37-pypy37_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "8ea63ebec63f20b59dd3e7a3d624eed8",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp37",
+                "requires_python": ">=3.6",
+                "size": 1284219,
+                "upload_time": "2023-02-17T08:43:07",
+                "upload_time_iso_8601": "2023-02-17T08:43:07.608205Z",
+                "url": "https://files.pythonhosted.org/packages/4c/ca/1e67ccd61464d4eb56ee98843ee73461c564b8bc9be3cc8baace1fdf4252/flashlight_text-0.0.2.dev272-pp37-pypy37_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "15729c6d14d4f8364c1efaa6a3184a6f84e5aad4a4368fd0ca29f630fe5a3d16",
+                    "md5": "46c4a8042a87b114a4db3e7c4321ce3a",
+                    "sha256": "22e81f728597f0f366585c29f05002676d88c6212bf95e562b98aa90af39e219"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-pp37-pypy37_pp73-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "46c4a8042a87b114a4db3e7c4321ce3a",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp37",
+                "requires_python": ">=3.6",
+                "size": 615158,
+                "upload_time": "2023-02-17T08:43:08",
+                "upload_time_iso_8601": "2023-02-17T08:43:08.944886Z",
+                "url": "https://files.pythonhosted.org/packages/15/72/9c6d14d4f8364c1efaa6a3184a6f84e5aad4a4368fd0ca29f630fe5a3d16/flashlight_text-0.0.2.dev272-pp37-pypy37_pp73-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e5139d44bfabf9bd228e3d3a87e894f6111df7178de27ece1ee4ff44d7b751d7",
+                    "md5": "6481fe724c3c0b37e842ead07dd6a1eb",
+                    "sha256": "51ecceed4acec66ba0cf6144d98fbc942bef987135bf0554cd07ee8686ed5617"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-pp38-pypy38_pp73-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "6481fe724c3c0b37e842ead07dd6a1eb",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp38",
+                "requires_python": ">=3.6",
+                "size": 990445,
+                "upload_time": "2023-02-17T08:43:10",
+                "upload_time_iso_8601": "2023-02-17T08:43:10.939478Z",
+                "url": "https://files.pythonhosted.org/packages/e5/13/9d44bfabf9bd228e3d3a87e894f6111df7178de27ece1ee4ff44d7b751d7/flashlight_text-0.0.2.dev272-pp38-pypy38_pp73-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "9252f521ed1e1fd5b3af6c1604cb992f73c01b1cd4178814712b786ba4c46e3f",
+                    "md5": "f5cc08a186bd2b77546f8196cf4ad247",
+                    "sha256": "b358ee29ea3eb9c22a2ab2ee58f6421f6aed7386a05a751cb0b08e087fee2f85"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-pp38-pypy38_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "f5cc08a186bd2b77546f8196cf4ad247",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp38",
+                "requires_python": ">=3.6",
+                "size": 1284196,
+                "upload_time": "2023-02-17T08:43:12",
+                "upload_time_iso_8601": "2023-02-17T08:43:12.210065Z",
+                "url": "https://files.pythonhosted.org/packages/92/52/f521ed1e1fd5b3af6c1604cb992f73c01b1cd4178814712b786ba4c46e3f/flashlight_text-0.0.2.dev272-pp38-pypy38_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "4eaade2147c07fcfe8449d938d6c57261cd1ead41f12e05cef951bd847be1b44",
+                    "md5": "e0ae05825701fe0ee15799d0029689fd",
+                    "sha256": "f4c37a179e8aab3c94da752faf9437ab1b18cf9529710c55312120cd0ac4c43d"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-pp38-pypy38_pp73-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "e0ae05825701fe0ee15799d0029689fd",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp38",
+                "requires_python": ">=3.6",
+                "size": 615218,
+                "upload_time": "2023-02-17T08:43:14",
+                "upload_time_iso_8601": "2023-02-17T08:43:14.255468Z",
+                "url": "https://files.pythonhosted.org/packages/4e/aa/de2147c07fcfe8449d938d6c57261cd1ead41f12e05cef951bd847be1b44/flashlight_text-0.0.2.dev272-pp38-pypy38_pp73-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "174bbb515753bb067d009dc6ae63f61ff9b7d22531de6594d00d541809a18dda",
+                    "md5": "8fe020be873beda02ec28b02e809795a",
+                    "sha256": "4fb463543cc774b74ed296e2851eef6dfdd7b95a84b479f82b41cc3eede5321b"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-pp39-pypy39_pp73-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "8fe020be873beda02ec28b02e809795a",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp39",
+                "requires_python": ">=3.6",
+                "size": 990339,
+                "upload_time": "2023-02-17T08:43:16",
+                "upload_time_iso_8601": "2023-02-17T08:43:16.340632Z",
+                "url": "https://files.pythonhosted.org/packages/17/4b/bb515753bb067d009dc6ae63f61ff9b7d22531de6594d00d541809a18dda/flashlight_text-0.0.2.dev272-pp39-pypy39_pp73-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "847b257aa2a925e0b654b8f8d0c86bc22410ac81eeed8d2b1cdd57adab4cf147",
+                    "md5": "122257b40800fc3e338caf7e777a5108",
+                    "sha256": "a76db02bcbc1fc119960bf8199d9479554d4bb02dcf27a9ce5043c7b3a8eb1fe"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-pp39-pypy39_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "122257b40800fc3e338caf7e777a5108",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp39",
+                "requires_python": ">=3.6",
+                "size": 1284215,
+                "upload_time": "2023-02-17T08:43:18",
+                "upload_time_iso_8601": "2023-02-17T08:43:18.079094Z",
+                "url": "https://files.pythonhosted.org/packages/84/7b/257aa2a925e0b654b8f8d0c86bc22410ac81eeed8d2b1cdd57adab4cf147/flashlight_text-0.0.2.dev272-pp39-pypy39_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "dacda8f6ba095cfc9fb4b129b24ff6ac282a07663208ddc14f3e416fa8c2d48e",
+                    "md5": "2b3054420b6e02d7b196c8cef1242edf",
+                    "sha256": "c2edf4b77602e5a2f7cac18c48f59a911e24556c129f1ac5c6b197c991dcf0ba"
+                },
+                "downloads": -1,
+                "filename": "flashlight_text-0.0.2.dev272-pp39-pypy39_pp73-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "2b3054420b6e02d7b196c8cef1242edf",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp39",
+                "requires_python": ">=3.6",
+                "size": 615342,
+                "upload_time": "2023-02-17T08:43:19",
+                "upload_time_iso_8601": "2023-02-17T08:43:19.390846Z",
+                "url": "https://files.pythonhosted.org/packages/da/cd/a8f6ba095cfc9fb4b129b24ff6ac282a07663208ddc14f3e416fa8c2d48e/flashlight_text-0.0.2.dev272-pp39-pypy39_pp73-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c881a7b6cca02387021c58128d659b960c7a4829bd0d986bfd3acddcff322a33",
+                    "md5": "cbcb245301d28849f6ef4d9381121100",
+                    "sha256": "4efa9c51fe24c0a4da9263d939129e1972be437d88de168e5e5f893f7a8232f2"
+                },
+                "downloads": -1,
+                "filename": "flashlight-text-0.0.2.dev272.tar.gz",
+                "has_sig": false,
+                "md5_digest": "cbcb245301d28849f6ef4d9381121100",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.6",
+                "size": 65492,
+                "upload_time": "2023-02-17T08:43:20",
+                "upload_time_iso_8601": "2023-02-17T08:43:20.712807Z",
+                "url": "https://files.pythonhosted.org/packages/c8/81/a7b6cca02387021c58128d659b960c7a4829bd0d986bfd3acddcff322a33/flashlight-text-0.0.2.dev272.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
