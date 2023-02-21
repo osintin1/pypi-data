@@ -53,7 +53,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16423277,
+        "last_serial": 16952791,
         "urls": [
             {
                 "comment_text": "",
@@ -154,7 +154,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16423277,
+        "last_serial": 16952791,
         "urls": [
             {
                 "comment_text": "",
@@ -255,7 +255,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16423277,
+        "last_serial": 16952791,
         "urls": [
             {
                 "comment_text": "",
@@ -356,7 +356,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16423277,
+        "last_serial": 16952791,
         "urls": [
             {
                 "comment_text": "",
@@ -421,7 +421,6 @@
                 "Programming Language :: Python :: 3.9",
                 "Typing :: Typed"
             ],
-            "description": "# AWS CDK AppSync Utilities\n\nThis package contains various utilities for definining GraphQl Apis via AppSync using the [aws-cdk](https://github.com/aws/aws-cdk).\n\n## Code First Schema Definition\n\n`CodeFirstSchema` offers the ability to generate your schema in a code-first\napproach. A code-first approach offers a developer workflow with:\n\n* **modularity**: organizing schema type definitions into different files\n* **reusability**: removing boilerplate/repetitive code\n* **consistency**: resolvers and schema definition will always be synced\n\nThe code-first approach allows for **dynamic** schema generation. You can\ngenerate your schema based on variables and templates to reduce code\nduplication.\n\n```python\nimport { GraphqlApi } from '@aws-cdk/aws-appsync-alpha';\nimport { CodeFirstSchema } from 'awscdk-appsync-utils';\n\nconst schema = new CodeFirstSchema();\nconst api = new GraphqlApi(this, 'api', { name: 'myApi', schema });\n\nschema.addType(new ObjectType('demo', {\n  definition: { id: GraphqlType.id() },\n}));\n```\n\n### Code-First Example\n\nTo showcase the code-first approach. Let's try to model the following schema segment.\n\n```gql\ninterface Node {\n  id: String\n}\n\ntype Query {\n  allFilms(after: String, first: Int, before: String, last: Int): FilmConnection\n}\n\ntype FilmNode implements Node {\n  filmName: String\n}\n\ntype FilmConnection {\n  edges: [FilmEdge]\n  films: [Film]\n  totalCount: Int\n}\n\ntype FilmEdge {\n  node: Film\n  cursor: String\n}\n```\n\nAbove we see a schema that allows for generating paginated responses. For example,\nwe can query `allFilms(first: 100)` since `FilmConnection` acts as an intermediary\nfor holding `FilmEdges` we can write a resolver to return the first 100 films.\n\nIn a separate file, we can declare our object types and related functions.\nWe will call this file `object-types.ts` and we will have created it in a way that\nallows us to generate other `XxxConnection` and `XxxEdges` in the future.\n\n```python\nimport { GraphqlType, InterfaceType, ObjectType } from 'awscdk-appsync-utils';\nconst pluralize = require('pluralize');\n\nexport const args = {\n  after: GraphqlType.string(),\n  first: GraphqlType.int(),\n  before: GraphqlType.string(),\n  last: GraphqlType.int(),\n};\n\nexport const Node = new InterfaceType('Node', {\n  definition: { id: GraphqlType.string() }\n});\nexport const FilmNode = new ObjectType('FilmNode', {\n  interfaceTypes: [Node],\n  definition: { filmName: GraphqlType.string() }\n});\n\nexport function generateEdgeAndConnection(base: ObjectType) {\n  const edge = new ObjectType(`${base.name}Edge`, {\n    definition: { node: base.attribute(), cursor: GraphqlType.string() }\n  });\n  const connection = new ObjectType(`${base.name}Connection`, {\n    definition: {\n      edges: edge.attribute({ isList: true }),\n      [pluralize(base.name)]: base.attribute({ isList: true }),\n      totalCount: GraphqlType.int(),\n    }\n  });\n  return { edge: edge, connection: connection };\n}\n```\n\nFinally, we will go to our `cdk-stack` and combine everything together\nto generate our schema.\n\n```python\ndeclare const dummyRequest: appsync.MappingTemplate;\ndeclare const dummyResponse: appsync.MappingTemplate;\n\nconst api = new appsync.GraphqlApi(this, 'Api', {\n  name: 'demo',\n});\n\nconst objectTypes = [ Node, FilmNode ];\n\nconst filmConnections = generateEdgeAndConnection(FilmNode);\n\napi.addQuery('allFilms', new ResolvableField({\n  returnType: filmConnections.connection.attribute(),\n  args: args,\n  dataSource: api.addNoneDataSource('none'),\n  requestMappingTemplate: dummyRequest,\n  responseMappingTemplate: dummyResponse,\n}));\n\napi.addType(Node);\napi.addType(FilmNode);\napi.addType(filmConnections.edge);\napi.addType(filmConnections.connection);\n```\n\nNotice how we can utilize the `generateEdgeAndConnection` function to generate\nObject Types. In the future, if we wanted to create more Object Types, we can simply\ncreate the base Object Type (i.e. Film) and from there we can generate its respective\n`Connections` and `Edges`.\n\nCheck out a more in-depth example [here](https://github.com/BryanPan342/starwars-code-first).\n\n## GraphQL Types\n\nOne of the benefits of GraphQL is its strongly typed nature. We define the\ntypes within an object, query, mutation, interface, etc. as **GraphQL Types**.\n\nGraphQL Types are the building blocks of types, whether they are scalar, objects,\ninterfaces, etc. GraphQL Types can be:\n\n* [**Scalar Types**](https://docs.aws.amazon.com/appsync/latest/devguide/scalars.html): Id, Int, String, AWSDate, etc.\n* [**Object Types**](#Object-Types): types that you generate (i.e. `demo` from the example above)\n* [**Interface Types**](#Interface-Types): abstract types that define the base implementation of other\n  Intermediate Types\n\nMore concretely, GraphQL Types are simply the types appended to variables.\nReferencing the object type `Demo` in the previous example, the GraphQL Types\nis `String!` and is applied to both the names `id` and `version`.\n\n### Directives\n\n`Directives` are attached to a field or type and affect the execution of queries,\nmutations, and types. With AppSync, we use `Directives` to configure authorization.\nAppsync utils provide static functions to add directives to your CodeFirstSchema.\n\n* `Directive.iam()` sets a type or field's authorization to be validated through `Iam`\n* `Directive.apiKey()` sets a type or field's authorization to be validated through a `Api Key`\n* `Directive.oidc()` sets a type or field's authorization to be validated through `OpenID Connect`\n* `Directive.cognito(...groups: string[])` sets a type or field's authorization to be validated\n  through `Cognito User Pools`\n\n  * `groups` the name of the cognito groups to give access\n\nTo learn more about authorization and directives, read these docs [here](https://docs.aws.amazon.com/appsync/latest/devguide/security.html).\n\n### Field and Resolvable Fields\n\nWhile `GraphqlType` is a base implementation for GraphQL fields, we have abstractions\non top of `GraphqlType` that provide finer grain support.\n\n### Field\n\n`Field` extends `GraphqlType` and will allow you to define arguments. [**Interface Types**](#Interface-Types) are not resolvable and this class will allow you to define arguments,\nbut not its resolvers.\n\nFor example, if we want to create the following type:\n\n```gql\ntype Node {\n  test(argument: string): String\n}\n```\n\nThe CDK code required would be:\n\n```python\nimport { Field, GraphqlType, InterfaceType } from 'awscdk-appsync-utils';\n\nconst field = new Field({\n  returnType: GraphqlType.string(),\n  args: {\n    argument: GraphqlType.string(),\n  },\n});\nconst type = new InterfaceType('Node', {\n  definition: { test: field },\n});\n```\n\n### Resolvable Fields\n\n`ResolvableField` extends `Field` and will allow you to define arguments and its resolvers.\n[**Object Types**](#Object-Types) can have fields that resolve and perform operations on\nyour backend.\n\nYou can also create resolvable fields for object types.\n\n```gql\ntype Info {\n  node(id: String): String\n}\n```\n\nThe CDK code required would be:\n\n```python\ndeclare const api: appsync.GraphqlApi;\ndeclare const dummyRequest: appsync.MappingTemplate;\ndeclare const dummyResponse: appsync.MappingTemplate;\n\nconst info = new ObjectType('Info', {\n  definition: {\n    node: new ResolvableField({\n      returnType: GraphqlType.string(),\n      args: {\n        id: GraphqlType.string(),\n      },\n      dataSource: api.addNoneDataSource('none'),\n      requestMappingTemplate: dummyRequest,\n      responseMappingTemplate: dummyResponse,\n    }),\n  },\n});\n```\n\nTo nest resolvers, we can also create top level query types that call upon\nother types. Building off the previous example, if we want the following graphql\ntype definition:\n\n```gql\ntype Query {\n  get(argument: string): Info\n}\n```\n\nThe CDK code required would be:\n\n```python\ndeclare const api: appsync.GraphqlApi;\ndeclare const dummyRequest: appsync.MappingTemplate;\ndeclare const dummyResponse: appsync.MappingTemplate;\n\nconst query = new ObjectType('Query', {\n  definition: {\n    get: new ResolvableField({\n      returnType: GraphqlType.string(),\n      args: {\n        argument: GraphqlType.string(),\n      },\n      dataSource: api.addNoneDataSource('none'),\n      requestMappingTemplate: dummyRequest,\n      responseMappingTemplate: dummyResponse,\n    }),\n  },\n});\n```\n\nLearn more about fields and resolvers [here](https://docs.aws.amazon.com/appsync/latest/devguide/resolver-mapping-template-reference-overview.html).\n\n### Intermediate Types\n\nIntermediate Types are defined by Graphql Types and Fields. They have a set of defined\nfields, where each field corresponds to another type in the system. Intermediate\nTypes will be the meat of your GraphQL Schema as they are the types defined by you.\n\nIntermediate Types include:\n\n* [**Interface Types**](#Interface-Types)\n* [**Object Types**](#Object-Types)\n* [**Enum Types**](#Enum-Types)\n* [**Input Types**](#Input-Types)\n* [**Union Types**](#Union-Types)\n\n#### Interface Types\n\n**Interface Types** are abstract types that define the implementation of other\nintermediate types. They are useful for eliminating duplication and can be used\nto generate Object Types with less work.\n\nYou can create Interface Types ***externally***.\n\n```python\nconst node = new InterfaceType('Node', {\n  definition: {\n    id: GraphqlType.string({ isRequired: true }),\n  },\n});\n```\n\nTo learn more about **Interface Types**, read the docs [here](https://graphql.org/learn/schema/#interfaces).\n\n#### Object Types\n\n**Object Types** are types that you declare. For example, in the [code-first example](#code-first-example)\nthe `demo` variable is an **Object Type**. **Object Types** are defined by\nGraphQL Types and are only usable when linked to a GraphQL Api.\n\nYou can create Object Types in two ways:\n\n1. Object Types can be created ***externally***.\n\n   ```python\n   const schema = new CodeFirstSchema();\n   const api = new appsync.GraphqlApi(this, 'Api', {\n     name: 'demo',\n     schema,\n   });\n   const demo = new ObjectType('Demo', {\n     definition: {\n       id: GraphqlType.string({ isRequired: true }),\n       version: GraphqlType.string({ isRequired: true }),\n     },\n   });\n\n   schema.addType(demo);\n   ```\n\n   > This method allows for reusability and modularity, ideal for larger projects.\n   > For example, imagine moving all Object Type definition outside the stack.\n\n   `object-types.ts` - a file for object type definitions\n\n   ```python\n   import { ObjectType, GraphqlType } from 'awscdk-appsync-utils';\n   export const demo = new ObjectType('Demo', {\n     definition: {\n       id: GraphqlType.string({ isRequired: true }),\n       version: GraphqlType.string({ isRequired: true }),\n     },\n   });\n   ```\n\n   `cdk-stack.ts` - a file containing our cdk stack\n\n   ```python\n   declare const schema: CodeFirstSchema;\n   schema.addType(demo);\n   ```\n2. Object Types can be created ***externally*** from an Interface Type.\n\n   ```python\n   const node = new InterfaceType('Node', {\n     definition: {\n       id: GraphqlType.string({ isRequired: true }),\n     },\n   });\n   const demo = new ObjectType('Demo', {\n     interfaceTypes: [ node ],\n     definition: {\n       version: GraphqlType.string({ isRequired: true }),\n     },\n   });\n   ```\n\n   > This method allows for reusability and modularity, ideal for reducing code duplication.\n\nTo learn more about **Object Types**, read the docs [here](https://graphql.org/learn/schema/#object-types-and-fields).\n\n#### Enum Types\n\n**Enum Types** are a special type of Intermediate Type. They restrict a particular\nset of allowed values for other Intermediate Types.\n\n```gql\nenum Episode {\n  NEWHOPE\n  EMPIRE\n  JEDI\n}\n```\n\n> This means that wherever we use the type Episode in our schema, we expect it to\n> be exactly one of NEWHOPE, EMPIRE, or JEDI.\n\nThe above GraphQL Enumeration Type can be expressed in CDK as the following:\n\n```python\ndeclare const api: GraphqlApi;\nconst episode = new EnumType('Episode', {\n  definition: [\n    'NEWHOPE',\n    'EMPIRE',\n    'JEDI',\n  ],\n});\napi.addType(episode);\n```\n\nTo learn more about **Enum Types**, read the docs [here](https://graphql.org/learn/schema/#enumeration-types).\n\n#### Input Types\n\n**Input Types** are special types of Intermediate Types. They give users an\neasy way to pass complex objects for top level Mutation and Queries.\n\n```gql\ninput Review {\n  stars: Int!\n  commentary: String\n}\n```\n\nThe above GraphQL Input Type can be expressed in CDK as the following:\n\n```python\ndeclare const api: appsync.GraphqlApi;\nconst review = new InputType('Review', {\n  definition: {\n    stars: GraphqlType.int({ isRequired: true }),\n    commentary: GraphqlType.string(),\n  },\n});\napi.addType(review);\n```\n\nTo learn more about **Input Types**, read the docs [here](https://graphql.org/learn/schema/#input-types).\n\n#### Union Types\n\n**Union Types** are a special type of Intermediate Type. They are similar to\nInterface Types, but they cannot specify any common fields between types.\n\n**Note:** the fields of a union type need to be `Object Types`. In other words, you\ncan't create a union type out of interfaces, other unions, or inputs.\n\n```gql\nunion Search = Human | Droid | Starship\n```\n\nThe above GraphQL Union Type encompasses the Object Types of Human, Droid and Starship. It\ncan be expressed in CDK as the following:\n\n```python\ndeclare const api: appsync.GraphqlApi;\nconst string = GraphqlType.string();\nconst human = new ObjectType('Human', { definition: { name: string } });\nconst droid = new ObjectType('Droid', { definition: { name: string } });\nconst starship = new ObjectType('Starship', { definition: { name: string } }););\nconst search = new UnionType('Search', {\n  definition: [ human, droid, starship ],\n});\napi.addType(search);\n```\n\nTo learn more about **Union Types**, read the docs [here](https://graphql.org/learn/schema/#union-types).\n\n### Query\n\nEvery schema requires a top level Query type. By default, the schema will look\nfor the `Object Type` named `Query`. The top level `Query` is the **only** exposed\ntype that users can access to perform `GET` operations on your Api.\n\nTo add fields for these queries, we can simply run the `addQuery` function to add\nto the schema's `Query` type.\n\n```python\ndeclare const api: appsync.GraphqlApi;\ndeclare const filmConnection: InterfaceType;\ndeclare const dummyRequest: appsync.MappingTemplate;\ndeclare const dummyResponse: appsync.MappingTemplate;\n\nconst string = GraphqlType.string();\nconst int = GraphqlType.int();\napi.addQuery('allFilms', new ResolvableField({\n  returnType: filmConnection.attribute(),\n  args: { after: string, first: int, before: string, last: int},\n  dataSource: api.addNoneDataSource('none'),\n  requestMappingTemplate: dummyRequest,\n  responseMappingTemplate: dummyResponse,\n}));\n```\n\nTo learn more about top level operations, check out the docs [here](https://docs.aws.amazon.com/appsync/latest/devguide/graphql-overview.html).\n\n### Mutation\n\nEvery schema **can** have a top level Mutation type. By default, the schema will look\nfor the `ObjectType` named `Mutation`. The top level `Mutation` Type is the only exposed\ntype that users can access to perform `mutable` operations on your Api.\n\nTo add fields for these mutations, we can simply run the `addMutation` function to add\nto the schema's `Mutation` type.\n\n```python\ndeclare const api: appsync.GraphqlApi;\ndeclare const filmNode: ObjectType;\ndeclare const dummyRequest: appsync.MappingTemplate;\ndeclare const dummyResponse: appsync.MappingTemplate;\n\nconst string = GraphqlType.string();\nconst int = GraphqlType.int();\napi.addMutation('addFilm', new ResolvableField({\n  returnType: filmNode.attribute(),\n  args: { name: string, film_number: int },\n  dataSource: api.addNoneDataSource('none'),\n  requestMappingTemplate: dummyRequest,\n  responseMappingTemplate: dummyResponse,\n}));\n```\n\nTo learn more about top level operations, check out the docs [here](https://docs.aws.amazon.com/appsync/latest/devguide/graphql-overview.html).\n\n### Subscription\n\nEvery schema **can** have a top level Subscription type. The top level `Subscription` Type\nis the only exposed type that users can access to invoke a response to a mutation. `Subscriptions`\nnotify users when a mutation specific mutation is called. This means you can make any data source\nreal time by specify a GraphQL Schema directive on a mutation.\n\n**Note**: The AWS AppSync client SDK automatically handles subscription connection management.\n\nTo add fields for these subscriptions, we can simply run the `addSubscription` function to add\nto the schema's `Subscription` type.\n\n```python\ndeclare const api: appsync.GraphqlApi;\ndeclare const film: InterfaceType;\n\napi.addSubscription('addedFilm', new Field({\n  returnType: film.attribute(),\n  args: { id: GraphqlType.id({ isRequired: true }) },\n  directives: [Directive.subscribe('addFilm')],\n}));\n```\n\nTo learn more about top level operations, check out the docs [here](https://docs.aws.amazon.com/appsync/latest/devguide/real-time-data.html).\n\n## Contributing\n\nThis library leans towards high level and experimental features for appsync cdk users. If you have an idea for additional utilities please create an issue describing the feature.\n\nSee [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.\n\n## License\n\nThis project is licensed under the Apache-2.0 License.\n\n\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -457,7 +456,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16423277,
+        "last_serial": 16952791,
         "urls": [
             {
                 "comment_text": "",
@@ -498,6 +497,307 @@
                 "upload_time": "2023-01-14T00:47:04",
                 "upload_time_iso_8601": "2023-01-14T00:47:04.713853Z",
                 "url": "https://files.pythonhosted.org/packages/24/c9/d43c81a0eecc5c2ba949738df6f986006af6496e2ad8888386e1638dde61/cdklabs.appsync-utils-0.0.4.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.5": {
+        "info": {
+            "author": "Mitchell Valine<mitchellvaline@yahoo.com>",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 5 - Production/Stable",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved",
+                "Operating System :: OS Independent",
+                "Programming Language :: JavaScript",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Typing :: Typed"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/cdklabs/awscdk-appsync-utils.git",
+            "keywords": "",
+            "license": "Apache-2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "cdklabs.appsync-utils",
+            "package_url": "https://pypi.org/project/cdklabs.appsync-utils/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/cdklabs.appsync-utils/",
+            "project_urls": {
+                "Homepage": "https://github.com/cdklabs/awscdk-appsync-utils.git",
+                "Source": "https://github.com/cdklabs/awscdk-appsync-utils.git"
+            },
+            "release_url": "https://pypi.org/project/cdklabs.appsync-utils/0.0.5/",
+            "requires_dist": [
+                "aws-cdk-lib (<3.0.0,>=2.60.0)",
+                "constructs (<11.0.0,>=10.0.5)",
+                "jsii (<2.0.0,>=1.73.0)",
+                "publication (>=0.0.3)",
+                "typeguard (~=2.13.3)"
+            ],
+            "requires_python": "~=3.7",
+            "summary": "Utilities for creating appsync apis using aws-cdk",
+            "version": "0.0.5",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16952791,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c9f90d707ae32350584e232a8a3be27bec6aa1e7584c073918a008f04ce70d34",
+                    "md5": "b0e5bd6b6ad203a442b78292f1a47ee5",
+                    "sha256": "b5c0ec0e62b63b063046f82f4477a5b35a9fa52bd7ee4bce238512349eb7a93b"
+                },
+                "downloads": -1,
+                "filename": "cdklabs.appsync_utils-0.0.5-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "b0e5bd6b6ad203a442b78292f1a47ee5",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": "~=3.7",
+                "size": 108750,
+                "upload_time": "2023-02-20T22:05:41",
+                "upload_time_iso_8601": "2023-02-20T22:05:41.045065Z",
+                "url": "https://files.pythonhosted.org/packages/c9/f9/0d707ae32350584e232a8a3be27bec6aa1e7584c073918a008f04ce70d34/cdklabs.appsync_utils-0.0.5-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "93247c35be7d574ac74abfadc0dcbe3026e550255c0dede1685bdbe286171983",
+                    "md5": "d109fd9b48eb45277b68279b21ef154c",
+                    "sha256": "abde40e870c9f64aeecc63a4fca4e331422984cb9925cc8355ce52f401bca78b"
+                },
+                "downloads": -1,
+                "filename": "cdklabs.appsync-utils-0.0.5.tar.gz",
+                "has_sig": false,
+                "md5_digest": "d109fd9b48eb45277b68279b21ef154c",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": "~=3.7",
+                "size": 110703,
+                "upload_time": "2023-02-20T22:05:42",
+                "upload_time_iso_8601": "2023-02-20T22:05:42.928028Z",
+                "url": "https://files.pythonhosted.org/packages/93/24/7c35be7d574ac74abfadc0dcbe3026e550255c0dede1685bdbe286171983/cdklabs.appsync-utils-0.0.5.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.6": {
+        "info": {
+            "author": "Mitchell Valine<mitchellvaline@yahoo.com>",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 5 - Production/Stable",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved",
+                "Operating System :: OS Independent",
+                "Programming Language :: JavaScript",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Typing :: Typed"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/cdklabs/awscdk-appsync-utils.git",
+            "keywords": "",
+            "license": "Apache-2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "cdklabs.appsync-utils",
+            "package_url": "https://pypi.org/project/cdklabs.appsync-utils/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/cdklabs.appsync-utils/",
+            "project_urls": {
+                "Homepage": "https://github.com/cdklabs/awscdk-appsync-utils.git",
+                "Source": "https://github.com/cdklabs/awscdk-appsync-utils.git"
+            },
+            "release_url": "https://pypi.org/project/cdklabs.appsync-utils/0.0.6/",
+            "requires_dist": [
+                "aws-cdk-lib (<3.0.0,>=2.60.0)",
+                "constructs (<11.0.0,>=10.0.5)",
+                "jsii (<2.0.0,>=1.75.0)",
+                "publication (>=0.0.3)",
+                "typeguard (~=2.13.3)"
+            ],
+            "requires_python": "~=3.7",
+            "summary": "Utilities for creating appsync apis using aws-cdk",
+            "version": "0.0.6",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16952791,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e02053d1072d2e298a029236820771fefd1f803a907e00a9cebb0b7cdad42c64",
+                    "md5": "fc3bb03f2c1865132a626df3270a3588",
+                    "sha256": "c8b7e0961979ee888d7bd20b15c63052c37d392ed4d1a31659f5fb5badfa3cda"
+                },
+                "downloads": -1,
+                "filename": "cdklabs.appsync_utils-0.0.6-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "fc3bb03f2c1865132a626df3270a3588",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": "~=3.7",
+                "size": 108734,
+                "upload_time": "2023-02-21T01:05:03",
+                "upload_time_iso_8601": "2023-02-21T01:05:03.861733Z",
+                "url": "https://files.pythonhosted.org/packages/e0/20/53d1072d2e298a029236820771fefd1f803a907e00a9cebb0b7cdad42c64/cdklabs.appsync_utils-0.0.6-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "8590cbf7c35f8f94c87c9f0e26ed15b957185a750bf97131ddafd7e66de627d8",
+                    "md5": "ae97be00dac87d4b1ec27f2b04500feb",
+                    "sha256": "602de7de0541b1407f06aace63e90378e56f64ad9ce3e39d9c0fddc658c9d188"
+                },
+                "downloads": -1,
+                "filename": "cdklabs.appsync-utils-0.0.6.tar.gz",
+                "has_sig": false,
+                "md5_digest": "ae97be00dac87d4b1ec27f2b04500feb",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": "~=3.7",
+                "size": 110643,
+                "upload_time": "2023-02-21T01:05:05",
+                "upload_time_iso_8601": "2023-02-21T01:05:05.276740Z",
+                "url": "https://files.pythonhosted.org/packages/85/90/cbf7c35f8f94c87c9f0e26ed15b957185a750bf97131ddafd7e66de627d8/cdklabs.appsync-utils-0.0.6.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.7": {
+        "info": {
+            "author": "Mitchell Valine<mitchellvaline@yahoo.com>",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 5 - Production/Stable",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved",
+                "Operating System :: OS Independent",
+                "Programming Language :: JavaScript",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Typing :: Typed"
+            ],
+            "description": "# AWS CDK AppSync Utilities\n\nThis package contains various utilities for definining GraphQl Apis via AppSync using the [aws-cdk](https://github.com/aws/aws-cdk).\n\n## Code First Schema Definition\n\n`CodeFirstSchema` offers the ability to generate your schema in a code-first\napproach. A code-first approach offers a developer workflow with:\n\n* **modularity**: organizing schema type definitions into different files\n* **reusability**: removing boilerplate/repetitive code\n* **consistency**: resolvers and schema definition will always be synced\n\nThe code-first approach allows for **dynamic** schema generation. You can\ngenerate your schema based on variables and templates to reduce code\nduplication.\n\n```python\nimport { GraphqlApi } from '@aws-cdk/aws-appsync-alpha';\nimport { CodeFirstSchema } from 'awscdk-appsync-utils';\n\nconst schema = new CodeFirstSchema();\nconst api = new GraphqlApi(this, 'api', { name: 'myApi', schema });\n\nschema.addType(new ObjectType('demo', {\n  definition: { id: GraphqlType.id() },\n}));\n```\n\n### Code-First Example\n\nTo showcase the code-first approach. Let's try to model the following schema segment.\n\n```gql\ninterface Node {\n  id: String\n}\n\ntype Query {\n  allFilms(after: String, first: Int, before: String, last: Int): FilmConnection\n}\n\ntype FilmNode implements Node {\n  filmName: String\n}\n\ntype FilmConnection {\n  edges: [FilmEdge]\n  films: [Film]\n  totalCount: Int\n}\n\ntype FilmEdge {\n  node: Film\n  cursor: String\n}\n```\n\nAbove we see a schema that allows for generating paginated responses. For example,\nwe can query `allFilms(first: 100)` since `FilmConnection` acts as an intermediary\nfor holding `FilmEdges` we can write a resolver to return the first 100 films.\n\nIn a separate file, we can declare our object types and related functions.\nWe will call this file `object-types.ts` and we will have created it in a way that\nallows us to generate other `XxxConnection` and `XxxEdges` in the future.\n\n```python\nimport { GraphqlType, InterfaceType, ObjectType } from 'awscdk-appsync-utils';\nconst pluralize = require('pluralize');\n\nexport const args = {\n  after: GraphqlType.string(),\n  first: GraphqlType.int(),\n  before: GraphqlType.string(),\n  last: GraphqlType.int(),\n};\n\nexport const Node = new InterfaceType('Node', {\n  definition: { id: GraphqlType.string() }\n});\nexport const FilmNode = new ObjectType('FilmNode', {\n  interfaceTypes: [Node],\n  definition: { filmName: GraphqlType.string() }\n});\n\nexport function generateEdgeAndConnection(base: ObjectType) {\n  const edge = new ObjectType(`${base.name}Edge`, {\n    definition: { node: base.attribute(), cursor: GraphqlType.string() }\n  });\n  const connection = new ObjectType(`${base.name}Connection`, {\n    definition: {\n      edges: edge.attribute({ isList: true }),\n      [pluralize(base.name)]: base.attribute({ isList: true }),\n      totalCount: GraphqlType.int(),\n    }\n  });\n  return { edge: edge, connection: connection };\n}\n```\n\nFinally, we will go to our `cdk-stack` and combine everything together\nto generate our schema.\n\n```python\ndeclare const dummyRequest: appsync.MappingTemplate;\ndeclare const dummyResponse: appsync.MappingTemplate;\n\nconst api = new appsync.GraphqlApi(this, 'Api', {\n  name: 'demo',\n});\n\nconst objectTypes = [ Node, FilmNode ];\n\nconst filmConnections = generateEdgeAndConnection(FilmNode);\n\napi.addQuery('allFilms', new ResolvableField({\n  returnType: filmConnections.connection.attribute(),\n  args: args,\n  dataSource: api.addNoneDataSource('none'),\n  requestMappingTemplate: dummyRequest,\n  responseMappingTemplate: dummyResponse,\n}));\n\napi.addType(Node);\napi.addType(FilmNode);\napi.addType(filmConnections.edge);\napi.addType(filmConnections.connection);\n```\n\nNotice how we can utilize the `generateEdgeAndConnection` function to generate\nObject Types. In the future, if we wanted to create more Object Types, we can simply\ncreate the base Object Type (i.e. Film) and from there we can generate its respective\n`Connections` and `Edges`.\n\nCheck out a more in-depth example [here](https://github.com/BryanPan342/starwars-code-first).\n\n## GraphQL Types\n\nOne of the benefits of GraphQL is its strongly typed nature. We define the\ntypes within an object, query, mutation, interface, etc. as **GraphQL Types**.\n\nGraphQL Types are the building blocks of types, whether they are scalar, objects,\ninterfaces, etc. GraphQL Types can be:\n\n* [**Scalar Types**](https://docs.aws.amazon.com/appsync/latest/devguide/scalars.html): Id, Int, String, AWSDate, etc.\n* [**Object Types**](#Object-Types): types that you generate (i.e. `demo` from the example above)\n* [**Interface Types**](#Interface-Types): abstract types that define the base implementation of other\n  Intermediate Types\n\nMore concretely, GraphQL Types are simply the types appended to variables.\nReferencing the object type `Demo` in the previous example, the GraphQL Types\nis `String!` and is applied to both the names `id` and `version`.\n\n### Directives\n\n`Directives` are attached to a field or type and affect the execution of queries,\nmutations, and types. With AppSync, we use `Directives` to configure authorization.\nAppsync utils provide static functions to add directives to your CodeFirstSchema.\n\n* `Directive.iam()` sets a type or field's authorization to be validated through `Iam`\n* `Directive.apiKey()` sets a type or field's authorization to be validated through a `Api Key`\n* `Directive.oidc()` sets a type or field's authorization to be validated through `OpenID Connect`\n* `Directive.cognito(...groups: string[])` sets a type or field's authorization to be validated\n  through `Cognito User Pools`\n\n  * `groups` the name of the cognito groups to give access\n\nTo learn more about authorization and directives, read these docs [here](https://docs.aws.amazon.com/appsync/latest/devguide/security.html).\n\n### Field and Resolvable Fields\n\nWhile `GraphqlType` is a base implementation for GraphQL fields, we have abstractions\non top of `GraphqlType` that provide finer grain support.\n\n### Field\n\n`Field` extends `GraphqlType` and will allow you to define arguments. [**Interface Types**](#Interface-Types) are not resolvable and this class will allow you to define arguments,\nbut not its resolvers.\n\nFor example, if we want to create the following type:\n\n```gql\ntype Node {\n  test(argument: string): String\n}\n```\n\nThe CDK code required would be:\n\n```python\nimport { Field, GraphqlType, InterfaceType } from 'awscdk-appsync-utils';\n\nconst field = new Field({\n  returnType: GraphqlType.string(),\n  args: {\n    argument: GraphqlType.string(),\n  },\n});\nconst type = new InterfaceType('Node', {\n  definition: { test: field },\n});\n```\n\n### Resolvable Fields\n\n`ResolvableField` extends `Field` and will allow you to define arguments and its resolvers.\n[**Object Types**](#Object-Types) can have fields that resolve and perform operations on\nyour backend.\n\nYou can also create resolvable fields for object types.\n\n```gql\ntype Info {\n  node(id: String): String\n}\n```\n\nThe CDK code required would be:\n\n```python\ndeclare const api: appsync.GraphqlApi;\ndeclare const dummyRequest: appsync.MappingTemplate;\ndeclare const dummyResponse: appsync.MappingTemplate;\n\nconst info = new ObjectType('Info', {\n  definition: {\n    node: new ResolvableField({\n      returnType: GraphqlType.string(),\n      args: {\n        id: GraphqlType.string(),\n      },\n      dataSource: api.addNoneDataSource('none'),\n      requestMappingTemplate: dummyRequest,\n      responseMappingTemplate: dummyResponse,\n    }),\n  },\n});\n```\n\nTo nest resolvers, we can also create top level query types that call upon\nother types. Building off the previous example, if we want the following graphql\ntype definition:\n\n```gql\ntype Query {\n  get(argument: string): Info\n}\n```\n\nThe CDK code required would be:\n\n```python\ndeclare const api: appsync.GraphqlApi;\ndeclare const dummyRequest: appsync.MappingTemplate;\ndeclare const dummyResponse: appsync.MappingTemplate;\n\nconst query = new ObjectType('Query', {\n  definition: {\n    get: new ResolvableField({\n      returnType: GraphqlType.string(),\n      args: {\n        argument: GraphqlType.string(),\n      },\n      dataSource: api.addNoneDataSource('none'),\n      requestMappingTemplate: dummyRequest,\n      responseMappingTemplate: dummyResponse,\n    }),\n  },\n});\n```\n\nLearn more about fields and resolvers [here](https://docs.aws.amazon.com/appsync/latest/devguide/resolver-mapping-template-reference-overview.html).\n\n### Intermediate Types\n\nIntermediate Types are defined by Graphql Types and Fields. They have a set of defined\nfields, where each field corresponds to another type in the system. Intermediate\nTypes will be the meat of your GraphQL Schema as they are the types defined by you.\n\nIntermediate Types include:\n\n* [**Interface Types**](#Interface-Types)\n* [**Object Types**](#Object-Types)\n* [**Enum Types**](#Enum-Types)\n* [**Input Types**](#Input-Types)\n* [**Union Types**](#Union-Types)\n\n#### Interface Types\n\n**Interface Types** are abstract types that define the implementation of other\nintermediate types. They are useful for eliminating duplication and can be used\nto generate Object Types with less work.\n\nYou can create Interface Types ***externally***.\n\n```python\nconst node = new InterfaceType('Node', {\n  definition: {\n    id: GraphqlType.string({ isRequired: true }),\n  },\n});\n```\n\nTo learn more about **Interface Types**, read the docs [here](https://graphql.org/learn/schema/#interfaces).\n\n#### Object Types\n\n**Object Types** are types that you declare. For example, in the [code-first example](#code-first-example)\nthe `demo` variable is an **Object Type**. **Object Types** are defined by\nGraphQL Types and are only usable when linked to a GraphQL Api.\n\nYou can create Object Types in two ways:\n\n1. Object Types can be created ***externally***.\n\n   ```python\n   const schema = new CodeFirstSchema();\n   const api = new appsync.GraphqlApi(this, 'Api', {\n     name: 'demo',\n     schema,\n   });\n   const demo = new ObjectType('Demo', {\n     definition: {\n       id: GraphqlType.string({ isRequired: true }),\n       version: GraphqlType.string({ isRequired: true }),\n     },\n   });\n\n   schema.addType(demo);\n   ```\n\n   > This method allows for reusability and modularity, ideal for larger projects.\n   > For example, imagine moving all Object Type definition outside the stack.\n\n   `object-types.ts` - a file for object type definitions\n\n   ```python\n   import { ObjectType, GraphqlType } from 'awscdk-appsync-utils';\n   export const demo = new ObjectType('Demo', {\n     definition: {\n       id: GraphqlType.string({ isRequired: true }),\n       version: GraphqlType.string({ isRequired: true }),\n     },\n   });\n   ```\n\n   `cdk-stack.ts` - a file containing our cdk stack\n\n   ```python\n   declare const schema: CodeFirstSchema;\n   schema.addType(demo);\n   ```\n2. Object Types can be created ***externally*** from an Interface Type.\n\n   ```python\n   const node = new InterfaceType('Node', {\n     definition: {\n       id: GraphqlType.string({ isRequired: true }),\n     },\n   });\n   const demo = new ObjectType('Demo', {\n     interfaceTypes: [ node ],\n     definition: {\n       version: GraphqlType.string({ isRequired: true }),\n     },\n   });\n   ```\n\n   > This method allows for reusability and modularity, ideal for reducing code duplication.\n\nTo learn more about **Object Types**, read the docs [here](https://graphql.org/learn/schema/#object-types-and-fields).\n\n#### Enum Types\n\n**Enum Types** are a special type of Intermediate Type. They restrict a particular\nset of allowed values for other Intermediate Types.\n\n```gql\nenum Episode {\n  NEWHOPE\n  EMPIRE\n  JEDI\n}\n```\n\n> This means that wherever we use the type Episode in our schema, we expect it to\n> be exactly one of NEWHOPE, EMPIRE, or JEDI.\n\nThe above GraphQL Enumeration Type can be expressed in CDK as the following:\n\n```python\ndeclare const api: GraphqlApi;\nconst episode = new EnumType('Episode', {\n  definition: [\n    'NEWHOPE',\n    'EMPIRE',\n    'JEDI',\n  ],\n});\napi.addType(episode);\n```\n\nTo learn more about **Enum Types**, read the docs [here](https://graphql.org/learn/schema/#enumeration-types).\n\n#### Input Types\n\n**Input Types** are special types of Intermediate Types. They give users an\neasy way to pass complex objects for top level Mutation and Queries.\n\n```gql\ninput Review {\n  stars: Int!\n  commentary: String\n}\n```\n\nThe above GraphQL Input Type can be expressed in CDK as the following:\n\n```python\ndeclare const api: appsync.GraphqlApi;\nconst review = new InputType('Review', {\n  definition: {\n    stars: GraphqlType.int({ isRequired: true }),\n    commentary: GraphqlType.string(),\n  },\n});\napi.addType(review);\n```\n\nTo learn more about **Input Types**, read the docs [here](https://graphql.org/learn/schema/#input-types).\n\n#### Union Types\n\n**Union Types** are a special type of Intermediate Type. They are similar to\nInterface Types, but they cannot specify any common fields between types.\n\n**Note:** the fields of a union type need to be `Object Types`. In other words, you\ncan't create a union type out of interfaces, other unions, or inputs.\n\n```gql\nunion Search = Human | Droid | Starship\n```\n\nThe above GraphQL Union Type encompasses the Object Types of Human, Droid and Starship. It\ncan be expressed in CDK as the following:\n\n```python\ndeclare const api: appsync.GraphqlApi;\nconst string = GraphqlType.string();\nconst human = new ObjectType('Human', { definition: { name: string } });\nconst droid = new ObjectType('Droid', { definition: { name: string } });\nconst starship = new ObjectType('Starship', { definition: { name: string } }););\nconst search = new UnionType('Search', {\n  definition: [ human, droid, starship ],\n});\napi.addType(search);\n```\n\nTo learn more about **Union Types**, read the docs [here](https://graphql.org/learn/schema/#union-types).\n\n### Query\n\nEvery schema requires a top level Query type. By default, the schema will look\nfor the `Object Type` named `Query`. The top level `Query` is the **only** exposed\ntype that users can access to perform `GET` operations on your Api.\n\nTo add fields for these queries, we can simply run the `addQuery` function to add\nto the schema's `Query` type.\n\n```python\ndeclare const api: appsync.GraphqlApi;\ndeclare const filmConnection: InterfaceType;\ndeclare const dummyRequest: appsync.MappingTemplate;\ndeclare const dummyResponse: appsync.MappingTemplate;\n\nconst string = GraphqlType.string();\nconst int = GraphqlType.int();\napi.addQuery('allFilms', new ResolvableField({\n  returnType: filmConnection.attribute(),\n  args: { after: string, first: int, before: string, last: int},\n  dataSource: api.addNoneDataSource('none'),\n  requestMappingTemplate: dummyRequest,\n  responseMappingTemplate: dummyResponse,\n}));\n```\n\nTo learn more about top level operations, check out the docs [here](https://docs.aws.amazon.com/appsync/latest/devguide/graphql-overview.html).\n\n### Mutation\n\nEvery schema **can** have a top level Mutation type. By default, the schema will look\nfor the `ObjectType` named `Mutation`. The top level `Mutation` Type is the only exposed\ntype that users can access to perform `mutable` operations on your Api.\n\nTo add fields for these mutations, we can simply run the `addMutation` function to add\nto the schema's `Mutation` type.\n\n```python\ndeclare const api: appsync.GraphqlApi;\ndeclare const filmNode: ObjectType;\ndeclare const dummyRequest: appsync.MappingTemplate;\ndeclare const dummyResponse: appsync.MappingTemplate;\n\nconst string = GraphqlType.string();\nconst int = GraphqlType.int();\napi.addMutation('addFilm', new ResolvableField({\n  returnType: filmNode.attribute(),\n  args: { name: string, film_number: int },\n  dataSource: api.addNoneDataSource('none'),\n  requestMappingTemplate: dummyRequest,\n  responseMappingTemplate: dummyResponse,\n}));\n```\n\nTo learn more about top level operations, check out the docs [here](https://docs.aws.amazon.com/appsync/latest/devguide/graphql-overview.html).\n\n### Subscription\n\nEvery schema **can** have a top level Subscription type. The top level `Subscription` Type\nis the only exposed type that users can access to invoke a response to a mutation. `Subscriptions`\nnotify users when a mutation specific mutation is called. This means you can make any data source\nreal time by specify a GraphQL Schema directive on a mutation.\n\n**Note**: The AWS AppSync client SDK automatically handles subscription connection management.\n\nTo add fields for these subscriptions, we can simply run the `addSubscription` function to add\nto the schema's `Subscription` type.\n\n```python\ndeclare const api: appsync.GraphqlApi;\ndeclare const film: InterfaceType;\n\napi.addSubscription('addedFilm', new Field({\n  returnType: film.attribute(),\n  args: { id: GraphqlType.id({ isRequired: true }) },\n  directives: [Directive.subscribe('addFilm')],\n}));\n```\n\nTo learn more about top level operations, check out the docs [here](https://docs.aws.amazon.com/appsync/latest/devguide/real-time-data.html).\n\n## Contributing\n\nThis library leans towards high level and experimental features for appsync cdk users. If you have an idea for additional utilities please create an issue describing the feature.\n\nSee [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.\n\n## License\n\nThis project is licensed under the Apache-2.0 License.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/cdklabs/awscdk-appsync-utils.git",
+            "keywords": "",
+            "license": "Apache-2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "cdklabs.appsync-utils",
+            "package_url": "https://pypi.org/project/cdklabs.appsync-utils/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/cdklabs.appsync-utils/",
+            "project_urls": {
+                "Homepage": "https://github.com/cdklabs/awscdk-appsync-utils.git",
+                "Source": "https://github.com/cdklabs/awscdk-appsync-utils.git"
+            },
+            "release_url": "https://pypi.org/project/cdklabs.appsync-utils/0.0.7/",
+            "requires_dist": [
+                "aws-cdk-lib (<3.0.0,>=2.60.0)",
+                "constructs (<11.0.0,>=10.0.5)",
+                "jsii (<2.0.0,>=1.75.0)",
+                "publication (>=0.0.3)",
+                "typeguard (~=2.13.3)"
+            ],
+            "requires_python": "~=3.7",
+            "summary": "Utilities for creating appsync apis using aws-cdk",
+            "version": "0.0.7",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16952791,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c128b205bb8bda953fd82bf56f06cc200bcb905b8482a799eef132e83a64ec9f",
+                    "md5": "3f3acc8bcf2d4b4a31b62d67826a60e3",
+                    "sha256": "0563b5b181f4e72795fe4951774bf51668c689a451b62345c2fd36e553280283"
+                },
+                "downloads": -1,
+                "filename": "cdklabs.appsync_utils-0.0.7-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "3f3acc8bcf2d4b4a31b62d67826a60e3",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": "~=3.7",
+                "size": 108736,
+                "upload_time": "2023-02-21T01:10:20",
+                "upload_time_iso_8601": "2023-02-21T01:10:20.220292Z",
+                "url": "https://files.pythonhosted.org/packages/c1/28/b205bb8bda953fd82bf56f06cc200bcb905b8482a799eef132e83a64ec9f/cdklabs.appsync_utils-0.0.7-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "b2e9a262779291b6a96c7c4a3f1852dce1a6e55968046b3e7704824c0b72fce3",
+                    "md5": "443cc6b78db5f04d315140dc465bf59b",
+                    "sha256": "996bc8d8dcb459fc93a1ee9d4d221da9c9e2fb9a372a0664e921282402b94302"
+                },
+                "downloads": -1,
+                "filename": "cdklabs.appsync-utils-0.0.7.tar.gz",
+                "has_sig": false,
+                "md5_digest": "443cc6b78db5f04d315140dc465bf59b",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": "~=3.7",
+                "size": 110644,
+                "upload_time": "2023-02-21T01:10:21",
+                "upload_time_iso_8601": "2023-02-21T01:10:21.913611Z",
+                "url": "https://files.pythonhosted.org/packages/b2/e9/a262779291b6a96c7c4a3f1852dce1a6e55968046b3e7704824c0b72fce3/cdklabs.appsync-utils-0.0.7.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

@@ -35,7 +35,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16938284,
+        "last_serial": 16951883,
         "urls": [
             {
                 "comment_text": "",
@@ -118,7 +118,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16938284,
+        "last_serial": 16951883,
         "urls": [
             {
                 "comment_text": "",
@@ -173,7 +173,6 @@
             "classifiers": [
                 "Programming Language :: Python :: 3.11"
             ],
-            "description": "[![](https://img.shields.io/pypi/v/flexdi.svg)](https://pypi.org/project/flexdi/)\r\n[![](https://github.com/cal-pratt/flexdi/actions/workflows/main.yml/badge.svg)](https://github.com/cal-pratt/flexdi/actions)\r\n\r\n# FlexDI \ud83d\ude80\r\n\r\n`flexdi` is a yet another dependency injection library for Python. `flexdi` provides a lightweight \r\nalternative to common DI solutions with minimal setup to be included in your projects. This library\r\nis intended for use with type annotated Python libraries, as it leverages these type annotations to \r\nperform injection.\r\n\r\n**Note:** *This repo is still a work in progress and is not yet intended for production use-cases. \r\nAPIs are likely to change in the coming releases*\r\n\r\n## Notable features\r\n\r\n- __Minimal Setup__<br/>\r\nSome DI systems require that you conform to a particular style of class definition, a naming \r\nconvention to arguments, placing wrappers around class or method definitions, or providing complex \r\ndefault arguments which are tied to the DI system. `flexdi` mainly uses type annotations to perform\r\ninjection, which avoids a common problem of library lock-in where frameworks force you to design\r\ncomponents using their highly specialized constructs.\r\n\r\n\r\n- __Inject Any Callable__<br/>\r\nBasic Python DI tools only allow classes to be used for injection, which can be quite limiting.\r\nIn `flexdi`, you can provide any typed callable as an input to be invoked. This avoids having to\r\nmake class definitions purely for injection to work.\r\n\r\n\r\n- __Lifetime Management__<br/>\r\nWhen creating dependencies for your callable, you often have resources that need to be properly \r\ntorn down when your work is done. Providers for types in `flexdi` can be initialized using context \r\nmanagers that will have their shutdown logic invoked when you're done your work.\r\n\r\n\r\n- __Asyncio Support__<br/>\r\n`flexdi` allows calling both sync and async methods directly, and provides both a sync and async \r\ninterface to its main invocation method. Similarly, dependency providers may be defined as async \r\nmethods, or be provided as async context managers.\r\n\r\n## High level Overview\r\n\r\n`flexdi` offers a construct called the `Injector` which is used to populate callables with\r\narguments and invoke these callables. These arguments are dependencies you want to inject in your\r\napplication.\r\n\r\nWhen determining dependencies for a callable, `flexdi` will examine the type annotations of the\r\narguments, and construct a graph of objects which can satisfy the callable. A callable can be \r\nanything from a class (as seen with the type annotations), to functions, class methods, \r\ngenerators, etc.\r\n\r\nFor complex types, `flexdi` allows binding helper functions that can map an instance to a type\r\ndefinition. These helper functions can themselves be injected with dependencies. Bindings can\r\nalso be defined as generators which allows supplying custom teardown logic for your dependencies.\r\n\r\nA simple example of an application with SQLAlchemy dependencies:\r\n\r\n```py\r\nimport sys\r\nfrom typing import Iterator\r\nfrom sqlalchemy import Engine, create_engine, text\r\nfrom sqlalchemy.orm import Session\r\n\r\nfrom flexdi import Injector\r\n\r\ninjector = Injector()\r\n\r\n# For simple functions we can infer the type to \r\n# bind from the return type annotation\r\n@injector.binding()\r\ndef provide_engine() -> Engine:\r\n    return create_engine(\"sqlite://\")\r\n\r\n# For more complex functions we can explicitly define \r\n# the type that we bind the result to.\r\n@injector.binding(bind_to=Session)\r\ndef provide_session(engine: Engine) -> Iterator[Session]:\r\n    with Session(engine) as session:\r\n        yield session\r\n\r\n# We don't need to add any flexdi setup to our actual code. \r\ndef main(session: Session) -> int:\r\n    print(session.execute(text(\"SELECT now()\")))\r\n    return 0\r\n\r\nif __name__ == \"__main__\":\r\n    # Start up the injector, and guard using a with statement to\r\n    # ensure that we clean up any dependencies which require it\r\n    with injector:\r\n        sys.exit(injector.invoke(main))\r\n```\r\n\r\nThe same example, but using async code:\r\n\r\n```py\r\nimport sys\r\nfrom typing import AsyncIterator\r\nfrom sqlalchemy.ext.asyncio import (\r\n    AsyncConnection, \r\n    AsyncEngine, \r\n    create_async_engine\r\n)\r\nfrom sqlalchemy import text\r\n\r\nfrom flexdi import Injector\r\n\r\ninjector = Injector()\r\n\r\n@injector.binding(bind_to=AsyncEngine)\r\nasync def provide_engine() -> AsyncIterator[AsyncEngine]:\r\n    engine = create_async_engine(\"sqlite://\")\r\n    try:\r\n        yield engine\r\n    finally:\r\n        await engine.dispose()\r\n\r\n@injector.binding(bind_to=AsyncConnection)\r\nasync def provide_connection(engine: AsyncEngine) -> AsyncIterator[AsyncConnection]:\r\n    async with engine.begin() as conn:\r\n        yield conn\r\n\r\nasync def main(conn: AsyncConnection) -> int:\r\n    print(await conn.execute(text(\"SELECT now()\")))\r\n    return 0\r\n\r\nif __name__ == \"__main__\":\r\n    with injector:\r\n        # The injector can handle invoking async functions natively,\r\n        # so no worry about adding in extra logic here.\r\n        sys.exit(injector.invoke(main))\r\n...\r\n\r\n# If already within an async context, then you can use the\r\n# async versions of these methods.\r\nasync def func() -> int:\r\n    async with injector:\r\n        return await injector.ainvoke(main)\r\n```\r\n\r\n\r\n# Why not use an alternative?\r\n\r\nAlthough there are many, many other dependency injection libraries, I found that I was still left \r\nlooking for more lightweight/minimal solutions to this problem. My thoughts on the alternatives:\r\n\r\n\r\n- [`dependency-injector`](https://github.com/ets-labs/python-dependency-injector) <br/>\r\nThis library is probably the most mature out of all the alternatives. Its main driving principal is \r\nthat \"Explicit is better than implicit\", in that you need to specify explicitly how to assemble/\r\ninject the dependencies. `flexdi` is still explicit in the sense that dependencies are directly \r\nreferenced from their type annotations, and by leveraging them we can avoid a lot of the more \r\nverbose setup required in `DeclarativeContainer` structures.\r\n\r\n\r\n- [`fastapi`](https://github.com/tiangolo/fastapi) <br>\r\nThis web framework provides an excellent way to perform dependency injection, but it does not\r\nprovide a way to perform dependency injection outside the context of web request. When configuring\r\nthe injection, you must also provide default values to arguments, which ties application code to the\r\nweb framework, making it more difficult to re-use code in other contexts. Additionally, it does not\r\nprovide rich support for lifetime/singleton scoped dependencies, making the setup of some \r\ndependencies increasingly awkward.\r\n\r\n\r\n- [`pinject`](https://github.com/google/pinject) <br>\r\nThis library allows you to perform DI with minimal setup, but its major downfall is that it relies\r\non the names of arguments to perform injection. If the name of the argument does not match the name\r\nof the class, then you are forced to bind it explicitly. If there are multiple objects that specify\r\na dependency of a particular type, but use different names, then you need to bind them all\r\nindividually as well. And sadly, this project has now been archived and is read-only.\r\n\r\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -202,7 +201,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16938284,
+        "last_serial": 16951883,
         "urls": [
             {
                 "comment_text": "",
@@ -243,6 +242,345 @@
                 "upload_time": "2023-02-20T05:34:44",
                 "upload_time_iso_8601": "2023-02-20T05:34:44.932030Z",
                 "url": "https://files.pythonhosted.org/packages/47/35/5288081111058ca2265deb55fde636927058240677c4d6e2fc075228ac7b/flexdi-0.0.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.0": {
+        "info": {
+            "author": "Cal Pratt",
+            "author_email": "ccpratt4@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 3.11"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/cal-pratt/flexdi",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "flexdi",
+            "package_url": "https://pypi.org/project/flexdi/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/flexdi/",
+            "project_urls": {
+                "Homepage": "https://github.com/cal-pratt/flexdi"
+            },
+            "release_url": "https://pypi.org/project/flexdi/0.1.0/",
+            "requires_dist": null,
+            "requires_python": ">=3.11",
+            "summary": "A flexible dependency injection tool for typed Python projects.",
+            "version": "0.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16951883,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "dc450d4dc413913bb2a0202249fda9ebe5ea3ddf0dbf941f3700d47ceef9f566",
+                    "md5": "4711dc086f1d4fda13cb6dbe98a74b99",
+                    "sha256": "b26bcf322e5e8dd2979e323f7d11932f81d3a7ff004e204f2a37526caa1ef0e5"
+                },
+                "downloads": -1,
+                "filename": "flexdi-0.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "4711dc086f1d4fda13cb6dbe98a74b99",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.11",
+                "size": 10028,
+                "upload_time": "2023-02-20T17:39:59",
+                "upload_time_iso_8601": "2023-02-20T17:39:59.862909Z",
+                "url": "https://files.pythonhosted.org/packages/dc/45/0d4dc413913bb2a0202249fda9ebe5ea3ddf0dbf941f3700d47ceef9f566/flexdi-0.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2c1070f12eb73c50a1a6c68c5794e99e36730d82a48362c71e5a103b29e8a7bb",
+                    "md5": "33db65186286de1d5fbe7f11b2949091",
+                    "sha256": "439d1d579de8f0987715fd1ce082c2be335560150a7c3708766e33a564eec1c8"
+                },
+                "downloads": -1,
+                "filename": "flexdi-0.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "33db65186286de1d5fbe7f11b2949091",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.11",
+                "size": 13020,
+                "upload_time": "2023-02-20T17:40:03",
+                "upload_time_iso_8601": "2023-02-20T17:40:03.026254Z",
+                "url": "https://files.pythonhosted.org/packages/2c/10/70f12eb73c50a1a6c68c5794e99e36730d82a48362c71e5a103b29e8a7bb/flexdi-0.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.1": {
+        "info": {
+            "author": "Cal Pratt",
+            "author_email": "ccpratt4@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 3.11"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/cal-pratt/flexdi",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "flexdi",
+            "package_url": "https://pypi.org/project/flexdi/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/flexdi/",
+            "project_urls": {
+                "Homepage": "https://github.com/cal-pratt/flexdi"
+            },
+            "release_url": "https://pypi.org/project/flexdi/0.1.1/",
+            "requires_dist": null,
+            "requires_python": ">=3.11",
+            "summary": "A flexible dependency injection tool for typed Python projects.",
+            "version": "0.1.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16951883,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e964fff20f7db51c4627514006196b305cd874c57d5a1ec0fe12158ad3f9ecfe",
+                    "md5": "2995706bddf65896cdd3888c7a99c137",
+                    "sha256": "3c0aa9c8293b58013e7adabab706ef687199ad6a0569e06de53b4c082ca5cf67"
+                },
+                "downloads": -1,
+                "filename": "flexdi-0.1.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "2995706bddf65896cdd3888c7a99c137",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.11",
+                "size": 8911,
+                "upload_time": "2023-02-20T18:30:06",
+                "upload_time_iso_8601": "2023-02-20T18:30:06.144197Z",
+                "url": "https://files.pythonhosted.org/packages/e9/64/fff20f7db51c4627514006196b305cd874c57d5a1ec0fe12158ad3f9ecfe/flexdi-0.1.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2fcf3d20cc6c2dfe1299977205103622bde422e6b725186feb51c33493138d96",
+                    "md5": "6fa98b5af3dd1f697effc73aef6e9a5f",
+                    "sha256": "2aa3a84ce3a92baf9d468ac9d0f84ea7fb9b496786424ade030b452e093ab220"
+                },
+                "downloads": -1,
+                "filename": "flexdi-0.1.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "6fa98b5af3dd1f697effc73aef6e9a5f",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.11",
+                "size": 12329,
+                "upload_time": "2023-02-20T18:30:07",
+                "upload_time_iso_8601": "2023-02-20T18:30:07.897108Z",
+                "url": "https://files.pythonhosted.org/packages/2f/cf/3d20cc6c2dfe1299977205103622bde422e6b725186feb51c33493138d96/flexdi-0.1.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.2": {
+        "info": {
+            "author": "Cal Pratt",
+            "author_email": "ccpratt4@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/cal-pratt/flexdi",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "flexdi",
+            "package_url": "https://pypi.org/project/flexdi/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/flexdi/",
+            "project_urls": {
+                "Homepage": "https://github.com/cal-pratt/flexdi"
+            },
+            "release_url": "https://pypi.org/project/flexdi/0.1.2/",
+            "requires_dist": null,
+            "requires_python": ">=3.8",
+            "summary": "A flexible dependency injection tool for typed Python projects.",
+            "version": "0.1.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16951883,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d3bf92d433ff46722af9ba92ea39ddcb3143b29873620ec68c3175aa00ec9f4e",
+                    "md5": "19d08744516a692c1379ebdf68eaa72f",
+                    "sha256": "d907745c74aa94a60d3b37abe094f2495c18fc60c5f125a85c79272561d0f208"
+                },
+                "downloads": -1,
+                "filename": "flexdi-0.1.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "19d08744516a692c1379ebdf68eaa72f",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 8953,
+                "upload_time": "2023-02-20T19:40:30",
+                "upload_time_iso_8601": "2023-02-20T19:40:30.810044Z",
+                "url": "https://files.pythonhosted.org/packages/d3/bf/92d433ff46722af9ba92ea39ddcb3143b29873620ec68c3175aa00ec9f4e/flexdi-0.1.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "72001a2e82caf762e888343156775e72f820b0480444700c2de11c48c48a6391",
+                    "md5": "ec87a5345e151a949708078418db8160",
+                    "sha256": "ecd8096b00b8b35a2a30e7234359a240203f191bae0450998fd2c646af1b6e3d"
+                },
+                "downloads": -1,
+                "filename": "flexdi-0.1.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "ec87a5345e151a949708078418db8160",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 12406,
+                "upload_time": "2023-02-20T19:40:32",
+                "upload_time_iso_8601": "2023-02-20T19:40:32.231028Z",
+                "url": "https://files.pythonhosted.org/packages/72/00/1a2e82caf762e888343156775e72f820b0480444700c2de11c48c48a6391/flexdi-0.1.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.3": {
+        "info": {
+            "author": "Cal Pratt",
+            "author_email": "ccpratt4@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "FlexDI\r\n======\r\n\r\n.. image:: https://img.shields.io/pypi/v/flexdi.svg\r\n   :target: https://pypi.org/project/flexdi/\r\n\r\n.. image:: https://img.shields.io/endpoint.svg?url=https%3A%2F%2Factions-badge.atrox.dev%2Fcal-pratt%2Fflexdi%2Fbadge%3Fref%3Dmain&style=flat\r\n   :target: https://github.com/cal-pratt/flexdi/actions\r\n\r\n.. image:: https://readthedocs.org/projects/flexdi/badge/?version=latest\r\n   :target: https://flexdi.readthedocs.io\r\n\r\n\r\n``flexdi`` is a yet another dependency injection library for Python.\r\n``flexdi`` provides a lightweight alternative to common DI solutions\r\nwith minimal setup to be included in your projects. This library is\r\nintended for use with type annotated Python libraries, as it leverages\r\nthese type annotations to perform injection.\r\n\r\n.. note::\r\n  | **FlexDI is still a work in progress and is not yet intended\r\n    for production use-cases.**\r\n  | **Be aware that APIs are likely to change in upcoming releases.**\r\n\r\n|\r\n| The full documentation is available at `flexdi.readthedocs.io <https://flexdi.readthedocs.io>`_.\r\n\r\nGoals\r\n-----\r\n\r\n- | **Minimal Setup**\r\n  | Some DI systems require that you conform to a particular style of class\r\n    definition, a naming convention to arguments, placing wrappers around class\r\n    or method definitions, or providing complex default arguments which are tied\r\n    to the DI system.\r\n    ``flexdi`` mainly uses type annotations to perform injection, which avoids\r\n    a common problem of library lock-in where frameworks force you to design\r\n    components using their highly specialized constructs.\r\n\r\n- | **Inject Any Callable**\r\n  | Basic Python DI tools only allow classes to be used for injection, which can\r\n    be quite limiting. In ``flexdi``, you can provide any typed callable as an\r\n    input to be invoked.\r\n    This avoids having to make class definitions purely for injection to work.\r\n\r\n- | **Lifetime Management**\r\n  | When creating dependencies for your callable, you often have resources that\r\n    need to be properly torn down when your work is done. Providers for types in\r\n    ``flexdi`` can be initialized using context managers that will have their\r\n    shutdown logic invoked when you're done your work.\r\n\r\n- | **Asyncio Support**\r\n  | ``flexdi`` allows calling both sync and async methods directly, and provides\r\n    both a sync and async interface to its main invocation method. Similarly,\r\n    dependency providers may be defined as async methods, or be provided as\r\n    async context managers.\r\n\r\nOverview\r\n========\r\n\r\n``flexdi`` offers a construct called the ``FlexPack`` which is used to\r\ninject callables with arguments and invoke these callables. These\r\narguments are dependencies you want to inject in your application.\r\n\r\nWhen determining dependencies for a callable, ``flexdi`` will examine\r\nthe type annotations of the arguments, and construct a graph of objects\r\nwhich can satisfy the callable. A callable can be anything from a class\r\n(as seen with the type annotations), to functions, class methods,\r\ngenerators, etc.\r\n\r\nFor complex types, ``flexdi`` allows binding helper functions that can\r\nmap an instance to a type definition. These helper functions can\r\nthemselves be injected with dependencies. Bindings can also be defined\r\nas generators which allows supplying custom teardown logic for your\r\ndependencies.\r\n\r\nExample Usage\r\n-------------\r\n\r\nA simple example of an application with SQLAlchemy dependencies:\r\n\r\n.. code:: python\r\n\r\n   import sys\r\n   from typing import Iterator\r\n   from sqlalchemy import Engine, create_engine, text\r\n   from sqlalchemy.orm import Session\r\n\r\n   from flexdi import FlexPack\r\n\r\n   flex = FlexPack()\r\n\r\n   # Anything that requires an Engine will fetch it from provide_engine\r\n   # For simple functions we infer the binding from the return type annotation.\r\n   @flex.bind\r\n   def provide_engine() -> Engine:\r\n       return create_engine(\"sqlite://\")\r\n\r\n\r\n   # Generator responses can also be inferred. e.g.\r\n   # - A function returning Iterator[T] binds to T\r\n   # - A function returning AsyncIterator[T] binds to T\r\n   @flex.bind\r\n   def provide_session(engine: Engine) -> Iterator[Session]:\r\n       with Session(engine) as session:\r\n           yield session\r\n\r\n\r\n   # We don't need to add any flexdi setup to our actual code.\r\n   def main(session: Session) -> int:\r\n       print(session.execute(text(\"SELECT now()\")))\r\n       return 0\r\n\r\n\r\n   if __name__ == \"__main__\":\r\n       # Start up the injector, and guard using a with statement to\r\n       # ensure that we clean up any dependencies which require it\r\n       with flex:\r\n           sys.exit(flex.invoke(main))\r\n\r\nThe same example, but using async code:\r\n\r\n.. code:: python\r\n\r\n   import sys\r\n   from typing import AsyncIterator\r\n   from sqlalchemy.ext.asyncio import (\r\n       AsyncConnection,\r\n       AsyncEngine,\r\n       create_async_engine\r\n   )\r\n   from sqlalchemy import text\r\n\r\n   from flexdi import FlexPack\r\n\r\n   flex = FlexPack()\r\n\r\n\r\n   @flex.bind\r\n   async def provide_engine() -> AsyncIterator[AsyncEngine]:\r\n       engine = create_async_engine(\"sqlite://\")\r\n       try:\r\n           yield engine\r\n       finally:\r\n           await engine.dispose()\r\n\r\n\r\n   @flex.bind\r\n   async def provide_connection(engine: AsyncEngine) -> AsyncIterator[AsyncConnection]:\r\n       async with engine.begin() as conn:\r\n           yield conn\r\n\r\n\r\n   async def main(conn: AsyncConnection) -> int:\r\n       print(await conn.execute(text(\"SELECT now()\")))\r\n       return 0\r\n\r\n\r\n   if __name__ == \"__main__\":\r\n       with flex:\r\n           # The injector can handle invoking async functions natively,\r\n           # so no worry about adding in extra logic here.\r\n           sys.exit(flex.invoke(main))\r\n   ...\r\n\r\n\r\n   # If already within an async context, then you can use the\r\n   # async versions of these methods.\r\n   async def func() -> int:\r\n       async with flex:\r\n           return await flex.ainvoke(main)\r\n\r\nAlternatives\r\n------------\r\n\r\nAlthough there are many, many other dependency injection libraries, I found that\r\nI was still left looking for more lightweight/minimal solutions to this problem. \r\nMy thoughts on some of the popular alternatives I have used in the past:\r\n\r\n- | `dependency-injector <https://github.com/ets-labs/python-dependency-injector>`_\r\n  | This library is probably the most mature out of all the alternatives.\r\n    Its main driving principal is that \"Explicit is better than\r\n    implicit\", in that you need to specify explicitly how to assemble/\r\n    inject the dependencies. ``flexdi`` is still explicit in the sense\r\n    that dependencies are directly referenced from their type\r\n    annotations, and by leveraging them we can avoid a lot of the more\r\n    verbose setup required in ``DeclarativeContainer`` structures.\r\n\r\n- | `fastapi <https://github.com/tiangolo/fastapi>`_\r\n  | This web framework provides an excellent way to perform dependency injection,\r\n    but it does not provide a way to perform dependency injection outside\r\n    the context of web request. When configuring the injection, you must\r\n    also provide default values to arguments, which ties application code\r\n    to the web framework, making it more difficult to re-use code in\r\n    other contexts. Additionally, it does not provide rich support for\r\n    lifetime/singleton scoped dependencies, making the setup of some\r\n    dependencies increasingly awkward.\r\n\r\n- | `pinject <https://github.com/google/pinject>`_\r\n  | This library allows you to perform DI with minimal setup, but its major\r\n    downfall is that it relies on the names of arguments to perform injection.\r\n    If the name of the argument does not match the name of the class, then\r\n    you are forced to bind it explicitly. If there are multiple objects\r\n    that specify a dependency of a particular type, but use different\r\n    names, then you need to bind them all individually as well. And\r\n    sadly, this project has now been archived and is read-only.\r\n",
+            "description_content_type": "",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/cal-pratt/flexdi",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "flexdi",
+            "package_url": "https://pypi.org/project/flexdi/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/flexdi/",
+            "project_urls": {
+                "Homepage": "https://github.com/cal-pratt/flexdi"
+            },
+            "release_url": "https://pypi.org/project/flexdi/0.1.3/",
+            "requires_dist": null,
+            "requires_python": ">=3.8",
+            "summary": "A flexible dependency injection tool for typed Python projects.",
+            "version": "0.1.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16951883,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2609f3b6194b53b93ff0b68380c3afa5092652749798a4fc22bb94e635d28595",
+                    "md5": "90a7afe697dd908c1e3068b2e26fe700",
+                    "sha256": "79b637a29f92a0effbf8a808ca4ccaae502be14ee407ef476d0d7e416a2b4baa"
+                },
+                "downloads": -1,
+                "filename": "flexdi-0.1.3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "90a7afe697dd908c1e3068b2e26fe700",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 9102,
+                "upload_time": "2023-02-20T23:53:17",
+                "upload_time_iso_8601": "2023-02-20T23:53:17.097249Z",
+                "url": "https://files.pythonhosted.org/packages/26/09/f3b6194b53b93ff0b68380c3afa5092652749798a4fc22bb94e635d28595/flexdi-0.1.3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "fe6de6fde8fb8f303e573e7e36cdcb05c39bcda8b45dcabf4514426731a3dce0",
+                    "md5": "458ce3db18a77fe4031318c109cfe4e9",
+                    "sha256": "b1b1c0fee793f2aa2b424deb40de28d825ff55e4bece4e5fd8301b76bdca8921"
+                },
+                "downloads": -1,
+                "filename": "flexdi-0.1.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "458ce3db18a77fe4031318c109cfe4e9",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 12696,
+                "upload_time": "2023-02-20T23:53:19",
+                "upload_time_iso_8601": "2023-02-20T23:53:19.089338Z",
+                "url": "https://files.pythonhosted.org/packages/fe/6d/e6fde8fb8f303e573e7e36cdcb05c39bcda8b45dcabf4514426731a3dce0/flexdi-0.1.3.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
