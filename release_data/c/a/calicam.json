@@ -42,7 +42,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16622352,
+        "last_serial": 16975659,
         "urls": [
             {
                 "comment_text": "",
@@ -139,7 +139,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16622352,
+        "last_serial": 16975659,
         "urls": [
             {
                 "comment_text": "",
@@ -196,7 +196,6 @@
                 "Programming Language :: Python",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "# Current Functionality\n\nTo launch the primary functionality of the repo, run `src\\gui\\main.py`. This will open an ugly dialog to begin a calibration session. Session data is stored in the `sessions` folder in the root directory. The session being launched is coded at the bottom of `main.py`. The general workflow:\n\n1. Print out a charuco board from the Charuco Builder tab\n2. Click \"Find Additional Cameras\" to connect to them\n3. Go to the camera tabs and configure resolution/exposure before collecting calibration corners and calibrating.\n4. Save calibration parameters on camera tab\n5. Once all cameras intrinsic factors are estimated, click the stereocalibration button and calibrate each pair of cameras.\n6. Save calibration to `config.toml`.\n\n# Recording\n\nThe file `src\\recording\\video_recorder.py` will launch a VideoRecorder and store the mp4 and frametime data in the session folder. \n\n# Triangulating\n\nRecorded video can be played back through the synchronizer with synched frames passed to the PairedPointStream which uses the charuco tracker to identify the same point in space between paired frames. Point ID and (X,Y) position for each frame are passed to an `out_q`. The triangulator pulls from this queue, calculates values for ID: (X,Y,Z) and places that calculation on its own `out_q`\n\n# Visualization\n\nThe Visualizer constructs camera meshes based on `config.toml` to allow a gut check of the stereocalibration parameters. The camera mesh shape is determined by the actual camera properties and provides another way of assessing reasonableness at a glance. (X,Y,Z) points are read from `triangulator.out_q` and updated to the scene. \n\nCurrently, the origin is the base camera from the stereocalibration pair. Next planned steps include a way to set the origin.\n\n## Current Object Relationships\n\nThe general flow of processing is illustrated in the graph below. This does not represent any of the GUI elements which are still a work in progress. My immediate next steps are to stabilize the GUI, making it easier to incorporate the full set of actions that are currently permitted by the back-end of the code base.\n\n```mermaid\ngraph TD\n\nsubgraph cameras\nCamera --> LiveStream\nLiveStream --> Synchronizer\nend\n\nsubgraph calibration\nCharuco --> CornerTracker\nCornerTracker --> Monocalibrator\nCornerTracker --> Stereocalibrator\nend\n\nSynchronizer --> Stereocalibrator\nLiveStream --> Monocalibrator\n\nsubgraph calibration_data\nconfig.toml\nStereoCalRecordings\nend\n\nStereocalibrator -.via Session.-> config.toml\ncalibration -.via Session.-> StereoCalRecordings\nMonocalibrator -.via Session.-> config.toml\ncalibration_data --> ArrayConstructor\n\nsubgraph array\nArrayConstructor\nend\n\nSynchronizer --> PairedPointStream \n\nsubgraph recording\nSynchronizer --> VideoRecorder\nVideoRecorder --> port_#.mp4\nVideoRecorder --> frame_time_history.csv\n\nport_#.mp4 --> RecordedStream\nframe_time_history.csv --> RecordedStream\nRecordedStream --> Synchronizer\nend\n\nCornerTracker -.temporary for testing.- PairedPointStream\n\nsubgraph triangulate\nPairedPointStream --> StereoTriangulator\nend\n\nsubgraph visualization\nCameraMesh --> Visualizer\nStereoTriangulator --> Visualizer\nend\n\n```\n\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -238,7 +237,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16622352,
+        "last_serial": 16975659,
         "urls": [
             {
                 "comment_text": "",
@@ -279,6 +278,105 @@
                 "upload_time": "2023-01-30T17:41:04",
                 "upload_time_iso_8601": "2023-01-30T17:41:04.803462Z",
                 "url": "https://files.pythonhosted.org/packages/f5/1b/bd33e5c9c91e25483eccd2890d67337aec528a10aca53b0666b933087cc3/calicam-0.0.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.4": {
+        "info": {
+            "author": "",
+            "author_email": "Mac Prible <prible@gmail.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "## Current Flow\n\nThe general flow of processing is illustrated in the graph below. \n\nThis graph needs to be updated to reflect the centrality of the ArrayPointsErrorData dataclass in the post-processing analysis. This is turning into a useful construct that can summarize the complete state of the model and tracking data, while also containing the data necessary to relate each 3d projected point to the precice frames it came from.\n\nIt is quite tightly coupled to the camera array object. I would like to refactor to decouple these things into seperate modules, but the best way to do that isn't immediately clear to me. It may ultimately be the case that the bundle adjustment function is going to need to come out of the camera array, and go into something like an Optimizer that could manage both the camera array optimization during calibration, and the 3d point optimization during general triangulation.\n\n```mermaid\ngraph TD\n\n\nLiveStream --FramePacket--> Synchronizer\nRecordedStream --FramePacket--> Synchronizer\nSynchronizer --SyncPacket--> VideoRecorder\n\nsubgraph cameras\n    Camera --> LiveStream\nend\n\nsubgraph tracking\n    Charuco --> CornerTracker\n    CornerTracker --PointPacket--> LiveStream\nend\n\nsubgraph GUI\n    MonoCalibrator\n    OmniFrame\nend\n\nSynchronizer --SyncPacket-->  OmniFrame\n\nLiveStream -.FramePacket.-> MonoCalibrator\nMonoCalibrator -.Intrinsics.-> config.toml\n\nVideoRecorder --> frame_time_history.csv\nVideoRecorder --> port_X.mp4 \nVideoRecorder -.During OmniFrame.-> point_data.csv\nport_X.mp4 --> RecordedStream\nframe_time_history.csv --> RecordedStream\n\n\nsubgraph recording\n\n    RecordedStream\n    VideoRecorder \n\n    subgraph RecordingDirectory\n        port_X.mp4\n        frame_time_history.csv\n    end\n\nend\n\n\n\npoint_data.csv --> OmniCalibrator\nconfig.toml --CameraSettings--> OmniCalibrator\nOmniCalibrator -.StereoPairs.-> config.toml\n\n\n\nsubgraph calibration_data\n    point_data.csv\n    config.toml\nend\n\npoint_data.csv --> SyncPacketBuilder\nSyncPacketBuilder -.SyncPacket.-> StereoPointBuilder \n\n\n\nCornerTracker --PointPacket--> RecordedStream\n\nArrayConstructor --> CameraArray\nconfig.toml --> ArrayConstructor\n\nCameraArray --> ArrayTriangulator\n\nsubgraph triangulate\n    StereoPointBuilder -.SynchedStereoPointsPacket-->ArrayTriangulator\n    ArrayTriangulator\n    StereoTriangulator\nend\n\nStereoTriangulator --> ArrayTriangulator\nArrayTriangulator --> triangulated_points.csv\nCaptureVolume --> CaptureVolumeVisualizer\n\ntriangulated_points.csv --> PointEstimateData\n\nsubgraph capture_volume\nCameraArray --> CaptureVolume\nPointEstimateData --> CaptureVolume\n\nCaptureVolume\nend\n\n\n\nsubgraph visualization\n    CaptureVolumeVisualizer\n    CameraMesh --> CaptureVolumeVisualizer\nend\n\n```\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "opencv,tracking,calibration,python,webcam",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "calicam",
+            "package_url": "https://pypi.org/project/calicam/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/calicam/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/calicam/0.0.4/",
+            "requires_dist": [
+                "numpy",
+                "opencv-contrib-python",
+                "pyqt6",
+                "scipy",
+                "pandas",
+                "pyqtgraph",
+                "pyopengl",
+                "toml",
+                "seaborn",
+                "black ; extra == \"dev\"",
+                "bumpver ; extra == \"dev\"",
+                "isort ; extra == \"dev\"",
+                "pip-tools ; extra == \"dev\"",
+                "pytest ; extra == \"dev\""
+            ],
+            "requires_python": ">=3.10",
+            "summary": "GUI tool for calibrating motion capture systems composed of multiple standard webcams",
+            "version": "0.0.4",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16975659,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ddccfdd2c035d92cf1611b6ca4daa9b035465cf749c4184a5c47550b4d7510d9",
+                    "md5": "a79bef08ebc279a34b2dd45b9c2d298b",
+                    "sha256": "fe8dddf3e948dc2bbb7690def868ee0667535c1cb5ef8239983879f1932a1c84"
+                },
+                "downloads": -1,
+                "filename": "calicam-0.0.4-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "a79bef08ebc279a34b2dd45b9c2d298b",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.10",
+                "size": 177003,
+                "upload_time": "2023-02-22T12:40:55",
+                "upload_time_iso_8601": "2023-02-22T12:40:55.435060Z",
+                "url": "https://files.pythonhosted.org/packages/dd/cc/fdd2c035d92cf1611b6ca4daa9b035465cf749c4184a5c47550b4d7510d9/calicam-0.0.4-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "306a539757bb3ac9b64c29c6ebb9fbec8fe42e98a9b9646b0c70885576c14367",
+                    "md5": "8f40d19cdbaa8946ee1c2806d6d4061b",
+                    "sha256": "378d873951f4b9c21871279eec037229c69d710879352bbe3f0ecf0965bcf490"
+                },
+                "downloads": -1,
+                "filename": "calicam-0.0.4.tar.gz",
+                "has_sig": false,
+                "md5_digest": "8f40d19cdbaa8946ee1c2806d6d4061b",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.10",
+                "size": 6736803,
+                "upload_time": "2023-02-22T12:40:58",
+                "upload_time_iso_8601": "2023-02-22T12:40:58.193173Z",
+                "url": "https://files.pythonhosted.org/packages/30/6a/539757bb3ac9b64c29c6ebb9fbec8fe42e98a9b9646b0c70885576c14367/calicam-0.0.4.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
