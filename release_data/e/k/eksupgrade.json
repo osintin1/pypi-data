@@ -43,7 +43,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16892711,
+        "last_serial": 16984284,
         "urls": [
             {
                 "comment_text": "",
@@ -134,7 +134,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16892711,
+        "last_serial": 16984284,
         "urls": [
             {
                 "comment_text": "",
@@ -225,7 +225,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16892711,
+        "last_serial": 16984284,
         "urls": [
             {
                 "comment_text": "",
@@ -316,7 +316,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16892711,
+        "last_serial": 16984284,
         "urls": [
             {
                 "comment_text": "",
@@ -378,7 +378,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "# Amazon EKS Upgrade Utility\n\n<p align=\"center\">\n<a href=\"https://github.com/aws-samples/eks-cluster-upgrade/actions/workflows/validate.yaml\"><img alt=\"Validation Status\" src=\"https://github.com/aws-samples/eks-cluster-upgrade/actions/workflows/validate.yaml/badge.svg?branch=main&event=push\"></a>\n<a href=\"https://codecov.io/github/aws-samples/eks-cluster-upgrade?branch=main\"><img alt=\"Coverage Status\" src=\"https://codecov.io/github/aws-samples/eks-cluster-upgrade/coverage.svg?branch=main\"></a>\n<a href=\"https://pypi.org/project/eksupgrade/\"><img alt=\"PyPI\" src=\"https://img.shields.io/pypi/v/eksupgrade\"></a>\n<a href=\"https://pepy.tech/project/eksupgrade\"><img alt=\"Downloads\" src=\"https://pepy.tech/badge/eksupgrade\"></a>\n</p>\n\nAmazon EKS cluster upgrade is a utility that automates the upgrade process for Amazon EKS clusters.\n\n## Process\n\nThe process for upgrading an Amazon EKS cluster using `eksupgrade` consists of primarily of three parts:\n\n1. Perform pre-flight checks prior to upgrading the cluster\n2. Upgrade the cluster\n3. Evaluate the cluster after upgrade\n\n### Pre-Flight Checks\n\nThere are a number of version compatibility constraints, health checks, etc., before a cluster can successfully be upgraded. `eksupgrade` performs the following pre-flight checks:\n\n1. Target Version Compatibility Check - Since any cluster in eks is always allowed to upgrade to one above version and not beyond a check for the target version is done as with each upgrade there are a lot of configuration changes and upgrading directly to a higher version can lead to breakdown of the services being provided by it.\n2. Customer Management Key - A cluster might have CMK Key associated with it and so it is essential to verify if the same exists in users account to carry out the upgrade\n3. Security Group - Every cluster has a security group associated with it to restrict and allow the flow of traffic across it, and therefore it has to be verified whether it exists in the user's VPC or not.\n4. Nodegroup and worker node detail - EKS cluster supports multiple types of node groups and so for the purpose of upgrade and there kubelet version compatibility check they have to classify to proceed with the upgrade step.\n5. Subnets - A minimum of 4-5 free IP are required when doing a cluster upgrade to launch new nodes and nodegroup with the old ones to keep the services of the cluster running while the upgrade is going on and so a check for them\n   Target version compatibly check\n6. Cluster Roles - There are a lot of important cluster roles required during the upgrade related to addons, nodes and other components of cluster without which cluster upgrade cannot be executed successfully.\n7. Pod Security Policy - Eks privileged role has to be checked to be present with the current pod security policy.\n8. cluster addons - The cluster addons like kube-proxy, VPC CNI and CoreDNS are essential for running various services across the cluster and sometimes there are certain variable parameters present by them which have been customized by the users end as per the functionality the cluster supports which have to captured while upgrading and then added during the upgrade for the services to continue working smoothly as before.\n9. Pod Disruption Budget - The existence of PDB has to be checked in the cluster and minimum and maximum available with it has to be taken into account while upgrading.\n10. Horizontal Pod and Cluster Autoscaler - As the other components are upgraded to the compatible image version, a check firstly to check of these are present and then to upgrade them to compatible version with respect to the control plane.\n\n### Cluster Upgrade\n\n1. Control plane upgrade - this is handled entirely by AWS once the version upgrade has been requested\n2. Identification of Managed and Self managed node - The worker nodes are identified as EKS managed and self managed to perform upgrade\n3. Managed Node group update - updates managed node group to the specified version\n4. Self Managed Nodegroup update\n   - Launch new nodes with upgraded version and wait until they require ready status for next step\n   - Mark existing nodes as unschedulable\n   - If pod disruption budget (PDB) is present then check for force eviction flag (--force) which is given by user, only then evict the pods or continue with the flow\n\n## Pre-Requisites\n\nBefore running `eksupgrade`, you will need to have permission for both AWS and the Kubernetes cluster itself.\n\n1. Install `eksupgrade` locally:\n\n```sh\npip install eksupgrade\n```\n\n2. Ensure you have the necessary AWS permissions; an example policy of required permissions is listed below:\n\n```json\n{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\n      \"Sid\": \"iam\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"iam:GetRole\",\n        \"sts:GetAccessKeyInfo\",\n        \"sts:GetCallerIdentity\",\n        \"sts:GetSessionToken\"\n      ]\n    },\n    {\n      \"Sid\": \"ec2\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"autoscaling:CreateLaunchConfiguration\",\n        \"autoscaling:Describe*\",\n        \"autoscaling:SetDesiredCapacity\",\n        \"autoscaling:TerminateInstanceInAutoScalingGroup\",\n        \"autoscaling:UpdateAutoScalingGroup\",\n        \"ec2:Describe*\",\n        \"ssm:*\"\n      ]\n    },\n    {\n      \"Sid\": \"eks\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"eks:Describe*\",\n        \"eks:List*\",\n        \"eks:UpdateAddon\",\n        \"eks:UpdateClusterVersion\",\n        \"eks:UpdateNodegroupVersion\"\n      ],\n      \"Resource\": \"*\"\n    }\n  ]\n}\n```\n\n3. Update your local kubeconfig to authenticate to the cluster:\n\n```sh\naws eks update-kubeconfig --name <CLUSTER-NAME> --region <REGION>\n```\n\n## Usage\n\nTo view the arguments and options, run:\n\n```sh\neksupgrade --help\n```\n\n```sh\nusage: eksupgrade [-h] [--pass_vpc] [--max_retry MAX_RETRY] [--force]\n                  [--preflight] [--email EMAIL] [--parallel]\n                  [--log-level LOG_LEVEL] [--version]\n                  name version region\n\nAmazon EKS cluster upgrade\n\npositional arguments:\n  name                  Cluster Name\n  version               new version which you want to update\n  region                The AWS region where the cluster resides\n\noptional arguments:\n  -h, --help            show this help message and exit\n  --pass_vpc            this --pass-vpc will skip the vpc cni upgrade\n  --max_retry MAX_RETRY\n                        you can specify max retry or else by default it is 2\n  --force               force pod eviction when you have pdb\n  --preflight           Run pre-flight check without upgrade\n  --email EMAIL         Email for sharing the preflight report\n  --parallel            Upgrade all nodegroups in parallel\n  --log-level LOG_LEVEL\n                        The log level to be displayed in the console.\n                        Default to: INFO\n  --version             show program's version number and exit\n\nexample:\n\n  eksupgrade <name> <version> <region>\n\nForce pod eviction when you have PDB (Pod Disruption Budget):\n\n  eksupgrade <name> <version> <region>n --force\n\nSkip VPC CNI upgrade:\n\n  eksupgrade <name> <version> <region> --pass_vpc\n\nSkip upgrade workflow:\n\n  eksupgrade <name> <version> <region> --preflight\n\nSet log level to console (default to INFO):\n\n  eksupgrade <name> <version> <region> --log-level debug\n\nDisplay the eksupgrade version:\n\n  eksupgrade --version\n```\n\n## Security\n\nSee [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.\n\n## License\n\nThis library is licensed under the MIT-0 License. See the [LICENSE](LICENSE) file.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -408,7 +407,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16892711,
+        "last_serial": 16984284,
         "urls": [
             {
                 "comment_text": "",
@@ -449,6 +448,98 @@
                 "upload_time": "2023-02-16T19:55:51",
                 "upload_time_iso_8601": "2023-02-16T19:55:51.687658Z",
                 "url": "https://files.pythonhosted.org/packages/f8/9e/81ae09b40297cfb33f6f5e95decd63c43e126a91868fc1fb9884bc0281d0/eksupgrade-0.5.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.5.1": {
+        "info": {
+            "author": "EKS Upgrade Maintainers",
+            "author_email": "eks-upgrade-maintainers@amazon.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT No Attribution License (MIT-0)",
+                "License :: Other/Proprietary License",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# Amazon EKS Upgrade Utility\n\n<p align=\"center\">\n<a href=\"https://github.com/aws-samples/eks-cluster-upgrade/actions/workflows/validate.yaml\"><img alt=\"Validation Status\" src=\"https://github.com/aws-samples/eks-cluster-upgrade/actions/workflows/validate.yaml/badge.svg?branch=main&event=push\"></a>\n<a href=\"https://codecov.io/github/aws-samples/eks-cluster-upgrade?branch=main\"><img alt=\"Coverage Status\" src=\"https://codecov.io/github/aws-samples/eks-cluster-upgrade/coverage.svg?branch=main\"></a>\n<a href=\"https://pypi.org/project/eksupgrade/\"><img alt=\"PyPI\" src=\"https://img.shields.io/pypi/v/eksupgrade\"></a>\n<a href=\"https://pepy.tech/project/eksupgrade\"><img alt=\"Downloads\" src=\"https://pepy.tech/badge/eksupgrade\"></a>\n</p>\n\nAmazon EKS cluster upgrade is a utility that automates the upgrade process for Amazon EKS clusters.\n\n## Process\n\nThe process for upgrading an Amazon EKS cluster using `eksupgrade` consists of primarily of three parts:\n\n1. Perform pre-flight checks prior to upgrading the cluster\n2. Upgrade the cluster\n3. Evaluate the cluster after upgrade\n\n### Pre-Flight Checks\n\nThere are a number of version compatibility constraints, health checks, etc., before a cluster can successfully be upgraded. `eksupgrade` performs the following pre-flight checks:\n\n1. Target Version Compatibility Check - Since any cluster in eks is always allowed to upgrade to one above version and not beyond a check for the target version is done as with each upgrade there are a lot of configuration changes and upgrading directly to a higher version can lead to breakdown of the services being provided by it.\n2. Customer Management Key - A cluster might have CMK Key associated with it and so it is essential to verify if the same exists in users account to carry out the upgrade\n3. Security Group - Every cluster has a security group associated with it to restrict and allow the flow of traffic across it, and therefore it has to be verified whether it exists in the user's VPC or not.\n4. Nodegroup and worker node detail - EKS cluster supports multiple types of node groups and so for the purpose of upgrade and there kubelet version compatibility check they have to classify to proceed with the upgrade step.\n5. Subnets - A minimum of 4-5 free IP are required when doing a cluster upgrade to launch new nodes and nodegroup with the old ones to keep the services of the cluster running while the upgrade is going on and so a check for them\n   Target version compatibly check\n6. Cluster Roles - There are a lot of important cluster roles required during the upgrade related to addons, nodes and other components of cluster without which cluster upgrade cannot be executed successfully.\n7. Pod Security Policy - Eks privileged role has to be checked to be present with the current pod security policy.\n8. cluster addons - The cluster addons like kube-proxy, VPC CNI and CoreDNS are essential for running various services across the cluster and sometimes there are certain variable parameters present by them which have been customized by the users end as per the functionality the cluster supports which have to captured while upgrading and then added during the upgrade for the services to continue working smoothly as before.\n9. Pod Disruption Budget - The existence of PDB has to be checked in the cluster and minimum and maximum available with it has to be taken into account while upgrading.\n10. Horizontal Pod and Cluster Autoscaler - As the other components are upgraded to the compatible image version, a check firstly to check of these are present and then to upgrade them to compatible version with respect to the control plane.\n\n### Cluster Upgrade\n\n1. Control plane upgrade - this is handled entirely by AWS once the version upgrade has been requested\n2. Identification of Managed and Self managed node - The worker nodes are identified as EKS managed and self managed to perform upgrade\n3. Managed Node group update - updates managed node group to the specified version\n4. Self Managed Nodegroup update\n   - Launch new nodes with upgraded version and wait until they require ready status for next step\n   - Mark existing nodes as unschedulable\n   - If pod disruption budget (PDB) is present then check for force eviction flag (--force) which is given by user, only then evict the pods or continue with the flow\n\n## Pre-Requisites\n\nBefore running `eksupgrade`, you will need to have permission for both AWS and the Kubernetes cluster itself.\n\n1. Install `eksupgrade` locally:\n\n```sh\npip install eksupgrade\n```\n\n2. Ensure you have the necessary AWS permissions; an example policy of required permissions is listed below:\n\n```json\n{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\n      \"Sid\": \"iam\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"iam:GetRole\",\n        \"sts:GetAccessKeyInfo\",\n        \"sts:GetCallerIdentity\",\n        \"sts:GetSessionToken\"\n      ]\n    },\n    {\n      \"Sid\": \"ec2\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"autoscaling:CreateLaunchConfiguration\",\n        \"autoscaling:Describe*\",\n        \"autoscaling:SetDesiredCapacity\",\n        \"autoscaling:TerminateInstanceInAutoScalingGroup\",\n        \"autoscaling:UpdateAutoScalingGroup\",\n        \"ec2:Describe*\",\n        \"ssm:*\"\n      ]\n    },\n    {\n      \"Sid\": \"eks\",\n      \"Effect\": \"Allow\",\n      \"Action\": [\n        \"eks:Describe*\",\n        \"eks:List*\",\n        \"eks:UpdateAddon\",\n        \"eks:UpdateClusterVersion\",\n        \"eks:UpdateNodegroupVersion\"\n      ],\n      \"Resource\": \"*\"\n    }\n  ]\n}\n```\n\n3. Update your local kubeconfig to authenticate to the cluster:\n\n```sh\naws eks update-kubeconfig --name <CLUSTER-NAME> --region <REGION>\n```\n\n## Usage\n\nTo view the arguments and options, run:\n\n```sh\neksupgrade --help\n```\n\n```sh\nusage: eksupgrade [-h] [--pass_vpc] [--max_retry MAX_RETRY] [--force]\n                  [--preflight] [--parallel]\n                  [--log-level LOG_LEVEL] [--version]\n                  name version region\n\nAmazon EKS cluster upgrade\n\npositional arguments:\n  name                  Cluster Name\n  version               new version which you want to update\n  region                The AWS region where the cluster resides\n\noptional arguments:\n  -h, --help            show this help message and exit\n  --pass_vpc            this --pass-vpc will skip the vpc cni upgrade\n  --max_retry MAX_RETRY\n                        you can specify max retry or else by default it is 2\n  --force               force pod eviction when you have pdb\n  --preflight           Run pre-flight check without upgrade\n  --parallel            Upgrade all nodegroups in parallel\n  --log-level LOG_LEVEL\n                        The log level to be displayed in the console.\n                        Default to: INFO\n  --version             show program's version number and exit\n\nexample:\n\n  eksupgrade <name> <version> <region>\n\nForce pod eviction when you have PDB (Pod Disruption Budget):\n\n  eksupgrade <name> <version> <region>n --force\n\nSkip VPC CNI upgrade:\n\n  eksupgrade <name> <version> <region> --pass_vpc\n\nSkip upgrade workflow:\n\n  eksupgrade <name> <version> <region> --preflight\n\nSet log level to console (default to INFO):\n\n  eksupgrade <name> <version> <region> --log-level debug\n\nDisplay the eksupgrade version:\n\n  eksupgrade --version\n```\n\n## Security\n\nSee [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.\n\n## License\n\nThis library is licensed under the MIT-0 License. See the [LICENSE](LICENSE) file.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "amazon,aws,aws-samples,eks,kubernetes,upgrade,eksupgrade",
+            "license": "MIT-0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "eksupgrade",
+            "package_url": "https://pypi.org/project/eksupgrade/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/eksupgrade/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/eksupgrade/0.5.1/",
+            "requires_dist": [
+                "boto3 (>=1.26.71,<2.0.0)",
+                "kubernetes (>=21.0.0,<25.0.0)"
+            ],
+            "requires_python": ">=3.8,<4.0",
+            "summary": "The Amazon EKS cluster upgrade utility",
+            "version": "0.5.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16984284,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "8cba13fe277ee8adf2f48a30f3bb397c4160a18227a3bd8e1b2fb2821e958683",
+                    "md5": "ebc3ef6999ab714568a4120ac598c63a",
+                    "sha256": "421eb5181d0152249a58edf58574830073620bbc928d1e944318094627435057"
+                },
+                "downloads": -1,
+                "filename": "eksupgrade-0.5.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "ebc3ef6999ab714568a4120ac598c63a",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8,<4.0",
+                "size": 45802,
+                "upload_time": "2023-02-22T23:28:01",
+                "upload_time_iso_8601": "2023-02-22T23:28:01.151463Z",
+                "url": "https://files.pythonhosted.org/packages/8c/ba/13fe277ee8adf2f48a30f3bb397c4160a18227a3bd8e1b2fb2821e958683/eksupgrade-0.5.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2bb1c700ac2d9d0bbbe026dca63d7499cb14d5db8317f9b52a5d375382c1b0d3",
+                    "md5": "aeaffd5055b83c4e2b4a62981ffc5ea7",
+                    "sha256": "1067965a77cf6b0282e5ad666113b4b42a68510840eeac5bd415dbe98a9105d6"
+                },
+                "downloads": -1,
+                "filename": "eksupgrade-0.5.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "aeaffd5055b83c4e2b4a62981ffc5ea7",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8,<4.0",
+                "size": 37920,
+                "upload_time": "2023-02-22T23:28:02",
+                "upload_time_iso_8601": "2023-02-22T23:28:02.780211Z",
+                "url": "https://files.pythonhosted.org/packages/2b/b1/c700ac2d9d0bbbe026dca63d7499cb14d5db8317f9b52a5d375382c1b0d3/eksupgrade-0.5.1.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
