@@ -50,7 +50,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16967814,
+        "last_serial": 16997890,
         "urls": [
             {
                 "comment_text": "",
@@ -148,7 +148,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16967814,
+        "last_serial": 16997890,
         "urls": [
             {
                 "comment_text": "",
@@ -246,7 +246,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16967814,
+        "last_serial": 16997890,
         "urls": [
             {
                 "comment_text": "",
@@ -305,7 +305,6 @@
                 "Programming Language :: Python :: 3",
                 "Programming Language :: Python :: 3 :: Only"
             ],
-            "description": "# PyTorch Robot Kinematics\n- Parallel and differentiable forward kinematics (FK) and Jacobian calculation\n- Load robot description from URDF, SDF, and MJCF formats \n\n# Installation\n```shell\npip install pytorch-kinematics\n```\n\nFor development, clone repository somewhere, then `pip3 install -e .` to install in editable mode.\n\n# Usage\n\nSee `tests` for code samples; some are also shown here.\n\n## Forward Kinematics (FK)\n```python\nimport math\nimport pytorch_kinematics as pk\n\n# load robot description from URDF and specify end effector link\nchain = pk.build_serial_chain_from_urdf(open(\"kuka_iiwa.urdf\").read(), \"lbr_iiwa_link_7\")\n# prints out the (nested) tree of links\nprint(chain)\n# prints out list of joint names\nprint(chain.get_joint_parameter_names())\n\n# specify joint values (can do so in many forms)\nth = [0.0, -math.pi / 4.0, 0.0, math.pi / 2.0, 0.0, math.pi / 4.0, 0.0]\n# do forward kinematics and get transform objects; end_only=False gives a dictionary of transforms for all links\nret = chain.forward_kinematics(th, end_only=False)\n# look up the transform for a specific link\ntg = ret['lbr_iiwa_link_7']\n# get transform matrix (1,4,4), then convert to separate position and unit quaternion\nm = tg.get_matrix()\npos = m[:, :3, 3]\nrot = pk.matrix_to_quaternion(m[:, :3, :3])\n```\n\nWe can parallelize FK by passing in 2D joint values, and also use CUDA if available\n```python\nimport torch\nimport pytorch_kinematics as pk\n\nd = \"cuda\" if torch.cuda.is_available() else \"cpu\"\ndtype = torch.float64\n\nchain = pk.build_serial_chain_from_urdf(open(\"kuka_iiwa.urdf\").read(), \"lbr_iiwa_link_7\")\nchain = chain.to(dtype=dtype, device=d)\n\nN = 1000\nth_batch = torch.rand(N, len(chain.get_joint_parameter_names()), dtype=dtype, device=d)\n\n# order of magnitudes faster when doing FK in parallel\n# elapsed 0.008678913116455078s for N=1000 when parallel\n# (N,4,4) transform matrix; only the one for the end effector is returned since end_only=True by default\ntg_batch = chain.forward_kinematics(th_batch)\n\n# elapsed 8.44686508178711s for N=1000 when serial\nfor i in range(N):\n    tg = chain.forward_kinematics(th_batch[i])\n```\n\nWe can compute gradients through the FK\n```python\nimport torch\nimport math\nimport pytorch_kinematics as pk\n\nchain = pk.build_serial_chain_from_urdf(open(\"kuka_iiwa.urdf\").read(), \"lbr_iiwa_link_7\")\n\n# require gradient through the input joint values\nth = torch.tensor([0.0, -math.pi / 4.0, 0.0, math.pi / 2.0, 0.0, math.pi / 4.0, 0.0], requires_grad=True)\ntg = chain.forward_kinematics(th)\nm = tg.get_matrix()\npos = m[:, :3, 3]\npos.norm().backward()\n# now th.grad is populated\n```\n\nWe can load SDF and MJCF descriptions too, and pass in joint values via a dictionary (unspecified joints get th=0) for non-serial chains\n```python\nimport math\nimport torch\nimport pytorch_kinematics as pk\n\nchain = pk.build_chain_from_sdf(open(\"simple_arm.sdf\").read())\nret = chain.forward_kinematics({'arm_elbow_pan_joint': math.pi / 2.0, 'arm_wrist_lift_joint': -0.5})\n# recall that we specify joint values and get link transforms\ntg = ret['arm_wrist_roll']\n\n# can also do this in parallel\nN = 100\nret = chain.forward_kinematics({'arm_elbow_pan_joint': torch.rand(N, 1), 'arm_wrist_lift_joint': torch.rand(N, 1)})\n# (N, 4, 4) transform object\ntg = ret['arm_wrist_roll']\n\n# building the robot from a MJCF file\nchain = pk.build_chain_from_mjcf(open(\"ant.xml\").read())\nprint(chain)\nprint(chain.get_joint_parameter_names())\nth = {'hip_1': 1.0, 'ankle_1': 1}\nret = chain.forward_kinematics(th)\n\nchain = pk.build_chain_from_mjcf(open(\"humanoid.xml\").read())\nprint(chain)\nprint(chain.get_joint_parameter_names())\nth = {'left_knee': 0.0, 'right_knee': 0.0}\nret = chain.forward_kinematics(th)\n```\n\n## Jacobian calculation\nThe Jacobian (in the kinematics context) is a matrix describing how the end effector changes with respect to joint value changes\n(where ![dx](https://latex.codecogs.com/png.latex?%5Cinline%20%5Cdot%7Bx%7D) is the twist, or stacked velocity and angular velocity):\n![jacobian](https://latex.codecogs.com/png.latex?%5Cinline%20%5Cdot%7Bx%7D%3DJ%5Cdot%7Bq%7D) \n\nFor `SerialChain` we provide a differentiable and parallelizable method for computing the Jacobian with respect to the base frame.\n```python\nimport math\nimport torch\nimport pytorch_kinematics as pk\n\n# can convert Chain to SerialChain by choosing end effector frame\nchain = pk.build_chain_from_sdf(open(\"simple_arm.sdf\").read())\n# print(chain) to see the available links for use as end effector\n# note that any link can be chosen; it doesn't have to be a link with no children\nchain = pk.SerialChain(chain, \"arm_wrist_roll_frame\")\n\nchain = pk.build_serial_chain_from_urdf(open(\"kuka_iiwa.urdf\").read(), \"lbr_iiwa_link_7\")\nth = torch.tensor([0.0, -math.pi / 4.0, 0.0, math.pi / 2.0, 0.0, math.pi / 4.0, 0.0])\n# (1,6,7) tensor, with 7 corresponding to the DOF of the robot\nJ = chain.jacobian(th)\n\n# get Jacobian in parallel and use CUDA if available\nN = 1000\nd = \"cuda\" if torch.cuda.is_available() else \"cpu\"\ndtype = torch.float64\n\nchain = chain.to(dtype=dtype, device=d)\n# Jacobian calculation is differentiable\nth = torch.rand(N, 7, dtype=dtype, device=d, requires_grad=True)\n# (N,6,7)\nJ = chain.jacobian(th)\n\n# can get Jacobian at a point offset from the end effector (location is specified in EE link frame)\n# by default location is at the origin of the EE frame\nloc = torch.rand(N, 3, dtype=dtype, device=d)\nJ = chain.jacobian(th, locations=loc)\n```\n\nThe Jacobian can be used to do inverse kinematics. See [IK survey](https://www.math.ucsd.edu/~sbuss/ResearchWeb/ikmethods/iksurvey.pdf)\nfor a survey of ways to do so. Note that IK may be better performed through other means (but doing it through the Jacobian can give an end-to-end differentiable method).\n\n# Credits\n- `pytorch_kinematics/transforms` is extracted from [pytorch3d](https://github.com/facebookresearch/pytorch3d) with minor extensions.\nThis was done instead of including `pytorch3d` as a dependency because it is hard to install and most of its code is unrelated.\n  An important difference is that we use left hand multiplied transforms as is convention in robotics (T * pt) instead of their\n  right hand multiplied transforms.\n- `pytorch_kinematics/urdf_parser_py`, and `pytorch_kinematics/mjcf_parser` is extracted from [kinpy](https://github.com/neka-nat/kinpy), as well as the FK logic.\nThis repository ports the logic to pytorch, parallelizes it, and provides some extensions.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -345,7 +344,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16967814,
+        "last_serial": 16997890,
         "urls": [
             {
                 "comment_text": "",
@@ -386,6 +385,301 @@
                 "upload_time": "2023-02-21T23:31:53",
                 "upload_time_iso_8601": "2023-02-21T23:31:53.430324Z",
                 "url": "https://files.pythonhosted.org/packages/93/16/0327e392ad8c561f6bc97d11c0e9628b1c8ec088a74770c4d942e41b1cbe/pytorch_kinematics-0.5.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.5.2": {
+        "info": {
+            "author": "",
+            "author_email": "Sheng Zhong <zhsh@umich.edu>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3 :: Only"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "kinematics,pytorch,ik,fk,robotics",
+            "license": "Copyright (c) 2023 University of Michigan ARM Lab  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.  THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.  ",
+            "maintainer": "",
+            "maintainer_email": "Sheng Zhong <zhsh@umich.edu>",
+            "name": "pytorch-kinematics",
+            "package_url": "https://pypi.org/project/pytorch-kinematics/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/pytorch-kinematics/",
+            "project_urls": {
+                "Bug Reports": "https://github.com/UM-ARM-Lab/pytorch_kinematics/issues",
+                "Homepage": "https://github.com/UM-ARM-Lab/pytorch_kinematics",
+                "Source": "https://github.com/UM-ARM-Lab/pytorch_kinematics"
+            },
+            "release_url": "https://pypi.org/project/pytorch-kinematics/0.5.2/",
+            "requires_dist": [
+                "torch",
+                "numpy",
+                "transformations",
+                "absl-py",
+                "lxml",
+                "dm-control",
+                "pyyaml",
+                "pytest ; extra == 'test'"
+            ],
+            "requires_python": ">=3.6",
+            "summary": "Robot kinematics implemented in pytorch",
+            "version": "0.5.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16997890,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "b239b04840fa5189d7224e8d9e5dca31c307d30fe1a65d542a5fa774eb7adfb5",
+                    "md5": "166afb431a8276af3b44b778f7e28d2c",
+                    "sha256": "78b70d8bae83de924c0d6c3d74ebccd0677fa86bd16f10a462721da65ce0df8c"
+                },
+                "downloads": -1,
+                "filename": "pytorch_kinematics-0.5.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "166afb431a8276af3b44b778f7e28d2c",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.6",
+                "size": 47025,
+                "upload_time": "2023-02-23T16:39:18",
+                "upload_time_iso_8601": "2023-02-23T16:39:18.947576Z",
+                "url": "https://files.pythonhosted.org/packages/b2/39/b04840fa5189d7224e8d9e5dca31c307d30fe1a65d542a5fa774eb7adfb5/pytorch_kinematics-0.5.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "7ec738767f0d899fbf6a5a9364e3dc35243d825177c45d2fcd4a913d6c05e54d",
+                    "md5": "3350c1aa90024d7654d18d37b0e8e8d2",
+                    "sha256": "15bb995723a634bad9d8f42cb5338fed2b08d42e87ff15febd2b920ff48e4637"
+                },
+                "downloads": -1,
+                "filename": "pytorch_kinematics-0.5.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "3350c1aa90024d7654d18d37b0e8e8d2",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.6",
+                "size": 48386,
+                "upload_time": "2023-02-23T16:39:21",
+                "upload_time_iso_8601": "2023-02-23T16:39:21.548957Z",
+                "url": "https://files.pythonhosted.org/packages/7e/c7/38767f0d899fbf6a5a9364e3dc35243d825177c45d2fcd4a913d6c05e54d/pytorch_kinematics-0.5.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.5.3": {
+        "info": {
+            "author": "",
+            "author_email": "Sheng Zhong <zhsh@umich.edu>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3 :: Only"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "kinematics,pytorch,ik,fk,robotics",
+            "license": "Copyright (c) 2023 University of Michigan ARM Lab  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.  THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.  ",
+            "maintainer": "",
+            "maintainer_email": "Sheng Zhong <zhsh@umich.edu>",
+            "name": "pytorch-kinematics",
+            "package_url": "https://pypi.org/project/pytorch-kinematics/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/pytorch-kinematics/",
+            "project_urls": {
+                "Bug Reports": "https://github.com/UM-ARM-Lab/pytorch_kinematics/issues",
+                "Homepage": "https://github.com/UM-ARM-Lab/pytorch_kinematics",
+                "Source": "https://github.com/UM-ARM-Lab/pytorch_kinematics"
+            },
+            "release_url": "https://pypi.org/project/pytorch-kinematics/0.5.3/",
+            "requires_dist": [
+                "torch",
+                "numpy",
+                "transformations",
+                "absl-py",
+                "lxml",
+                "dm-control",
+                "pyyaml",
+                "pytest ; extra == 'test'"
+            ],
+            "requires_python": ">=3.6",
+            "summary": "Robot kinematics implemented in pytorch",
+            "version": "0.5.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16997890,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6dfcdf274168425dd3df82b998bf346eb6ff5dbc4dae97ebbab0f24814f508c2",
+                    "md5": "ae3b548757b90dd7c1c8730fbc924011",
+                    "sha256": "a97a64aaa351073d97e74b3edcc2a58207f93834e4e4b47481997404dc08cba7"
+                },
+                "downloads": -1,
+                "filename": "pytorch_kinematics-0.5.3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "ae3b548757b90dd7c1c8730fbc924011",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.6",
+                "size": 47133,
+                "upload_time": "2023-02-23T18:42:52",
+                "upload_time_iso_8601": "2023-02-23T18:42:52.010594Z",
+                "url": "https://files.pythonhosted.org/packages/6d/fc/df274168425dd3df82b998bf346eb6ff5dbc4dae97ebbab0f24814f508c2/pytorch_kinematics-0.5.3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "add3ff63f3568de2dd54e32c7655f1afe221cafdb4c5e6ba9807f22b5d965a12",
+                    "md5": "c73892d0189f3135c1cc98eff221f5b0",
+                    "sha256": "9397d633ff21a60b9d3b391b1a7eaf2c486a23f209edb2bb1e4d18a99c44ac5e"
+                },
+                "downloads": -1,
+                "filename": "pytorch_kinematics-0.5.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "c73892d0189f3135c1cc98eff221f5b0",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.6",
+                "size": 49082,
+                "upload_time": "2023-02-23T18:42:55",
+                "upload_time_iso_8601": "2023-02-23T18:42:55.472621Z",
+                "url": "https://files.pythonhosted.org/packages/ad/d3/ff63f3568de2dd54e32c7655f1afe221cafdb4c5e6ba9807f22b5d965a12/pytorch_kinematics-0.5.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.5.4": {
+        "info": {
+            "author": "",
+            "author_email": "Sheng Zhong <zhsh@umich.edu>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3 :: Only"
+            ],
+            "description": "# PyTorch Robot Kinematics\n- Parallel and differentiable forward kinematics (FK) and Jacobian calculation\n- Load robot description from URDF, SDF, and MJCF formats \n- SDF queries batched across configurations and points via [pytorch-volumetric](https://github.com/UM-ARM-Lab/pytorch_volumetric)\n\n# Installation\n```shell\npip install pytorch-kinematics\n```\n\nFor development, clone repository somewhere, then `pip3 install -e .` to install in editable mode.\n\n# Usage\n\nSee `tests` for code samples; some are also shown here.\n\n## Forward Kinematics (FK)\n```python\nimport math\nimport pytorch_kinematics as pk\n\n# load robot description from URDF and specify end effector link\nchain = pk.build_serial_chain_from_urdf(open(\"kuka_iiwa.urdf\").read(), \"lbr_iiwa_link_7\")\n# prints out the (nested) tree of links\nprint(chain)\n# prints out list of joint names\nprint(chain.get_joint_parameter_names())\n\n# specify joint values (can do so in many forms)\nth = [0.0, -math.pi / 4.0, 0.0, math.pi / 2.0, 0.0, math.pi / 4.0, 0.0]\n# do forward kinematics and get transform objects; end_only=False gives a dictionary of transforms for all links\nret = chain.forward_kinematics(th, end_only=False)\n# look up the transform for a specific link\ntg = ret['lbr_iiwa_link_7']\n# get transform matrix (1,4,4), then convert to separate position and unit quaternion\nm = tg.get_matrix()\npos = m[:, :3, 3]\nrot = pk.matrix_to_quaternion(m[:, :3, :3])\n```\n\nWe can parallelize FK by passing in 2D joint values, and also use CUDA if available\n```python\nimport torch\nimport pytorch_kinematics as pk\n\nd = \"cuda\" if torch.cuda.is_available() else \"cpu\"\ndtype = torch.float64\n\nchain = pk.build_serial_chain_from_urdf(open(\"kuka_iiwa.urdf\").read(), \"lbr_iiwa_link_7\")\nchain = chain.to(dtype=dtype, device=d)\n\nN = 1000\nth_batch = torch.rand(N, len(chain.get_joint_parameter_names()), dtype=dtype, device=d)\n\n# order of magnitudes faster when doing FK in parallel\n# elapsed 0.008678913116455078s for N=1000 when parallel\n# (N,4,4) transform matrix; only the one for the end effector is returned since end_only=True by default\ntg_batch = chain.forward_kinematics(th_batch)\n\n# elapsed 8.44686508178711s for N=1000 when serial\nfor i in range(N):\n    tg = chain.forward_kinematics(th_batch[i])\n```\n\nWe can compute gradients through the FK\n```python\nimport torch\nimport math\nimport pytorch_kinematics as pk\n\nchain = pk.build_serial_chain_from_urdf(open(\"kuka_iiwa.urdf\").read(), \"lbr_iiwa_link_7\")\n\n# require gradient through the input joint values\nth = torch.tensor([0.0, -math.pi / 4.0, 0.0, math.pi / 2.0, 0.0, math.pi / 4.0, 0.0], requires_grad=True)\ntg = chain.forward_kinematics(th)\nm = tg.get_matrix()\npos = m[:, :3, 3]\npos.norm().backward()\n# now th.grad is populated\n```\n\nWe can load SDF and MJCF descriptions too, and pass in joint values via a dictionary (unspecified joints get th=0) for non-serial chains\n```python\nimport math\nimport torch\nimport pytorch_kinematics as pk\n\nchain = pk.build_chain_from_sdf(open(\"simple_arm.sdf\").read())\nret = chain.forward_kinematics({'arm_elbow_pan_joint': math.pi / 2.0, 'arm_wrist_lift_joint': -0.5})\n# recall that we specify joint values and get link transforms\ntg = ret['arm_wrist_roll']\n\n# can also do this in parallel\nN = 100\nret = chain.forward_kinematics({'arm_elbow_pan_joint': torch.rand(N, 1), 'arm_wrist_lift_joint': torch.rand(N, 1)})\n# (N, 4, 4) transform object\ntg = ret['arm_wrist_roll']\n\n# building the robot from a MJCF file\nchain = pk.build_chain_from_mjcf(open(\"ant.xml\").read())\nprint(chain)\nprint(chain.get_joint_parameter_names())\nth = {'hip_1': 1.0, 'ankle_1': 1}\nret = chain.forward_kinematics(th)\n\nchain = pk.build_chain_from_mjcf(open(\"humanoid.xml\").read())\nprint(chain)\nprint(chain.get_joint_parameter_names())\nth = {'left_knee': 0.0, 'right_knee': 0.0}\nret = chain.forward_kinematics(th)\n```\n\n## Jacobian calculation\nThe Jacobian (in the kinematics context) is a matrix describing how the end effector changes with respect to joint value changes\n(where ![dx](https://latex.codecogs.com/png.latex?%5Cinline%20%5Cdot%7Bx%7D) is the twist, or stacked velocity and angular velocity):\n![jacobian](https://latex.codecogs.com/png.latex?%5Cinline%20%5Cdot%7Bx%7D%3DJ%5Cdot%7Bq%7D) \n\nFor `SerialChain` we provide a differentiable and parallelizable method for computing the Jacobian with respect to the base frame.\n```python\nimport math\nimport torch\nimport pytorch_kinematics as pk\n\n# can convert Chain to SerialChain by choosing end effector frame\nchain = pk.build_chain_from_sdf(open(\"simple_arm.sdf\").read())\n# print(chain) to see the available links for use as end effector\n# note that any link can be chosen; it doesn't have to be a link with no children\nchain = pk.SerialChain(chain, \"arm_wrist_roll_frame\")\n\nchain = pk.build_serial_chain_from_urdf(open(\"kuka_iiwa.urdf\").read(), \"lbr_iiwa_link_7\")\nth = torch.tensor([0.0, -math.pi / 4.0, 0.0, math.pi / 2.0, 0.0, math.pi / 4.0, 0.0])\n# (1,6,7) tensor, with 7 corresponding to the DOF of the robot\nJ = chain.jacobian(th)\n\n# get Jacobian in parallel and use CUDA if available\nN = 1000\nd = \"cuda\" if torch.cuda.is_available() else \"cpu\"\ndtype = torch.float64\n\nchain = chain.to(dtype=dtype, device=d)\n# Jacobian calculation is differentiable\nth = torch.rand(N, 7, dtype=dtype, device=d, requires_grad=True)\n# (N,6,7)\nJ = chain.jacobian(th)\n\n# can get Jacobian at a point offset from the end effector (location is specified in EE link frame)\n# by default location is at the origin of the EE frame\nloc = torch.rand(N, 3, dtype=dtype, device=d)\nJ = chain.jacobian(th, locations=loc)\n```\n\nThe Jacobian can be used to do inverse kinematics. See [IK survey](https://www.math.ucsd.edu/~sbuss/ResearchWeb/ikmethods/iksurvey.pdf)\nfor a survey of ways to do so. Note that IK may be better performed through other means (but doing it through the Jacobian can give an end-to-end differentiable method).\n\n## SDF Queries\nSee [pytorch-volumetric](https://github.com/UM-ARM-Lab/pytorch_volumetric) for the latest details, some instructions are pasted here:\n\nFor many applications such as collision checking, it is useful to have the\nSDF of a multi-link robot in certain configurations.\nFirst, we create the robot model (loaded from URDF, SDF, MJCF, ...) with\n[pytorch kinematics](https://github.com/UM-ARM-Lab/pytorch_kinematics).\nFor example, we will be using the KUKA 7 DOF arm model from pybullet data\n\n```python\nimport os\nimport torch\nimport pybullet_data\nimport pytorch_kinematics as pk\nimport pytorch_volumetric as pv\n\nurdf = \"kuka_iiwa/model.urdf\"\nsearch_path = pybullet_data.getDataPath()\nfull_urdf = os.path.join(search_path, urdf)\nchain = pk.build_serial_chain_from_urdf(open(full_urdf).read(), \"lbr_iiwa_link_7\")\nd = \"cuda\" if torch.cuda.is_available() else \"cpu\"\n\nchain = chain.to(device=d)\n# paths to the link meshes are specified with their relative path inside the URDF\n# we need to give them the path prefix as we need their absolute path to load\ns = pv.RobotSDF(chain, path_prefix=os.path.join(search_path, \"kuka_iiwa\"))\n```\n\nBy default, each link will have a `MeshSDF`. To instead use `CachedSDF` for faster queries\n\n```python\ns = pv.RobotSDF(chain, path_prefix=os.path.join(search_path, \"kuka_iiwa\"),\n                link_sdf_cls=pv.cache_link_sdf_factory(resolution=0.02, padding=1.0, device=d))\n```\n\nWhich when the `y=0.02` SDF slice is visualized:\n\n![sdf slice](https://i.imgur.com/Putw72A.png)\n\nWith surface points corresponding to:\n\n![wireframe](https://i.imgur.com/L3atG9h.png)\n![solid](https://i.imgur.com/XiAks7a.png)\n\nQueries on this SDF is dependent on the joint configurations (by default all zero).\n**Queries are batched across configurations and query points**. For example, we have a batch of\njoint configurations to query\n\n```python\nth = torch.tensor([0.0, -math.pi / 4.0, 0.0, math.pi / 2.0, 0.0, math.pi / 4.0, 0.0], device=d)\nN = 200\nth_perturbation = torch.randn(N - 1, 7, device=d) * 0.1\n# N x 7 joint values\nth = torch.cat((th.view(1, -1), th_perturbation + th))\n```\n\nAnd also a batch of points to query (same points for each configuration):\n\n```python\ny = 0.02\nquery_range = np.array([\n    [-1, 0.5],\n    [y, y],\n    [-0.2, 0.8],\n])\n# M x 3 points\ncoords, pts = pv.get_coordinates_and_points_in_grid(0.01, query_range, device=s.device)\n```\n\nWe set the batch of joint configurations and query:\n\n```python\ns.set_joint_configuration(th)\n# N x M SDF value\n# N x M x 3 SDF gradient\nsdf_val, sdf_grad = s(pts)\n```\n\n\n# Credits\n- `pytorch_kinematics/transforms` is extracted from [pytorch3d](https://github.com/facebookresearch/pytorch3d) with minor extensions.\nThis was done instead of including `pytorch3d` as a dependency because it is hard to install and most of its code is unrelated.\n  An important difference is that we use left hand multiplied transforms as is convention in robotics (T * pt) instead of their\n  right hand multiplied transforms.\n- `pytorch_kinematics/urdf_parser_py`, and `pytorch_kinematics/mjcf_parser` is extracted from [kinpy](https://github.com/neka-nat/kinpy), as well as the FK logic.\nThis repository ports the logic to pytorch, parallelizes it, and provides some extensions.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "kinematics,pytorch,ik,fk,robotics",
+            "license": "Copyright (c) 2023 University of Michigan ARM Lab  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.  THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.  ",
+            "maintainer": "",
+            "maintainer_email": "Sheng Zhong <zhsh@umich.edu>",
+            "name": "pytorch-kinematics",
+            "package_url": "https://pypi.org/project/pytorch-kinematics/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/pytorch-kinematics/",
+            "project_urls": {
+                "Bug Reports": "https://github.com/UM-ARM-Lab/pytorch_kinematics/issues",
+                "Homepage": "https://github.com/UM-ARM-Lab/pytorch_kinematics",
+                "Source": "https://github.com/UM-ARM-Lab/pytorch_kinematics"
+            },
+            "release_url": "https://pypi.org/project/pytorch-kinematics/0.5.4/",
+            "requires_dist": [
+                "torch",
+                "numpy",
+                "transformations",
+                "absl-py",
+                "lxml",
+                "dm-control",
+                "pyyaml",
+                "pytest ; extra == 'test'"
+            ],
+            "requires_python": ">=3.6",
+            "summary": "Robot kinematics implemented in pytorch",
+            "version": "0.5.4",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 16997890,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f46245686732f06c72b610fd1a334eab0c9dba5229dada62b9222be080d5164f",
+                    "md5": "d839816ca0966a42f9e7ca8f1aa50d3d",
+                    "sha256": "e6b9f61bad5ac1312a3d43a3a1228a4d9cbcbddb9f36649b52cf175d2588442b"
+                },
+                "downloads": -1,
+                "filename": "pytorch_kinematics-0.5.4-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "d839816ca0966a42f9e7ca8f1aa50d3d",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.6",
+                "size": 47138,
+                "upload_time": "2023-02-23T19:02:05",
+                "upload_time_iso_8601": "2023-02-23T19:02:05.547363Z",
+                "url": "https://files.pythonhosted.org/packages/f4/62/45686732f06c72b610fd1a334eab0c9dba5229dada62b9222be080d5164f/pytorch_kinematics-0.5.4-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "80171c552a2a5bb0c7564c0d0032e13fca2494c6d3c2b9588b4345f277e52243",
+                    "md5": "dc7ccc50daa8edecc41505901d0d39b4",
+                    "sha256": "034199c9c129f44db64aa304044476bc5d1e2b739ba0619fa58f90013a614bdf"
+                },
+                "downloads": -1,
+                "filename": "pytorch_kinematics-0.5.4.tar.gz",
+                "has_sig": false,
+                "md5_digest": "dc7ccc50daa8edecc41505901d0d39b4",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.6",
+                "size": 49105,
+                "upload_time": "2023-02-23T19:02:10",
+                "upload_time_iso_8601": "2023-02-23T19:02:10.061384Z",
+                "url": "https://files.pythonhosted.org/packages/80/17/1c552a2a5bb0c7564c0d0032e13fca2494c6d3c2b9588b4345f277e52243/pytorch_kinematics-0.5.4.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
