@@ -48,7 +48,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16415270,
+        "last_serial": 17006241,
         "urls": [
             {
                 "comment_text": "",
@@ -144,7 +144,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16415270,
+        "last_serial": 17006241,
         "urls": [
             {
                 "comment_text": "",
@@ -660,7 +660,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16415270,
+        "last_serial": 17006241,
         "urls": [
             {
                 "comment_text": "",
@@ -1176,7 +1176,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16415270,
+        "last_serial": 17006241,
         "urls": [
             {
                 "comment_text": "",
@@ -1660,7 +1660,6 @@
                 "Programming Language :: Python :: 3.9",
                 "Topic :: Scientific/Engineering"
             ],
-            "description": "# Crackle: Next gen. 3D segmentation compression codec.\n\n```bash\n# Command Line Interface\ncrackle data.npy # creates data.ckl\ncrackle -d data.ckl # recovers data.npy\n```\n\n```python\nimport crackle\nimport numpy\n\nlabels = np.load(\"example.npy\") # a 2D or 3D dense segmentation\n\nbinary = crackle.compress(labels)\nlabels = crackle.decompress(binary)\n\n# get unique labels without decompressing\nuniq = crackle.labels(binary) \n\n# Remap labels without decompressing. Could\n# be useful for e.g. proofreading.\nremapped = crackle.remap(\n  binary, { 1: 2, 2: 3, ... },\n  preserve_missing_labels=True\n)\n\n# for working with files\n# if .gz is appended to the filename, the file will be\n# automatically gzipped (or ungzipped)\ncrackle.save(labels, \"example.ckl.gz\")\nlabels = crackle.load(\"example.ckl.gz\")\n\narr = crackle.CrackleArray(binary)\nres = arr[:10,:10,:10] # array slicing (efficient z ranges)\n20 in arr # highly efficient search\n```\n\n*This repository is currently experimental.*\n\nCrackle is a compression codec for 3D dense segmentation (labeled) images. The algorithm accepts both signed and unsigned integer labels (though the implementation currently has some restrictions on signed integers). It is written in C++ and has Python bindings. Crackle uses a two pass compression strategy where the output of crackle may be further comrpessed with a bitstream compressor like gzip, bzip2, zstd, or lzma. However, if the Crackle binary, which is already small, is not further compressed, it supports several efficient operations:\n\n- Query if a label exists in the image\n- Extract unique labels\n- Remap labels\n- Decode by Z-Range\n\nCrackle is inspired by Compresso \\[1\\]. Compresso innovated by separating labels from boundary structures. There were conceptually four (but really five) elements in the format: header, labels, bit packed and RLE encoded binary image boundaries, and indeterminate boundary locations. \n\nCrackle improves upon Compresso by replacing the bit-packed boundary map with a \"crack code\" and can also use 3D information to reduce redundancy in labels using \"pins\".\n\nSee benchmarks for more information on Crackle's size and compute effiency.\n\n## Versions\n\n| Major Version | Format Version | Description                                                    |\n|---------------|----------------|----------------------------------------------------------------|\n| 1             | 0              | Still experimental. |\n\n\n## Stream Format\n\n| Section   | Bytes                                     | Description                                                                                                     |\n|-----------|-------------------------------------------|-----------------------------------------------------------------------------------------------------------------|\n| Header    | 24                                        | Metadata incl. length of fields.                                                                                |\n| Crack Index     | header.sz * sizeof(uint32)             | Number of bytes for the crack codes in each slice.\n| Labels       | header.num_label_bytes        | Can be either \"flat\" labels or \"pins\". Describes how to color connected components.                                                                                   |\n| Crack Codes    | Variable length.           | Instructions for drawing crack boundaries.             |\n\n### Header\n\n\n| Attribute         | Value             | Type    | Description                                     |\n|-------------------|-------------------|---------|-------------------------------------------------|\n| magic             | crkl              | char[4] | File magic number.                              |\n| format_version    | 0                 | u8      | Stream version.                   |\n| format_field      | bitfield          | u16     | See below.                 |\n| sx, sy, sz        | >= 0              | u32 x 3 | Size of array dimensions.                       |\n| grid_size         | log2(grid_size)   | u8      | Stores log2 of grid dimensions in voxels.          |\n| num_label_bytes   | Any.              | u8      | Number of bytes of the labels section. Note the labels come in at least two format types.          |\n\n\nFormat Field (u16): DDSSCLLFGRRRRRRR (each letter represents a bit, left is LSB)\n\nDD: 2^(DD) = byte width of returned array (1,2,4,8 bytes)  \nSS: 2^(SS) = byte width of stored labels (sometimes you can store values in 2 bytes when the final array is 8 bytes)  \nC: 1: crack codes denote impermissible boundaries 0: they denote permissible boundaries.  \nLL: 0: \"flat\" label format, 1: fixed width pins (unused?) 2: variable width pins 3: reserved  \nF: whether the array is to be rendered as C (0) or F (1) order\nG: Signed (if (1), data are signed int, otherwise unsigned int)\nR: Reserved\n\n### Flat Label Format\n\n`| NUM_LABELS (u64) | UNIQUE LABELS (NUM_LABELS \\* STORED_DATA_WIDTH) | NUM CONNECTED COMPONENTS PER A GRID (sizeof(sx \\* sy) \\* sz) | INDEX INTO UNIQUE LABELS FOR EACH CCL ID (sizeof(NUM_LABELS) \\* ... to end of section) |`\n\nFlat labels are random access read, allow efficient reading of unique labels, efficient remapping, and efficient search for a given label's existence. Since the connected component labels can often use a smaller byte width than the unique values, even noise arrays can see some value from compression.\n\nEncoding flat labels is fast.\n\n### Condensed (Variable Width) Pins Label Format\n\n`| BACKGROUND COLOR (STORED_DATA_WIDTH) | NUM_LABELS (u64) | UNIQUE LABELS (NUM_LABELS \\* STORED_DATA_WIDTH) | FMT_BYTE | PIN SECTION |`\n\nFMT_BYTE: `0000DDNN`\n\nDD: 2^(DD) is the depth width\nNN: 2^(NN) is the num pins width\n\nPIN SECTION: `| PINS FOR LABEL 0 | PINS FOR LABEL 1 | ... | PINS FOR LABEL N |`\n\nPINS: `| num_pins | INDEX_0 | INDEX_1 | ... | INDEX_N | DEPTH_0 | DEPTH_1 | ... | DEPTH_N |`\n\nNote that INDEX_0 to INDEX_N are stored with a difference filter applied to improve compressibility.\n\nA pin (color, position, depth) is a line segment that joins together multiple connected component IDs and labels them with a color (an index into UNIQUE LABELS) in order to use 3D information to compress the labels as compared with the flat label format. Pins are slow to compute but fast to decode, however random access is lost (a full scan of the labels section is needed to decode a subset of crack codes). The most frequent pin is replaced with a background color. Like with flat, efficient reading of unique labels, efficient remapping, and search are supported. \n\nDepending on the image statistics and quality of the pin solver, pins can be much smaller than flat or larger (some heuristics are used to avoid this case). An excellent example of where pins do well is a binary image where remarkable savings can be achieved in the labels section (though overall it is probably a small part of the file).\n\n### Fixed Width Pins (disabled)\n\n`| BACKGROUND COLOR (STORED_DATA_WIDTH) | NUM_LABELS (u64) | UNIQUE LABELS (NUM_LABELS \\* STORED_DATA_WIDTH) | PIN SECTION |`\n\nPIN SECTION: `|PIN0|PIN1|PIN2|...|PINN|`\nPIN: `|LABEL|INDEX|DEPTH|`\n\nA fixed width variant of pins has also been developed but is not enabled. It frequently is not significantly smaller than flat outside of special circumstances such as a binary image. An advantage this format would have over condensed is that the pins can be sorted and searched rapidly by index, which reduces the amount of reading one might have to do on an mmapped file. Please raise an issue if this seems like something that might be useful to you.\n\n### Crack Code Format\n\n\nCRACK CODE: `| CHAIN 0 | CHAIN 1 | ... | CHAIN N |`\n\nCHAIN: `| BEGINNING OF CHAIN INDEX (sizeof(sx * sy)) | BIT PACKED MOVES (2 bits each) |`\n\nThe BEGINNING OF CHAIN INDEX (BOC) locates the grid vertex where the crack code will begin. Vertices are the corners of the pixel grid, with 0 at the top left and sx\\*sy-1 at the bottom right (fortran order). \n\nThe crack code is a NEWS code (up,right,left,down). Impossible combinations of directions are used to signal branching and branch termination. The next chain begins in the next byte when a termination signal causes the current branch count to reach zero.\n\nThere may be ways to further improve the design of the crack code. For example, by applying a difference filter a few more percent compression under gzip can be obtained. In the literature, there are other shorter codes such as a left,right,straight (LRS) code and fancy large context compressors that can achieve fewer than one bit per a move.\n\n## Boundary Structure: Crack Code\n\nOur different approach is partially inspired by the work of Zingaretti et al. \\[2\\]. We represent the boundary not by border voxels, but by a \"crack code\" that represents the edges between voxels. This code can be thought of as directions to draw edges on a graph where the vertices are where the corners of four pixels touch and the edges are the cracks in between them. \n\nSince this regular graph is 4-connected, each \"move\" in a cardinal direction can be described using two bits. To represent special symbols such as \"branch\" and \"terminate\", an impossible set of instructions on an undirected graph such as \"left-right\" or \"up-down\" can be used (occupying 4 bits). In order to avoid creating palendromic sequences such as (3, 0, 3) meaning (down, branch) but can be read (terminate, down), we can use the left-right impossible directions to rewrite it as (3, 2, 1).\n\nWhile the image is 3D, we treat the image in layers because working in 3D introduces a large increase in geometric complexity (a cube has 6 faces, 12 edges, and 8 corners while a square has 4 edges and 4 corners). This increase in complexity would inflate the size of the crack code and make the implementation more difficult.\n\n## Label Map: Method of Pins\n\nEach 2D CCL region must has a label assigned. Due to the 2D nature of the crack code, we cannot use 3D CCL. However, for example, a solid cube of height 100 would need 100 labels to represent the same color on every slice as in Compresso.\n\nIt is still possible to reduce the amount of redundant information even without 3D CCL. For each label, we find a set of vertical line segments (\"pins\") that fully cover the label's 2D CCL regions. Sharp readers may note that this is the NP-hard set cover problem.\n\nOnce a reasonably small or minimal set of pins are found, they can be encoded in two forms:\n\nCondensed Form: `[label][num_pins][pin_1][pin_2]...[pin_N]`\nFixed Width Form: `[label][pin_1][label][pin_2]...[label][pin_N]`\nPin Format: `[linear index of pin top][number of voxels to bottom]`\n\nFixed width example with label 1 with a pin between (1,1,1) and (1,1,5) on a 10x10x10 image: `[1][111][4]`\n\nAn alternative formulation `[label][idx1][idx2]` was shown in an experiment on `connectomics.npy.cpso` to compress slightly worse than Compresso labels. However, this alternative formulation theoretically allows arbitrary pin orientations and so might be useful for reducing the overall number of pins.\n\nThe condensed format is a bit smaller than the fixed width format, but the fixed width format enables rapid searches if the set of pins are sorted by either the label (enables fast `label in file`) or the likely more useful sorting by top index to filter candidate pins when performing random access to a z-slice.\n\n## References\n\n1. Matejek, B., Haehn, D., Lekschas, F., Mitzenmacher, M., Pfister, H., 2017. Compresso: Efficient Compression of Segmentation Data for Connectomics, in: Descoteaux, M., Maier-Hein, L., Franz, A., Jannin, P., Collins, D.L., Duchesne, S. (Eds.), Medical Image Computing and Computer Assisted Intervention \u2212 MICCAI 2017, Lecture Notes in Computer Science. Springer International Publishing, Cham, pp. 781\u2013788. https://doi.org/10.1007/978-3-319-66182-7_89\n\n2. Zingaretti, P., Gasparroni, M., Vecci, L., 1998. Fast chain coding of region boundaries. IEEE Transactions on Pattern Analysis and Machine Intelligence 20, 407\u2013415. https://doi.org/10.1109/34.677272\n\n3. Freeman, H., 1974. Computer Processing of Line-Drawing Images. ACM Comput. Surv. 6, 57\u201397. https://doi.org/10.1145/356625.356627\n\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -1693,7 +1692,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16415270,
+        "last_serial": 17006241,
         "urls": [
             {
                 "comment_text": "",
@@ -2154,6 +2153,544 @@
                 "upload_time": "2023-01-13T08:38:00",
                 "upload_time_iso_8601": "2023-01-13T08:38:00.998128Z",
                 "url": "https://files.pythonhosted.org/packages/f0/3d/e912a39f1809132b081f5c5b7554a485a5f507f3f93531d3b171925705cf/crackle_codec-0.3.0-cp39-cp39-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.4.0": {
+        "info": {
+            "author": "William Silversmith",
+            "author_email": "ws9@princeton.edu",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: BSD License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Scientific/Engineering"
+            ],
+            "description": "# Crackle: Next gen. 3D segmentation compression codec.\n\n```bash\n# Command Line Interface\ncrackle data.npy # creates data.ckl\ncrackle -m 5 data.npy # use a 5th order context model\ncrackle -d data.ckl # recovers data.npy\n```\n\n```python\nimport crackle\nimport numpy\n\nlabels = np.load(\"example.npy\") # a 2D or 3D dense segmentation\n\nbinary = crackle.compress(labels, allow_pins=False, markov_model_order=0)\nlabels = crackle.decompress(binary)\n\n# get unique labels without decompressing\nuniq = crackle.labels(binary) \n\n# Remap labels without decompressing. Could\n# be useful for e.g. proofreading.\nremapped = crackle.remap(\n  binary, { 1: 2, 2: 3, ... },\n  preserve_missing_labels=True\n)\n\n# for working with files\n# if .gz is appended to the filename, the file will be\n# automatically gzipped (or ungzipped)\ncrackle.save(labels, \"example.ckl.gz\")\nlabels = crackle.load(\"example.ckl.gz\")\n\narr = crackle.CrackleArray(binary)\nres = arr[:10,:10,:10] # array slicing (efficient z ranges)\n20 in arr # highly efficient search\n```\n\n*This repository is currently experimental.*\n\nCrackle is a compression codec for 3D dense segmentation (labeled) images. The algorithm accepts both signed and unsigned integer labels (though the implementation currently has some restrictions on signed integers). It is written in C++ and has Python bindings. Crackle uses a two pass compression strategy where the output of crackle may be further comrpessed with a bitstream compressor like gzip, bzip2, zstd, or lzma. However, if the Crackle binary, which is already small, is not further compressed, it supports several efficient operations:\n\n- Query if a label exists in the image\n- Extract unique labels\n- Remap labels\n- Decode by Z-Range\n\nCrackle is inspired by Compresso \\[1\\]. Compresso innovated by separating labels from boundary structures. There were conceptually four (but really five) elements in the format: header, labels, bit packed and RLE encoded binary image boundaries, and indeterminate boundary locations. \n\nCrackle improves upon Compresso by replacing the bit-packed boundary map with a \"crack code\" and can also use 3D information to reduce redundancy in labels using \"pins\".\n\nSee benchmarks for more information on Crackle's size and compute effiency.\n\n## Versions\n\n| Major Version | Format Version | Description                                                    |\n|---------------|----------------|----------------------------------------------------------------|\n| 1             | 0              | Still experimental. |\n\n\n## Stream Format\n\n| Section   | Bytes                                     | Description                                                                                                     |\n|-----------|-------------------------------------------|-----------------------------------------------------------------------------------------------------------------|\n| Header    | 24                                        | Metadata incl. length of fields.                                                                                |\n| Crack Index     | header.sz * sizeof(uint32)             | Number of bytes for the crack codes in each slice.\n| Labels       | header.num_label_bytes        | Can be either \"flat\" labels or \"pins\". Describes how to color connected components.                                                                                   |\n| Crack Codes    | Variable length.           | Instructions for drawing crack boundaries.             |\n\n### Header\n\n\n| Attribute         | Value             | Type    | Description                                     |\n|-------------------|-------------------|---------|-------------------------------------------------|\n| magic             | crkl              | char[4] | File magic number.                              |\n| format_version    | 0                 | u8      | Stream version.                   |\n| format_field      | bitfield          | u16     | See below.                 |\n| sx, sy, sz        | >= 0              | u32 x 3 | Size of array dimensions.                       |\n| grid_size         | log2(grid_size)   | u8      | Stores log2 of grid dimensions in voxels.          |\n| num_label_bytes   | Any.              | u32      | Number of bytes of the labels section. Note the labels come in at least two format types.          |\n\n\nFormat Field (u16): DDSSCLLFGOOOORRR (each letter represents a bit, left is LSB)\n\nDD: 2^(DD) = byte width of returned array (1,2,4,8 bytes)  \nSS: 2^(SS) = byte width of stored labels (sometimes you can store values in 2 bytes when the final array is 8 bytes)  \nC: 1: crack codes denote impermissible boundaries 0: they denote permissible boundaries.  \nLL: 0: \"flat\" label format, 1: fixed width pins (unused?) 2: variable width pins 3: reserved  \nF: whether the array is to be rendered as C (0) or F (1) order\nG: Signed (if (1), data are signed int, otherwise unsigned int)\nOOOO: Nth-Order of Markov Chain (as an unsigned integer, typical values 0, or 3 to 7). If 0, markov compression is disabled.\nR: Reserved\n\n### Flat Label Format\n\n| Attribute     | Type                                        | Description                                                                                                 |\n|---------------|---------------------------------------------|-------------------------------------------------------------------------------------------------------------|\n| num_unique    | u64                                         | Number of unique labels in this volume.                                                                     |\n| unique_labels | stored_type[num_unique]                     | Sorted ascending array of all unique values in image, stored in the smallest data type that will hold them. |\n| cc_per_grid   | smallest_type(sx \\* sy)[sz]                 | Array containing the number of CCL IDs in each grid (usually a z-slice).                                    |\n| cc_to_labels  | smallest_type(num_labels)[sum(cc_per_grid)] | Array mapping CCL IDs to their proper value by indexing the unique labels array.                            |\n\nFlat labels are random access read, allow efficient reading of unique labels, efficient remapping, and efficient search for a given label's existence. Since the connected component labels can often use a smaller byte width than the unique values, even noise arrays can see some value from compression.\n\nEncoding flat labels is fast.\n\n### Condensed (Variable Width) Pins Label Format\n\n| Attribute        | Type                                | Description                                                                                                 |\n|------------------|-------------------------------------|-------------------------------------------------------------------------------------------------------------|\n| background_color | stored_data_width                   | Background color of image.                                                                                  |\n| num_unique       | u64                                 | Number of unique labels in this volume.                                                                     |\n| unique_labels    | stored_type[num_unique]             | Sorted ascending array of all unique values in image, stored in the smallest data type that will hold them. |\n| fmt_byte         | u8                                  | 0000DDNN  DD: 2^(DD) is the depth width NN: 2^(NN) is the num pins width                                    |\n| pin_section      | Bitstream to end of labels section. | Contains pin information.                                                                                   |\n\nPIN SECTION: `| PINS FOR LABEL 0 | PINS FOR LABEL 1 | ... | PINS FOR LABEL N |`\n\nPINS: `| num_pins | INDEX_0 | INDEX_1 | ... | INDEX_N | DEPTH_0 | DEPTH_1 | ... | DEPTH_N | num_single_labels | CC 0 | CC 1 | ... | CC N |`\n\nNote that INDEX_0 to INDEX_N are stored with a difference filter applied to improve compressibility.\n\nA pin (color, position, depth) is a line segment that joins together multiple connected component IDs and labels them with a color (an index into UNIQUE LABELS) in order to use 3D information to compress the labels as compared with the flat label format. Pins are slow to compute but fast to decode, however random access is lost (a full scan of the labels section is needed to decode a subset of crack codes). The most frequent pin is replaced with a background color. Like with flat, efficient reading of unique labels, efficient remapping, and search are supported. \n\nDepending on the image statistics and quality of the pin solver, pins can be much smaller than flat or larger (some heuristics are used to avoid this case). An excellent example of where pins do well is a binary image where remarkable savings can be achieved in the labels section (though overall it is probably a small part of the file).\n\nFor very short pins (e.g. depth 0 or 1) that take more bytes to record than simply listing the corresponding CC label, we list the CC label instead. This calculation is made depending on the dimensions of the image and the max pin depth, and the byte width of the CCL labels.\n\nExample calculation. For a 512 x 512 x 32 file with an average of 1000 CCL's per a slice and a maximum pin depth of 30, a pin takes 4 index + 1 depth = 5 bytes while a CCL takes 2 bytes. Therefore, depth 1 and 2 pins can be efficiently replaced with 1 and 2 CCL labels for a 60\\% and 20\\% savings respectively. CCLs are also difference coded to enhance second stage compressibility.\n\n### Fixed Width Pins (disabled)\n\n`| BACKGROUND COLOR (STORED_DATA_WIDTH) | NUM_LABELS (u64) | UNIQUE LABELS (NUM_LABELS \\* STORED_DATA_WIDTH) | PIN SECTION |`\n\nPIN SECTION: `|PIN0|PIN1|PIN2|...|PINN|`\nPIN: `|LABEL|INDEX|DEPTH|`\n\nA fixed width variant of pins has also been developed but is not enabled. It frequently is not significantly smaller than flat outside of special circumstances such as a binary image. An advantage this format would have over condensed is that the pins can be sorted and searched rapidly by index, which reduces the amount of reading one might have to do on an mmapped file. Please raise an issue if this seems like something that might be useful to you.\n\n### Crack Code Format\n\nCRACK CODE: `MARKOV MODEL | CHAIN 0 | CHAIN 1 | ... | CHAIN N |`\n\nCHAIN: `| BEGINNING OF CHAIN INDEX (sizeof(sx * sy)) | BIT PACKED MOVES (2 bits each) |`\n\nMARKOV MODEL (if enabled): `priority order of moves UDLR packed per a byte`. 4^order bytes.\n\nThe BEGINNING OF CHAIN INDEX (BOC) locates the grid vertex where the crack code will begin. Vertices are the corners of the pixel grid, with 0 at the top left and sx\\*sy-1 at the bottom right (fortran order). \n\nThe crack code is a NEWS code (up,right,left,down). Impossible combinations of directions are used to signal branching and branch termination. The next chain begins in the next byte when a termination signal causes the current branch count to reach zero.\n\nThere may be ways to further improve the design of the crack code. For example, by applying a difference filter a few more percent compression under gzip can be obtained. In the literature, there are other shorter codes such as a left,right,straight (LRS) code and fancy large context compressors that can achieve fewer than one bit per a move.\n\n## Boundary Structure: Crack Code\n\nOur different approach is partially inspired by the work of Zingaretti et al. \\[2\\]. We represent the boundary not by border voxels, but by a \"crack code\" that represents the edges between voxels. This code can be thought of as directions to draw edges on a graph where the vertices are where the corners of four pixels touch and the edges are the cracks in between them. \n\nSince this regular graph is 4-connected, each \"move\" in a cardinal direction can be described using two bits. To represent special symbols such as \"branch\" and \"terminate\", an impossible set of instructions on an undirected graph such as \"left-right\" or \"up-down\" can be used (occupying 4 bits). In order to avoid creating palendromic sequences such as (3, 0, 3) meaning (down, branch) but can be read (terminate, down), we can use the left-right impossible directions to rewrite it as (3, 2, 1).\n\nWhile the image is 3D, we treat the image in layers because working in 3D introduces a large increase in geometric complexity (a cube has 6 faces, 12 edges, and 8 corners while a square has 4 edges and 4 corners). This increase in complexity would inflate the size of the crack code and make the implementation more difficult.\n\n## Label Map: Method of Pins\n\nEach 2D CCL region must has a label assigned. Due to the 2D nature of the crack code, we cannot use 3D CCL. However, for example, a solid cube of height 100 would need 100 labels to represent the same color on every slice as in Compresso.\n\nIt is still possible to reduce the amount of redundant information even without 3D CCL. For each label, we find a set of vertical line segments (\"pins\") that fully cover the label's 2D CCL regions. Sharp readers may note that this is the NP-hard set cover problem.\n\nOnce a reasonably small or minimal set of pins are found, they can be encoded in two forms:\n\nCondensed Form: `[label][num_pins][pin_1][pin_2]...[pin_N]`\nFixed Width Form: `[label][pin_1][label][pin_2]...[label][pin_N]`\nPin Format: `[linear index of pin top][number of voxels to bottom]`\n\nFixed width example with label 1 with a pin between (1,1,1) and (1,1,5) on a 10x10x10 image: `[1][111][4]`\n\nAn alternative formulation `[label][idx1][idx2]` was shown in an experiment on `connectomics.npy.cpso` to compress slightly worse than Compresso labels. However, this alternative formulation theoretically allows arbitrary pin orientations and so might be useful for reducing the overall number of pins.\n\nThe condensed format is a bit smaller than the fixed width format, but the fixed width format enables rapid searches if the set of pins are sorted by either the label (enables fast `label in file`) or the likely more useful sorting by top index to filter candidate pins when performing random access to a z-slice.\n\n## References\n\n1. Matejek, B., Haehn, D., Lekschas, F., Mitzenmacher, M., Pfister, H., 2017. Compresso: Efficient Compression of Segmentation Data for Connectomics, in: Descoteaux, M., Maier-Hein, L., Franz, A., Jannin, P., Collins, D.L., Duchesne, S. (Eds.), Medical Image Computing and Computer Assisted Intervention \u2212 MICCAI 2017, Lecture Notes in Computer Science. Springer International Publishing, Cham, pp. 781\u2013788. https://doi.org/10.1007/978-3-319-66182-7_89\n\n2. Zingaretti, P., Gasparroni, M., Vecci, L., 1998. Fast chain coding of region boundaries. IEEE Transactions on Pattern Analysis and Machine Intelligence 20, 407\u2013415. https://doi.org/10.1109/34.677272\n\n3. Freeman, H., 1974. Computer Processing of Line-Drawing Images. ACM Comput. Surv. 6, 57\u201397. https://doi.org/10.1145/356625.356627\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/seung-lab/crackle",
+            "keywords": "",
+            "license": "License :: OSI Approved :: BSD License",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "crackle-codec",
+            "package_url": "https://pypi.org/project/crackle-codec/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/crackle-codec/",
+            "project_urls": {
+                "Homepage": "https://github.com/seung-lab/crackle"
+            },
+            "release_url": "https://pypi.org/project/crackle-codec/0.4.0/",
+            "requires_dist": [
+                "numpy",
+                "fastremap",
+                "pybind11"
+            ],
+            "requires_python": "",
+            "summary": "Crackle 3D dense segmentation compression codec.",
+            "version": "0.4.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17006241,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "71c97c717fc901995b86465d5649a8fd2c61e2884eed366e95e354bea1a97db6",
+                    "md5": "9e72a48348880407d30f3abdc19bfa65",
+                    "sha256": "b436a247d1a8e759f3e1ae9cee5aaec0f4f5f946442f79eeef5c3daa21e0c358"
+                },
+                "downloads": -1,
+                "filename": "crackle_codec-0.4.0-cp310-cp310-macosx_10_9_universal2.whl",
+                "has_sig": false,
+                "md5_digest": "9e72a48348880407d30f3abdc19bfa65",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": null,
+                "size": 665914,
+                "upload_time": "2023-02-24T04:02:34",
+                "upload_time_iso_8601": "2023-02-24T04:02:34.549261Z",
+                "url": "https://files.pythonhosted.org/packages/71/c9/7c717fc901995b86465d5649a8fd2c61e2884eed366e95e354bea1a97db6/crackle_codec-0.4.0-cp310-cp310-macosx_10_9_universal2.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "221ba9c8694ec503a5bfcfb2810e65c9fc57d4cb6f236ddb4f6a441ba4648e32",
+                    "md5": "0c2c8f3fecf3a2bbb513d03f72e207f7",
+                    "sha256": "7aba60458ecc5659f2789941003130ec6807cdde35df67e5c96eba4c45193e30"
+                },
+                "downloads": -1,
+                "filename": "crackle_codec-0.4.0-cp310-cp310-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "0c2c8f3fecf3a2bbb513d03f72e207f7",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": null,
+                "size": 382328,
+                "upload_time": "2023-02-24T04:02:36",
+                "upload_time_iso_8601": "2023-02-24T04:02:36.630876Z",
+                "url": "https://files.pythonhosted.org/packages/22/1b/a9c8694ec503a5bfcfb2810e65c9fc57d4cb6f236ddb4f6a441ba4648e32/crackle_codec-0.4.0-cp310-cp310-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "881ac69e6e2d235a81a2c6931343d753c619f3b0462896a2994da3c2a6f14403",
+                    "md5": "48c7b7ede51d16aae714c01b38b9558c",
+                    "sha256": "71236ee9acfc18b2d0931c7ddff6451a83c75aadab2a16ce002e958162e21c91"
+                },
+                "downloads": -1,
+                "filename": "crackle_codec-0.4.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "48c7b7ede51d16aae714c01b38b9558c",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": null,
+                "size": 322769,
+                "upload_time": "2023-02-24T04:02:38",
+                "upload_time_iso_8601": "2023-02-24T04:02:38.107610Z",
+                "url": "https://files.pythonhosted.org/packages/88/1a/c69e6e2d235a81a2c6931343d753c619f3b0462896a2994da3c2a6f14403/crackle_codec-0.4.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ce288043a400de45b354df7d4f7c30dfd5ef17de792745a00a153f1db3eaec21",
+                    "md5": "e4ec0bc31e08321bd2d445933d8b1637",
+                    "sha256": "7a9defeb6e585f6157980ff5b801df335dc14eb8cf8ffcc500b5d14af4c6671e"
+                },
+                "downloads": -1,
+                "filename": "crackle_codec-0.4.0-cp310-cp310-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "e4ec0bc31e08321bd2d445933d8b1637",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": null,
+                "size": 211023,
+                "upload_time": "2023-02-24T04:02:39",
+                "upload_time_iso_8601": "2023-02-24T04:02:39.746571Z",
+                "url": "https://files.pythonhosted.org/packages/ce/28/8043a400de45b354df7d4f7c30dfd5ef17de792745a00a153f1db3eaec21/crackle_codec-0.4.0-cp310-cp310-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "eb014a1661b08c46e51a3fea5da9f3f6877c4bb879101a0b5fa1a5bf1d522ac3",
+                    "md5": "cfbacf87729f08f9f0b7b30aa37f7957",
+                    "sha256": "0f3caa857e16027275dbdb2c8ae80d2c948aca458fd71be6d155e716a96c0cd5"
+                },
+                "downloads": -1,
+                "filename": "crackle_codec-0.4.0-cp311-cp311-macosx_10_9_universal2.whl",
+                "has_sig": false,
+                "md5_digest": "cfbacf87729f08f9f0b7b30aa37f7957",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": null,
+                "size": 665856,
+                "upload_time": "2023-02-24T04:02:41",
+                "upload_time_iso_8601": "2023-02-24T04:02:41.685283Z",
+                "url": "https://files.pythonhosted.org/packages/eb/01/4a1661b08c46e51a3fea5da9f3f6877c4bb879101a0b5fa1a5bf1d522ac3/crackle_codec-0.4.0-cp311-cp311-macosx_10_9_universal2.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "335bddf5f2993527952d0c7dd370baa3e3fdaa4ad026f50f4bba84ef8ada664e",
+                    "md5": "9d0523567bcc2624cd61b6e5a90dc56b",
+                    "sha256": "456209a2bae96e8624ffd31ad2fcab70625dfb927b42e04cac1f066eb0399f85"
+                },
+                "downloads": -1,
+                "filename": "crackle_codec-0.4.0-cp311-cp311-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "9d0523567bcc2624cd61b6e5a90dc56b",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": null,
+                "size": 382314,
+                "upload_time": "2023-02-24T04:02:43",
+                "upload_time_iso_8601": "2023-02-24T04:02:43.507228Z",
+                "url": "https://files.pythonhosted.org/packages/33/5b/ddf5f2993527952d0c7dd370baa3e3fdaa4ad026f50f4bba84ef8ada664e/crackle_codec-0.4.0-cp311-cp311-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "9434413fe5c512c62dff931917721c6a4c72c56266d7a00dba6ea3be5cbe3b40",
+                    "md5": "67b4e78f775a62277e6f33184b656fb0",
+                    "sha256": "3a50c10a2d1d93ea606e3f9b283d027636542d6870ec6ab969627a1be6c16f42"
+                },
+                "downloads": -1,
+                "filename": "crackle_codec-0.4.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "67b4e78f775a62277e6f33184b656fb0",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": null,
+                "size": 322597,
+                "upload_time": "2023-02-24T04:02:45",
+                "upload_time_iso_8601": "2023-02-24T04:02:45.221531Z",
+                "url": "https://files.pythonhosted.org/packages/94/34/413fe5c512c62dff931917721c6a4c72c56266d7a00dba6ea3be5cbe3b40/crackle_codec-0.4.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a9afb26a150c42bdb77edbd619e61a740af236edfea9261c66755b7db26a46ac",
+                    "md5": "379b32585c0df9f18d0a7b3628374fc8",
+                    "sha256": "2e8694fcf15162cc7f6a99fb6a93d4552050b235c49055d6585dda89221a430c"
+                },
+                "downloads": -1,
+                "filename": "crackle_codec-0.4.0-cp311-cp311-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "379b32585c0df9f18d0a7b3628374fc8",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": null,
+                "size": 211060,
+                "upload_time": "2023-02-24T04:02:46",
+                "upload_time_iso_8601": "2023-02-24T04:02:46.784760Z",
+                "url": "https://files.pythonhosted.org/packages/a9/af/b26a150c42bdb77edbd619e61a740af236edfea9261c66755b7db26a46ac/crackle_codec-0.4.0-cp311-cp311-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2c5a6757ce688ffd241ab9f067dcd25fc433b34942bf9d5467a3f08ba891f2a8",
+                    "md5": "fda3bbce95f92c48109ace16cfb2a084",
+                    "sha256": "d74ee14268e838296cdf6a7bf37dd6378e167a58882bcb9e14a614d25844dcee"
+                },
+                "downloads": -1,
+                "filename": "crackle_codec-0.4.0-cp36-cp36m-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "fda3bbce95f92c48109ace16cfb2a084",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp36",
+                "requires_python": null,
+                "size": 381602,
+                "upload_time": "2023-02-24T04:02:48",
+                "upload_time_iso_8601": "2023-02-24T04:02:48.611907Z",
+                "url": "https://files.pythonhosted.org/packages/2c/5a/6757ce688ffd241ab9f067dcd25fc433b34942bf9d5467a3f08ba891f2a8/crackle_codec-0.4.0-cp36-cp36m-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "16cd5d33d7b984cf665ad6abd5a23ddd236bcc3787fd03ab711b10a53379dfb3",
+                    "md5": "e7d87d021d0d49b7cb24973a8c1b8658",
+                    "sha256": "75b829ef0c058fe2374156b6e4ca2f2cc3a1cb87cf618db9cc8785de5c394431"
+                },
+                "downloads": -1,
+                "filename": "crackle_codec-0.4.0-cp36-cp36m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "e7d87d021d0d49b7cb24973a8c1b8658",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp36",
+                "requires_python": null,
+                "size": 323493,
+                "upload_time": "2023-02-24T04:02:50",
+                "upload_time_iso_8601": "2023-02-24T04:02:50.316369Z",
+                "url": "https://files.pythonhosted.org/packages/16/cd/5d33d7b984cf665ad6abd5a23ddd236bcc3787fd03ab711b10a53379dfb3/crackle_codec-0.4.0-cp36-cp36m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "7dab2943b8e46e796606a3ab4ba43cfbb6bd96bcdf8c5c2b45370690554cd2cc",
+                    "md5": "c390304954bfa30558ca1d7c02d07b09",
+                    "sha256": "b50acbb3532b87217e397fe933327d6935d46a1730db2b55ad3876faa8a7a190"
+                },
+                "downloads": -1,
+                "filename": "crackle_codec-0.4.0-cp36-cp36m-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "c390304954bfa30558ca1d7c02d07b09",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp36",
+                "requires_python": null,
+                "size": 211881,
+                "upload_time": "2023-02-24T04:02:51",
+                "upload_time_iso_8601": "2023-02-24T04:02:51.567197Z",
+                "url": "https://files.pythonhosted.org/packages/7d/ab/2943b8e46e796606a3ab4ba43cfbb6bd96bcdf8c5c2b45370690554cd2cc/crackle_codec-0.4.0-cp36-cp36m-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "0192995f0dc1d035c539d526dad95f890ee5e7de273bfa3f7652748acc356883",
+                    "md5": "acaaff57461a2462cfa824b76da85bac",
+                    "sha256": "445e2667ae266f7a61c55e1d8ff0e33f09565dd28b4d9eb3bb6e4c2bbc16fee2"
+                },
+                "downloads": -1,
+                "filename": "crackle_codec-0.4.0-cp37-cp37m-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "acaaff57461a2462cfa824b76da85bac",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": null,
+                "size": 381614,
+                "upload_time": "2023-02-24T04:02:52",
+                "upload_time_iso_8601": "2023-02-24T04:02:52.881414Z",
+                "url": "https://files.pythonhosted.org/packages/01/92/995f0dc1d035c539d526dad95f890ee5e7de273bfa3f7652748acc356883/crackle_codec-0.4.0-cp37-cp37m-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "51fbefb362647a156ba732f102b0194a411e85ac6f95c4958e263410a1f75774",
+                    "md5": "f263b3774a333c467948b60b52705be5",
+                    "sha256": "0ad1972bdd30b14c35921ea4448265709d46a6ff3a98b9309d415c3366ce9842"
+                },
+                "downloads": -1,
+                "filename": "crackle_codec-0.4.0-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "f263b3774a333c467948b60b52705be5",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": null,
+                "size": 323277,
+                "upload_time": "2023-02-24T04:02:54",
+                "upload_time_iso_8601": "2023-02-24T04:02:54.284121Z",
+                "url": "https://files.pythonhosted.org/packages/51/fb/efb362647a156ba732f102b0194a411e85ac6f95c4958e263410a1f75774/crackle_codec-0.4.0-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ac9c89e3c643c0863aeabd6788af23504bac67afcc41bea31e1432e4bfdc503a",
+                    "md5": "9182b57b5357afeb7513c56a0f65996d",
+                    "sha256": "ba2c32f6be963a16ab2d30c8c8eb7a7d5cf01e2c0c126c8f87f7adf5e804e3af"
+                },
+                "downloads": -1,
+                "filename": "crackle_codec-0.4.0-cp37-cp37m-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "9182b57b5357afeb7513c56a0f65996d",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": null,
+                "size": 211894,
+                "upload_time": "2023-02-24T04:02:55",
+                "upload_time_iso_8601": "2023-02-24T04:02:55.466870Z",
+                "url": "https://files.pythonhosted.org/packages/ac/9c/89e3c643c0863aeabd6788af23504bac67afcc41bea31e1432e4bfdc503a/crackle_codec-0.4.0-cp37-cp37m-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "04417b4da126d45ceb047a80a2d8e4b48c194a73e2f22167a46485d164bad6b1",
+                    "md5": "5bf503186db986c8c6ef78b9f99cbb8a",
+                    "sha256": "fa7d5e71a1673787eded3cc5ab401c1bc937c849ab615bd364286760f84bb94f"
+                },
+                "downloads": -1,
+                "filename": "crackle_codec-0.4.0-cp38-cp38-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "5bf503186db986c8c6ef78b9f99cbb8a",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": null,
+                "size": 382127,
+                "upload_time": "2023-02-24T04:02:57",
+                "upload_time_iso_8601": "2023-02-24T04:02:57.172523Z",
+                "url": "https://files.pythonhosted.org/packages/04/41/7b4da126d45ceb047a80a2d8e4b48c194a73e2f22167a46485d164bad6b1/crackle_codec-0.4.0-cp38-cp38-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f6d02482d4d02023af5a4b1c4bc8f9c5bd478541a56c028697043b8bcd10a2be",
+                    "md5": "3b5c9eb4f7fc6747fd3bcd5f2f49b0b4",
+                    "sha256": "00048ad633c956b86bde8fa77f7ed44017edab00455d91858d8b8c737baf7e70"
+                },
+                "downloads": -1,
+                "filename": "crackle_codec-0.4.0-cp38-cp38-macosx_11_0_universal2.whl",
+                "has_sig": false,
+                "md5_digest": "3b5c9eb4f7fc6747fd3bcd5f2f49b0b4",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": null,
+                "size": 682912,
+                "upload_time": "2023-02-24T04:02:58",
+                "upload_time_iso_8601": "2023-02-24T04:02:58.834526Z",
+                "url": "https://files.pythonhosted.org/packages/f6/d0/2482d4d02023af5a4b1c4bc8f9c5bd478541a56c028697043b8bcd10a2be/crackle_codec-0.4.0-cp38-cp38-macosx_11_0_universal2.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "bb84693f6ecd73d9cb0174f9258a15ead3827542de8888ea715f3e6b9cf20b39",
+                    "md5": "68a4fedc5ad9b267eacd6ab9b1618d35",
+                    "sha256": "445f694e77e02aa08258417a51677b22c8a17e0bc24a24b279f91079c1568025"
+                },
+                "downloads": -1,
+                "filename": "crackle_codec-0.4.0-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "68a4fedc5ad9b267eacd6ab9b1618d35",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": null,
+                "size": 322817,
+                "upload_time": "2023-02-24T04:03:00",
+                "upload_time_iso_8601": "2023-02-24T04:03:00.070212Z",
+                "url": "https://files.pythonhosted.org/packages/bb/84/693f6ecd73d9cb0174f9258a15ead3827542de8888ea715f3e6b9cf20b39/crackle_codec-0.4.0-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "42de02522f19f906154f9c3c7ee994bcf1d5a839131b8aaca8b44784a56dd1dc",
+                    "md5": "3c79b5d2e2a160b4f2bd4e0f0c7b9458",
+                    "sha256": "87e698172f7194cb88864df1aba4d486d64aefcd14bb55ed3ab0de7aba40085a"
+                },
+                "downloads": -1,
+                "filename": "crackle_codec-0.4.0-cp38-cp38-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "3c79b5d2e2a160b4f2bd4e0f0c7b9458",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": null,
+                "size": 211014,
+                "upload_time": "2023-02-24T04:03:01",
+                "upload_time_iso_8601": "2023-02-24T04:03:01.217988Z",
+                "url": "https://files.pythonhosted.org/packages/42/de/02522f19f906154f9c3c7ee994bcf1d5a839131b8aaca8b44784a56dd1dc/crackle_codec-0.4.0-cp38-cp38-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c46e6934f3636a6ed437351f572561b7cc40e478964d5049594593a5011c8d1c",
+                    "md5": "b73033e75983c7a66178c930b55866fe",
+                    "sha256": "292ffd3be7aab08a8f037de983b7f3f9c318a0784dcb411a6a5f0c0581bf6513"
+                },
+                "downloads": -1,
+                "filename": "crackle_codec-0.4.0-cp39-cp39-macosx_10_9_universal2.whl",
+                "has_sig": false,
+                "md5_digest": "b73033e75983c7a66178c930b55866fe",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": null,
+                "size": 666277,
+                "upload_time": "2023-02-24T04:03:03",
+                "upload_time_iso_8601": "2023-02-24T04:03:03.165987Z",
+                "url": "https://files.pythonhosted.org/packages/c4/6e/6934f3636a6ed437351f572561b7cc40e478964d5049594593a5011c8d1c/crackle_codec-0.4.0-cp39-cp39-macosx_10_9_universal2.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "31de21c1cdedd50400c85be51ea25191598877a19da62a4e3e83ee120a44f440",
+                    "md5": "71ce57d9ced63e7d9d873183d26e8a0a",
+                    "sha256": "72d12d6db8ec3be46bfe07bf0955956a3532f409668e993a2761f483303706d8"
+                },
+                "downloads": -1,
+                "filename": "crackle_codec-0.4.0-cp39-cp39-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "71ce57d9ced63e7d9d873183d26e8a0a",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": null,
+                "size": 382490,
+                "upload_time": "2023-02-24T04:03:04",
+                "upload_time_iso_8601": "2023-02-24T04:03:04.498850Z",
+                "url": "https://files.pythonhosted.org/packages/31/de/21c1cdedd50400c85be51ea25191598877a19da62a4e3e83ee120a44f440/crackle_codec-0.4.0-cp39-cp39-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2274f2ad2c225c48992b26b973d2fc2f00d188044447ce4b9fea9ae87309179f",
+                    "md5": "ca2fc6e4af474c8c14a994b93c0c4d99",
+                    "sha256": "8d354cd9aa8d72f773eb868aadafcaff2c60dbcff2b348cc845a83d81192009a"
+                },
+                "downloads": -1,
+                "filename": "crackle_codec-0.4.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "ca2fc6e4af474c8c14a994b93c0c4d99",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": null,
+                "size": 323326,
+                "upload_time": "2023-02-24T04:03:05",
+                "upload_time_iso_8601": "2023-02-24T04:03:05.965731Z",
+                "url": "https://files.pythonhosted.org/packages/22/74/f2ad2c225c48992b26b973d2fc2f00d188044447ce4b9fea9ae87309179f/crackle_codec-0.4.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "7a2a516fe755b56355a3d200a17ff60449bab492f233038d6aa12d83e6d37392",
+                    "md5": "4e194174ccf3ef41e6286cadb464e8ef",
+                    "sha256": "a207e37f965efa433e3bae9eed7b2f09392b79bc8e132489dd503c29783f32e2"
+                },
+                "downloads": -1,
+                "filename": "crackle_codec-0.4.0-cp39-cp39-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "4e194174ccf3ef41e6286cadb464e8ef",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": null,
+                "size": 210453,
+                "upload_time": "2023-02-24T04:03:07",
+                "upload_time_iso_8601": "2023-02-24T04:03:07.035919Z",
+                "url": "https://files.pythonhosted.org/packages/7a/2a/516fe755b56355a3d200a17ff60449bab492f233038d6aa12d83e6d37392/crackle_codec-0.4.0-cp39-cp39-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "9066d72abaacc15966c6d5d96a0c4aec1840c5dc6d122bf5a0c68c8e73cbcd15",
+                    "md5": "84599ad7d52afd6563659ac2ff156445",
+                    "sha256": "b1753b1d2b335b30fde5137ba1481f45bd5b2ba5d603d99b96cf909bd4431f9d"
+                },
+                "downloads": -1,
+                "filename": "crackle-codec-0.4.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "84599ad7d52afd6563659ac2ff156445",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 72562,
+                "upload_time": "2023-02-24T04:03:08",
+                "upload_time_iso_8601": "2023-02-24T04:03:08.271699Z",
+                "url": "https://files.pythonhosted.org/packages/90/66/d72abaacc15966c6d5d96a0c4aec1840c5dc6d122bf5a0c68c8e73cbcd15/crackle-codec-0.4.0.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
