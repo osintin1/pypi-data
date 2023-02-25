@@ -42,7 +42,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17009258,
+        "last_serial": 17015359,
         "urls": [
             {
                 "comment_text": "",
@@ -101,7 +101,6 @@
                 "Programming Language :: Python :: 3",
                 "Topic :: Scientific/Engineering :: Artificial Intelligence"
             ],
-            "description": "<h1 align=\"center\">UForm</h1>\n<h3 align=\"center\">\nMulti-Modal Inference Library<br/>\nFor Semantic Search Applications<br/>\n</h3>\n<br/>\n\n<p align=\"center\">\n<a href=\"https://discord.gg/jsMURnSFM2\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/discord.svg\" alt=\"Discord\"></a>\n&nbsp;&nbsp;&nbsp;\n<a href=\"https://www.linkedin.com/company/unum-cloud/\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/linkedin.svg\" alt=\"LinkedIn\"></a>\n&nbsp;&nbsp;&nbsp;\n<a href=\"https://twitter.com/unum_cloud\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/twitter.svg\" alt=\"Twitter\"></a>\n&nbsp;&nbsp;&nbsp;\n<a href=\"https://unum.cloud/post\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/blog.svg\" alt=\"Blog\"></a>\n&nbsp;&nbsp;&nbsp;\n<a href=\"https://github.com/unum-cloud/uform\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/github.svg\" alt=\"GitHub\"></a>\n</p>\n\n---\n\nUForm is a Multi-Modal Modal Inference package, designed to encode Multi-Lingual Texts, Images, and, soon, Audio, Video, and Documents, into a shared vector space!\nIt comes with a set of homonymous pre-trained networks available on [HuggingFace portal](https://huggingface.co/unum-cloud/uform) and extends the `transfromers` package to support Mid-fusion Models.\n\n## Three Kinds of Multi-Modal Encoding\n\n![Early, Mid and Late Fusion Transformer Models](assets/model_types_bg.png)\n\n__Late-fusion models__ encode each modality independently, but into one shared vector space.\nDue to independent encoding late-fusion models are good at capturing coarse-grained features but often neglect fine-grained ones.\nThis type of models is well-suited for retrieval in large collections.\nThe most famous example of such models is CLIP by OpenAI.\n\n__Early-fusion models__ encode both modalities jointly so they can take into account fine-grained features.\nUsually, these models are used for re-ranking relatively small retrieval results.\n\n__Mid-fusion models__ are the golden midpoint between the previous two types.\nMid-fusion models consist of two parts \u2013 unimodal and multimodal.\nThe unimodal part allows encoding each modality separately as late-fusion models do.\nThe multimodal part takes unimodal features from the unimodal part as input and enhances them with a cross-attention mechanism.\n\nThis tiny package will help you deal with the last!\n\n## Installation\n\n```bash\npip install uform\n```\n\n## Usage\n\nTo load the model:\n\n```python\nimport uform\n\nmodel = uform.get_model('english')\nmodel = uform.get_model('multilingual')\n```\n\nTo encode data:\n\n```python\nfrom PIL import Image\n\ntext = 'a small red panda in a zoo'\nimage = Image.open('red_panda.jpg')\n\nimage_data = model.preprocess_image(image).unsqueeze(0)\ntext_data = model.preprocess_text(text)\n\nimage_embedding = model.encode_image(image_data)\ntext_embedding = model.encode_text(text_data)\njoint_embedding = model.encode_multimodal(image=image_data, text=text_data)\n```\n\nRetrieving features is also trivial:\n\n```python\nimage_features, image_embedding = model.encode_image(image_data, return_features=True)\ntext_features, text_embedding = model.encode_text(text_data, return_features=True)\n```\n\nThese features can later be used to produce joint multimodal encodings faster, as the first layers of the transformer can be skipped:\n\n```python\njoint_embedding = model.encode_multimodal(\n    image_features=image_features,\n    text_features=text_features,\n    attention_mask=text_data['attention_mask']\n)\n```\n\n## Evaluation\n\nThere are two options to calculate semantic compatibility between an image and a text: [Cosine Similarity](#cosine-similarity) and [Matching Score](#matching-score).\n\n### Cosine Similarity\n\n```python\nimport torch.nn.functional as F\n\nsimilarity = F.cosine_similarity(image_embedding, text_embedding)\n```\n\nThe `similarity` will belong to the `[-1, 1]` range, `1` meaning the absolute match.\n\n__Pros__:\n\n- Computationally cheap.\n- Only unimodal embeddings are required, unimodal encoding is faster than joint encoding.\n- Suitable for retrieval in large collections.\n\n__Cons__:\n\n- Takes into account only coarse-grained features.\n\n\n### Matching Score \n\nUnlike cosine similarity, unimodal embedding are not enough.\nJoint embedding will be needed and the resulting `score` will belong to the `[0, 1]` range, `1` meaning the absolute match.\n\n```python\nscore = model.get_matching_scores(joint_embedding)\n```\n\n__Pros__:\n\n- Joint embedding captures fine-grained features.\n- Suitable for re-ranking - sorting retrieval result.\n\n__Cons__:\n\n- Resource-intensive.\n- Not suitable for retrieval in large collections.\n\n## Models\n\n### Architecture\n\n| Model        | Language Tower | Image Tower | Multimodal Part |                     URL |\n| :----------- | :------------: | :---------: | :-------------: | ----------------------: |\n| English      | BERT, 2 layers |  ViT-B/16   |    2 layers     | [weights.pt][weights-e] |\n| Multilingual | BERT, 8 layers |  ViT-B/16   |    4 layers     | [weights.pt][weights-m] |\n\nThe Multilingual model supports 11 languages, after being trained on a balanced dataset.\n\n|      |      |      |      |\n| :--- | :--- | :--- | :--- |\n| en   | de   | es   | fr   |\n| it   | jp   | ko   | pl   |\n| ru   | tr   | zh   |      |\n\n[weights-e]: https://huggingface.co/unum-cloud/uform/resolve/main/english/weight.pt\n[weights-m]: https://huggingface.co/unum-cloud/uform/resolve/main/multilingual/weight.pt\n\n### Performance\n\nOn RTX 3090, the following performance is expected from `uform` on text encoding.\n\n| Model                     | Multilingual | Sequences per Second |    Speedup |\n| :------------------------ | -----------: | -------------------: | ---------: |\n| `bert-base-uncased`       |           No |                1'612 |            |\n| `distilbert-base-uncased` |           No |                3'174 |     x 1.96 |\n| `MiniLM-L12`              |          Yes |                3'604 |     x 2.24 |\n| `MiniLM-L6`               |           No |                6'107 |     x 3.79 |\n|                           |              |                      |            |\n| `uform`                   |          Yes |                6'809 | __x 4.22__ |\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -133,7 +132,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17009258,
+        "last_serial": 17015359,
         "urls": [
             {
                 "comment_text": "",
@@ -174,6 +173,187 @@
                 "upload_time": "2023-02-23T22:23:23",
                 "upload_time_iso_8601": "2023-02-23T22:23:23.931668Z",
                 "url": "https://files.pythonhosted.org/packages/2b/ed/230ac4c2a9326bee3059e7af82e133923c2dc5f59b17f1d57cd9e83fc495/uform-0.0.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.3": {
+        "info": {
+            "author": "",
+            "author_email": "Mikhail Kim <mike.kim@unum.cloud>, Vladimir Orshulevich <vladimir.orshulevich@unum.cloud>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "License :: OSI Approved :: Apache Software License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Topic :: Scientific/Engineering :: Artificial Intelligence"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "unum <info@unum.cloud>",
+            "name": "uform",
+            "package_url": "https://pypi.org/project/uform/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/uform/",
+            "project_urls": {
+                "Homepage": "https://github.com/unum-cloud/uform"
+            },
+            "release_url": "https://pypi.org/project/uform/0.0.3/",
+            "requires_dist": [
+                "transformers (>=4.22.0)",
+                "timm (>0.6.11)"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "Efficient Multi-Modal Semantic Search Models by Unum",
+            "version": "0.0.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17015359,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a7ae516e11ae69b15247c52d2c11c0fd9f69b97b5678b5d2aa20244857fef438",
+                    "md5": "f1ffdb1ee6c3fe952f6fed402ee69131",
+                    "sha256": "7c533bbf9a9be6a1919624bd842d0590f5908bd5301bc3817185f4e2ae389912"
+                },
+                "downloads": -1,
+                "filename": "uform-0.0.3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "f1ffdb1ee6c3fe952f6fed402ee69131",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 10699,
+                "upload_time": "2023-02-24T13:56:32",
+                "upload_time_iso_8601": "2023-02-24T13:56:32.378445Z",
+                "url": "https://files.pythonhosted.org/packages/a7/ae/516e11ae69b15247c52d2c11c0fd9f69b97b5678b5d2aa20244857fef438/uform-0.0.3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f7acf2a5bfc80887a05cb5e9d638a606402fe2b6ebdee07ed9f886445bdc89f8",
+                    "md5": "f9f9bc3ee2b1541fe151e33c6e6510f3",
+                    "sha256": "e4d8814258b4b7cf9f0bc66a5b099003ca98b888b82fc1a51ff33f2e42ea54fa"
+                },
+                "downloads": -1,
+                "filename": "uform-0.0.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "f9f9bc3ee2b1541fe151e33c6e6510f3",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 10474,
+                "upload_time": "2023-02-24T13:56:33",
+                "upload_time_iso_8601": "2023-02-24T13:56:33.779226Z",
+                "url": "https://files.pythonhosted.org/packages/f7/ac/f2a5bfc80887a05cb5e9d638a606402fe2b6ebdee07ed9f886445bdc89f8/uform-0.0.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.4": {
+        "info": {
+            "author": "",
+            "author_email": "Mikhail Kim <mike.kim@unum.cloud>, Vladimir Orshulevich <vladimir.orshulevich@unum.cloud>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "License :: OSI Approved :: Apache Software License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Topic :: Scientific/Engineering :: Artificial Intelligence"
+            ],
+            "description": "<h1 align=\"center\">UForm</h1>\n<h3 align=\"center\">\nMulti-Modal Inference Library<br/>\nFor Semantic Search Applications<br/>\n</h3>\n<br/>\n\n<p align=\"center\">\n<a href=\"https://discord.gg/jsMURnSFM2\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/discord.svg\" alt=\"Discord\"></a>\n&nbsp;&nbsp;&nbsp;\n<a href=\"https://www.linkedin.com/company/unum-cloud/\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/linkedin.svg\" alt=\"LinkedIn\"></a>\n&nbsp;&nbsp;&nbsp;\n<a href=\"https://twitter.com/unum_cloud\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/twitter.svg\" alt=\"Twitter\"></a>\n&nbsp;&nbsp;&nbsp;\n<a href=\"https://unum.cloud/post\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/blog.svg\" alt=\"Blog\"></a>\n&nbsp;&nbsp;&nbsp;\n<a href=\"https://github.com/unum-cloud/uform\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/github.svg\" alt=\"GitHub\"></a>\n</p>\n\n---\n\nUForm is a Multi-Modal Modal Inference package, designed to encode Multi-Lingual Texts, Images, and, soon, Audio, Video, and Documents, into a shared vector space!\nIt comes with a set of homonymous pre-trained networks available on [HuggingFace portal](https://huggingface.co/unum-cloud/uform) and extends the `transfromers` package to support Mid-fusion Models.\n\n## Three Kinds of Multi-Modal Encoding\n\n![Early, Mid and Late Fusion Transformer Models](https://raw.githubusercontent.com/unum-cloud/uform/main/assets/model_types_bg.png)\n\n__Late-fusion models__ encode each modality independently, but into one shared vector space.\nDue to independent encoding late-fusion models are good at capturing coarse-grained features but often neglect fine-grained ones.\nThis type of models is well-suited for retrieval in large collections.\nThe most famous example of such models is CLIP by OpenAI.\n\n__Early-fusion models__ encode both modalities jointly so they can take into account fine-grained features.\nUsually, these models are used for re-ranking relatively small retrieval results.\n\n__Mid-fusion models__ are the golden midpoint between the previous two types.\nMid-fusion models consist of two parts \u2013 unimodal and multimodal.\nThe unimodal part allows encoding each modality separately as late-fusion models do.\nThe multimodal part takes unimodal features from the unimodal part as input and enhances them with a cross-attention mechanism.\n\nThis tiny package will help you deal with the last!\n\n## Installation\n\n```bash\npip install uform\n```\n\n## Usage\n\nTo load the model:\n\n```python\nimport uform\n\nmodel = uform.get_model('english')\nmodel = uform.get_model('multilingual')\n```\n\nTo encode data:\n\n```python\nfrom PIL import Image\n\ntext = 'a small red panda in a zoo'\nimage = Image.open('red_panda.jpg')\n\nimage_data = model.preprocess_image(image).unsqueeze(0)\ntext_data = model.preprocess_text(text)\n\nimage_embedding = model.encode_image(image_data)\ntext_embedding = model.encode_text(text_data)\njoint_embedding = model.encode_multimodal(image=image_data, text=text_data)\n```\n\nRetrieving features is also trivial:\n\n```python\nimage_features, image_embedding = model.encode_image(image_data, return_features=True)\ntext_features, text_embedding = model.encode_text(text_data, return_features=True)\n```\n\nThese features can later be used to produce joint multimodal encodings faster, as the first layers of the transformer can be skipped:\n\n```python\njoint_embedding = model.encode_multimodal(\n    image_features=image_features,\n    text_features=text_features,\n    attention_mask=text_data['attention_mask']\n)\n```\n\n## Evaluation\n\nThere are two options to calculate semantic compatibility between an image and a text: [Cosine Similarity](#cosine-similarity) and [Matching Score](#matching-score).\n\n### Cosine Similarity\n\n```python\nimport torch.nn.functional as F\n\nsimilarity = F.cosine_similarity(image_embedding, text_embedding)\n```\n\nThe `similarity` will belong to the `[-1, 1]` range, `1` meaning the absolute match.\n\n__Pros__:\n\n- Computationally cheap.\n- Only unimodal embeddings are required, unimodal encoding is faster than joint encoding.\n- Suitable for retrieval in large collections.\n\n__Cons__:\n\n- Takes into account only coarse-grained features.\n\n\n### Matching Score \n\nUnlike cosine similarity, unimodal embedding are not enough.\nJoint embedding will be needed and the resulting `score` will belong to the `[0, 1]` range, `1` meaning the absolute match.\n\n```python\nscore = model.get_matching_scores(joint_embedding)\n```\n\n__Pros__:\n\n- Joint embedding captures fine-grained features.\n- Suitable for re-ranking - sorting retrieval result.\n\n__Cons__:\n\n- Resource-intensive.\n- Not suitable for retrieval in large collections.\n\n## Models\n\n### Architecture\n\n| Model        | Language Tower | Image Tower | Multimodal Part |                     URL |\n| :----------- | :------------: | :---------: | :-------------: | ----------------------: |\n| English      | BERT, 2 layers |  ViT-B/16   |    2 layers     | [weights.pt][weights-e] |\n| Multilingual | BERT, 8 layers |  ViT-B/16   |    4 layers     | [weights.pt][weights-m] |\n\nThe Multilingual model supports 11 languages, after being trained on a balanced dataset.\n\n|      |      |      |      |\n| :--- | :--- | :--- | :--- |\n| en   | de   | es   | fr   |\n| it   | jp   | ko   | pl   |\n| ru   | tr   | zh   |      |\n\n[weights-e]: https://huggingface.co/unum-cloud/uform/resolve/main/english/weight.pt\n[weights-m]: https://huggingface.co/unum-cloud/uform/resolve/main/multilingual/weight.pt\n\n### Performance\n\nOn RTX 3090, the following performance is expected from `uform` on text encoding.\n\n| Model                     | Multilingual | Sequences per Second |    Speedup |\n| :------------------------ | -----------: | -------------------: | ---------: |\n| `bert-base-uncased`       |           No |                1'612 |            |\n| `distilbert-base-uncased` |           No |                3'174 |     x 1.96 |\n| `MiniLM-L12`              |          Yes |                3'604 |     x 2.24 |\n| `MiniLM-L6`               |           No |                6'107 |     x 3.79 |\n|                           |              |                      |            |\n| `uform`                   |          Yes |                6'809 | __x 4.22__ |\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "unum <info@unum.cloud>",
+            "name": "uform",
+            "package_url": "https://pypi.org/project/uform/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/uform/",
+            "project_urls": {
+                "Homepage": "https://github.com/unum-cloud/uform"
+            },
+            "release_url": "https://pypi.org/project/uform/0.0.4/",
+            "requires_dist": [
+                "transformers (>=4.22.0)",
+                "timm (>0.6.11)"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "Efficient Multi-Modal Semantic Search Models by Unum",
+            "version": "0.0.4",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17015359,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "168f8eff6d151271cbeec2cab48153571fd48c30d260f1d725d412ae57612951",
+                    "md5": "c3b1844edad748844387dc00d96bb577",
+                    "sha256": "a889ae17e7fd9777b563098c098f0bb124e5b2e6eee475429c29d6596aace1d3"
+                },
+                "downloads": -1,
+                "filename": "uform-0.0.4-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "c3b1844edad748844387dc00d96bb577",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 10732,
+                "upload_time": "2023-02-24T15:32:31",
+                "upload_time_iso_8601": "2023-02-24T15:32:31.728706Z",
+                "url": "https://files.pythonhosted.org/packages/16/8f/8eff6d151271cbeec2cab48153571fd48c30d260f1d725d412ae57612951/uform-0.0.4-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "761bbe8f2bc987364eedd80f334819e9237a787977122e140017fe627b65f135",
+                    "md5": "01231230a38b4d88598522e9ecd5983c",
+                    "sha256": "ef7660edd260981127259f4bc60fb470e3f23a86f385d8c40f3bc5731479182f"
+                },
+                "downloads": -1,
+                "filename": "uform-0.0.4.tar.gz",
+                "has_sig": false,
+                "md5_digest": "01231230a38b4d88598522e9ecd5983c",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 10515,
+                "upload_time": "2023-02-24T15:32:33",
+                "upload_time_iso_8601": "2023-02-24T15:32:33.459953Z",
+                "url": "https://files.pythonhosted.org/packages/76/1b/be8f2bc987364eedd80f334819e9237a787977122e140017fe627b65f135/uform-0.0.4.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
