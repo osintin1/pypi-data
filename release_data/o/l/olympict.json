@@ -44,7 +44,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17108231,
+        "last_serial": 17118132,
         "urls": [
             {
                 "comment_text": "",
@@ -136,7 +136,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17108231,
+        "last_serial": 17118132,
         "urls": [
             {
                 "comment_text": "",
@@ -228,7 +228,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17108231,
+        "last_serial": 17118132,
         "urls": [
             {
                 "comment_text": "",
@@ -288,7 +288,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "# Olympict\n\n![coverage](https://gitlab.com/gabraken/olympict/badges/master/coverage.svg?job=tests)![status](https://gitlab.com/gabraken/olympict/badges/master/pipeline.svg)\n\n![Olympict](https://gitlab.com/gabraken/olympict/-/raw/master/Olympict.png)\n\n\nBased on [olympipe](https://pypi.org/project/olympipe/), this project will make image processing pipelines easy to use using the basic multiprocessing module. \nThis module uses type checking to ensure your data process validity from the start.\n\n## Basic image processing pipeline\n\n### Loading images from a folder and resize them to a new folder\n\n```python\nfrom olympict import ImagePipeline\n\np0 = ImagePipeline.load_folder(\"./examples\") # path containing the images\np1 = p0.resize((150, 250)) # new width, new height\np2 = p1.save_to_folder(\"./resized_examples\") # path to save the images\np2.wait_for_completion() # the code blocks here until all images are processed\n\nprint(\"Finished resizing\")\n```\n\n### Loading images from a folder and overwrite them with a new size\n\n```python\nfrom olympict import ImagePipeline\n\np0 = ImagePipeline.load_folder(\"./examples\") # path containing the images\np1 = p0.resize((150, 250))\np2 = p1.save() # overwrite the images\np2.wait_for_completion()\n```\n\n### Loading images from a folder and resize them keeping the aspect ratio using a padding color\n\n```python\nfrom olympict import ImagePipeline\nblue = (255, 0, 0) # Colors are BGR to match opencv format\n\np0 = ImagePipeline.load_folder(\"./examples\")\np1 = p0.resize((150, 250), pad_color=blue)\np2 = p1.save() # overwrite the images\np2.wait_for_completion()\n```\n\n### Load image to make a specific operation\n\n```python\nfrom olympict import ImagePipeline, Img\n\ndef operation(image: Img) -> Img:\n    # set the green channel as a mean of blue and red channels\n    img[:, :, 1] = (img[:, :, 0] + img[:, :, 2]) / 2\n    return img\n\np0 = ImagePipeline.load_folder(\"./examples\")\np1 = p0.task_img(operation)\np2 = p1.save() # overwrite the images\np2.wait_for_completion()\n```\n\n\n### Check ongoing operation\n\n```python\nfrom olympict import ImagePipeline, Img\n\ndef operation(image: Img) -> Img:\n    # set the green channel as a mean of blue and red channels\n    img[:, :, 1] = (img[:, :, 0] + img[:, :, 2]) / 2\n    return img\n\np0 = ImagePipeline.load_folder(\"./examples\").debug_window(\"Raw image\")\np1 = p0.task_img(operation).debug_window(\"Processed image\")\np2 = p1.save() # overwrite the images\np2.wait_for_completion()\n```\n\n### Load a video and process each individual frame\n\n```python\nfrom olympict import VideoPipeline\n\np0 = VideoPipeline.load_folder(\"./examples\") # will load .mp4 and .mkv files\n\np1 = p0.to_sequence() # split each video frame into a basic image\n\np2 = p1.resize((100, 3), (255, 255, 255)) # resize each image with white padding\n\np3 = p2.save_to_folder(\"./sequence\") # save images individually\n\np3.wait_for_completion()\n\nimg_paths = glob(\"./sequence/*.png\") # count images\n\nprint(\"Number of images:\", len(img_paths))\n```\n\n\n### Complex example with preview windows\n```python\nimport os\nfrom random import randint\nimport re\nimport time\nfrom olympict import ImagePipeline\nfrom olympict.files.o_image import OlympImage\n\n\ndef img_simple_order(path: str) -> int:\n    number_pattern = r\"\\d+\"\n    res = re.findall(number_pattern, os.path.basename(path))\n\n    return int(res[0])\n\n\nif __name__ == \"__main__\":\n\n    def wait(x: OlympImage):\n        time.sleep(0.1)\n        print(x.path)\n        return x\n\n    def generator():\n        for i in range(96):\n            img = np.zeros((256, 256, 3), np.uint8)\n            img[i, :, :] = (255, 255, 255)\n\n            o = OlympImage()\n            o.path = f'/tmp/{i}.png'\n            o.img = img\n            yield o\n        return\n\n    p = (\n        ImagePipeline(generator())\n        .task(wait)\n        .debug_window(\"start it\")\n        .task_img(lambda x: x[::-1, :, :])\n        .debug_window(\"flip it\")\n        .keep_each_frame_in(1, 3)\n        .debug_window(\"stuttered\")\n        .draw_bboxes(\n            lambda x: [\n                (\n                    (\n                        randint(0, 50),\n                        randint(0, 50),\n                        randint(100, 200),\n                        randint(100, 200),\n                        \"change\",\n                        0.5,\n                    ),\n                    (randint(0, 255), 25, 245),\n                )\n            ]\n        )\n        .debug_window(\"bboxed\")\n    )\n\n    p.wait_for_completion()\n\n```\n\n\n## Basic usage\n\nEach pipeline starts from an interator as a source of packets (a list, tuple, or any complex iterator). This pipeline will then be extended by adding basic `.task(<function>)`. The pipeline process join the main process when using the `.wait_for_results()` or `.wait_for_completion()` functions.\n\n```python\n\nfrom olympict import Pipeline\n\ndef times_2(x: int) -> int:\n    return x * 2\n\np = Pipeline(range(10))\n\np1 = p.task(times_2) # Multiply each packet by 2\n# or \np1 = p.task(lambda x: x * 2) # using a lambda function\n\nres = p1.wait_for_results()\n\nprint(res) # [0, 2, 4, 6, 8, 10, 12, 14, 16, 18]\n\n```\n\n\n## Filtering\n\nYou can choose which packets to `.filter(<keep_function>)` by passing them a function returning True or False when applied to this packet.\n\n```python\n\nfrom olympict import Pipeline\n\np = Pipeline(range(20))\np1 = p.filter(lambda x: x % 2 == 0) # Keep pair numbers\np2 = p1.batch(2) # Group in arrays of 2 elements\n\nres = p2.wait_for_results()\n\nprint(res) # [[0, 2], [4, 6], [8, 10], [12, 14], [16, 18]]\n\n```\n\n## In line formalization\n\nYou can chain declarations to have a more readable pipeline.\n\n```python\n\nfrom olympict import Pipeline\n\nres = Pipeline(range(20)).filter(lambda x: x % 2 == 0).batch(2).wait_for_results()\n\nprint(res) # [[0, 2], [4, 6], [8, 10], [12, 14], [16, 18]]\n\n```\n\n## Debugging\n\nInterpolate `.debug()` function anywhere in the pipe to print packets as they arrive in the pipe.\n\n```python\nfrom olympict import Pipeline\n\np = Pipeline(range(20))\np1 = p.filter(lambda x: x % 2 == 0).debug() # Keep pair numbers\np2 = p1.batch(2).debug() # Group in arrays of 2 elements\n\np2.wait_for_completion()\n```\n\n## Pipeline forking\n\nFor the time being, you have to adapt the code a little bit if you wish to get several outputs for a same pipeline. [This section might be updated soon]\n\n```python\nfrom olympict import Pipeline\n\np1 = Pipeline(range(10))\np2 = p1.filter(lambda x: x % 2 == 0)\np3 = p1.filter(lambda x: x % 2 == 1)\n\nq2 = p2.prepare_output_buffer()\nq3 = p3.prepare_output_buffer()\n\nres3 = p3.wait_for_results(q3)\nres2 = p2.wait_for_results(q2)\n\nprint(res3) # [1, 3, 5, 7, 9]\nprint(res2) # [0, 2, 4, 6, 8]\n\n```\n\n## Real time processing (for sound, video...)\n\nUse the `.temporal_batch(<seconds_float>)` pipe to aggregate packets received at this point each <seconds_float> seconds.\n\n```python\nimport time\nfrom olympict import Pipeline\n\ndef delay(x: int) -> int:\n    time.sleep(0.1)\n    return x\n\np = Pipeline(range(20)).task(delay) # Wait 0.1 s for each queue element\np1 = p.filter(lambda x: x % 2 == 0) # Keep pair numbers\np2 = p1.temporal_batch(1.0) # Group in arrays of 2 elements\n\nres = p2.wait_for_results()\n\nprint(res) # [[0, 2, 4, 6, 8], [10, 12, 14, 16, 18], []]\n```\n\n## Using classes in a pipeline\n\nYou can add a stateful class instance to a pipeline. The method used will be typecheked as well to ensure data coherence. You just have to use the `.class_task(<Class>, <Class.method>, ...)` method where Class.method is the actual method you will use to process each packet.\n\n```python\nitem_count  = 5\n\nclass StockPile:\n    def __init__(self, mul:int):\n        self.mul = mul\n        self.last = 0\n        \n    def pile(self, num: int) -> int:\n        out = self.last\n        self.last = num * self.mul\n        return out\n        \n\np1 = Pipeline(range(item_count))\n\np2 = p1.class_task(StockPile, StockPile.pile, [3])\n\nres = p2.wait_for_results()\n\nprint(res) # [0, 0, 3, 6, 9]\n\n```\n\n\nThis project is still an early version, feedback is very helpful.",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -322,7 +321,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17108231,
+        "last_serial": 17118132,
         "urls": [
             {
                 "comment_text": "",
@@ -363,6 +362,375 @@
                 "upload_time": "2023-03-01T08:00:56",
                 "upload_time_iso_8601": "2023-03-01T08:00:56.456172Z",
                 "url": "https://files.pythonhosted.org/packages/30/d3/7fa6dcec59a64f1344dadd08d101ae10d9c41d9e823ccc422711bcea9c0e/olympict-1.0.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.0.1": {
+        "info": {
+            "author": "Gabriel Kasser",
+            "author_email": "gabriel.kasser@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://gitlab.com/gabraken/olympict",
+            "keywords": "image,parallel,multiprocessing,pipeline",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "olympict",
+            "package_url": "https://pypi.org/project/olympict/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/olympict/",
+            "project_urls": {
+                "Documentation": "https://gitlab.com/gabraken/olympict/-/blob/master/README.md",
+                "Homepage": "https://gitlab.com/gabraken/olympict",
+                "Repository": "https://gitlab.com/gabraken/olympict"
+            },
+            "release_url": "https://pypi.org/project/olympict/1.0.1/",
+            "requires_dist": [
+                "olympipe (>=1.0.3)",
+                "opencv-python (>=4.6.0.66,<5.0.0.0)"
+            ],
+            "requires_python": ">=3.7, !=2.7.*, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*, !=3.6.*",
+            "summary": "A powerful parallel pipelining tool for image processing",
+            "version": "1.0.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17118132,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c685fbbd0374992765a13de993e950daff43b1ca0a9a705fa571519154d2d3ef",
+                    "md5": "9e097a5508ddc258de32b04984ccee06",
+                    "sha256": "38d62358b8494384ed81eb063a15e6fa0c649833f88183c9cb0b4c10ad139a37"
+                },
+                "downloads": -1,
+                "filename": "olympict-1.0.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "9e097a5508ddc258de32b04984ccee06",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7, !=2.7.*, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*, !=3.6.*",
+                "size": 14937,
+                "upload_time": "2023-03-01T19:22:26",
+                "upload_time_iso_8601": "2023-03-01T19:22:26.954937Z",
+                "url": "https://files.pythonhosted.org/packages/c6/85/fbbd0374992765a13de993e950daff43b1ca0a9a705fa571519154d2d3ef/olympict-1.0.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a8ed56c7eeeea7220045c231f9bcf6bb2e3cb5d61ca5f4c058e9c40f194431f6",
+                    "md5": "c8e369630b66609f028740115d31b78a",
+                    "sha256": "432d4a2479af9225afb2e34d7b0073ee9f23809f27228c81723ca8e4639e656b"
+                },
+                "downloads": -1,
+                "filename": "olympict-1.0.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "c8e369630b66609f028740115d31b78a",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7, !=2.7.*, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*, !=3.6.*",
+                "size": 13354,
+                "upload_time": "2023-03-01T19:22:28",
+                "upload_time_iso_8601": "2023-03-01T19:22:28.226301Z",
+                "url": "https://files.pythonhosted.org/packages/a8/ed/56c7eeeea7220045c231f9bcf6bb2e3cb5d61ca5f4c058e9c40f194431f6/olympict-1.0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.0.2": {
+        "info": {
+            "author": "Gabriel Kasser",
+            "author_email": "gabriel.kasser@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://gitlab.com/gabraken/olympict",
+            "keywords": "image,parallel,multiprocessing,pipeline",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "olympict",
+            "package_url": "https://pypi.org/project/olympict/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/olympict/",
+            "project_urls": {
+                "Documentation": "https://gitlab.com/gabraken/olympict/-/blob/master/README.md",
+                "Homepage": "https://gitlab.com/gabraken/olympict",
+                "Repository": "https://gitlab.com/gabraken/olympict"
+            },
+            "release_url": "https://pypi.org/project/olympict/1.0.2/",
+            "requires_dist": [
+                "olympipe (>=1.0.3)",
+                "opencv-python (>=4.6.0.66,<5.0.0.0)"
+            ],
+            "requires_python": ">=3.7, !=2.7.*, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*, !=3.6.*",
+            "summary": "A powerful parallel pipelining tool for image processing",
+            "version": "1.0.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17118132,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ce21a67bff76195ad6a188b243ed7814e78197e5dba2c0871a418e81389514ba",
+                    "md5": "36788cd7a5a7374d0c9e0b61d4aa7aa0",
+                    "sha256": "dbac9058de02b163a27c8a670a81f8a1be5ee519d0d314e6459865965a8ed59b"
+                },
+                "downloads": -1,
+                "filename": "olympict-1.0.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "36788cd7a5a7374d0c9e0b61d4aa7aa0",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7, !=2.7.*, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*, !=3.6.*",
+                "size": 14939,
+                "upload_time": "2023-03-01T19:35:50",
+                "upload_time_iso_8601": "2023-03-01T19:35:50.210230Z",
+                "url": "https://files.pythonhosted.org/packages/ce/21/a67bff76195ad6a188b243ed7814e78197e5dba2c0871a418e81389514ba/olympict-1.0.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6645a6a454c63af40bd1eaacef88ca8456c42dbbe5865b18aa97bc7a6ebb9681",
+                    "md5": "2870b27f6b03fb677eb0f01d1d3644af",
+                    "sha256": "968403846a8eab38a8cb40d12547dcfcbca12aeb24db0baaf104d4a0dbd5ef53"
+                },
+                "downloads": -1,
+                "filename": "olympict-1.0.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "2870b27f6b03fb677eb0f01d1d3644af",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7, !=2.7.*, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*, !=3.6.*",
+                "size": 13368,
+                "upload_time": "2023-03-01T19:35:51",
+                "upload_time_iso_8601": "2023-03-01T19:35:51.512943Z",
+                "url": "https://files.pythonhosted.org/packages/66/45/a6a454c63af40bd1eaacef88ca8456c42dbbe5865b18aa97bc7a6ebb9681/olympict-1.0.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.0.3": {
+        "info": {
+            "author": "Gabriel Kasser",
+            "author_email": "gabriel.kasser@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://gitlab.com/gabraken/olympict",
+            "keywords": "image,parallel,multiprocessing,pipeline",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "olympict",
+            "package_url": "https://pypi.org/project/olympict/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/olympict/",
+            "project_urls": {
+                "Documentation": "https://gitlab.com/gabraken/olympict/-/blob/master/README.md",
+                "Homepage": "https://gitlab.com/gabraken/olympict",
+                "Repository": "https://gitlab.com/gabraken/olympict"
+            },
+            "release_url": "https://pypi.org/project/olympict/1.0.3/",
+            "requires_dist": [
+                "olympipe (>=1.0.3)",
+                "opencv-python (>=4.6.0.66,<5.0.0.0)"
+            ],
+            "requires_python": ">=3.7, !=2.7.*, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*, !=3.6.*",
+            "summary": "A powerful parallel pipelining tool for image processing",
+            "version": "1.0.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17118132,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "dfe9d8f8e29cbf47edd818a284fdce590ef622ca31e53e6c50d32ea4e1ea7d9c",
+                    "md5": "0a53e053a03d9aaa5c1f8cfbce66918b",
+                    "sha256": "32315aa29c66cd0203da5e7c9d97be691fc630df7b3099ecbfca0174b64c236e"
+                },
+                "downloads": -1,
+                "filename": "olympict-1.0.3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "0a53e053a03d9aaa5c1f8cfbce66918b",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7, !=2.7.*, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*, !=3.6.*",
+                "size": 14986,
+                "upload_time": "2023-03-01T20:10:02",
+                "upload_time_iso_8601": "2023-03-01T20:10:02.970663Z",
+                "url": "https://files.pythonhosted.org/packages/df/e9/d8f8e29cbf47edd818a284fdce590ef622ca31e53e6c50d32ea4e1ea7d9c/olympict-1.0.3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "b3e208f369c751781381f06d7514fd5a10c112a1d50fa14371e290d743a65db8",
+                    "md5": "75c25a398a1264c45cc7ece349bd37aa",
+                    "sha256": "043a7bfbf71ee1dd17bdfb887db2f69f3f7c4e91c7f6d41ae533e6dc68d3d9bc"
+                },
+                "downloads": -1,
+                "filename": "olympict-1.0.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "75c25a398a1264c45cc7ece349bd37aa",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7, !=2.7.*, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*, !=3.6.*",
+                "size": 13373,
+                "upload_time": "2023-03-01T20:10:04",
+                "upload_time_iso_8601": "2023-03-01T20:10:04.163140Z",
+                "url": "https://files.pythonhosted.org/packages/b3/e2/08f369c751781381f06d7514fd5a10c112a1d50fa14371e290d743a65db8/olympict-1.0.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.0.4": {
+        "info": {
+            "author": "Gabriel Kasser",
+            "author_email": "gabriel.kasser@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8"
+            ],
+            "description": "# Olympict\n\n![coverage](https://gitlab.com/gabraken/olympict/badges/master/coverage.svg?job=tests)![status](https://gitlab.com/gabraken/olympict/badges/master/pipeline.svg)\n\n![Olympict](https://gitlab.com/gabraken/olympict/-/raw/master/Olympict.png)\n\n\nBased on [olympipe](https://pypi.org/project/olympipe/), this project will make image processing pipelines easy to use using the basic multiprocessing module. \nThis module uses type checking to ensure your data process validity from the start.\n\n## Basic image processing pipeline\n\n### Loading images from a folder and resize them to a new folder\n\n```python\nfrom olympict import ImagePipeline\n\np0 = ImagePipeline.load_folder(\"./examples\") # path containing the images\np1 = p0.resize((150, 250)) # new width, new height\np2 = p1.save_to_folder(\"./resized_examples\") # path to save the images\np2.wait_for_completion() # the code blocks here until all images are processed\n\nprint(\"Finished resizing\")\n```\n\n### Loading images from a folder and overwrite them with a new size\n\n```python\nfrom olympict import ImagePipeline\n\np0 = ImagePipeline.load_folder(\"./examples\") # path containing the images\np1 = p0.resize((150, 250))\np2 = p1.save() # overwrite the images\np2.wait_for_completion()\n```\n\n### Loading images from a folder and resize them keeping the aspect ratio using a padding color\n\n```python\nfrom olympict import ImagePipeline\nblue = (255, 0, 0) # Colors are BGR to match opencv format\n\np0 = ImagePipeline.load_folder(\"./examples\")\np1 = p0.resize((150, 250), pad_color=blue)\np2 = p1.save() # overwrite the images\np2.wait_for_completion()\n```\n\n### Load image to make a specific operation\n\n```python\nfrom olympict import ImagePipeline, Img\n\ndef operation(image: Img) -> Img:\n    # set the green channel as a mean of blue and red channels\n    img[:, :, 1] = (img[:, :, 0] + img[:, :, 2]) / 2\n    return img\n\np0 = ImagePipeline.load_folder(\"./examples\")\np1 = p0.task_img(operation)\np2 = p1.save() # overwrite the images\np2.wait_for_completion()\n```\n\n\n### Check ongoing operation\n\n```python\nfrom olympict import ImagePipeline, Img\n\ndef operation(image: Img) -> Img:\n    # set the green channel as a mean of blue and red channels\n    img[:, :, 1] = (img[:, :, 0] + img[:, :, 2]) / 2\n    return img\n\np0 = ImagePipeline.load_folder(\"./examples\").debug_window(\"Raw image\")\np1 = p0.task_img(operation).debug_window(\"Processed image\")\np2 = p1.save() # overwrite the images\np2.wait_for_completion()\n```\n\n### Load a video and process each individual frame\n\n```python\nfrom olympict import VideoPipeline\n\np0 = VideoPipeline.load_folder(\"./examples\") # will load .mp4 and .mkv files\n\np1 = p0.to_sequence() # split each video frame into a basic image\n\np2 = p1.resize((100, 3), (255, 255, 255)) # resize each image with white padding\n\np3 = p2.save_to_folder(\"./sequence\") # save images individually\n\np3.wait_for_completion()\n\nimg_paths = glob(\"./sequence/*.png\") # count images\n\nprint(\"Number of images:\", len(img_paths))\n```\n\n\n### Complex example with preview windows\n```python\nimport os\nfrom random import randint\nimport re\nimport time\nfrom olympict import ImagePipeline\nfrom olympict.files.o_image import OlympImage\n\n\ndef img_simple_order(path: str) -> int:\n    number_pattern = r\"\\d+\"\n    res = re.findall(number_pattern, os.path.basename(path))\n\n    return int(res[0])\n\n\nif __name__ == \"__main__\":\n\n    def wait(x: OlympImage):\n        time.sleep(0.1)\n        print(x.path)\n        return x\n\n    def generator():\n        for i in range(96):\n            img = np.zeros((256, 256, 3), np.uint8)\n            img[i, :, :] = (255, 255, 255)\n\n            o = OlympImage()\n            o.path = f'/tmp/{i}.png'\n            o.img = img\n            yield o\n        return\n\n    p = (\n        ImagePipeline(generator())\n        .task(wait)\n        .debug_window(\"start it\")\n        .task_img(lambda x: x[::-1, :, :])\n        .debug_window(\"flip it\")\n        .keep_each_frame_in(1, 3)\n        .debug_window(\"stuttered\")\n        .draw_bboxes(\n            lambda x: [\n                (\n                    (\n                        randint(0, 50),\n                        randint(0, 50),\n                        randint(100, 200),\n                        randint(100, 200),\n                        \"change\",\n                        0.5,\n                    ),\n                    (randint(0, 255), 25, 245),\n                )\n            ]\n        )\n        .debug_window(\"bboxed\")\n    )\n\n    p.wait_for_completion()\n\n```\n\nThis project is still an early version, feedback is very helpful.",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://gitlab.com/gabraken/olympict",
+            "keywords": "image,parallel,multiprocessing,pipeline",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "olympict",
+            "package_url": "https://pypi.org/project/olympict/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/olympict/",
+            "project_urls": {
+                "Documentation": "https://gitlab.com/gabraken/olympict/-/blob/master/README.md",
+                "Homepage": "https://gitlab.com/gabraken/olympict",
+                "Repository": "https://gitlab.com/gabraken/olympict"
+            },
+            "release_url": "https://pypi.org/project/olympict/1.0.4/",
+            "requires_dist": [
+                "olympipe (>=1.0.3)",
+                "opencv-python (>=4.6.0.66,<5.0.0.0)"
+            ],
+            "requires_python": ">=3.7, !=2.7.*, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*, !=3.6.*",
+            "summary": "A powerful parallel pipelining tool for image processing",
+            "version": "1.0.4",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17118132,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e3c6e53a9d93608bc9454a3fe7e4008ece062fb1e65a695df9aff11071b4cb9c",
+                    "md5": "5e78094ec75d705d358aa1edb221ab46",
+                    "sha256": "67092d69d58ca65b77fd1862083c7245233964c4bcd765b83d2ca08bbd3ca7b1"
+                },
+                "downloads": -1,
+                "filename": "olympict-1.0.4-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "5e78094ec75d705d358aa1edb221ab46",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7, !=2.7.*, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*, !=3.6.*",
+                "size": 13960,
+                "upload_time": "2023-03-01T21:20:03",
+                "upload_time_iso_8601": "2023-03-01T21:20:03.283009Z",
+                "url": "https://files.pythonhosted.org/packages/e3/c6/e53a9d93608bc9454a3fe7e4008ece062fb1e65a695df9aff11071b4cb9c/olympict-1.0.4-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "33bb6775b1f93a94f3ff7edc524039bb2561bbde2531edf65c83710ac27669b4",
+                    "md5": "d2140a1778afa6a7c74e37ebb7f9e190",
+                    "sha256": "1247498d40e53c90a3021a7796bd069e4ba034d1aa163b3f94aae61d17c02a0c"
+                },
+                "downloads": -1,
+                "filename": "olympict-1.0.4.tar.gz",
+                "has_sig": false,
+                "md5_digest": "d2140a1778afa6a7c74e37ebb7f9e190",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7, !=2.7.*, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*, !=3.6.*",
+                "size": 11347,
+                "upload_time": "2023-03-01T21:20:04",
+                "upload_time_iso_8601": "2023-03-01T21:20:04.898069Z",
+                "url": "https://files.pythonhosted.org/packages/33/bb/6775b1f93a94f3ff7edc524039bb2561bbde2531edf65c83710ac27669b4/olympict-1.0.4.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
