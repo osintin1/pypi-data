@@ -40,7 +40,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17033953,
+        "last_serial": 17120703,
         "urls": [
             {
                 "comment_text": "",
@@ -128,7 +128,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17033953,
+        "last_serial": 17120703,
         "urls": [
             {
                 "comment_text": "",
@@ -216,7 +216,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17033953,
+        "last_serial": 17120703,
         "urls": [
             {
                 "comment_text": "",
@@ -304,7 +304,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17033953,
+        "last_serial": 17120703,
         "urls": [
             {
                 "comment_text": "",
@@ -360,7 +360,6 @@
                 "License :: OSI Approved :: MIT License",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "# A lightweight application for consistent handling of kafka events\n\nThis application was developed to be a universal api endpoint for microservices that process kafka events.\n\n## Installation\n\n```\npip install kafka-python-app\n```\n\n## Usage\n\n#### Configure and create application instance.\n\nConfiguration parameters:\n\n- **app_name [OPTIONAL]**: application name.\n- **bootstrap_servers**: list of kafka bootstrap servers addresses 'host:port'.\n- **producer_config [OPTIONAL]**: kafka producer configuration (\n  see [kafka-python documentation](https://kafka-python.readthedocs.io/en/master/apidoc/KafkaProducer.html)).\n\n```python\n# Default producer config\nproducer_config = {\n    'key_serializer': lambda x: x.encode('utf-8') if x else x,\n    \"value_serializer\": lambda x: json.dumps(x).encode('utf-8')\n}\n```\n\n- **consumer_config [OPTIONAL]**: kafka consumer configuration (\n  see [kafka-python documentation](https://kafka-python.readthedocs.io/en/master/apidoc/KafkaConsumer.html)).\n\n```python\n# Default consumer config\nconf = {\n    'group_id': str(uuid.uuid4()),\n    'auto_offset_reset': 'earliest',\n    'enable_auto_commit': False,\n    'key_deserializer': lambda x: x.decode('utf-8') if x else x,\n    'value_deserializer': lambda x: json.loads(x.decode('utf-8')),\n    'session_timeout_ms': 25000\n}\n```\n\n- **listen_topics**: list of subscribed topics.\n- **message_key_as_event [OPTIONAL]**: set to True if using kafka message key as event name.\n\n> **_NOTE_** When setting ***message_key_as_event*** to True,\n> make sure to specify valid **key_deserializer** in **consumer_config**.\n\n- **message_value_cls**: dictionary {\"topic_name\": dataclass_type} that maps message dataclass type to specific topic.\n  The application uses this mapping to create specified dataclass from kafka message.value.\n- **middleware_message_cb [OPTIONAL]**: if provided, this callback will be executed with raw kafka message argument\n  before calling any handler.\n- **logger [OPTIONAL]**: any logger with standard log methods. If not provided, the standard python logger is used.\n\n```python\nfrom kafka_python_app.app import AppConfig, KafkaApp\n\n\n# Setup kafka message payload:\nclass MyMessage(pydantic.BaseModel):\n    event: str\n    prop1: str\n    prop2: int\n\n\n# This message type is specific for \"test_topic3\" only. \nclass MyMessageSpecific(pydantic.BaseModel):\n    event: str\n    prop3: bool\n    prop4: float\n\n\n# Create application config\nconfig = AppConfig(\n    app_name='Test application',\n    bootstrap_servers=['localhost:9092'],\n    consumer_config={\n        'group_id': 'test_app_group'\n    },\n    listen_topics=['test_topic1', 'test_topic2', 'test_topic3'],\n    message_value_cls={\n        'test_topic1': MyMessage,\n        'test_topic2': MyMessage,\n        'test_topic3': MyMessageSpecific\n    }\n)\n\n# Create application\napp = KafkaApp(config)\n```\n\n#### Create event handlers using **@app.on** decorator:\n\n```python\n# This handler will handle 'some_event' no matter which topic it comes from\n@app.on(event='some_event')\ndef handle_some_event(message: MyMessage, **kwargs):\n    print('Handling event: {}..'.format(message.event))\n    print('prop1: {}\\n'.format(message.prop1))\n    print('prop2: {}\\n'.format(message.prop2))\n\n\n# This handler will handle 'another_event' from 'test_topic2' only.\n# Events with this name but coming from another topic will be ignored.\n@app.on(event='another_event', topic='test_topic2')\ndef handle_some_event(message: MyMessage, **kwargs):\n    print('Handling event: {}..'.format(message.event))\n    print('prop1: {}\\n'.format(message.prop1))\n    print('prop2: {}\\n'.format(message.prop2))\n\n\n# This handler will handle 'another_event' from 'test_topic3' only.\n@app.on(event='another_event', topic='test_topic3')\ndef handle_some_event(message: MyMessageSpecific, **kwargs):\n    print('Handling event: {}..'.format(message.event))\n    print('prop3: {}\\n'.format(message.prop3))\n    print('prop4: {}\\n'.format(message.prop4))\n```\n\n> **_NOTE:_** If **topic** argument is provided to **@app.on** decorator,\n> the decorated function is mapped to particular topic.event key that means\n> an event that comes from a topic other than the specified\n> will not be processed. Otherwise, event will be processed\n> no matter which topic it comes from.\n\nUse **app.emit()** method to send messages to kafka:\n\n```python\nfrom kafka_python_app import ProducerRecord\n\nmsg = ProducerRecord(\n  key='my_message_key',\n  value='my_payload'\n)\n\napp.emit(topic='some_topic', message=msg)\n```\n\n\n#### Start application:\n\n```python\nif __name__ == \"__main__\":\n    asyncio.run(app.run())\n```\n\n## Use standalone kafka connector\n\nThe **KafkaConnector** class has two factory methods:\n\n- **get_producer** method returns kafka-python producer.\n- **get_listener** method returns instance of the **KafkaListener** class that wraps up kafka-python consumer and **\n  listen()** method that starts consumption loop.\n\nUse **ListenerConfig** class to create listener configuration:\n\n```python\nfrom kafka_python_app.connector import ListenerConfig\n\nkafka_listener_config = ListenerConfig(\n    bootstrap_servers=['ip1:port1', 'ip2:port2', ...],\n    process_message_cb=my_process_message_func,\n    consumer_config={'group_id': 'test_group'},\n    topics=['topic1', 'topic2', ...],\n    logger=my_logger\n)\n```\n\n- **bootstrap_servers**: list of kafka bootstrap servers addresses 'host:port'.\n- **process_message_cb**: a function that will be called on each message. \n\n```python\nfrom kafka.consumer.fetcher import ConsumerRecord\n\ndef my_process_message_func(message: ConsumerRecord):\n    print('Received kafka message: key: {}, value: {}'.format(\n      message.key,\n      message.value\n    ))\n```\n\n- **consumer_config [OPTIONAL]**: kafka consumer configuration (\n  see [kafka-python documentation](https://kafka-python.readthedocs.io/en/master/apidoc/KafkaConsumer.html)).\n- **topics**: list of topics to listen from.\n- **logger [OPTIONAL]**: any logger with standard log methods. If not provided, the standard python logger is used.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -393,7 +392,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17033953,
+        "last_serial": 17120703,
         "urls": [
             {
                 "comment_text": "",
@@ -434,6 +433,95 @@
                 "upload_time": "2023-02-25T19:58:42",
                 "upload_time_iso_8601": "2023-02-25T19:58:42.143466Z",
                 "url": "https://files.pythonhosted.org/packages/9d/6e/7a1bfe774859c07c9d1151803cb1380b46ea8e0622e1836eab35d3dc8168/kafka_python_app-0.1.5.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.0": {
+        "info": {
+            "author": "Dmitry Amanov",
+            "author_email": "dmitry.amanov@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# A lightweight application for consistent handling of kafka events\n\nThis application was developed to be a universal api endpoint for microservices that process kafka events.\n\n## Installation\n\n```\npip install kafka-python-app\n```\n\n## Usage\n\n#### Configure and create application instance.\n\nConfiguration parameters:\n\n- **app_name [OPTIONAL]**: application name.\n- **bootstrap_servers**: list of kafka bootstrap servers addresses 'host:port'.\n- **producer_config [OPTIONAL]**: kafka producer configuration (\n  see [kafka-python documentation](https://kafka-python.readthedocs.io/en/master/apidoc/KafkaProducer.html)).\n\n```python\n# Default producer config\nproducer_config = {\n    'key_serializer': lambda x: x.encode('utf-8') if x else x,\n    \"value_serializer\": lambda x: json.dumps(x).encode('utf-8')\n}\n```\n\n- **consumer_config [OPTIONAL]**: kafka consumer configuration (\n  see [kafka-python documentation](https://kafka-python.readthedocs.io/en/master/apidoc/KafkaConsumer.html)).\n\n```python\n# Default consumer config\nconf = {\n    'group_id': str(uuid.uuid4()),\n    'auto_offset_reset': 'earliest',\n    'enable_auto_commit': False,\n    'key_deserializer': lambda x: x.decode('utf-8') if x else x,\n    'value_deserializer': lambda x: json.loads(x.decode('utf-8')),\n    'session_timeout_ms': 25000\n}\n```\n\n- **listen_topics**: list of subscribed topics.\n- **message_key_as_event [OPTIONAL]**: set to True if using kafka message key as event name.\n\n> **_NOTE_** When setting ***message_key_as_event*** to True,\n> make sure to specify valid **key_deserializer** in **consumer_config**.\n\n- **message_value_cls**: dictionary {\"topic_name\": dataclass_type} that maps message dataclass type to specific topic.\n  The application uses this mapping to create specified dataclass from kafka message.value.\n- **middleware_message_cb [OPTIONAL]**: if provided, this callback will be executed with raw kafka message argument\n  before calling any handler.\n- **logger [OPTIONAL]**: any logger with standard log methods. If not provided, the standard python logger is used.\n\n```python\nfrom kafka_python_app.app import AppConfig, KafkaApp\n\n\n# Setup kafka message payload:\nclass MyMessage(pydantic.BaseModel):\n    event: str\n    prop1: str\n    prop2: int\n\n\n# This message type is specific for \"test_topic3\" only. \nclass MyMessageSpecific(pydantic.BaseModel):\n    event: str\n    prop3: bool\n    prop4: float\n\n\n# Create application config\nconfig = AppConfig(\n    app_name='Test application',\n    bootstrap_servers=['localhost:9092'],\n    consumer_config={\n        'group_id': 'test_app_group'\n    },\n    listen_topics=['test_topic1', 'test_topic2', 'test_topic3'],\n    message_value_cls={\n        'test_topic1': MyMessage,\n        'test_topic2': MyMessage,\n        'test_topic3': MyMessageSpecific\n    }\n)\n\n# Create application\napp = KafkaApp(config)\n```\n\n#### Create event handlers using **@app.on** decorator:\n\n```python\n# This handler will handle 'some_event' no matter which topic it comes from\n@app.on(event='some_event')\ndef handle_some_event(message: MyMessage, **kwargs):\n    print('Handling event: {}..'.format(message.event))\n    print('prop1: {}\\n'.format(message.prop1))\n    print('prop2: {}\\n'.format(message.prop2))\n\n\n# This handler will handle 'another_event' from 'test_topic2' only.\n# Events with this name but coming from another topic will be ignored.\n@app.on(event='another_event', topic='test_topic2')\ndef handle_some_event(message: MyMessage, **kwargs):\n    print('Handling event: {}..'.format(message.event))\n    print('prop1: {}\\n'.format(message.prop1))\n    print('prop2: {}\\n'.format(message.prop2))\n\n\n# This handler will handle 'another_event' from 'test_topic3' only.\n@app.on(event='another_event', topic='test_topic3')\ndef handle_some_event(message: MyMessageSpecific, **kwargs):\n    print('Handling event: {}..'.format(message.event))\n    print('prop3: {}\\n'.format(message.prop3))\n    print('prop4: {}\\n'.format(message.prop4))\n```\n\n> **_NOTE:_** If **topic** argument is provided to **@app.on** decorator,\n> the decorated function is mapped to particular topic.event key that means\n> an event that comes from a topic other than the specified\n> will not be processed. Otherwise, event will be processed\n> no matter which topic it comes from.\n\n#### Use message pipelines\n\nThe **@app.on** decorator is used to register a single handler for a message. \nHowever, now it is possible to pass a message through a sequence of handlers\nby providing a **pipelines_map** option into the application config.\nThe **pipelines_map** is a dictionary of type **Dict[str, MessagePipeline]**.\n\nThe **MessagePipeline** class has following properties:\n- transactions: List[MessageTransaction]\n- logger (optional): any object that has standard logging methods (debug, info, error, etc.)\n\nThe **MessageTransaction** has two properties **'fnc'** and **'args'**.\nThe **'fnc'** is a function that is called in order to perform a transaction.\nThe transaction function **'fnc'** must have a mandatory 'message' argument that \nis same type as handled kafka message, optional argument 'logger' and **kwargs.\nFunction must return same message type.\nThe **'args'** property is a dictionary of keyword arguments for transaction function.\n\n> **_NOTE:_** Transaction function can be sync or async.\n\n#### Example:\nSuppose we receive a string with each message and that string needs to be processed.\nLet's say we need replace all commas with a custom symbol and then \nadd a number to the end of the string that correspond to the number of some\nsubstring occurrences.\n\n```python\nfrom kafka_python_app.app import AppConfig, KafkaApp, MessagePipeline, MessageTransaction\n\n\n# Define transaction functions\ndef txn_replace(message: str, symbol: str, logger=None):\n  return message.replace(',', symbol)\n\ndef txn_add_count(message: str, substr: str, logger=None):\n  return ' '.join([message, message.count(substr)])\n\n# Define a pipeline\npipeline = MessagePipeline(\n  transactions=[\n    MessageTransaction(fnc=txn_replace, args={'symbol': '|'}),\n    MessageTransaction(fnc=txn_add_count, args={'substr': 'foo'})\n  ]\n)\n\n# Define a pipelines map\npipelines_map = {'some_event': pipeline}\n\n# Create application config\nconfig = AppConfig(\n    app_name='Test application',\n    bootstrap_servers=['localhost:9092'],\n    consumer_config={\n        'group_id': 'test_app_group'\n    },\n    listen_topics=['test_topic1'],\n    pipelines_map=pipelines_map\n)\n\n# Create application\napp = KafkaApp(config)\n```\n\n> **_NOTE:_** Define pipelines_map keys in a format 'topic.event' in order\n> to restrict pipeline execution to events that come from a certain topic.\n\n#### Use **app.emit()** method to send messages to kafka:\n\n```python\nfrom kafka_python_app import ProducerRecord\n\nmsg = ProducerRecord(\n  key='my_message_key',\n  value='my_payload'\n)\n\napp.emit(topic='some_topic', message=msg)\n```\n\n\n#### Start application:\n\n```python\nif __name__ == \"__main__\":\n    asyncio.run(app.run())\n```\n\n## Use standalone kafka connector\n\nThe **KafkaConnector** class has two factory methods:\n\n- **get_producer** method returns kafka-python producer.\n- **get_listener** method returns instance of the **KafkaListener** class that wraps up kafka-python consumer and **\n  listen()** method that starts consumption loop.\n\nUse **ListenerConfig** class to create listener configuration:\n\n```python\nfrom kafka_python_app.connector import ListenerConfig\n\nkafka_listener_config = ListenerConfig(\n    bootstrap_servers=['ip1:port1', 'ip2:port2', ...],\n    process_message_cb=my_process_message_func,\n    consumer_config={'group_id': 'test_group'},\n    topics=['topic1', 'topic2', ...],\n    logger=my_logger\n)\n```\n\n- **bootstrap_servers**: list of kafka bootstrap servers addresses 'host:port'.\n- **process_message_cb**: a function that will be called on each message. \n\n```python\nfrom kafka.consumer.fetcher import ConsumerRecord\n\ndef my_process_message_func(message: ConsumerRecord):\n    print('Received kafka message: key: {}, value: {}'.format(\n      message.key,\n      message.value\n    ))\n```\n\n> **_NOTE:_** Use async function for **process_message_cb** in order to process messages concurrently.\n\n- **consumer_config [OPTIONAL]**: kafka consumer configuration (\n  see [kafka-python documentation](https://kafka-python.readthedocs.io/en/master/apidoc/KafkaConsumer.html)).\n- **topics**: list of topics to listen from.\n- **logger [OPTIONAL]**: any logger with standard log methods. If not provided, the standard python logger is used.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/doctor3030/kafka-python-app.git",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "kafka-python-app",
+            "package_url": "https://pypi.org/project/kafka-python-app/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/kafka-python-app/",
+            "project_urls": {
+                "Homepage": "https://github.com/doctor3030/kafka-python-app.git"
+            },
+            "release_url": "https://pypi.org/project/kafka-python-app/0.2.0/",
+            "requires_dist": [
+                "pydantic (~=1.8.2)",
+                "setuptools (~=57.0.0)",
+                "kafka-python (~=2.0.2)"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "kafka application endpoint",
+            "version": "0.2.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17120703,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f0f4517ccd95142eb0cd7f5159c8f4f1917978c28fa6625fa4106e5f671a130e",
+                    "md5": "7fab0a18c7bfaa25ea305e1e9f697eed",
+                    "sha256": "1df3897fc82c1db5de69d91122791c5f1ea149e191b5a8944d54768e41f32df5"
+                },
+                "downloads": -1,
+                "filename": "kafka_python_app-0.2.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "7fab0a18c7bfaa25ea305e1e9f697eed",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 9110,
+                "upload_time": "2023-03-02T01:37:25",
+                "upload_time_iso_8601": "2023-03-02T01:37:25.276562Z",
+                "url": "https://files.pythonhosted.org/packages/f0/f4/517ccd95142eb0cd7f5159c8f4f1917978c28fa6625fa4106e5f671a130e/kafka_python_app-0.2.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "8c4c6179c291fadc48afbbed5ad37f693dc5e322679855d4806a0419ceac2e56",
+                    "md5": "ec7e2c834d1b129e21e46385badac62e",
+                    "sha256": "58b70b9415fa3968db50119b7863c471c76872acc767edf93e6b06c58b242ac3"
+                },
+                "downloads": -1,
+                "filename": "kafka_python_app-0.2.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "ec7e2c834d1b129e21e46385badac62e",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 12822,
+                "upload_time": "2023-03-02T01:37:33",
+                "upload_time_iso_8601": "2023-03-02T01:37:33.879844Z",
+                "url": "https://files.pythonhosted.org/packages/8c/4c/6179c291fadc48afbbed5ad37f693dc5e322679855d4806a0419ceac2e56/kafka_python_app-0.2.0.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
