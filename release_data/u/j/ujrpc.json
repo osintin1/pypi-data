@@ -46,7 +46,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17147255,
+        "last_serial": 17153939,
         "urls": [
             {
                 "comment_text": "",
@@ -413,7 +413,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17147255,
+        "last_serial": 17153939,
         "urls": [
             {
                 "comment_text": "",
@@ -649,7 +649,6 @@
                 "Topic :: Scientific/Engineering :: Artificial Intelligence",
                 "Topic :: System :: Clustering"
             ],
-            "description": "<h1 align=\"center\">Uninterrupted JSON RPC</h1>\n<h3 align=\"center\">\nRemote Procedure Calls<br/>\nUp to 100x Faster than FastAPI<br/>\n</h3>\n<br/>\n\n<p align=\"center\">\n<a href=\"https://discord.gg/xuDmpbEDnQ\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/discord.svg\" alt=\"Discord\"></a>\n&nbsp;&nbsp;&nbsp;\n<a href=\"https://www.linkedin.com/company/unum-cloud/\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/linkedin.svg\" alt=\"LinkedIn\"></a>\n&nbsp;&nbsp;&nbsp;\n<a href=\"https://twitter.com/unum_cloud\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/twitter.svg\" alt=\"Twitter\"></a>\n&nbsp;&nbsp;&nbsp;\n<a href=\"https://unum.cloud/post\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/blog.svg\" alt=\"Blog\"></a>\n&nbsp;&nbsp;&nbsp;\n<a href=\"https://github.com/unum-cloud/ujrpc\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/github.svg\" alt=\"GitHub\"></a>\n</p>\n\n---\n\nMost modern networking is built either on slow and ambiguous REST APIs or unnecessarily complex gRPC. FastAPI, for example, looks very easy to use:\n\n```python\nfrom fastapi import FastAPI\n\napp = FastAPI()\n\n@app.get('/sum')\ndef sum(a: int, b: int):\n    return a + b\n```\n\nIt takes over a millisecond to handle such a call on the same machine.\nIn that time, light could have traveled 300 km through optics to the neighboring city or country, in my case.\nLet's look at UJRPC example.\n\n```python\nfrom ujrpc import Server\n\nserve = Server()\n\n@serve\ndef sum(a: int, b: int):\n    return a + b\n```\n\nNot much difference on the outside, but there is magic happening behind the scenes.\nHere is what we do to make networking faster:\n\n- I/O layer without interrupts (hence the name), like `io_uring`.\n  - `io_uring_prep_read_fixed` to read into registered buffers on 5.1+.\n  - `io_uring_prep_accept_direct` for reusable descriptors on 5.19+.\n  - `io_uring_register_files_sparse` on 5.19+.\n  - `IORING_SETUP_COOP_TASKRUN` optional feature on 5.19+.\n  - `IORING_SETUP_SINGLE_ISSUER` optional feature on 6.0+.\n- Efficient SIMD-accelerated parsers and serializers:\n   - [`simdjson`][simdjson] that uses SIMD to parse JSON docs faster than gRPC will unpack binary `ProtoBuf`.\n   - [`Tubrbo-Base64`][base64] that uses SIMD to parse binary strings packed into JSON in base-64 form.\n   - [`picohttpparser`][picohttpparser] that uses SIMD to parse HTTP headers.\n\nWith `io_uring`, we can avoid system calls to reduce the latency on the hot path and still use the TCP/IP stack for maximum compatibility.\nWith SIMD we add hardware acceleration to increase the bandwidth parsing large messages.\nAt this point, it shouldn't be hard to imagine that one can be faster than gRPC.\nLet's estimate the gap.\n\n> This tiny solution already works for C, C++, and Python.\n> We are inviting others to contribute bindings to other languages as well.\n\n[simdjson]: https://github.com/simdjson/simdjson\n[base64]: https://github.com/powturbo/Turbo-Base64\n[picohttpparser]: https://github.com/h2o/picohttpparser\n\n## Benchmarks\n\nAll benchmarks were conducted on AWS on general purpose instances with Ubuntu 22.10 AMI, as it is the first major AMI to come with Linux Kernel 5.19, featuring much wider `io_uring` support for networking operations.\n\n### Single Large Node\n\nWe measured the performance of `c7g.metal` AWS Graviton 3 machines, hosting both the server and client applications on the same physical machine.\n\n| Setup                   |   \ud83d\udd01   | Language | Latency w 1 client | Throughput w 32 clients |\n| :---------------------- | :---: | :------: | -----------------: | ----------------------: |\n| Fast API over REST      |   \u274c   |    Py    |           1'203 \u03bcs |               3'184 rps |\n| Fast API over WebSocket |   \u2705   |    Py    |              86 \u03bcs |            11'356 rps \u00b9 |\n| gRPC                    |   \u2705   |    Py    |             164 \u03bcs |               9'849 rps |\n|                         |       |          |                    |                         |\n| UJRPC with POSIX        |   \u274c   |    C     |              62 \u03bcs |              79'000 rps |\n| UJRPC with io_uring     |   \u2705   |    Py    |              23 \u03bcs |              43'008 rps |\n| UJRPC with io_uring     |   \u2705   |    C     |              22 \u03bcs |             231'000 rps |\n\nThe first column report the amount of time between sending a request and receiving a response. \u03bc stands for micro, \u03bcs subsequently means microseconds.\nThe second column reports the number of Requests Per Second when querying the same server application from multiple client processes running on the same machine.\n\n> \u00b9 FastAPI couldn't process concurrent requests with WebSockets.\n\n### Free Tier Throughput\n\nThe general logic is that you can't squeeze high performance from Free-Tier machines.\nCurrently AWS provides following options: `t2.micro` and `t4g.small`, on older Intel and newer Graviton 2 chips.\nHere is the bandwidth they can sustain.\n\n| Setup                   |   \ud83d\udd01   | Language | Clients | `t2.micro` | `t4g.small` |\n| :---------------------- | :---: | :------: | :-----: | ---------: | ----------: |\n| Fast API over REST      |   \u274c   |    Py    |    1    |    328 rps |     424 rps |\n| Fast API over WebSocket |   \u2705   |    Py    |    1    |  1'504 rps |   3'051 rps |\n| gRPC                    |   \u2705   |    Py    |    1    |  1'169 rps |   1'974 rps |\n|                         |       |          |         |            |             |\n| UJRPC with POSIX        |   \u274c   |    C     |    1    |  1'082 rps |   2'438 rps |\n| UJRPC with io_uring     |   \u2705   |    C     |    1    |      ? rps |   5'864 rps |\n| UJRPC with POSIX        |   \u274c   |    C     |   32    |  3'399 rps |  39'877 rps |\n| UJRPC with io_uring     |   \u2705   |    C     |   32    |     ?  rps |  88'455 rps |\n\n## Installation\n\n```sh\npip install uform\n```\n\nA CMake user?\n\n```cmake\ninclude(FetchContent)\nFetchContent_Declare(\n    ujrpc\n    GIT_REPOSITORY https://github.com/unum-cloud/ujrpc\n    GIT_SHALLOW TRUE\n)\nFetchContent_MakeAvailable(ujrpc)\ninclude_directories(${ujrpc_SOURCE_DIR}/include)\n```\n\n## Roadmap\n\n- [x] Batch Requests\n- [x] JSON-RPC over raw TCP sockets\n- [x] JSON-RPC over TCP with HTTP\n- [x] Concurrent sessions\n- [ ] HTTP**S** Support\n- [ ] Batch-capable Endpoints\n- [ ] WebSockets\n- [ ] Complementing JSON with Amazon Ion\n- [ ] Custom UDP-based JSON-RPC like protocol\n- [ ] AF_XDP on Linux\n\n## Why JSON-RPC?\n\n- Transport independent: UDP, TCP, bring what you want.\n- Application layer is optional: use HTTP or not.\n- Unlike REST APIs, there is just one way to pass arguments.\n\n## Reproducing Benchmarks\n\n### FastAPI\n\n```sh\npip install uvicorn fastapi websocket-client requests tqdm fire\ncd examples && uvicorn sum.fastapi_server:app --log-level critical &\ncd ..\npython examples/bench.py \"sum.fastapi_client.ClientREST\" --progress\npython examples/bench.py \"sum.fastapi_client.ClientWebSocket\" --progress\nkill %%\n```\n\nWant to dispatch more clients and aggregate statistics?\n\n```sh\npython examples/bench.py \"sum.fastapi_client.ClientREST\" --threads 8\npython examples/bench.py \"sum.fastapi_client.ClientWebSocket\" --threads 8\n```\n\n### UJRPC\n\nUJRPC can produce both a POSIX compliant old-school server, and a modern `io_uring`-based version for Linux kernel 5.19 and newer.\nYou would either run `ujrpc_example_sum_posix` or `ujrpc_example_sum_uring`.\n\n```sh\nsudo apt-get install cmake g++ build-essential\ncmake -DCMAKE_BUILD_TYPE=Release -B ./build_release  && make -C ./build_release\n./build_release/build/bin/ujrpc_example_sum_posix &\n./build_release/build/bin/ujrpc_example_sum_uring &\npython examples/bench.py \"sum.jsonrpc_client.ClientTCP\" --progress\npython examples/bench.py \"sum.jsonrpc_client.ClientHTTP\" --progress\npython examples/bench.py \"sum.jsonrpc_client.ClientHTTPBatches\" --progress\nkill %%\n```\n\nWant to customize server settings?\n\n```sh\n./build_release/build/bin/ujrpc_example_sum_uring --nic=127.0.0.1 --port=8545 --threads=16 --silent=false\n```\n\nWant to dispatch more clients and aggregate more accurate statistics?\n\n```sh\npython examples/bench.py \"sum.jsonrpc_client.ClientTCP\" --threads 32 --seconds 100\npython examples/bench.py \"sum.jsonrpc_client.ClientHTTP\" --threads 32 --seconds 100\npython examples/bench.py \"sum.jsonrpc_client.ClientHTTPBatches\" --threads 32 --seconds 100\n```\n\nA lot has been said about the speed of Python code ~~or the lack of~~.\nTo get more accurate numbers for mean request latency, you can use the GoLang version:\n\n```sh\ngo run ./examples/sum/ujrpc_client.go\n```\n\nOr push it even further dispatching dozens of processes with GNU `parallel` utility:\n\n```sh\nsudo apt install parallel\nparallel go run ./examples/sum/ujrpc_client.go run ::: {1..32}\n```\n\n### gRPC Results\n\n```sh\npip install grpcio grpcio-tools\npython ./examples/sum/grpc_server.py &\npython examples/bench.py \"sum.grpc_client.gRPCClient\" --progress\npython examples/bench.py \"sum.grpc_client.gRPCClient\" --threads 32\nkill %%\n```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -678,7 +677,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17147255,
+        "last_serial": 17153939,
         "urls": [
             {
                 "comment_text": "",
@@ -1160,6 +1159,544 @@
                 "upload_time": "2023-03-03T17:34:11",
                 "upload_time_iso_8601": "2023-03-03T17:34:11.596430Z",
                 "url": "https://files.pythonhosted.org/packages/45/28/2a0bbca657cb00f01fdc3e5afbf5025f89d5152a090fef0bb5068201b205/ujrpc-0.0.4-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.5": {
+        "info": {
+            "author": "Ashot Vardanian",
+            "author_email": "info@unum.cloud",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Intended Audience :: Developers",
+                "Intended Audience :: Information Technology",
+                "License :: OSI Approved :: Apache Software License",
+                "Natural Language :: English",
+                "Operating System :: MacOS",
+                "Operating System :: Microsoft :: Windows",
+                "Operating System :: Unix",
+                "Programming Language :: C",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: Implementation :: CPython",
+                "Topic :: Database :: Database Engines/Servers",
+                "Topic :: Scientific/Engineering :: Artificial Intelligence",
+                "Topic :: System :: Clustering"
+            ],
+            "description": "<h1 align=\"center\">Uninterrupted JSON RPC</h1>\n<h3 align=\"center\">\nRemote Procedure Calls<br/>\nUp to 100x Faster than FastAPI<br/>\n</h3>\n<br/>\n\n<p align=\"center\">\n<a href=\"https://discord.gg/xuDmpbEDnQ\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/discord.svg\" alt=\"Discord\"></a>\n&nbsp;&nbsp;&nbsp;\n<a href=\"https://www.linkedin.com/company/unum-cloud/\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/linkedin.svg\" alt=\"LinkedIn\"></a>\n&nbsp;&nbsp;&nbsp;\n<a href=\"https://twitter.com/unum_cloud\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/twitter.svg\" alt=\"Twitter\"></a>\n&nbsp;&nbsp;&nbsp;\n<a href=\"https://unum.cloud/post\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/blog.svg\" alt=\"Blog\"></a>\n&nbsp;&nbsp;&nbsp;\n<a href=\"https://github.com/unum-cloud/ujrpc\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/github.svg\" alt=\"GitHub\"></a>\n</p>\n\n---\n\nMost modern networking is built either on slow and ambiguous REST APIs or unnecessarily complex gRPC. FastAPI, for example, looks very easy to use:\n\n```python\nfrom fastapi import FastAPI\nimport uvicorn\n\napp = FastAPI()\n\n@app.get('/sum')\ndef sum(a: int, b: int):\n    return a + b\n\nuvicorn.run(...)\n```\n\nIt takes over a millisecond to handle such a call on the same machine.\nIn that time, light could have traveled 300 km through optics to the neighboring city or country, in my case.\nLet's look at UJRPC example.\n\n```python\nfrom ujrpc.posix import Server # or `ujrpc.uring`\n\nserver = Server()\n\n@server\ndef sum(a: int, b: int):\n    return a + b\n\nserver.run()\n```\n\nNot much difference on the outside, but there is magic happening behind the scenes.\nHere is what we do to make networking faster:\n\n- I/O layer without interrupts (hence the name), like `io_uring`.\n  - `io_uring_prep_read_fixed` to read into registered buffers on 5.1+.\n  - `io_uring_prep_accept_direct` for reusable descriptors on 5.19+.\n  - `io_uring_register_files_sparse` on 5.19+.\n  - `IORING_SETUP_COOP_TASKRUN` optional feature on 5.19+.\n  - `IORING_SETUP_SINGLE_ISSUER` optional feature on 6.0+.\n- Efficient SIMD-accelerated parsers and serializers:\n   - [`simdjson`][simdjson] that uses SIMD to parse JSON docs faster than gRPC will unpack binary `ProtoBuf`.\n   - [`Tubrbo-Base64`][base64] that uses SIMD to parse binary strings packed into JSON in base-64 form.\n   - [`picohttpparser`][picohttpparser] that uses SIMD to parse HTTP headers.\n\nWith `io_uring`, we can avoid system calls to reduce the latency on the hot path and still use the TCP/IP stack for maximum compatibility.\nWith SIMD we add hardware acceleration to increase the bandwidth parsing large messages.\nEspecially, if they contain binary data.\n\n```python\n@server\ndef echo(data: bytes):\n    return data\n```\n\nAt this point, it shouldn't be hard to imagine that one can be faster than gRPC.\nLet's estimate the gap.\n\n> This tiny solution already works for C, C++, and Python.\n> We are inviting others to contribute bindings to other languages as well.\n\n[simdjson]: https://github.com/simdjson/simdjson\n[base64]: https://github.com/powturbo/Turbo-Base64\n[picohttpparser]: https://github.com/h2o/picohttpparser\n\n## Benchmarks\n\nAll benchmarks were conducted on AWS on general purpose instances with Ubuntu 22.10 AMI, as it is the first major AMI to come with Linux Kernel 5.19, featuring much wider `io_uring` support for networking operations.\n\n### Single Large Node\n\nWe measured the performance of `c7g.metal` AWS Graviton 3 machines, hosting both the server and client applications on the same physical machine.\n\n| Setup                   |   \ud83d\udd01   | Language | Latency w 1 client | Throughput w 32 clients |\n| :---------------------- | :---: | :------: | -----------------: | ----------------------: |\n| Fast API over REST      |   \u274c   |    Py    |           1'203 \u03bcs |               3'184 rps |\n| Fast API over WebSocket |   \u2705   |    Py    |              86 \u03bcs |            11'356 rps \u00b9 |\n| gRPC                    |   \u2705   |    Py    |             164 \u03bcs |               9'849 rps |\n|                         |       |          |                    |                         |\n| UJRPC with POSIX        |   \u274c   |    C     |              62 \u03bcs |              79'000 rps |\n| UJRPC with io_uring     |   \u2705   |    Py    |              23 \u03bcs |              43'000 rps |\n| UJRPC with io_uring     |   \u2705   |    C     |              22 \u03bcs |             231'000 rps |\n\nThe first column report the amount of time between sending a request and receiving a response. \u03bc stands for micro, \u03bcs subsequently means microseconds.\nThe second column reports the number of Requests Per Second when querying the same server application from multiple client processes running on the same machine.\n\n> \u00b9 FastAPI couldn't process concurrent requests with WebSockets.\n\n### Free Tier Throughput\n\nThe general logic is that you can't squeeze high performance from Free-Tier machines.\nCurrently AWS provides following options: `t2.micro` and `t4g.small`, on older Intel and newer Graviton 2 chips.\nHere is the bandwidth they can sustain.\n\n| Setup                   |   \ud83d\udd01   | Language | Clients | `t2.micro` | `t4g.small` |\n| :---------------------- | :---: | :------: | :-----: | ---------: | ----------: |\n| Fast API over REST      |   \u274c   |    Py    |    1    |    328 rps |     424 rps |\n| Fast API over WebSocket |   \u2705   |    Py    |    1    |  1'504 rps |   3'051 rps |\n| gRPC                    |   \u2705   |    Py    |    1    |  1'169 rps |   1'974 rps |\n|                         |       |          |         |            |             |\n| UJRPC with POSIX        |   \u274c   |    C     |    1    |  1'082 rps |   2'438 rps |\n| UJRPC with io_uring     |   \u2705   |    C     |    1    |          - |   5'864 rps |\n| UJRPC with POSIX        |   \u274c   |    C     |   32    |  3'399 rps |  39'877 rps |\n| UJRPC with io_uring     |   \u2705   |    C     |   32    |          - |  88'455 rps |\n\n## Installation\n\n```sh\npip install uform\n```\n\nA CMake user?\n\n```cmake\ninclude(FetchContent)\nFetchContent_Declare(\n    ujrpc\n    GIT_REPOSITORY https://github.com/unum-cloud/ujrpc\n    GIT_SHALLOW TRUE\n)\nFetchContent_MakeAvailable(ujrpc)\ninclude_directories(${ujrpc_SOURCE_DIR}/include)\n```\n\n## Roadmap\n\n- [x] Batch Requests\n- [x] JSON-RPC over raw TCP sockets\n- [x] JSON-RPC over TCP with HTTP\n- [x] Concurrent sessions\n- [ ] HTTP**S** Support\n- [ ] Batch-capable Endpoints\n- [ ] WebSockets\n- [ ] Complementing JSON with Amazon Ion\n- [ ] Custom UDP-based JSON-RPC like protocol\n- [ ] AF_XDP on Linux\n\n## Why JSON-RPC?\n\n- Transport independent: UDP, TCP, bring what you want.\n- Application layer is optional: use HTTP or not.\n- Unlike REST APIs, there is just one way to pass arguments.\n\n## Reproducing Benchmarks\n\n### FastAPI\n\n```sh\npip install uvicorn fastapi websocket-client requests tqdm fire\ncd examples && uvicorn sum.fastapi_server:app --log-level critical &\ncd ..\npython examples/bench.py \"sum.fastapi_client.ClientREST\" --progress\npython examples/bench.py \"sum.fastapi_client.ClientWebSocket\" --progress\nkill %%\n```\n\nWant to dispatch more clients and aggregate statistics?\n\n```sh\npython examples/bench.py \"sum.fastapi_client.ClientREST\" --threads 8\npython examples/bench.py \"sum.fastapi_client.ClientWebSocket\" --threads 8\n```\n\n### UJRPC\n\nUJRPC can produce both a POSIX compliant old-school server, and a modern `io_uring`-based version for Linux kernel 5.19 and newer.\nYou would either run `ujrpc_example_sum_posix` or `ujrpc_example_sum_uring`.\n\n```sh\nsudo apt-get install cmake g++ build-essential\ncmake -DCMAKE_BUILD_TYPE=Release -B ./build_release  && make -C ./build_release\n./build_release/build/bin/ujrpc_example_sum_posix &\n./build_release/build/bin/ujrpc_example_sum_uring &\npython examples/bench.py \"sum.jsonrpc_client.ClientTCP\" --progress\npython examples/bench.py \"sum.jsonrpc_client.ClientHTTP\" --progress\npython examples/bench.py \"sum.jsonrpc_client.ClientHTTPBatches\" --progress\nkill %%\n```\n\nWant to customize server settings?\n\n```sh\n./build_release/build/bin/ujrpc_example_sum_uring --nic=127.0.0.1 --port=8545 --threads=16 --silent=false\n```\n\nWant to dispatch more clients and aggregate more accurate statistics?\n\n```sh\npython examples/bench.py \"sum.jsonrpc_client.ClientTCP\" --threads 32 --seconds 100\npython examples/bench.py \"sum.jsonrpc_client.ClientHTTP\" --threads 32 --seconds 100\npython examples/bench.py \"sum.jsonrpc_client.ClientHTTPBatches\" --threads 32 --seconds 100\n```\n\nA lot has been said about the speed of Python code ~~or the lack of~~.\nTo get more accurate numbers for mean request latency, you can use the GoLang version:\n\n```sh\ngo run ./examples/sum/ujrpc_client.go\n```\n\nOr push it even further dispatching dozens of processes with GNU `parallel` utility:\n\n```sh\nsudo apt install parallel\nparallel go run ./examples/sum/ujrpc_client.go run ::: {1..32}\n```\n\n### gRPC Results\n\n```sh\npip install grpcio grpcio-tools\npython ./examples/sum/grpc_server.py &\npython examples/bench.py \"sum.grpc_client.gRPCClient\" --progress\npython examples/bench.py \"sum.grpc_client.gRPCClient\" --threads 32\nkill %%\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/unum-cloud/ujrpc",
+            "keywords": "",
+            "license": "Apache-2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "ujrpc",
+            "package_url": "https://pypi.org/project/ujrpc/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/ujrpc/",
+            "project_urls": {
+                "Homepage": "https://github.com/unum-cloud/ujrpc"
+            },
+            "release_url": "https://pypi.org/project/ujrpc/0.0.5/",
+            "requires_dist": null,
+            "requires_python": "",
+            "summary": "Up to 100x Faster FastAPI. JSON-RPC with io_uring, SIMD-acceleration, and pure CPython bindings",
+            "version": "0.0.5",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17153939,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "28896ab11b37728443e7179bef1c361bbda57bb2242bbab70d5780a214e1aff0",
+                    "md5": "c4221c63ba47311ca43f50eff3183c88",
+                    "sha256": "23bd6acffde94d340c9376593ddc91de2db4e4f987b0cfe4c98aa41c8d61ba98"
+                },
+                "downloads": -1,
+                "filename": "ujrpc-0.0.5-cp310-cp310-macosx_11_0_arm64.whl",
+                "has_sig": false,
+                "md5_digest": "c4221c63ba47311ca43f50eff3183c88",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": null,
+                "size": 114291,
+                "upload_time": "2023-03-04T07:04:06",
+                "upload_time_iso_8601": "2023-03-04T07:04:06.037780Z",
+                "url": "https://files.pythonhosted.org/packages/28/89/6ab11b37728443e7179bef1c361bbda57bb2242bbab70d5780a214e1aff0/ujrpc-0.0.5-cp310-cp310-macosx_11_0_arm64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "b02646140b6c65d3ac3fbeaa5340d80118c29d879dd6af977ff6e70992b9ea28",
+                    "md5": "3ec2081d751eabedb237d544d770faeb",
+                    "sha256": "eb17e9803eb5eaaf31bf427a6a928088fb27e00f3b39d141f9b2d65043564c2f"
+                },
+                "downloads": -1,
+                "filename": "ujrpc-0.0.5-cp310-cp310-macosx_11_0_universal2.whl",
+                "has_sig": false,
+                "md5_digest": "3ec2081d751eabedb237d544d770faeb",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": null,
+                "size": 325659,
+                "upload_time": "2023-03-04T07:04:07",
+                "upload_time_iso_8601": "2023-03-04T07:04:07.652980Z",
+                "url": "https://files.pythonhosted.org/packages/b0/26/46140b6c65d3ac3fbeaa5340d80118c29d879dd6af977ff6e70992b9ea28/ujrpc-0.0.5-cp310-cp310-macosx_11_0_universal2.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d6d198d4c978e8706cc8cb9b6b9ab2a972e5193ef852cf46a8e99117ce87ebbe",
+                    "md5": "efe6c235145a2b8654bfb8a35fffbb46",
+                    "sha256": "602cb147132af9c0a70781e5b92cf9344996899d7feb5f0231cd3ac47b4b5482"
+                },
+                "downloads": -1,
+                "filename": "ujrpc-0.0.5-cp310-cp310-macosx_11_0_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "efe6c235145a2b8654bfb8a35fffbb46",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": null,
+                "size": 222334,
+                "upload_time": "2023-03-04T07:04:09",
+                "upload_time_iso_8601": "2023-03-04T07:04:09.215509Z",
+                "url": "https://files.pythonhosted.org/packages/d6/d1/98d4c978e8706cc8cb9b6b9ab2a972e5193ef852cf46a8e99117ce87ebbe/ujrpc-0.0.5-cp310-cp310-macosx_11_0_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "fac2914dab39a744173ae4cff45f6cea42d23cc0343354284a9995faa1e47108",
+                    "md5": "e3297e9997765955f65e9f7ce8ab8015",
+                    "sha256": "6afdb89fdae9d26aa867b2a455e6665c8d05d0def560b1134edc323b80167495"
+                },
+                "downloads": -1,
+                "filename": "ujrpc-0.0.5-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                "has_sig": false,
+                "md5_digest": "e3297e9997765955f65e9f7ce8ab8015",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": null,
+                "size": 186578,
+                "upload_time": "2023-03-04T07:04:10",
+                "upload_time_iso_8601": "2023-03-04T07:04:10.382174Z",
+                "url": "https://files.pythonhosted.org/packages/fa/c2/914dab39a744173ae4cff45f6cea42d23cc0343354284a9995faa1e47108/ujrpc-0.0.5-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5555ee11b5cba9c1ac1a4fd742b23a0397a533b83451b2ed4e63637128abe124",
+                    "md5": "75d3eea9b2062baabbfd193e48d73bd1",
+                    "sha256": "d2d687248866e78658e0e8aa9fa6bb1f23875007ff85abdb5c543ccd50ca428b"
+                },
+                "downloads": -1,
+                "filename": "ujrpc-0.0.5-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "75d3eea9b2062baabbfd193e48d73bd1",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": null,
+                "size": 221972,
+                "upload_time": "2023-03-04T07:04:11",
+                "upload_time_iso_8601": "2023-03-04T07:04:11.921782Z",
+                "url": "https://files.pythonhosted.org/packages/55/55/ee11b5cba9c1ac1a4fd742b23a0397a533b83451b2ed4e63637128abe124/ujrpc-0.0.5-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a539ab1ee78d345ccd363d0d1d81e61bf5d8a46c364e797a369c0d8b134517f4",
+                    "md5": "aadbb574ca6e65a11cc76c6e12ceb222",
+                    "sha256": "82f134b26b4d4f1421d7768799b7ee645c0dc9a9fed7ea9587bd9900632cc9c7"
+                },
+                "downloads": -1,
+                "filename": "ujrpc-0.0.5-cp311-cp311-macosx_11_0_arm64.whl",
+                "has_sig": false,
+                "md5_digest": "aadbb574ca6e65a11cc76c6e12ceb222",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": null,
+                "size": 114291,
+                "upload_time": "2023-03-04T07:04:12",
+                "upload_time_iso_8601": "2023-03-04T07:04:12.992391Z",
+                "url": "https://files.pythonhosted.org/packages/a5/39/ab1ee78d345ccd363d0d1d81e61bf5d8a46c364e797a369c0d8b134517f4/ujrpc-0.0.5-cp311-cp311-macosx_11_0_arm64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "27e9a66edd96a7c1c95247cdf91a268b24338e2b6c7c2888899072cc8921c5a2",
+                    "md5": "7c20184bc6e83192bc85bfc31c3926f0",
+                    "sha256": "3190f74c8b6bff5bee0ac7611336ef0e9bc8b1debf7318a26b9fd78ed1354968"
+                },
+                "downloads": -1,
+                "filename": "ujrpc-0.0.5-cp311-cp311-macosx_11_0_universal2.whl",
+                "has_sig": false,
+                "md5_digest": "7c20184bc6e83192bc85bfc31c3926f0",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": null,
+                "size": 325655,
+                "upload_time": "2023-03-04T07:04:14",
+                "upload_time_iso_8601": "2023-03-04T07:04:14.170416Z",
+                "url": "https://files.pythonhosted.org/packages/27/e9/a66edd96a7c1c95247cdf91a268b24338e2b6c7c2888899072cc8921c5a2/ujrpc-0.0.5-cp311-cp311-macosx_11_0_universal2.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c872a5fb01af961e68c406f87242e4e6eaa91b1bd0df732ebe687acb4f6c6df4",
+                    "md5": "7170794db5d4712f4d14c45af87f3367",
+                    "sha256": "2ee5c237a314a2d869c9e02e8100a1ce39975f52e1d38a52495ad0b83281d585"
+                },
+                "downloads": -1,
+                "filename": "ujrpc-0.0.5-cp311-cp311-macosx_11_0_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "7170794db5d4712f4d14c45af87f3367",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": null,
+                "size": 222334,
+                "upload_time": "2023-03-04T07:04:15",
+                "upload_time_iso_8601": "2023-03-04T07:04:15.475240Z",
+                "url": "https://files.pythonhosted.org/packages/c8/72/a5fb01af961e68c406f87242e4e6eaa91b1bd0df732ebe687acb4f6c6df4/ujrpc-0.0.5-cp311-cp311-macosx_11_0_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "52916613e6f899ecab3473cda617d24af0023b775f99a75385e282244adf4e5e",
+                    "md5": "c9d5033c182e285c690634938b6ae7f0",
+                    "sha256": "98a9f1de1828d57b22eb88bc87e723bd68dfaa60769b190ff84fbe5f410f79d3"
+                },
+                "downloads": -1,
+                "filename": "ujrpc-0.0.5-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                "has_sig": false,
+                "md5_digest": "c9d5033c182e285c690634938b6ae7f0",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": null,
+                "size": 186576,
+                "upload_time": "2023-03-04T07:04:16",
+                "upload_time_iso_8601": "2023-03-04T07:04:16.500769Z",
+                "url": "https://files.pythonhosted.org/packages/52/91/6613e6f899ecab3473cda617d24af0023b775f99a75385e282244adf4e5e/ujrpc-0.0.5-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "1b3f53128ffec1b0b0849a3a6c8c902cd08856cba73f022513c3634a8d4f9c11",
+                    "md5": "4e555fcdf3d4d7d964b21eb13ed7bff4",
+                    "sha256": "2514c24c20579769951c43790c8600d5313683ff88f655d4b2ba41b463b47c27"
+                },
+                "downloads": -1,
+                "filename": "ujrpc-0.0.5-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "4e555fcdf3d4d7d964b21eb13ed7bff4",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": null,
+                "size": 221971,
+                "upload_time": "2023-03-04T07:04:17",
+                "upload_time_iso_8601": "2023-03-04T07:04:17.565938Z",
+                "url": "https://files.pythonhosted.org/packages/1b/3f/53128ffec1b0b0849a3a6c8c902cd08856cba73f022513c3634a8d4f9c11/ujrpc-0.0.5-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "376e43dd598d02aa42dcb6eb3230d169550e77f8aa3c0094c86f3a2362b5796f",
+                    "md5": "930b647959c226fe434cc5f4ccde2bcc",
+                    "sha256": "b82f4f71d4f6493d9bbafd1996aead24bfc6bc4a892793d739d21739562a0cf8"
+                },
+                "downloads": -1,
+                "filename": "ujrpc-0.0.5-cp37-cp37m-macosx_11_0_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "930b647959c226fe434cc5f4ccde2bcc",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": null,
+                "size": 222337,
+                "upload_time": "2023-03-04T07:04:18",
+                "upload_time_iso_8601": "2023-03-04T07:04:18.579768Z",
+                "url": "https://files.pythonhosted.org/packages/37/6e/43dd598d02aa42dcb6eb3230d169550e77f8aa3c0094c86f3a2362b5796f/ujrpc-0.0.5-cp37-cp37m-macosx_11_0_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "02d256c45b217719da9f00620013069f889a69732ee35bb95120b05308c8f6d5",
+                    "md5": "92d7115ad6fde89622c833359ac0eccb",
+                    "sha256": "839da8e3e809243f11666e04d81f0fb8874b41aaec16e5c7cff29490c867b811"
+                },
+                "downloads": -1,
+                "filename": "ujrpc-0.0.5-cp37-cp37m-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                "has_sig": false,
+                "md5_digest": "92d7115ad6fde89622c833359ac0eccb",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": null,
+                "size": 186554,
+                "upload_time": "2023-03-04T07:04:20",
+                "upload_time_iso_8601": "2023-03-04T07:04:20.172455Z",
+                "url": "https://files.pythonhosted.org/packages/02/d2/56c45b217719da9f00620013069f889a69732ee35bb95120b05308c8f6d5/ujrpc-0.0.5-cp37-cp37m-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "456d86430fe04f0bf44dc13f089f6a779fa30fc3f8f2f8a8fceb7995b40781f4",
+                    "md5": "0d261cfbd9dd394e8f2b9b6fdd1befac",
+                    "sha256": "7c3d957cbbf23a4e5d06877dbdc0e7378330acf56555a9e62811960134da4d5b"
+                },
+                "downloads": -1,
+                "filename": "ujrpc-0.0.5-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "0d261cfbd9dd394e8f2b9b6fdd1befac",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": null,
+                "size": 221967,
+                "upload_time": "2023-03-04T07:04:21",
+                "upload_time_iso_8601": "2023-03-04T07:04:21.714971Z",
+                "url": "https://files.pythonhosted.org/packages/45/6d/86430fe04f0bf44dc13f089f6a779fa30fc3f8f2f8a8fceb7995b40781f4/ujrpc-0.0.5-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "de888d23a0cbc8b5ccc1adcf1f72f1cec0b05c8e529f0e4e5c0705252feeb095",
+                    "md5": "c2e13bf72f843e8ac5e2541caa278402",
+                    "sha256": "2bc6a8278c0649a7c14a329ce53a68828d7c799c16f795ccabe901c22a52dce9"
+                },
+                "downloads": -1,
+                "filename": "ujrpc-0.0.5-cp38-cp38-macosx_11_0_arm64.whl",
+                "has_sig": false,
+                "md5_digest": "c2e13bf72f843e8ac5e2541caa278402",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": null,
+                "size": 114291,
+                "upload_time": "2023-03-04T07:04:23",
+                "upload_time_iso_8601": "2023-03-04T07:04:23.239371Z",
+                "url": "https://files.pythonhosted.org/packages/de/88/8d23a0cbc8b5ccc1adcf1f72f1cec0b05c8e529f0e4e5c0705252feeb095/ujrpc-0.0.5-cp38-cp38-macosx_11_0_arm64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "695b8ce62a2155ff04fa1d8102e2ebdba627b7d4aa2ea6c1efc686d01a4f2b79",
+                    "md5": "80bc4805fa65227618a27fb5d6088c5d",
+                    "sha256": "975be4a2550c96d06e941d69b115f4c4b936ed9c0a6fb7acf58daed6e466d46e"
+                },
+                "downloads": -1,
+                "filename": "ujrpc-0.0.5-cp38-cp38-macosx_11_0_universal2.whl",
+                "has_sig": false,
+                "md5_digest": "80bc4805fa65227618a27fb5d6088c5d",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": null,
+                "size": 325650,
+                "upload_time": "2023-03-04T07:04:24",
+                "upload_time_iso_8601": "2023-03-04T07:04:24.822900Z",
+                "url": "https://files.pythonhosted.org/packages/69/5b/8ce62a2155ff04fa1d8102e2ebdba627b7d4aa2ea6c1efc686d01a4f2b79/ujrpc-0.0.5-cp38-cp38-macosx_11_0_universal2.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "939730124e0d109c2fc762a8b9d4a973d323bb894f6c0cf59787ce6649ee838e",
+                    "md5": "023e2ee07acd3d0b413a52fc3fbd21e8",
+                    "sha256": "df3f5abaf573765bb41a1b5362ccf1a922eff67c35b8b6e27aa2fcc2b384a6c1"
+                },
+                "downloads": -1,
+                "filename": "ujrpc-0.0.5-cp38-cp38-macosx_11_0_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "023e2ee07acd3d0b413a52fc3fbd21e8",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": null,
+                "size": 222335,
+                "upload_time": "2023-03-04T07:04:25",
+                "upload_time_iso_8601": "2023-03-04T07:04:25.886785Z",
+                "url": "https://files.pythonhosted.org/packages/93/97/30124e0d109c2fc762a8b9d4a973d323bb894f6c0cf59787ce6649ee838e/ujrpc-0.0.5-cp38-cp38-macosx_11_0_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "30f4f821a3219bfc9231cff212d43f8e10f14fb9081178c11fc4e5c2005069ce",
+                    "md5": "e31a732735e9cb1e2a0c6632b96531cc",
+                    "sha256": "f0dbbf538f68d628b5e8a2bc56c6a1d5bcc0abc670c9b64ab282a5bc131a26cd"
+                },
+                "downloads": -1,
+                "filename": "ujrpc-0.0.5-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                "has_sig": false,
+                "md5_digest": "e31a732735e9cb1e2a0c6632b96531cc",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": null,
+                "size": 186581,
+                "upload_time": "2023-03-04T07:04:26",
+                "upload_time_iso_8601": "2023-03-04T07:04:26.904007Z",
+                "url": "https://files.pythonhosted.org/packages/30/f4/f821a3219bfc9231cff212d43f8e10f14fb9081178c11fc4e5c2005069ce/ujrpc-0.0.5-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c7e256b522680c6cebe2cae5ed3b7937545a5430dc90a9a4a5bbebaa76cf952f",
+                    "md5": "997a3dd9cce76052f4710608ce3f2126",
+                    "sha256": "cdf0b15375cb46b345bd8772233ca40bfddde0d11705e00655d733ffd176fd14"
+                },
+                "downloads": -1,
+                "filename": "ujrpc-0.0.5-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "997a3dd9cce76052f4710608ce3f2126",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": null,
+                "size": 221975,
+                "upload_time": "2023-03-04T07:04:27",
+                "upload_time_iso_8601": "2023-03-04T07:04:27.929949Z",
+                "url": "https://files.pythonhosted.org/packages/c7/e2/56b522680c6cebe2cae5ed3b7937545a5430dc90a9a4a5bbebaa76cf952f/ujrpc-0.0.5-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "bfd33ec99a288667f509de708ba53e6c94ab36d32ffd57fa0ae1f6876dad0cb4",
+                    "md5": "558338d5feceea6b48a37b221b40c3a6",
+                    "sha256": "d1a855fbf4efd73ca88c34a9926efd09523f0d925c99a43edd62903b6504c3e3"
+                },
+                "downloads": -1,
+                "filename": "ujrpc-0.0.5-cp39-cp39-macosx_11_0_arm64.whl",
+                "has_sig": false,
+                "md5_digest": "558338d5feceea6b48a37b221b40c3a6",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": null,
+                "size": 114289,
+                "upload_time": "2023-03-04T07:04:29",
+                "upload_time_iso_8601": "2023-03-04T07:04:29.392684Z",
+                "url": "https://files.pythonhosted.org/packages/bf/d3/3ec99a288667f509de708ba53e6c94ab36d32ffd57fa0ae1f6876dad0cb4/ujrpc-0.0.5-cp39-cp39-macosx_11_0_arm64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "da1d7bc4c3cfe0d935722273a9d4ff52deaddf1ca70f77a96da16c825a06359b",
+                    "md5": "6a04a9c7bbf8d2e66b9856422318074e",
+                    "sha256": "f638f545e349ef40a21bb790b2bff27aa1f81f24427a65593f6587626f4c904d"
+                },
+                "downloads": -1,
+                "filename": "ujrpc-0.0.5-cp39-cp39-macosx_11_0_universal2.whl",
+                "has_sig": false,
+                "md5_digest": "6a04a9c7bbf8d2e66b9856422318074e",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": null,
+                "size": 325655,
+                "upload_time": "2023-03-04T07:04:30",
+                "upload_time_iso_8601": "2023-03-04T07:04:30.854402Z",
+                "url": "https://files.pythonhosted.org/packages/da/1d/7bc4c3cfe0d935722273a9d4ff52deaddf1ca70f77a96da16c825a06359b/ujrpc-0.0.5-cp39-cp39-macosx_11_0_universal2.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2ef0bce560c3c8616a76130658962a82e19863f0a2226245c518c303417db9c9",
+                    "md5": "dc3de3a73403c6bc6c83dc7ee0070445",
+                    "sha256": "23fc3ece0859390fffdec4aa6448eff8ed7132f75d76ec836f1927bd85db951c"
+                },
+                "downloads": -1,
+                "filename": "ujrpc-0.0.5-cp39-cp39-macosx_11_0_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "dc3de3a73403c6bc6c83dc7ee0070445",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": null,
+                "size": 222333,
+                "upload_time": "2023-03-04T07:04:31",
+                "upload_time_iso_8601": "2023-03-04T07:04:31.904652Z",
+                "url": "https://files.pythonhosted.org/packages/2e/f0/bce560c3c8616a76130658962a82e19863f0a2226245c518c303417db9c9/ujrpc-0.0.5-cp39-cp39-macosx_11_0_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "cdd2490793d5793922252f08f159fe3af62742a365e403e54a670cc3b3a51060",
+                    "md5": "04bf5bd8be4edaee41923c37eb47c29d",
+                    "sha256": "faacd6af49b0c9642c62637b2fbce63e7b17c726d0875cefb44dcef84465d8f3"
+                },
+                "downloads": -1,
+                "filename": "ujrpc-0.0.5-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                "has_sig": false,
+                "md5_digest": "04bf5bd8be4edaee41923c37eb47c29d",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": null,
+                "size": 186582,
+                "upload_time": "2023-03-04T07:04:32",
+                "upload_time_iso_8601": "2023-03-04T07:04:32.949250Z",
+                "url": "https://files.pythonhosted.org/packages/cd/d2/490793d5793922252f08f159fe3af62742a365e403e54a670cc3b3a51060/ujrpc-0.0.5-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5af86743002259930f3b2fbce06eee4da084d386d1577c14b651816fce89e9c1",
+                    "md5": "dffa2d581a1c4b228bca1f6931184cb2",
+                    "sha256": "26763a9fa62b11724e57f5539828ff222f2c2ad2ca67bdab3e320476b15e6c9d"
+                },
+                "downloads": -1,
+                "filename": "ujrpc-0.0.5-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "dffa2d581a1c4b228bca1f6931184cb2",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": null,
+                "size": 221974,
+                "upload_time": "2023-03-04T07:04:34",
+                "upload_time_iso_8601": "2023-03-04T07:04:34.076307Z",
+                "url": "https://files.pythonhosted.org/packages/5a/f8/6743002259930f3b2fbce06eee4da084d386d1577c14b651816fce89e9c1/ujrpc-0.0.5-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
                 "yanked": false,
                 "yanked_reason": null
             }
