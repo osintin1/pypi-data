@@ -74,7 +74,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17113561,
+        "last_serial": 17148496,
         "urls": [
             {
                 "comment_text": "",
@@ -196,7 +196,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17113561,
+        "last_serial": 17148496,
         "urls": [
             {
                 "comment_text": "",
@@ -318,7 +318,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17113561,
+        "last_serial": 17148496,
         "urls": [
             {
                 "comment_text": "",
@@ -440,7 +440,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17113561,
+        "last_serial": 17148496,
         "urls": [
             {
                 "comment_text": "",
@@ -496,7 +496,6 @@
                 "Operating System :: OS Independent",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "# simple-cocotools\n\nA simple, modern alternative to `pycocotools`.\n\n\n## About\n\nWhy not just use [Pycocotools](https://github.com/cocodataset/cocoapi/tree/master/PythonAPI/pycocotools)?\n\n* Code is more readable and hackable.\n* Metrics are more transparent and understandable.\n* Evaluation is fast.\n* Only dependencies are `numpy` and `scipy`. No `cython` extensions. \n* Code is more modern (type annotations, linting, etc).\n\n\n## Install\n\n\n### From PyPI\n\n```bash\npip install simple-cocotools\n```\n\n### From Repo\n```bash\npip install \"simple-cocotools @ git+ssh://git@github.com/fkodom/simple-cocotools.git\"\n```\n\n### For Contributors\n```bash\n# Clone this repository\ngh repo clone fkodom/simple-cocotools\ncd simple-cocotools\n# Install all dev dependencies (tests etc.)\npip install -e .[all]\n# Setup pre-commit hooks\npre-commit install\n```\n\n\n## Usage\n\nExpects target annotations to have the same format as model predictions. (The format used by all `torchvision` detection models.)  You may already have code to convert annotations into this format, since it's required to train many detection models.  If not, use ['AnnotationsToDetectionFormat' from this repo](./simple_cocotools/utils/coco.py#L83) as an example for how to do that. \n\nA minimal example:\n\n```python\nfrom torchvision.detection.models import maskrcnn_resnet50_fpn\nfrom simple_cocotools import CocoEvaluator\n\nevaluator = CocoEvaluator()\nmodel = maskrcnn_resnet50_fpn(pretrained=True).eval()\n\nfor images, targets in data_loader:\n    predictions = model(images)\n    evaluator.update(predictions, targets)\n\nmetrics = evaluator.summarize()\n\n```\n\n`metrics` will be a dictionary with format:\n```json\n{\n    \"box\": {\n        \"mAP\": 0.40,\n        \"mAR\": 0.41,\n        \"class_AP\": {\n            \"cat\": 0.39,\n            \"dog\": 0.42,\n            ...\n        },\n        \"class_AR\": {\n            # Same as 'class_AP' above.\n        }\n    }\n    \"mask\": {\n        # Same as 'box' above.\n    }\n}\n```\n\nFor a more complete example, see [`scripts/mask_rcnn_example.py`](./scripts/mask_rcnn_example.py).\n\n\n## Benchmarks\n\nI benchmarked against several `torchvision` detection models, which have [mAP scores reported on the PyTorch website](https://pytorch.org/vision/stable/models.html#object-detection-instance-segmentation-and-person-keypoint-detection).\n\nUsing a default score threshold of 0.5:\n\nModel        | Backbone          | box mAP<br>(official) | box mAP | box mAR | mask mAP<br>(official) | mask mAP | mask mAR \n-------------|-------------------|-----------------------|---------|---------|------------------------|----------|----------\nMask R-CNN   | ResNet50          | 37.9                  | 36.9    | 43.2    | 34.6                   | 34.1     | 40.0\nFaster R-CNN | ResNet50          | 37.0                  | 36.3    | 42.0    | -                      | -        | -\nFaster R-CNN | MobileNetV3-Large | 32.8                  | 39.9    | 35.0    | -                      | -        | -\n\nNotice that the mAP for `MobileNetV3-Large` is artificially high, since it has a much lower mAR at that score threshold.  After tuning the score threshold, so that mAP and mAR are more balanced:  \n\nModel        | Backbone          | Threshold | box mAP | box mAR | mask mAP | mask mAR \n-------------|-------------------|-----------|---------|---------|----------|----------\nMask R-CNN   | ResNet50          | 0.6       | 41.1    | 41.3    | 38.2     | 38.5\nFaster R-CNN | ResNet50          | 0.6       | 40.8    | 40.4    | -        | -\nFaster R-CNN | MobileNetV3-Large | 0.425     | 36.2    | 36.2    | -        | -\n\nThese scores are more reflective of model performance, in my opinion.  Mask R-CNN slightly outperforms Faster R-CNN, and there is a noticeable (but not horrible) gap between ResNet50 and MobileNetV3 backbones.  PyTorch docs don't mention what score thresholds were used for each model benchmark. \u00af\\\\_(\u30c4)_/\u00af\n\nIgnoring the time spent getting predictions from the model, evaluation is very fast.\n* **Bbox:** ~400 samples/second\n* **Bbox + mask:** ~100 samples/second\n* Using a Google Cloud `n1-standard-4` VM (4 vCPUs, 16 GB RAM).\n\n**Note:** Speeds are dependent on the number of detections per image, and therefore dependent on the model and score threshold.\n\n\n## Keypoints Usage\n\nKeypoint mAP and mAR normally use pre-computed \"sigmas\" to determin the \"correctness\" of each keypoint prediction.  Unfortunately, those sigmas are tailored specifically for human pose (as in the COCO dataset), and not applicable to other keypoint datasets.  \n\n> **NOTE:** Sigmas are actually computed using the predictions of a specific model trained on COCO.  To make this applicable to other datasets, you would need to train a model on that dataset, and then use the sigmas from that model.  The logic is somewhat circular -- you need to train a model to get the sigmas, but you need the sigmas to compute mAP / mAR.\n>\n> There's no way around this, unless a large body of pretrained models are already available for the dataset you're using.  For most real-world problems, that is not the case.  So, the open-source mAP / mAR keypoints metrics are not generally extensible to other datasets.\n\n`simple-cocotools` does not use sigmas, and instead computes the average distance between each keypoint prediction and ground truth.  This is a much simpler approach, and is more applicable to other datasets.  It's roughly how the [sigmas for COCO were originally computed](https://cocodataset.org/#keypoints-eval).  The downside is that it's not directly comparable to the official COCO keypoints mAP / mAR.\n\nSome keypoints are more ambiguous than others.  For example, \"left hip\" is much more ambiguous than \"left eye\" -- the exact location of \"left eye\" should be obvious, while \"left hip\" is hidden by the torso and clothing.  The average distance for \"left hip\" will be much larger than \"left eye\", even if the predictions are correct. (This is how sigmas were used in the official COCO keypoints mAP / mAR.)  For that reason, keypoint distances should be interpreted with some knowledge about the specific dataset at hand.\n\n`metrics` will be a dictionary with format:\n```json\n{\n    \"box\": {\n        \"mAP\": 0.40,\n        \"mAR\": 0.41,\n        \"class_AP\": {\n            \"cat\": 0.39,\n            \"dog\": 0.42,\n            ...\n        },\n        \"class_AR\": {\n            # Same as 'class_AP' above.\n        }\n    }\n    \"keypoints\": {\n        \"distance\": 0.10,\n        \"class_distance\": {\n            \"cat\": {\n                \"distance\": 0.11,\n                \"keypoint_distance\": {\n                    \"left_eye\": 0.12,\n                    \"right_eye\": 0.13,\n                    ...\n                }\n            },\n            ...\n        }\n    }\n}\n```\n\n## How It Works\n\n**TODO:** Blog post on how `simple-cocotools` works.\n\n1. Match the predictions/labels together, maximizing the IoU between pairs with the same object class. SciPy's `linear_sum_assignment` method does most of the heavy lifting here.\n2. For each IoU threshold, determine the number of \"correct\" predictions from the assignments above.  Pairs with IoU < threshold are incorrect. \n3. For each image, count the number of total predictions, correct predictions, and ground truth labels for each object class and IoU threshold.  \n3. Compute AP/AR for each class from the prediction counts above.  Then compute mAP and mAR by averaging over all object classes.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -566,7 +565,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17113561,
+        "last_serial": 17148496,
         "urls": [
             {
                 "comment_text": "",
@@ -607,6 +606,132 @@
                 "upload_time": "2023-03-01T16:02:32",
                 "upload_time_iso_8601": "2023-03-01T16:02:32.998404Z",
                 "url": "https://files.pythonhosted.org/packages/3e/13/23917ea32c195a26eead2f4c284a3f7bbe4421316e81e404803d81ad1c02/simple-cocotools-0.2.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.1": {
+        "info": {
+            "author": "Frank Odom",
+            "author_email": "fodom@plainsight.ai",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# simple-cocotools\n\nA simple, modern alternative to `pycocotools`.\n\n\n## About\n\nWhy not just use [Pycocotools](https://github.com/cocodataset/cocoapi/tree/master/PythonAPI/pycocotools)?\n\n* Code is more readable and hackable.\n* Metrics are more transparent and understandable.\n* Evaluation is fast.\n* Only dependencies are `numpy` and `scipy`. No `cython` extensions. \n* Code is more modern (type annotations, linting, etc).\n\n\n## Install\n\n\n### From PyPI\n\n```bash\npip install simple-cocotools\n```\n\n### From Repo\n```bash\npip install \"simple-cocotools @ git+ssh://git@github.com/fkodom/simple-cocotools.git\"\n```\n\n### For Contributors\n```bash\n# Clone this repository\ngh repo clone fkodom/simple-cocotools\ncd simple-cocotools\n# Install all dev dependencies (tests etc.)\npip install -e .[all]\n# Setup pre-commit hooks\npre-commit install\n```\n\n\n## Usage\n\nExpects target annotations to have the same format as model predictions. (The format used by all `torchvision` detection models.)  You may already have code to convert annotations into this format, since it's required to train many detection models.  If not, use ['AnnotationsToDetectionFormat' from this repo](./simple_cocotools/utils/coco.py#L83) as an example for how to do that. \n\nA minimal example:\n\n```python\nfrom torchvision.detection.models import maskrcnn_resnet50_fpn\nfrom simple_cocotools import CocoEvaluator\n\nevaluator = CocoEvaluator()\nmodel = maskrcnn_resnet50_fpn(pretrained=True).eval()\n\nfor images, targets in data_loader:\n    predictions = model(images)\n    evaluator.update(predictions, targets)\n\nmetrics = evaluator.summarize()\n\n```\n\n`metrics` will be a dictionary with format:\n```json\n{\n    \"box\": {\n        \"mAP\": 0.40,\n        \"mAR\": 0.41,\n        \"class_AP\": {\n            \"cat\": 0.39,\n            \"dog\": 0.42,\n            ...\n        },\n        \"class_AR\": {\n            # Same as 'class_AP' above.\n        }\n    }\n    \"mask\": {\n        # Same as 'box' above.\n    }\n}\n```\n\nFor a more complete example, see [`scripts/mask_rcnn_example.py`](./scripts/mask_rcnn_example.py).\n\n\n## Benchmarks\n\nI benchmarked against several `torchvision` detection models, which have [mAP scores reported on the PyTorch website](https://pytorch.org/vision/stable/models.html#object-detection-instance-segmentation-and-person-keypoint-detection).\n\nUsing a default score threshold of 0.5:\n\nModel        | Backbone          | box mAP<br>(official) | box mAP | box mAR | mask mAP<br>(official) | mask mAP | mask mAR \n-------------|-------------------|-----------------------|---------|---------|------------------------|----------|----------\nMask R-CNN   | ResNet50          | 37.9                  | 36.9    | 43.2    | 34.6                   | 34.1     | 40.0\nFaster R-CNN | ResNet50          | 37.0                  | 36.3    | 42.0    | -                      | -        | -\nFaster R-CNN | MobileNetV3-Large | 32.8                  | 39.9    | 35.0    | -                      | -        | -\n\nNotice that the mAP for `MobileNetV3-Large` is artificially high, since it has a much lower mAR at that score threshold.  After tuning the score threshold, so that mAP and mAR are more balanced:  \n\nModel        | Backbone          | Threshold | box mAP | box mAR | mask mAP | mask mAR \n-------------|-------------------|-----------|---------|---------|----------|----------\nMask R-CNN   | ResNet50          | 0.6       | 41.1    | 41.3    | 38.2     | 38.5\nFaster R-CNN | ResNet50          | 0.6       | 40.8    | 40.4    | -        | -\nFaster R-CNN | MobileNetV3-Large | 0.425     | 36.2    | 36.2    | -        | -\n\nThese scores are more reflective of model performance, in my opinion.  Mask R-CNN slightly outperforms Faster R-CNN, and there is a noticeable (but not horrible) gap between ResNet50 and MobileNetV3 backbones.  PyTorch docs don't mention what score thresholds were used for each model benchmark. \u00af\\\\_(\u30c4)_/\u00af\n\nIgnoring the time spent getting predictions from the model, evaluation is very fast.\n* **Bbox:** ~400 samples/second\n* **Bbox + mask:** ~100 samples/second\n* Using a Google Cloud `n1-standard-4` VM (4 vCPUs, 16 GB RAM).\n\n**Note:** Speeds are dependent on the number of detections per image, and therefore dependent on the model and score threshold.\n\n\n## Keypoints Usage\n\nKeypoint mAP and mAR normally use pre-computed \"sigmas\" to determin the \"correctness\" of each keypoint prediction.  Unfortunately, those sigmas are tailored specifically for human pose (as in the COCO dataset), and not applicable to other keypoint datasets.  \n\n> **NOTE:** Sigmas are actually computed using the predictions of a specific model trained on COCO.  To make this applicable to other datasets, you would need to train a model on that dataset, and then use the sigmas from that model.  The logic is somewhat circular -- you need to train a model to get the sigmas, but you need the sigmas to compute mAP / mAR.\n>\n> There's no way around this, unless a large body of pretrained models are already available for the dataset you're using.  For most real-world problems, that is not the case.  So, the open-source mAP / mAR keypoints metrics are not generally extensible to other datasets.\n\n`simple-cocotools` does not use sigmas, and instead computes the average distance between each keypoint prediction and ground truth.  This is a much simpler approach, and is more applicable to other datasets.  It's roughly how the [sigmas for COCO were originally computed](https://cocodataset.org/#keypoints-eval).  The downside is that it's not directly comparable to the official COCO keypoints mAP / mAR.\n\nSome keypoints are more ambiguous than others.  For example, \"left hip\" is much more ambiguous than \"left eye\" -- the exact location of \"left eye\" should be obvious, while \"left hip\" is hidden by the torso and clothing.  The average distance for \"left hip\" will be much larger than \"left eye\", even if the predictions are correct. (This is how sigmas were used in the official COCO keypoints mAP / mAR.)  For that reason, keypoint distances should be interpreted with some knowledge about the specific dataset at hand.\n\n`metrics` will be a dictionary with format:\n```json\n{\n    \"box\": {\n        \"mAP\": 0.40,\n        \"mAR\": 0.41,\n        \"class_AP\": {\n            \"cat\": 0.39,\n            \"dog\": 0.42,\n            ...\n        },\n        \"class_AR\": {\n            # Same as 'class_AP' above.\n        }\n    }\n    \"keypoints\": {\n        \"distance\": 0.10,\n        \"class_distance\": {\n            \"cat\": {\n                \"distance\": 0.11,\n                \"keypoint_distance\": {\n                    \"left_eye\": 0.12,\n                    \"right_eye\": 0.13,\n                    ...\n                }\n            },\n            ...\n        }\n    }\n}\n```\n\n## How It Works\n\n**TODO:** Blog post on how `simple-cocotools` works.\n\n1. Match the predictions/labels together, maximizing the IoU between pairs with the same object class. SciPy's `linear_sum_assignment` method does most of the heavy lifting here.\n2. For each IoU threshold, determine the number of \"correct\" predictions from the assignments above.  Pairs with IoU < threshold are incorrect. \n3. For each image, count the number of total predictions, correct predictions, and ground truth labels for each object class and IoU threshold.  \n3. Compute AP/AR for each class from the prediction counts above.  Then compute mAP and mAR by averaging over all object classes.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/fkodom/simple-cocotools",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "simple-cocotools",
+            "package_url": "https://pypi.org/project/simple-cocotools/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/simple-cocotools/",
+            "project_urls": {
+                "Homepage": "https://github.com/fkodom/simple-cocotools"
+            },
+            "release_url": "https://pypi.org/project/simple-cocotools/0.2.1/",
+            "requires_dist": [
+                "numpy",
+                "scipy",
+                "black ; extra == 'all'",
+                "flake8 ; extra == 'all'",
+                "isort ; extra == 'all'",
+                "mypy ; extra == 'all'",
+                "pycocotools ; extra == 'all'",
+                "sweet-pipes (>=0.2.0) ; extra == 'all'",
+                "torch (>=1.8) ; extra == 'all'",
+                "torchvision ; extra == 'all'",
+                "tqdm ; extra == 'all'",
+                "wget (>=3.2) ; extra == 'all'",
+                "pytest ; extra == 'all'",
+                "pytest-cov ; extra == 'all'",
+                "pre-commit ; extra == 'all'",
+                "pre-commit ; extra == 'dev'",
+                "black ; extra == 'dev'",
+                "flake8 ; extra == 'dev'",
+                "isort ; extra == 'dev'",
+                "mypy ; extra == 'dev'",
+                "pycocotools ; extra == 'dev'",
+                "sweet-pipes (>=0.2.0) ; extra == 'dev'",
+                "torch (>=1.8) ; extra == 'dev'",
+                "torchvision ; extra == 'dev'",
+                "tqdm ; extra == 'dev'",
+                "wget (>=3.2) ; extra == 'dev'",
+                "pytest ; extra == 'dev'",
+                "pytest-cov ; extra == 'dev'",
+                "black ; extra == 'test'",
+                "flake8 ; extra == 'test'",
+                "isort ; extra == 'test'",
+                "mypy ; extra == 'test'",
+                "pycocotools ; extra == 'test'",
+                "sweet-pipes (>=0.2.0) ; extra == 'test'",
+                "torch (>=1.8) ; extra == 'test'",
+                "torchvision ; extra == 'test'",
+                "tqdm ; extra == 'test'",
+                "wget (>=3.2) ; extra == 'test'",
+                "pytest ; extra == 'test'",
+                "pytest-cov ; extra == 'test'"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "project_description",
+            "version": "0.2.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17148496,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "11deb5e13a213bf31a43306a464cd78fb0b937dc7a70da0ac5cb42c9b0e94cda",
+                    "md5": "c2388a474909ce39ca9e53ff81d91509",
+                    "sha256": "a841f26e1ac107dee7d24e3d269234592177f2e5dcec73681b35d8cff2b77449"
+                },
+                "downloads": -1,
+                "filename": "simple_cocotools-0.2.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "c2388a474909ce39ca9e53ff81d91509",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 11815,
+                "upload_time": "2023-03-03T19:20:19",
+                "upload_time_iso_8601": "2023-03-03T19:20:19.432384Z",
+                "url": "https://files.pythonhosted.org/packages/11/de/b5e13a213bf31a43306a464cd78fb0b937dc7a70da0ac5cb42c9b0e94cda/simple_cocotools-0.2.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e076f7611708ca4e90146930525987d65ef926cfc97aed796562e834f26ca0c0",
+                    "md5": "236cfdfb3425aab8ffc1c84902f2bf63",
+                    "sha256": "a4e8fe5f11d832f6f7e0d53b1cdabc450d5a546ed35a4963c800b5bb53272141"
+                },
+                "downloads": -1,
+                "filename": "simple-cocotools-0.2.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "236cfdfb3425aab8ffc1c84902f2bf63",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 13999,
+                "upload_time": "2023-03-03T19:20:20",
+                "upload_time_iso_8601": "2023-03-03T19:20:20.893709Z",
+                "url": "https://files.pythonhosted.org/packages/e0/76/f7611708ca4e90146930525987d65ef926cfc97aed796562e834f26ca0c0/simple-cocotools-0.2.1.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
