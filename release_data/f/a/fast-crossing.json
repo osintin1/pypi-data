@@ -36,7 +36,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17162857,
+        "last_serial": 17188224,
         "urls": [
             {
                 "comment_text": "",
@@ -246,7 +246,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17162857,
+        "last_serial": 17188224,
         "urls": [
             {
                 "comment_text": "",
@@ -425,7 +425,6 @@
             "author_email": "dvorak4tzx@gmail.com",
             "bugtrack_url": null,
             "classifiers": [],
-            "description": "# fast crossing\n\n<!--intro-start-->\n\n## Installation\n\n### via pip\n\n```bash\npip install -U fast-crossing\n```\n\n### from source\n\n```bash\ngit clone --recursive https://github.com/cubao/fast-crossing\npip install ./fast-crossing\n```\n\nOr\n\n```bash\npip install git+https://github.com/cubao/fast-crossing.git\n```\n\n(you can build wheels for later reuse by ` pip wheel git+https://github.com/cubao/fast-crossing.git`)\n\n<!--intro-end-->\n\n## Usage & Tests\n\nSee [`tests/test_basic.py`](tests/test_basic.py):\n\n```python\nimport numpy as np\nimport pytest\nfrom fast_crossing import FastCrossing\n\n\ndef test_fast_crossing():\n    fc = FastCrossing()\n\n    # add your polylines\n    \"\"\"\n                    2 C\n                    |\n                    1 D\n    0               |                  5\n    A---------------o------------------B\n                    |\n                    |\n                    -2 E\n    \"\"\"\n    fc.add_polyline(np.array([[0.0, 0.0], [5.0, 0.0]]))  # AB\n    fc.add_polyline(np.array([[2.5, 2.0], [2.5, 1.0], [2.5, -2.0]]))  # CDE\n\n    # build index\n    fc.finish()\n\n    # num_poylines\n    assert 2 == fc.num_poylines()\n    rulers = fc.polyline_rulers()\n    assert len(rulers) == 2\n    ruler0 = fc.polyline_ruler(0)\n    ruler1 = fc.polyline_ruler(1)\n    assert not ruler0.is_wgs84()\n    assert not ruler1.is_wgs84()\n    assert ruler0.length() == 5\n    assert ruler1.length() == 4\n    assert fc.polyline_ruler(10) is None\n\n    # intersections\n    ret = fc.intersections([1.5, 0], [3.5, 2])\n    assert len(ret) == 2\n    assert np.linalg.norm(fc.coordinates(ret[0]) - [1.5, 0, 0]) < 1e-15\n    assert np.linalg.norm(fc.coordinates(ret[1]) - [2.5, 1, 0]) < 1e-15\n    xyz = fc.coordinates(0, 0, 0.2)\n    assert np.linalg.norm(xyz - [1.0, 0, 0]) < 1e-15\n    with pytest.raises(IndexError) as excinfo:\n        xyz = fc.coordinates(2, 0, 0.5)\n    assert \"map::at\" in str(excinfo)\n\n    # query all line segment intersections\n    # [\n    #    (array([2.5, 0. ]),\n    #     array([0.5       , 0.33333333]),\n    #     array([0, 0], dtype=int32),\n    #     array([1, 1], dtype=int32))\n    # ]\n    ret = fc.intersections()\n    # print(ret)\n    assert len(ret) == 1\n    for xy, ts, label1, label2 in ret:\n        # xy \u662f\u4ea4\u70b9\uff0c\u5373\u56fe\u4e2d\u7684 o \u70b9\u5750\u6807\n        # t,s \u662f\u5206\u4f4d\u70b9\uff0c(0.5, 0.33)\n        #        0.5  ->   o \u5728 AB 1/2 \u5904\n        #        0.33 ->   o \u5728 DE 1/3 \u5904\n        # label1 \u662f line segment \u7d22\u5f15\uff0c(polyline_index, point_index)\n        #        e.g. (0, 0)\uff0cpolyline AB \u7684\u7b2c\u4e00\u6bb5\n        # label2 \u662f\u53e6\u4e00\u4e2a\u6761 line seg \u7684\u7d22\u5f15\n        #        e.g. (1, 1)\uff0cpolyline CDE \u7684\u7b2c\u4e8c\u6bb5\uff08DE \u6bb5\uff09\n        # print(xy)\n        # print(ts)\n        # print(label1)\n        # print(label2)\n        assert np.all(xy == [2.5, 0])\n        assert np.all(ts == [0.5, 1 / 3.0])\n        assert np.all(label1 == [0, 0])\n        assert np.all(label2 == [1, 1])\n\n    # query intersections against provided polyline\n    polyline = np.array([[-6.0, -1.0], [-5.0, 1.0], [5.0, -1.0]])\n    ret = fc.intersections(polyline)\n    ret = np.array(ret)  # \u8fd8\u662f\u8f6c\u5316\u6210 numpy \u6bd4\u8f83\u597d\u7528\n    xy = ret[:, 0]  # \u76f4\u63a5\u53d6\u51fa\u6240\u6709\u4ea4\u70b9\n    ts = ret[:, 1]  # \u6240\u6709\u5206\u4f4d\u70b9\n    label1 = ret[:, 2]  # \u6240\u6709 label1\uff08\u5f53\u524d polyline \u7684 label\uff09\n    label2 = ret[:, 3]  # tree \u4e2d line segs \u7684 label\n    # print(ret, xy, ts, label1, label2)\n    assert np.all(xy[0] == [0, 0])\n    assert np.all(xy[1] == [2.5, -0.5])\n    assert np.all(ts[0] == [0.5, 0])\n    assert np.all(ts[1] == [0.75, 0.5])\n    assert np.all(label1 == [[0, 1], [0, 1]])\n    assert np.all(label2 == [[0, 0], [1, 1]])\n\n    polyline2 = np.column_stack((polyline, np.zeros(len(polyline))))\n    ret2 = np.array(fc.intersections(polyline2[:, :2]))\n    assert str(ret) == str(ret2)\n\n\ndef test_fast_crossing_intersection3d():\n    fc = FastCrossing()\n    \"\"\"\n                    2 C\n                    |\n                    1 D\n    0               |                  5\n    A---------------o------------------B\n                    |\n                    |\n                    -2 E\n    \"\"\"\n    fc.add_polyline(np.array([[0.0, 0.0, 0.0], [5.0, 0.0, 100]]))  # AB\n    fc.add_polyline(np.array([[2.5, 2.0, 0.0], [2.5, 1.0, 100], [2.5, -2.0, 0]]))  # CDE\n    fc.finish()\n    ret = fc.intersections()\n    assert len(ret) == 1\n    ret = ret[0]\n    xyz1 = fc.coordinates(ret, second=False)\n    xyz2 = fc.coordinates(ret)\n    assert np.linalg.norm(xyz1 - [2.5, 0, 50]) < 1e-10\n    assert np.linalg.norm(xyz2 - [2.5, 0, 2 / 3 * 100.0]) < 1e-10\n\n\ndef test_fast_crossing_auto_rebuild_flatbush():\n    fc = FastCrossing()\n    fc.add_polyline(np.array([[0.0, 0.0, 0.0], [5.0, 0.0, 100]]))  # AB\n    fc.add_polyline(np.array([[2.5, 2.0, 0.0], [2.5, 1.0, 100], [2.5, -2.0, 0]]))  # CDE\n    ret = fc.intersections()\n    assert len(ret) == 1\n\n    fc.add_polyline([[1.5, 0], [3.5, 2]])\n    ret = fc.intersections()\n    assert len(ret) == 4  # should dedup to 3?\n\n\ndef test_fast_crossing_filter_by_z():\n    fc = FastCrossing()\n    fc.add_polyline([[0, 0, 0], [1, 0, 0]])\n    fc.add_polyline([[0, 0, 10], [1, 0, 10]])\n    fc.add_polyline([[0, 0, 20], [1, 0, 20]])\n    ret = fc.intersections([[0.5, -1], [0.5, 1]])\n    assert len(ret) == 3\n\n    ret = fc.intersections([[0.5, -1], [0.5, 1]], z_min=-1, z_max=1)\n    assert len(ret) == 1\n    assert fc.coordinates(ret[0])[2] == 0\n\n    ret = fc.intersections([[0.5, -1, 10], [0.5, 1, 10]], z_min=-1, z_max=1)\n    assert len(ret) == 1\n    assert fc.coordinates(ret[0])[2] == 10\n\n    ret = fc.intersections([[0.5, -1, 20], [0.5, 1, 20]], z_min=-1, z_max=1)\n    assert len(ret) == 1\n    assert fc.coordinates(ret[0])[2] == 20\n\n    ret = fc.intersections([[0.5, -1, 15], [0.5, 1, 15]], z_min=-6, z_max=6)\n    assert len(ret) == 2\n    assert fc.coordinates(ret[0])[2] == 10\n    assert fc.coordinates(ret[1])[2] == 20\n\n\ndef test_fast_crossing_dedup():\n    # should be stable\n    for _ in range(100):\n        fc = FastCrossing()\n        fc.add_polyline([[0, 0, 0], [1, 0, 0], [2, 0, 0]])\n        fc.add_polyline([[0, 1, 0], [1, 1, 0], [2, 1, 0]])\n\n        ret = fc.intersections([[1, -1], [1, 1]])\n        assert len(ret) == 2\n        assert np.all(ret[0][-1] == [0, 0]), ret\n        assert np.all(ret[1][-1] == [1, 0]), ret\n        assert ret[0][1][1] == 1.0, ret\n        assert ret[1][1][1] == 1.0, ret\n\n        ret = fc.intersections([[1, -1], [1, 1]], dedup=False)\n        # for idx, row in enumerate(ret):\n        #     print(idx, row)\n        assert len(ret) == 4\n```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -457,7 +456,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17162857,
+        "last_serial": 17188224,
         "urls": [
             {
                 "comment_text": "",
@@ -1065,6 +1064,658 @@
                 "upload_time": "2023-03-05T09:59:41",
                 "upload_time_iso_8601": "2023-03-05T09:59:41.113430Z",
                 "url": "https://files.pythonhosted.org/packages/b3/33/852fa878979196168e7afe44785c3c327e0d7ae24efbc31f11feaaefe700/fast_crossing-0.0.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.4": {
+        "info": {
+            "author": "tzx",
+            "author_email": "dvorak4tzx@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "# fast crossing\n\n![](docs/fast-crossing.png)\n\n(See jupyter notebook [here](https://github.com/cubao/index/blob/master/docs/notebooks/fast-crossing.ipynb))\n\n<!--intro-start-->\n\nFast polyline (line segments) intersection (fast version of bentley-ottmann).\n\n## Installation\n\n### via pip\n\n```bash\npip install -U fast-crossing\n```\n\n### from source\n\n```bash\ngit clone --recursive https://github.com/cubao/fast-crossing\npip install ./fast-crossing\n```\n\nOr\n\n```bash\npip install git+https://github.com/cubao/fast-crossing.git\n```\n\n(you can build wheels for later reuse by ` pip wheel git+https://github.com/cubao/fast-crossing.git`)\n\n## Related\n\nInspired by [anvaka/isect: Segments intersection detection library](https://github.com/anvaka/isect).\n\n<!--intro-end-->\n\n## Usage & Tests\n\nSee [`tests/test_basic.py`](tests/test_basic.py):\n\n```python\nimport numpy as np\nimport pytest\nfrom fast_crossing import FastCrossing\n\n\ndef test_fast_crossing():\n    fc = FastCrossing()\n\n    # add your polylines\n    \"\"\"\n                    2 C\n                    |\n                    1 D\n    0               |                  5\n    A---------------o------------------B\n                    |\n                    |\n                    -2 E\n    \"\"\"\n    fc.add_polyline(np.array([[0.0, 0.0], [5.0, 0.0]]))  # AB\n    fc.add_polyline(np.array([[2.5, 2.0], [2.5, 1.0], [2.5, -2.0]]))  # CDE\n\n    # build index\n    fc.finish()\n\n    # num_poylines\n    assert 2 == fc.num_poylines()\n    rulers = fc.polyline_rulers()\n    assert len(rulers) == 2\n    ruler0 = fc.polyline_ruler(0)\n    ruler1 = fc.polyline_ruler(1)\n    assert not ruler0.is_wgs84()\n    assert not ruler1.is_wgs84()\n    assert ruler0.length() == 5\n    assert ruler1.length() == 4\n    assert fc.polyline_ruler(10) is None\n\n    # intersections\n    ret = fc.intersections([1.5, 0], [3.5, 2])\n    assert len(ret) == 2\n    assert np.linalg.norm(fc.coordinates(ret[0]) - [1.5, 0, 0]) < 1e-15\n    assert np.linalg.norm(fc.coordinates(ret[1]) - [2.5, 1, 0]) < 1e-15\n    xyz = fc.coordinates(0, 0, 0.2)\n    assert np.linalg.norm(xyz - [1.0, 0, 0]) < 1e-15\n    with pytest.raises(IndexError) as excinfo:\n        xyz = fc.coordinates(2, 0, 0.5)\n    assert \"map::at\" in str(excinfo)\n\n    # query all line segment intersections\n    # [\n    #    (array([2.5, 0. ]),\n    #     array([0.5       , 0.33333333]),\n    #     array([0, 0], dtype=int32),\n    #     array([1, 1], dtype=int32))\n    # ]\n    ret = fc.intersections()\n    # print(ret)\n    assert len(ret) == 1\n    for xy, ts, label1, label2 in ret:\n        # xy \u662f\u4ea4\u70b9\uff0c\u5373\u56fe\u4e2d\u7684 o \u70b9\u5750\u6807\n        # t,s \u662f\u5206\u4f4d\u70b9\uff0c(0.5, 0.33)\n        #        0.5  ->   o \u5728 AB 1/2 \u5904\n        #        0.33 ->   o \u5728 DE 1/3 \u5904\n        # label1 \u662f line segment \u7d22\u5f15\uff0c(polyline_index, point_index)\n        #        e.g. (0, 0)\uff0cpolyline AB \u7684\u7b2c\u4e00\u6bb5\n        # label2 \u662f\u53e6\u4e00\u4e2a\u6761 line seg \u7684\u7d22\u5f15\n        #        e.g. (1, 1)\uff0cpolyline CDE \u7684\u7b2c\u4e8c\u6bb5\uff08DE \u6bb5\uff09\n        # print(xy)\n        # print(ts)\n        # print(label1)\n        # print(label2)\n        assert np.all(xy == [2.5, 0])\n        assert np.all(ts == [0.5, 1 / 3.0])\n        assert np.all(label1 == [0, 0])\n        assert np.all(label2 == [1, 1])\n\n    # query intersections against provided polyline\n    polyline = np.array([[-6.0, -1.0], [-5.0, 1.0], [5.0, -1.0]])\n    ret = fc.intersections(polyline)\n    ret = np.array(ret)  # \u8fd8\u662f\u8f6c\u5316\u6210 numpy \u6bd4\u8f83\u597d\u7528\n    xy = ret[:, 0]  # \u76f4\u63a5\u53d6\u51fa\u6240\u6709\u4ea4\u70b9\n    ts = ret[:, 1]  # \u6240\u6709\u5206\u4f4d\u70b9\n    label1 = ret[:, 2]  # \u6240\u6709 label1\uff08\u5f53\u524d polyline \u7684 label\uff09\n    label2 = ret[:, 3]  # tree \u4e2d line segs \u7684 label\n    # print(ret, xy, ts, label1, label2)\n    assert np.all(xy[0] == [0, 0])\n    assert np.all(xy[1] == [2.5, -0.5])\n    assert np.all(ts[0] == [0.5, 0])\n    assert np.all(ts[1] == [0.75, 0.5])\n    assert np.all(label1 == [[0, 1], [0, 1]])\n    assert np.all(label2 == [[0, 0], [1, 1]])\n\n    polyline2 = np.column_stack((polyline, np.zeros(len(polyline))))\n    ret2 = np.array(fc.intersections(polyline2[:, :2]))\n    assert str(ret) == str(ret2)\n\n\ndef test_fast_crossing_intersection3d():\n    fc = FastCrossing()\n    \"\"\"\n                    2 C\n                    |\n                    1 D\n    0               |                  5\n    A---------------o------------------B\n                    |\n                    |\n                    -2 E\n    \"\"\"\n    fc.add_polyline(np.array([[0.0, 0.0, 0.0], [5.0, 0.0, 100]]))  # AB\n    fc.add_polyline(np.array([[2.5, 2.0, 0.0], [2.5, 1.0, 100], [2.5, -2.0, 0]]))  # CDE\n    fc.finish()\n    ret = fc.intersections()\n    assert len(ret) == 1\n    ret = ret[0]\n    xyz1 = fc.coordinates(ret, second=False)\n    xyz2 = fc.coordinates(ret)\n    assert np.linalg.norm(xyz1 - [2.5, 0, 50]) < 1e-10\n    assert np.linalg.norm(xyz2 - [2.5, 0, 2 / 3 * 100.0]) < 1e-10\n\n\ndef test_fast_crossing_auto_rebuild_flatbush():\n    fc = FastCrossing()\n    fc.add_polyline(np.array([[0.0, 0.0, 0.0], [5.0, 0.0, 100]]))  # AB\n    fc.add_polyline(np.array([[2.5, 2.0, 0.0], [2.5, 1.0, 100], [2.5, -2.0, 0]]))  # CDE\n    ret = fc.intersections()\n    assert len(ret) == 1\n\n    fc.add_polyline([[1.5, 0], [3.5, 2]])\n    ret = fc.intersections()\n    assert len(ret) == 4  # should dedup to 3?\n\n\ndef test_fast_crossing_filter_by_z():\n    fc = FastCrossing()\n    fc.add_polyline([[0, 0, 0], [1, 0, 0]])\n    fc.add_polyline([[0, 0, 10], [1, 0, 10]])\n    fc.add_polyline([[0, 0, 20], [1, 0, 20]])\n    ret = fc.intersections([[0.5, -1], [0.5, 1]])\n    assert len(ret) == 3\n\n    ret = fc.intersections([[0.5, -1], [0.5, 1]], z_min=-1, z_max=1)\n    assert len(ret) == 1\n    assert fc.coordinates(ret[0])[2] == 0\n\n    ret = fc.intersections([[0.5, -1, 10], [0.5, 1, 10]], z_min=-1, z_max=1)\n    assert len(ret) == 1\n    assert fc.coordinates(ret[0])[2] == 10\n\n    ret = fc.intersections([[0.5, -1, 20], [0.5, 1, 20]], z_min=-1, z_max=1)\n    assert len(ret) == 1\n    assert fc.coordinates(ret[0])[2] == 20\n\n    ret = fc.intersections([[0.5, -1, 15], [0.5, 1, 15]], z_min=-6, z_max=6)\n    assert len(ret) == 2\n    assert fc.coordinates(ret[0])[2] == 10\n    assert fc.coordinates(ret[1])[2] == 20\n\n\ndef test_fast_crossing_dedup():\n    # should be stable\n    for _ in range(100):\n        fc = FastCrossing()\n        fc.add_polyline([[0, 0, 0], [1, 0, 0], [2, 0, 0]])\n        fc.add_polyline([[0, 1, 0], [1, 1, 0], [2, 1, 0]])\n\n        ret = fc.intersections([[1, -1], [1, 1]])\n        assert len(ret) == 2\n        assert np.all(ret[0][-1] == [0, 0]), ret\n        assert np.all(ret[1][-1] == [1, 0]), ret\n        assert ret[0][1][1] == 1.0, ret\n        assert ret[1][1][1] == 1.0, ret\n\n        ret = fc.intersections([[1, -1], [1, 1]], dedup=False)\n        # for idx, row in enumerate(ret):\n        #     print(idx, row)\n        assert len(ret) == 4\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/cubao/fast-crossing",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "fast-crossing",
+            "package_url": "https://pypi.org/project/fast-crossing/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/fast-crossing/",
+            "project_urls": {
+                "Homepage": "https://github.com/cubao/fast-crossing"
+            },
+            "release_url": "https://pypi.org/project/fast-crossing/0.0.4/",
+            "requires_dist": [
+                "numpy",
+                "pytest (>=6.0) ; extra == 'test'"
+            ],
+            "requires_python": "",
+            "summary": "fast crossing",
+            "version": "0.0.4",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17188224,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d744f16d5bb055f6067b721e47dfdc1dd5c61467a2abdeb908214b00ae372868",
+                    "md5": "75981b66b141fb46d71afee31a3e6491",
+                    "sha256": "a71a6ba58d1a15c68b5411db6093842288f64c30d3a518c22f213d704bbd7df1"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp310-cp310-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "75981b66b141fb46d71afee31a3e6491",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": null,
+                "size": 151435,
+                "upload_time": "2023-03-07T09:12:06",
+                "upload_time_iso_8601": "2023-03-07T09:12:06.073117Z",
+                "url": "https://files.pythonhosted.org/packages/d7/44/f16d5bb055f6067b721e47dfdc1dd5c61467a2abdeb908214b00ae372868/fast_crossing-0.0.4-cp310-cp310-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "1fc5f61dd1433dabd9520be65c5153006f12ecc8143f1a8f5a89913f0d1ec893",
+                    "md5": "887699d8a5ae0ab438dda7d7ee186086",
+                    "sha256": "5fd217f182ea7a265f40175c80e0833fcf2317251380a58ca2c0ea9e98e4af43"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp310-cp310-macosx_11_0_arm64.whl",
+                "has_sig": false,
+                "md5_digest": "887699d8a5ae0ab438dda7d7ee186086",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": null,
+                "size": 138066,
+                "upload_time": "2023-03-07T09:12:07",
+                "upload_time_iso_8601": "2023-03-07T09:12:07.907998Z",
+                "url": "https://files.pythonhosted.org/packages/1f/c5/f61dd1433dabd9520be65c5153006f12ecc8143f1a8f5a89913f0d1ec893/fast_crossing-0.0.4-cp310-cp310-macosx_11_0_arm64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "7342c3386f5af38754550fd53d3fd0f602b51ab17fff73f0566c214802dcba10",
+                    "md5": "85fb6ab402fa91c3a485a7ac9d17702b",
+                    "sha256": "157dbd77c0ab6dea9a4dd5d0ae9d5246528235bbb737490994a5cd00a851fa63"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                "has_sig": false,
+                "md5_digest": "85fb6ab402fa91c3a485a7ac9d17702b",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": null,
+                "size": 166307,
+                "upload_time": "2023-03-07T09:12:09",
+                "upload_time_iso_8601": "2023-03-07T09:12:09.613682Z",
+                "url": "https://files.pythonhosted.org/packages/73/42/c3386f5af38754550fd53d3fd0f602b51ab17fff73f0566c214802dcba10/fast_crossing-0.0.4-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "4bdc57b8b00c91aeba4a35ba7e4ffe7a49852021807949788fd684cf9a977b96",
+                    "md5": "8c5449ce446d23c6b37326710183761f",
+                    "sha256": "887a5f92c11e1de233711b296547979f976bf970c7b8e4c0cd35b60030bf8e5b"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "8c5449ce446d23c6b37326710183761f",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": null,
+                "size": 179181,
+                "upload_time": "2023-03-07T09:12:11",
+                "upload_time_iso_8601": "2023-03-07T09:12:11.222054Z",
+                "url": "https://files.pythonhosted.org/packages/4b/dc/57b8b00c91aeba4a35ba7e4ffe7a49852021807949788fd684cf9a977b96/fast_crossing-0.0.4-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5a40340133ed92b85cfe957166445a37440adf797ddb8d4a1bfe1d220aabd735",
+                    "md5": "81b530349d3f15ef69a712a12dda300a",
+                    "sha256": "7f8de6e66d9e47b31be5fb6630247b444694ebdce6bd547e0b27423b543c4a8d"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp310-cp310-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "81b530349d3f15ef69a712a12dda300a",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": null,
+                "size": 149086,
+                "upload_time": "2023-03-07T09:12:12",
+                "upload_time_iso_8601": "2023-03-07T09:12:12.404082Z",
+                "url": "https://files.pythonhosted.org/packages/5a/40/340133ed92b85cfe957166445a37440adf797ddb8d4a1bfe1d220aabd735/fast_crossing-0.0.4-cp310-cp310-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ac12e6ca571ac2e1e17b912c6b6159f930d85c061bf122bcd8350f294a011191",
+                    "md5": "bce0848822fafb96c56a3f449ac23558",
+                    "sha256": "5be8dd0dee019be99a629fa69c9c3888ee386055d1890faebae0a73ec5ebe268"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp311-cp311-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "bce0848822fafb96c56a3f449ac23558",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": null,
+                "size": 151442,
+                "upload_time": "2023-03-07T09:12:14",
+                "upload_time_iso_8601": "2023-03-07T09:12:14.161809Z",
+                "url": "https://files.pythonhosted.org/packages/ac/12/e6ca571ac2e1e17b912c6b6159f930d85c061bf122bcd8350f294a011191/fast_crossing-0.0.4-cp311-cp311-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "73d5e70ee96e30b33263eee7e0888d223b6cc9ef027da545c267d7fe42ee51e6",
+                    "md5": "7ed3cf1a50a9079e750519dd4c051604",
+                    "sha256": "513539d860541c572530e4fccae5b3fbe11d5a0cbe63fc8dd79a040b2317bc26"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp311-cp311-macosx_11_0_arm64.whl",
+                "has_sig": false,
+                "md5_digest": "7ed3cf1a50a9079e750519dd4c051604",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": null,
+                "size": 138038,
+                "upload_time": "2023-03-07T09:12:15",
+                "upload_time_iso_8601": "2023-03-07T09:12:15.984949Z",
+                "url": "https://files.pythonhosted.org/packages/73/d5/e70ee96e30b33263eee7e0888d223b6cc9ef027da545c267d7fe42ee51e6/fast_crossing-0.0.4-cp311-cp311-macosx_11_0_arm64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "7845c127bbdf3dc0211e416f4b20e83473f84cca151412101234c27290fa3f03",
+                    "md5": "b31014641ad708b88cfe14ab3dbd7558",
+                    "sha256": "97f6cfeaca9faf7dac16751f5b93caf4cad7313ce44d697bd4690eb62061c1a7"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                "has_sig": false,
+                "md5_digest": "b31014641ad708b88cfe14ab3dbd7558",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": null,
+                "size": 166313,
+                "upload_time": "2023-03-07T09:12:17",
+                "upload_time_iso_8601": "2023-03-07T09:12:17.778377Z",
+                "url": "https://files.pythonhosted.org/packages/78/45/c127bbdf3dc0211e416f4b20e83473f84cca151412101234c27290fa3f03/fast_crossing-0.0.4-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "360310b146b43a7b1361327d9b26da2c548bac6ad9f28581b61891a9fe921a5e",
+                    "md5": "ce69dff39317da964e070a675915dfdf",
+                    "sha256": "e17030cc3ef5edfe53cb94d6f777e8cdca70607189c4a02542a719961febafcc"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "ce69dff39317da964e070a675915dfdf",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": null,
+                "size": 179213,
+                "upload_time": "2023-03-07T09:12:19",
+                "upload_time_iso_8601": "2023-03-07T09:12:19.475803Z",
+                "url": "https://files.pythonhosted.org/packages/36/03/10b146b43a7b1361327d9b26da2c548bac6ad9f28581b61891a9fe921a5e/fast_crossing-0.0.4-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d4d7a5e5d5826df04626229c8a650189401a21e9490622aab0c7c93647c521be",
+                    "md5": "ef6f9fb3eeee537e4198baac651bc308",
+                    "sha256": "a39b09c5cc7de2b07da197b9acd76c98960663ddf59bac9f2365ed3e59061679"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp311-cp311-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "ef6f9fb3eeee537e4198baac651bc308",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": null,
+                "size": 148975,
+                "upload_time": "2023-03-07T09:12:21",
+                "upload_time_iso_8601": "2023-03-07T09:12:21.639228Z",
+                "url": "https://files.pythonhosted.org/packages/d4/d7/a5e5d5826df04626229c8a650189401a21e9490622aab0c7c93647c521be/fast_crossing-0.0.4-cp311-cp311-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "12d17251192818bd8fa6b4d27d404fa1dcbf04d2ce9e3a8f70c58c6cb5f8a08d",
+                    "md5": "89e04abf528ae6804237e14b4a8f2eb1",
+                    "sha256": "8906dfb159d653f4f77fea00b912420958c2d30776d6d35e29981abbc060d915"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp36-cp36m-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "89e04abf528ae6804237e14b4a8f2eb1",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp36",
+                "requires_python": null,
+                "size": 148827,
+                "upload_time": "2023-03-07T09:12:23",
+                "upload_time_iso_8601": "2023-03-07T09:12:23.285800Z",
+                "url": "https://files.pythonhosted.org/packages/12/d1/7251192818bd8fa6b4d27d404fa1dcbf04d2ce9e3a8f70c58c6cb5f8a08d/fast_crossing-0.0.4-cp36-cp36m-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "fd9d305f29a53afb7ed31626658f2d91260430a7acb5e5e310088f9728c246e3",
+                    "md5": "4ac0843c3ec2df44da549572c7e2c0a3",
+                    "sha256": "c564be934f1abc058ac4bb8ccd033c5d0722cc3620eb8102da00c1c4feeca95e"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp36-cp36m-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                "has_sig": false,
+                "md5_digest": "4ac0843c3ec2df44da549572c7e2c0a3",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp36",
+                "requires_python": null,
+                "size": 172241,
+                "upload_time": "2023-03-07T09:12:24",
+                "upload_time_iso_8601": "2023-03-07T09:12:24.489924Z",
+                "url": "https://files.pythonhosted.org/packages/fd/9d/305f29a53afb7ed31626658f2d91260430a7acb5e5e310088f9728c246e3/fast_crossing-0.0.4-cp36-cp36m-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5d9966c491658efee3deb746d8dc58009f414ee3b419aaf59490efe4d666f790",
+                    "md5": "d25fd2264aeb7509ea8febc827e4cdb5",
+                    "sha256": "7e1a4a13121dcbce63a435a7dac68ac49560aa9af319f0a7d9912c857f31ae4d"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp36-cp36m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "d25fd2264aeb7509ea8febc827e4cdb5",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp36",
+                "requires_python": null,
+                "size": 184521,
+                "upload_time": "2023-03-07T09:12:26",
+                "upload_time_iso_8601": "2023-03-07T09:12:26.305060Z",
+                "url": "https://files.pythonhosted.org/packages/5d/99/66c491658efee3deb746d8dc58009f414ee3b419aaf59490efe4d666f790/fast_crossing-0.0.4-cp36-cp36m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3b0e97c2107af4d6263e1715debfebb1f4841a02ab2e081bbedde0c459bde3bc",
+                    "md5": "3abdd28a0160baf2dbc770502f82d1fd",
+                    "sha256": "dd5a75e584eca3ab053a122124de082b5a697e01976ab7c61dd19d4ef0e72093"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp36-cp36m-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "3abdd28a0160baf2dbc770502f82d1fd",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp36",
+                "requires_python": null,
+                "size": 147945,
+                "upload_time": "2023-03-07T09:12:27",
+                "upload_time_iso_8601": "2023-03-07T09:12:27.774098Z",
+                "url": "https://files.pythonhosted.org/packages/3b/0e/97c2107af4d6263e1715debfebb1f4841a02ab2e081bbedde0c459bde3bc/fast_crossing-0.0.4-cp36-cp36m-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "315ad98b8c5e84f04e142a59161c8adf0fc2d8119fe76c308614a616af88936e",
+                    "md5": "868e2f88ef1ed3b6b04609f783b4259a",
+                    "sha256": "e4e62135f5a2a88f78f1fba984bf6be5fa838ef582ec99799ce511c83d527913"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp37-cp37m-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "868e2f88ef1ed3b6b04609f783b4259a",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": null,
+                "size": 148718,
+                "upload_time": "2023-03-07T09:12:29",
+                "upload_time_iso_8601": "2023-03-07T09:12:29.439683Z",
+                "url": "https://files.pythonhosted.org/packages/31/5a/d98b8c5e84f04e142a59161c8adf0fc2d8119fe76c308614a616af88936e/fast_crossing-0.0.4-cp37-cp37m-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "9fd1b64c35e72b37d2df6f1ef71bef911749f9885a20fb445e9fc74cd6e97576",
+                    "md5": "68faee35fa59fffa5fbc87f8ca86ad27",
+                    "sha256": "9ba465343f1c44990ff95625572b294ce1cedfce288c5c0a49e91605839141d3"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp37-cp37m-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                "has_sig": false,
+                "md5_digest": "68faee35fa59fffa5fbc87f8ca86ad27",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": null,
+                "size": 172075,
+                "upload_time": "2023-03-07T09:12:30",
+                "upload_time_iso_8601": "2023-03-07T09:12:30.613515Z",
+                "url": "https://files.pythonhosted.org/packages/9f/d1/b64c35e72b37d2df6f1ef71bef911749f9885a20fb445e9fc74cd6e97576/fast_crossing-0.0.4-cp37-cp37m-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ecd07341dd4d2e59e534f1cfb72d50e9161ff00738ed33c22ca30615eb3bcd84",
+                    "md5": "f367be8c43d801b2f03d4f918430aba8",
+                    "sha256": "34095424347c4dcf7691237cebf1624b16c32420d057f78c495a96ae07d09d26"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "f367be8c43d801b2f03d4f918430aba8",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": null,
+                "size": 184753,
+                "upload_time": "2023-03-07T09:12:32",
+                "upload_time_iso_8601": "2023-03-07T09:12:32.469899Z",
+                "url": "https://files.pythonhosted.org/packages/ec/d0/7341dd4d2e59e534f1cfb72d50e9161ff00738ed33c22ca30615eb3bcd84/fast_crossing-0.0.4-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "8164b993774d09872b32b2ea3a82bc85876dac29c5585ec44da895005165c9fc",
+                    "md5": "878e11ab0f33983b314ee305ef456019",
+                    "sha256": "23d105442993ed9a444c22a9f40f93c28813cb9f57df8e84940b866009b6a7ab"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp37-cp37m-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "878e11ab0f33983b314ee305ef456019",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": null,
+                "size": 147943,
+                "upload_time": "2023-03-07T09:12:33",
+                "upload_time_iso_8601": "2023-03-07T09:12:33.729960Z",
+                "url": "https://files.pythonhosted.org/packages/81/64/b993774d09872b32b2ea3a82bc85876dac29c5585ec44da895005165c9fc/fast_crossing-0.0.4-cp37-cp37m-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e68175b6e85f7a59364aad54c0008c437b2f4022330d372fb3e69b2f957c79f3",
+                    "md5": "d84366264852551a931fffe2918ff7ed",
+                    "sha256": "47709f829077b5cc1b3e69691bacc3940e873ab3d57e82f8ab197ae1034f8a78"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp38-cp38-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "d84366264852551a931fffe2918ff7ed",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": null,
+                "size": 151476,
+                "upload_time": "2023-03-07T09:12:35",
+                "upload_time_iso_8601": "2023-03-07T09:12:35.371775Z",
+                "url": "https://files.pythonhosted.org/packages/e6/81/75b6e85f7a59364aad54c0008c437b2f4022330d372fb3e69b2f957c79f3/fast_crossing-0.0.4-cp38-cp38-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2bf27a8831655607f3a1124c1c74f208264cc5d3e28fcf7fd26f260cac6c9042",
+                    "md5": "5db8943f59dc0850c04040d23153e248",
+                    "sha256": "a26860021ab7702245f70b69dc3ef57e4dd026c30cbbc5348851405fd4c256e1"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp38-cp38-macosx_11_0_arm64.whl",
+                "has_sig": false,
+                "md5_digest": "5db8943f59dc0850c04040d23153e248",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": null,
+                "size": 138102,
+                "upload_time": "2023-03-07T09:12:36",
+                "upload_time_iso_8601": "2023-03-07T09:12:36.661493Z",
+                "url": "https://files.pythonhosted.org/packages/2b/f2/7a8831655607f3a1124c1c74f208264cc5d3e28fcf7fd26f260cac6c9042/fast_crossing-0.0.4-cp38-cp38-macosx_11_0_arm64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "0a6c51eebadd9da32487f84fe6d3f1d7579a51956c384e6b8e4b1f8bebdfbf2d",
+                    "md5": "83877b1832de8e993b682d8c6d979aed",
+                    "sha256": "967cd07cce89f0ad54b0109b9b259679db4ece0628fd2dc21cc7ccae9c67f4c9"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                "has_sig": false,
+                "md5_digest": "83877b1832de8e993b682d8c6d979aed",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": null,
+                "size": 166216,
+                "upload_time": "2023-03-07T09:12:38",
+                "upload_time_iso_8601": "2023-03-07T09:12:38.088713Z",
+                "url": "https://files.pythonhosted.org/packages/0a/6c/51eebadd9da32487f84fe6d3f1d7579a51956c384e6b8e4b1f8bebdfbf2d/fast_crossing-0.0.4-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "eadd975c0c59f3616aa0f0b2e5b4b46a0e31257c7be6c526dee12ac7ba48d0a5",
+                    "md5": "31d99d37dc169c48e29b8a0eaa8f5fed",
+                    "sha256": "48e921d1e3917724312b05421cf188ba63fc5f90c9fe83d031889f4642cd2919"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "31d99d37dc169c48e29b8a0eaa8f5fed",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": null,
+                "size": 179197,
+                "upload_time": "2023-03-07T09:12:39",
+                "upload_time_iso_8601": "2023-03-07T09:12:39.790039Z",
+                "url": "https://files.pythonhosted.org/packages/ea/dd/975c0c59f3616aa0f0b2e5b4b46a0e31257c7be6c526dee12ac7ba48d0a5/fast_crossing-0.0.4-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "582c212b3cfba1c56881a51108f491fc052a38eda5d8e404e1eb6ab3f01b012f",
+                    "md5": "f49903d55b8e7a28088ed5d1e047c9dc",
+                    "sha256": "d567dc7c4d8adebd1b2f9a8ec9838020d02c71f244c61ff14280f33a19c2416a"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp38-cp38-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "f49903d55b8e7a28088ed5d1e047c9dc",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": null,
+                "size": 148987,
+                "upload_time": "2023-03-07T09:12:40",
+                "upload_time_iso_8601": "2023-03-07T09:12:40.942345Z",
+                "url": "https://files.pythonhosted.org/packages/58/2c/212b3cfba1c56881a51108f491fc052a38eda5d8e404e1eb6ab3f01b012f/fast_crossing-0.0.4-cp38-cp38-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e24ba244db1e2787b28a7e0f421eaa632f99a55e413e18b22e46e2cab5f0c230",
+                    "md5": "2747f561de95b86b7785d8360df9eb79",
+                    "sha256": "41c0be0b15d173ab11ac1904674dc9062ff8142cf0d21710e97fda3454c64830"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp39-cp39-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "2747f561de95b86b7785d8360df9eb79",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": null,
+                "size": 151551,
+                "upload_time": "2023-03-07T09:12:42",
+                "upload_time_iso_8601": "2023-03-07T09:12:42.113798Z",
+                "url": "https://files.pythonhosted.org/packages/e2/4b/a244db1e2787b28a7e0f421eaa632f99a55e413e18b22e46e2cab5f0c230/fast_crossing-0.0.4-cp39-cp39-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5dfb53088da76ea348375ff33dac6d26d89aa28a1beac2986801ab7b54d8fe48",
+                    "md5": "0918ed39878f2826d69b9038fdaac96c",
+                    "sha256": "0253d90434cc041aa5793e4b7cb8a30e671701f56557bbe72e507a8637d8cadc"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp39-cp39-macosx_11_0_arm64.whl",
+                "has_sig": false,
+                "md5_digest": "0918ed39878f2826d69b9038fdaac96c",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": null,
+                "size": 138180,
+                "upload_time": "2023-03-07T09:12:43",
+                "upload_time_iso_8601": "2023-03-07T09:12:43.316710Z",
+                "url": "https://files.pythonhosted.org/packages/5d/fb/53088da76ea348375ff33dac6d26d89aa28a1beac2986801ab7b54d8fe48/fast_crossing-0.0.4-cp39-cp39-macosx_11_0_arm64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a317cccb2ff413bb654f10c4d4e688dfb98e3cd3f6c70c489f37e88488344a02",
+                    "md5": "1b8ae0c53ac9ba49d2a7c87ee72ad60f",
+                    "sha256": "b2c225c51354f62cf0236c0164c952d414a4164315850278632ecd219d6b3ba4"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                "has_sig": false,
+                "md5_digest": "1b8ae0c53ac9ba49d2a7c87ee72ad60f",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": null,
+                "size": 166643,
+                "upload_time": "2023-03-07T09:12:44",
+                "upload_time_iso_8601": "2023-03-07T09:12:44.638923Z",
+                "url": "https://files.pythonhosted.org/packages/a3/17/cccb2ff413bb654f10c4d4e688dfb98e3cd3f6c70c489f37e88488344a02/fast_crossing-0.0.4-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c80df198fcefe3be9881b746dd269231802d08192d76697efa236e920fea4827",
+                    "md5": "a80995aeb3f54974fdf98867d2a4a72b",
+                    "sha256": "0ffe05b221f3c297d419d90268b8c60beb4193a2f282dbebf424c22ca4fb2c1a"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "a80995aeb3f54974fdf98867d2a4a72b",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": null,
+                "size": 179347,
+                "upload_time": "2023-03-07T09:12:45",
+                "upload_time_iso_8601": "2023-03-07T09:12:45.766476Z",
+                "url": "https://files.pythonhosted.org/packages/c8/0d/f198fcefe3be9881b746dd269231802d08192d76697efa236e920fea4827/fast_crossing-0.0.4-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "1ba9c9b3823e5856e3e09356ba3b24e797b2e7d4c5c86e2c8b221184e18629ae",
+                    "md5": "579d01416b3f8602392bdced309ecf95",
+                    "sha256": "07c473e18499bc86ab1672f5102a0844634dc922b53e925d80a9db8e0d91ac54"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4-cp39-cp39-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "579d01416b3f8602392bdced309ecf95",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": null,
+                "size": 149118,
+                "upload_time": "2023-03-07T09:12:47",
+                "upload_time_iso_8601": "2023-03-07T09:12:47.494125Z",
+                "url": "https://files.pythonhosted.org/packages/1b/a9/c9b3823e5856e3e09356ba3b24e797b2e7d4c5c86e2c8b221184e18629ae/fast_crossing-0.0.4-cp39-cp39-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "19119c513e0fb17848a24c5f55735a60fee5fd42cbd88da16ffa58dbba8e7b58",
+                    "md5": "7187854c0316c9571266463c40e04089",
+                    "sha256": "e696b10d2bb60b38d89c8c43ac628f9b63cb2e8020f8537577d967d9204133da"
+                },
+                "downloads": -1,
+                "filename": "fast_crossing-0.0.4.tar.gz",
+                "has_sig": false,
+                "md5_digest": "7187854c0316c9571266463c40e04089",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 3174129,
+                "upload_time": "2023-03-07T09:12:48",
+                "upload_time_iso_8601": "2023-03-07T09:12:48.831633Z",
+                "url": "https://files.pythonhosted.org/packages/19/11/9c513e0fb17848a24c5f55735a60fee5fd42cbd88da16ffa58dbba8e7b58/fast_crossing-0.0.4.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

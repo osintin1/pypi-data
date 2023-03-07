@@ -45,7 +45,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17179136,
+        "last_serial": 17189120,
         "urls": [
             {
                 "comment_text": "",
@@ -138,7 +138,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17179136,
+        "last_serial": 17189120,
         "urls": [
             {
                 "comment_text": "",
@@ -195,7 +195,6 @@
                 "Programming Language :: Python",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "# About\n\nThis is a Python library aimed at developers, that simplifies setting up and using automatic system testing for several types of projects.\n\nI've named it `verifit` as a contraction of `Verify It!`, i.e. \"Make sure your system works fine!\"\n\n\n\n# Introduction\n\n## Why Developer-Based Automatic System Testing?\n\nAutomatic system (or application-level) testing done by developers is a must for every project.  Even if you have a dedicated QA team, automatic system testing is a very valuable tool for making sure your product works as expected:\n\n- It allows developers to be very confident of the quality of the products that they ship.\n- Sometimes you can't test a system 100% automatically. But, if you manage to cover the functionality (and perhaps some non-functional requirements, such as performance and high-availability - depending on the nature of the project), this will be a big help as the project builds up, and the risk of breaking something increases.\n- It makes bug investigation easier - if you know the case covered by the bug passes in your automated tests, then the source must be elsewhere, such as misconfiguration or wrong parameter.\n- It makes QA team's life easier by helping them design their tests.\n\n## Why This Libray?\n\nFor the above to work, though, the developers must be maintaining their tests along with the code base, or even better, do TDD.\n\nThis library aims to make a developer's life easier by leveraging the already very friendly PyTest tool, and building upon it with a handful of commonly used options, such as environment variables or making authorized HTTPS requests.\n\nAlso, on small projects or where you're time constrained, having an automatic system testing framework that's easy to put to use on a daily basis is of great help.\n\n## Side Note: Black Box Testing\n\nThere are multiple ways of writing automated tests, and this library is not tied to any particular methodology.\n\nHowever, one particular testing methodology I favor is **black box testing**, in which you treat your system as a black box, and *never check its internals*.  I find it has quite a few advantages, and I thought I'd list some of them here:\n\n- Easy to put in place.  You just hit your system in the same way its clients would.  No need to write code that checks databases, Kafka, or who knows what.\n- Can serve as acceptance testing.  You can put up compound scenarios.\n- It's resistant to system implementation changes.\n\n\n\n\n# Overview\n\nNormally, if you're using PyTest and a few helper Python modules, you can test pretty much anything quite fast, without needing a library.  However, as you start doing this, you soon realize you're going to need some things over and over again in your tests.  This small library provides a few helpers for making a developer's automatic testing easier:\n\n- Quick configuration.\n- A cache for speeding up things such as getting access tokens, or any other data that is reused.\n- A quick way to do driver-based testing, in which the test case relies on a particular driver (specified at runtime)  that does the action and returns the result.  This allows you to run the same test against different drivers, such as an API, UI, etc.\n- Simplified mechanism for skipping tests that are not suitable for a particular driver.\n- Web-Sockets testing.\n- Some other helper tools, like date & time, generating random values.\n\nThis repo consists of the actual library, which is in `lib/`, some sample shell scripts, and sample tests from which you can inspire.\n\n\n# Quick Start with Writing Tests\n\n## 1. Install Required Libraries\n\n- Install Python 3.6 or higher.\n- Install PyTest.\n- Copy the [requirements from the sample tests](https://github.com/sorelmitra/verifit/blob/main/tests/requirements.txt) to your PyTest project and install them.  This will basically install the `verifit` library to its latest version.\n\n## 2. Prepare a `conftest.py` File with Drivers\n\n**Note 1**: You can skip this section if you're not going to use drivers in your tests.\n\n**Note 2**: You can see the pattern explained below applied for the sample tests in  `tests/conftest.py`.\n\nAssume you have two services, `my-service`, and `my-second-service`, and each one of them has different needs for a driver:\n\n- `my-service` has a REST, GraphQL, and UI interface, and you want to test them all, ideally without duplicating test cases.  The use cases for all interfaces are similar and you want to reuse your test cases.\n- `my-second-service` has multiple versions, and most of your tests apply to all of them, so again  you want to reuse them.\n\nTo achieve this with this library, add the following code into your `conftest.py` file:\n\n```python\nimport pytest\n\nfrom src.lib.driver import get_driver_params, get_driver\n\n\n@pytest.fixture(params=get_driver_params('MY_DRIVER', ['my-service-rest', 'my-service-graphql', 'my-service-ui']))\ndef my_driver(request):\n    return get_driver(request)\n\n\n@pytest.fixture(params=get_driver_params('MY_SECOND_DRIVER', ['my-second-service-v1', 'my-second-service-v2', 'my-second-service-v3', 'my-second-service-v4']))\ndef my_second_driver(request):\n    return get_driver(request)\n```\n\n(In the rest of this section, we focus on `my-service`.  The same pattern applies for `my-second-service`.)\n\nThen in your test file, use the driver like this:\n\n```python\n@pytest.mark.driver_functionality('do_stuff')\ndef test_stuff(my_driver):\n   data = {}  # the data that <do_stuff> needs\n   my_driver(data)\n```\n\nNow the framework will make sure to call `do_stuff` for each driver that is specified in the environment variable `MY_DRIVER`, or by default for the list declared in the fixture: `['my-service-rest', 'my-service-graphql', 'my-service-ui']`.  Specifically, it will look for files named like this, in the same folder as your test file:\n\n- `my-service-rest-do_stuff.py`: Do stuff via REST.\n- `my-service-graphql-do_stuff.py`: Do stuff via GraphQL.\n- `my-service-ui-do_stuff.py`: Do stuff via UI.\n\nIf you need to specify `MY_DRIVER`, do it like this: `MY_DRIVER='my-service-rest,my-service-ui' pytest my-tests`.  This will run your tests for only the REST and UI drivers.\n\nIn case a particular test does not make sense for a particular driver, mark it as such with:\n\n```python\n@pytest.mark.skip_driver('my-service-ui')\n@pytest.mark.driver_functionality('do_another_stuff')\ndef test_another_stuff(my_driver):\n   data = {}  # the data that <do_another_stuff> needs\n   my_driver(data)\n```\n\nNow the framework will skip `test_another_stuff` if the driver is for UI, and instruct PyTest to display an appropriate message.\n\n## 3. Inspire from the Sample Tests \n\nWe have a bunch of test suites that you can inspire from.  Each suite tests an imaginary service, which is either an online dummy one, either a dummy shell command. \n\n1. **Post-Service**.  This one can post to a particular server via a driver.  Each driver connects to the server it can talk to, and makes sure the returned data has the same format in order for the test to function.  We have the following drivers:\n   - `post-service-1` that connects to a REST API.\n   - `post-service-2` that connects to a GraphQL API.\n2. **Echo-Service**.  It sends a message to a Web-Sockets server and gives back the response.  In our case, the dummy WSS server echoes back whatever we're sending, so the test verifies this.\n3. **Shopping-Service**.  This test shows multiple features:\n   - Login and get an access token.  (`test_login.py`.)\n   - Accessing an authorized endpoint with an access token.  (`test_products.py`.)\n   - Caching some values, in this case the access token for a particular user.  (`test_login.py`.)\n   - Log in from cache, which means reusing the cached access token if it's not close to expiration date.  If no suitable token is found, log in again.  (`test_products.py`.)\n   - BDD using `pytest-bdd` and Gherkin.  Implements a similar test to `test_products.py`, but this time with a Gherkin feature file and `@given`, `@when`, `@then`.  Showcases matching a Gherkin declaration with regular expressions.  (`test_carts.py`.)\n4. **Date-Service**.  It runs the shell command `date` with some arguments, and verifies the resulting output.\n5. **Kitchen-Service**.  Web UI test using Cypress.IO and their kitchen sink sample page.  It is called from a Python test that runs Cypress via `subprocess`.\n\nTo run all sample test suites included with this project, do this:\n\n```shell\ncd tests\npip install -r requirements.txt\npytest .\n```\n\nMore example commands:\n\n- Run only tests that are related to posts and shopping: `pytest post-service shopping-service`.\n- Run the posts tests only with the first driver: `POST_DRIVER='post-service-1' pytest post-service`.\n- Run the posts tests with all drivers explicitly: `POST_DRIVER='post-service-1,post-service-2' pytest post-service`.\n   - **Note**: In our case, this is the same as not specifying `POST_DRIVER` at all.  _However_, this is a useful pattern in case you have N>2 drivers and want to run just a few of them.\n\n## 4. Write Some Tests\n\nYou can now start writing tests!  (Perhaps by copying one of the samples.)\n\n## 5. Run Tests\n\nRun your tests as usual, by invoking `pytest`, specifying the environment name, and driver, if that's the case, and any other environment variables you might need in your tests.\n\nE.g., assuming you have:\n\n- The drivers presented in the section on [preparing drivers](#2-prepare-a-conftestpy-file-with-drivers) above.\n- The environment `sandbox`.\n- A tenant-based app.\n- The tenant `dev-test` set up for testing.\n- All your tests in the `tests/` folder,\n\nthen you could run your tests for REST and UI like this:\n\n```shell\nENV=sandbox tenant=dev-test MY_DRIVER='my-service-rest,my-service-ui' pytest tests\n```\n\n\n\n# Reference\n\nThe entire library is coded using Functional Programming principles.  Thus, you will see:\n\n- At most one argument for each function.\n- Higher-order functions - that return another function.\n- The memoize pattern used to make sure a single instance of a thing exists (in our case the config store).\n\nHelpers:\n\n- `cache.py`.  Implements a simple cache, stored in `.<env>-cache.json` \n- `config.py`.  Loads configuration via `dotenv` package, and returns a memoized store for getting/setting values.\n- `date_and_time.py`.  Some simple date/time utils, such as a diff.\n- `driver.py`.  Imports a driver based on a driver name.  Built for calling from `conftest.py`, see above section for [preparing drivers](#2-prepare-a-conftestpy-file-with-drivers).\n- `generate.py`.  Functions to generate some data.\n- `iam_token.py`.  Decoding and extracting data from a JWT.\n- `login.py`.  Functions to log in or log in from cache, and for building authorization values (one for REST, one for the Python GraphQL client.)\n- `memoize.py`.  Simple memoize pattern.\n- `web_sockets.py`.  Simplifies Web-Sockets testing by listening in background for received packages, and sending data.\n\n\n\n\n# Development\n\n## Library\n\nIf you want to develop, build, and upload this library to PyPI, do this:\n\nFirst, set up a few things:\n\n- Install Python 3.6 or higher.\n- Install the requirements from `requirements.txt`.\n\nThe lib code is in `src/verifit`.  Make sure to use proper `.` imports to avoid importing from the installed `verifit` library accidentally.\n\nOnce your code changes are ready and documented (if need be), do the following to upload:\n\n1. Commit everything to GIT.\n\n2. Check Manifest: Run `check-manifest`.\n\n3. Increase the version in `pyproject.toml`:\n\n   ```toml\n   [project]\n   version = \"1.0.6\"\n   ```\n\n4. Increase the minimum version in `tests/requirements.txt`:\n\n   ```\n   verifit >= 1.0.6\n   ```\n\n5. Build package. Run:\n\n   ```shell\n   python -m build\n   ```\n\n6. Check build. Run:\n\n   ```shell\n   twine check dist/verifit-1.0.6*\n   ```\n\n7. Upload to Test.PyPI. Run:\n\n   ```shell\n   twine upload -r testpypi dist/verifit-1.0.6*\n   ```\n\n8. Install manually from Test.PyPI. Run:\n\n   ```shell\n   pip install -i https://test.pypi.org/simple verifit==1.0.6\n   ```\n\n   (First time it may fail, in this case, rerun the above command.)\n\n9. Run the sample tests:\n\n   ```shell\n   cd tests/ && pytest .\n   ```\n\n10. If everything goes well, upload to PyPI. Run:\n\n   ```shell\n   twine upload dist/verifit-1.0.6*\n   ```\n\n11. Install sample tests requirements. Run:\n\n   ```shell\n   cd tests/ && pip install -r requirements.txt\n   ```\n\n12. Run the sample tests again:\n\n   ```shell\n   cd tests/ && pytest .\n   ```\n\nIf all went well, they should pass.  You can now push to GIT.\n\n## Sample Tests\n\nSetup:\n\n- Go to `tests/kitchen-service/ui` and run `yarn install`.\n- Install sample tests requirements. Run:\n\n   ```shell\n   cd tests/ && pip install -r requirements.txt\n   ```\nChange tests code, then make sure to test, document, & push your changes.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -232,7 +231,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17179136,
+        "last_serial": 17189120,
         "urls": [
             {
                 "comment_text": "",
@@ -273,6 +272,379 @@
                 "upload_time": "2023-03-06T18:17:05",
                 "upload_time_iso_8601": "2023-03-06T18:17:05.094126Z",
                 "url": "https://files.pythonhosted.org/packages/9c/34/d379849e53f5b870eb61f87efe493ac94ea64b223aa2ad380bd2e72e89e9/verifit-1.0.5.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.0.6": {
+        "info": {
+            "author": "",
+            "author_email": "Sorel Mitra <sorelmitra@yahoo.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "automatic testing,acceptance testing,bdd,Gherkin,black box testing",
+            "license": "MIT License  Copyright (c) 2022 sorelmitra  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.  THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. ",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "verifit",
+            "package_url": "https://pypi.org/project/verifit/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/verifit/",
+            "project_urls": {
+                "Homepage": "https://github.com/sorelmitra/verifit"
+            },
+            "release_url": "https://pypi.org/project/verifit/1.0.6/",
+            "requires_dist": [
+                "PyJWT",
+                "pytest",
+                "pytest-bdd",
+                "python-dotenv",
+                "python-graphql-client",
+                "requests",
+                "websockets"
+            ],
+            "requires_python": ">=3.9",
+            "summary": "Verify It: Automatic Testing helper tools & sample tests",
+            "version": "1.0.6",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17189120,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "28da90c1f082d1f9067b0317d5fec3816f453a65a5b1e55a33a7588dd4e8e5cc",
+                    "md5": "c1fa5a0c15db8ad732edf9122692c09b",
+                    "sha256": "10aa281c91909cd0ae2d89f034c493193641c51ce7b23e07ca9810a4899736a1"
+                },
+                "downloads": -1,
+                "filename": "verifit-1.0.6-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "c1fa5a0c15db8ad732edf9122692c09b",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9",
+                "size": 13998,
+                "upload_time": "2023-03-07T08:49:39",
+                "upload_time_iso_8601": "2023-03-07T08:49:39.834730Z",
+                "url": "https://files.pythonhosted.org/packages/28/da/90c1f082d1f9067b0317d5fec3816f453a65a5b1e55a33a7588dd4e8e5cc/verifit-1.0.6-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "95775a406050954c2837e447778a6232a31e8d3fd96e34c99faa1b44c30dca15",
+                    "md5": "2ed96c0e79162d029f134c7684be6e62",
+                    "sha256": "cd8df7a31fb23de24c009e6245aeb97083d99c82f31609913d01a722989a3993"
+                },
+                "downloads": -1,
+                "filename": "verifit-1.0.6.tar.gz",
+                "has_sig": false,
+                "md5_digest": "2ed96c0e79162d029f134c7684be6e62",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9",
+                "size": 19310,
+                "upload_time": "2023-03-07T08:49:41",
+                "upload_time_iso_8601": "2023-03-07T08:49:41.597662Z",
+                "url": "https://files.pythonhosted.org/packages/95/77/5a406050954c2837e447778a6232a31e8d3fd96e34c99faa1b44c30dca15/verifit-1.0.6.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.0.7": {
+        "info": {
+            "author": "",
+            "author_email": "Sorel Mitra <sorelmitra@yahoo.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "automatic testing,acceptance testing,bdd,Gherkin,black box testing",
+            "license": "MIT License  Copyright (c) 2022 sorelmitra  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.  THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. ",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "verifit",
+            "package_url": "https://pypi.org/project/verifit/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/verifit/",
+            "project_urls": {
+                "Homepage": "https://github.com/sorelmitra/verifit"
+            },
+            "release_url": "https://pypi.org/project/verifit/1.0.7/",
+            "requires_dist": [
+                "PyJWT",
+                "pytest",
+                "pytest-bdd",
+                "python-dotenv",
+                "python-graphql-client",
+                "requests",
+                "websockets"
+            ],
+            "requires_python": ">=3.9",
+            "summary": "Verify It: Automatic Testing helper tools & sample tests",
+            "version": "1.0.7",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17189120,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "54ff587b0c8dd5700b1b5bfcf2321915c8ef22a1eaa2d5b7e2c5c0de5dc9aca7",
+                    "md5": "91ff4bad604cdcea86ad2f414f19ad0a",
+                    "sha256": "543db6642f28cafac32ded36684ca32db75a68a06495e4599c5edd17bea1ff80"
+                },
+                "downloads": -1,
+                "filename": "verifit-1.0.7-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "91ff4bad604cdcea86ad2f414f19ad0a",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9",
+                "size": 14540,
+                "upload_time": "2023-03-07T09:39:51",
+                "upload_time_iso_8601": "2023-03-07T09:39:51.234721Z",
+                "url": "https://files.pythonhosted.org/packages/54/ff/587b0c8dd5700b1b5bfcf2321915c8ef22a1eaa2d5b7e2c5c0de5dc9aca7/verifit-1.0.7-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "636d51f3bc5439a679bca2987d75ef6cf2c574ff431fc594fe236dbfd261dbe8",
+                    "md5": "2c2836dababb24fae959dd382fe074e0",
+                    "sha256": "ae7c187c200dae1539ebf1fe923cfbecf5d8b6d4ba930c87f35440030eb08399"
+                },
+                "downloads": -1,
+                "filename": "verifit-1.0.7.tar.gz",
+                "has_sig": false,
+                "md5_digest": "2c2836dababb24fae959dd382fe074e0",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9",
+                "size": 20395,
+                "upload_time": "2023-03-07T09:39:53",
+                "upload_time_iso_8601": "2023-03-07T09:39:53.344740Z",
+                "url": "https://files.pythonhosted.org/packages/63/6d/51f3bc5439a679bca2987d75ef6cf2c574ff431fc594fe236dbfd261dbe8/verifit-1.0.7.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.0.8": {
+        "info": {
+            "author": "",
+            "author_email": "Sorel Mitra <sorelmitra@yahoo.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "automatic testing,acceptance testing,bdd,Gherkin,black box testing",
+            "license": "MIT License  Copyright (c) 2022 sorelmitra  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.  THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. ",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "verifit",
+            "package_url": "https://pypi.org/project/verifit/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/verifit/",
+            "project_urls": {
+                "Homepage": "https://github.com/sorelmitra/verifit"
+            },
+            "release_url": "https://pypi.org/project/verifit/1.0.8/",
+            "requires_dist": [
+                "PyJWT",
+                "pytest",
+                "pytest-bdd",
+                "python-dotenv",
+                "python-graphql-client",
+                "requests",
+                "websockets"
+            ],
+            "requires_python": ">=3.9",
+            "summary": "Verify It: Automatic Testing helper tools & sample tests",
+            "version": "1.0.8",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17189120,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "60f38df396a1dd7f1ec48e401b95897f9f8f39f81d7dd545040fe1a248fadcd9",
+                    "md5": "3fbc4f79de973da2f7b141222a2eb810",
+                    "sha256": "53935b42d66c4ae1c2128876c11f64a17e8866d34ba3f4408de67f9d22861a7c"
+                },
+                "downloads": -1,
+                "filename": "verifit-1.0.8-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "3fbc4f79de973da2f7b141222a2eb810",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9",
+                "size": 14632,
+                "upload_time": "2023-03-07T10:14:40",
+                "upload_time_iso_8601": "2023-03-07T10:14:40.636608Z",
+                "url": "https://files.pythonhosted.org/packages/60/f3/8df396a1dd7f1ec48e401b95897f9f8f39f81d7dd545040fe1a248fadcd9/verifit-1.0.8-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "cb9eb40719e8baddedeaf34deeb1e5d4a1ee39ba27bcdbc587cc4d20bfcb18fc",
+                    "md5": "a0ca283a47cf8d141a5fcfe390004cad",
+                    "sha256": "5d072c2422931df3508ae8c6ff363563997ae72398a7210777552b5f1898f094"
+                },
+                "downloads": -1,
+                "filename": "verifit-1.0.8.tar.gz",
+                "has_sig": false,
+                "md5_digest": "a0ca283a47cf8d141a5fcfe390004cad",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9",
+                "size": 20472,
+                "upload_time": "2023-03-07T10:14:42",
+                "upload_time_iso_8601": "2023-03-07T10:14:42.892677Z",
+                "url": "https://files.pythonhosted.org/packages/cb/9e/b40719e8baddedeaf34deeb1e5d4a1ee39ba27bcdbc587cc4d20bfcb18fc/verifit-1.0.8.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.0.9": {
+        "info": {
+            "author": "",
+            "author_email": "Sorel Mitra <sorelmitra@yahoo.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# About\n\nThis is a Python library aimed at developers, that simplifies setting up and using automatic system testing for several types of projects.\n\nI've named it `verifit` as a contraction of `Verify It!`, i.e. \"Make sure your system works fine!\"\n\n\n\n# Introduction\n\n## Why Developer-Based Automatic System Testing?\n\nAutomatic system (or application-level) testing done by developers is a must for every project.  Even if you have a dedicated QA team, automatic system testing is a very valuable tool for making sure your product works as expected:\n\n- It allows developers to be very confident of the quality of the products that they ship.\n- Sometimes you can't test a system 100% automatically. But, if you manage to cover the functionality (and perhaps some non-functional requirements, such as performance and high-availability - depending on the nature of the project), this will be a big help as the project builds up, and the risk of breaking something increases.\n- It makes bug investigation easier - if you know the case covered by the bug passes in your automated tests, then the source must be elsewhere, such as misconfiguration or wrong parameter.\n- It makes QA team's life easier by helping them design their tests.\n\n## Why This Libray?\n\nFor the above to work, though, the developers must be maintaining their tests along with the code base, or even better, do TDD.\n\nThis library aims to make a developer's life easier by leveraging the already very friendly PyTest tool, and building upon it with a handful of commonly used options, such as environment variables or making authorized HTTPS requests.\n\nAlso, on small projects or where you're time constrained, having an automatic system testing framework that's easy to put to use on a daily basis is of great help.\n\n## Side Note: Black Box Testing\n\nThere are multiple ways of writing automated tests, and this library is not tied to any particular methodology.\n\nHowever, one particular testing methodology I favor is **black box testing**, in which you treat your system as a black box, and *never check its internals*.  I find it has quite a few advantages, and I thought I'd list some of them here:\n\n- Easy to put in place.  You just hit your system in the same way its clients would.  No need to write code that checks databases, Kafka, or who knows what.\n- Can serve as acceptance testing.  You can put up compound scenarios.\n- It's resistant to system implementation changes.\n\n\n\n\n# Overview\n\nThis library supports any type of tests that can be done with PyTest, and note that this is by no means limited to Python projects.\n\nYou can by all means have your automatic developer testing done in a different language than your project's.  PyTest is my go-to stack for automatic testing, in the absence of constraints imposed by the project I'm working on.\n\nNormally, if you're using PyTest and a few other standard Python modules, you can test pretty much anything quite fast, without needing a library.  However, as you start doing this, you soon realize you're going to need some things over and over again in your tests.  This small library provides a few helpers for making a developer's automatic testing easier:\n\n- Quick configuration.\n- A cache for speeding up things such as getting access tokens, or any other data that is reused.\n- A quick way to do driver-based testing, in which the test case relies on a particular driver (specified at runtime)  that does the action and returns the result.  This allows you to run the same test against different drivers, such as an API, UI, etc.\n- Simplified mechanism for skipping tests that are not suitable for a particular driver.\n- Web-Sockets testing.  (I couldn't find a Python package that makes testing Web-Sockets as easy as calling a couple of functions.)\n- Some other helper tools, like date & time, generating random values, etc.\n\nThis repo consists of the actual library, which is in `lib/`, and some sample tests from which you can inspire when writing your own.\n\n\n# Quick Start with Writing Tests\n\n## 1. Install Required Libraries\n\n- Install Python 3.6 or higher.\n- Install PyTest.\n- Copy the [requirements from the sample tests](https://github.com/sorelmitra/verifit/blob/main/tests/requirements.txt) to your PyTest project and install them.  This will basically install the `verifit` library to its latest stable version.\n\n## 2. Prepare a `conftest.py` File with Drivers\n\n**Note 1**: You can skip this section if you're not going to use drivers in your tests.\n\n**Note 2**: The Post-Service and Shopping-Service sample tests use drivers.  For more details, check our [reference](#reference) section below.\n\nLet's assume you have two services, `my-service`, and `my-second-service`, and each one of them has different needs for a driver:\n\n- `my-service` has a REST, GraphQL, and UI interface, and you want to test them all, ideally without duplicating test cases.  The use cases for all interfaces are similar, and you want to reuse your test cases.\n- `my-second-service` has multiple versions, and most of your tests apply to all of them, so again  you want to reuse them.\n\nTo achieve this with this library, add the following code into your `conftest.py` file:\n\n```python\nimport pytest\n\nfrom src.lib.driver import get_driver_params, get_driver\n\n\n@pytest.fixture(params=get_driver_params('MY_DRIVER', ['my-service-rest', 'my-service-graphql', 'my-service-ui']))\ndef my_driver(request):\n    return get_driver(request)\n\n\n@pytest.fixture(params=get_driver_params('MY_SECOND_DRIVER', ['my-second-service-v1', 'my-second-service-v2', 'my-second-service-v3', 'my-second-service-v4']))\ndef my_second_driver(request):\n    return get_driver(request)\n```\n\n(In the rest of this section, we focus on `my-service`.  The same pattern applies for `my-second-service`.)\n\nThen in your test file, use the driver like this:\n\n```python\n@pytest.mark.driver_functionality('do-stuff')\ndef test_stuff(my_driver):\n   data = {}  # the data that <do-stuff> needs\n   my_driver(data)\n```\n\nNow the framework will make sure to call `do-stuff` for each driver that is specified in the environment variable `MY_DRIVER`, or by default for the list declared in the fixture: `['my-service-rest', 'my-service-graphql', 'my-service-ui']`.  Specifically, it will look for Python files named like this, in any folder known to PyTest:\n\n- `my-service-rest_do-stuff.py`: Do stuff via REST.\n- `my-service-graphql_do-stuff.py`: Do stuff via GraphQL.\n- `my-service-ui_do-stuff.py`: Do stuff via UI.\n\nInside each Python file, it will expect to find an `execute()` function, which it will load and return as a first-class object.  Note that the `execute()` function is not being called by the framework.\n\nIf you need to specify `MY_DRIVER`, do it like this: `MY_DRIVER='my-service-rest,my-service-ui' pytest my-tests`.  This will run your tests for only the REST and UI drivers.\n\nIn case a particular test does not make sense for a particular driver, mark it as such with:\n\n```python\n@pytest.mark.skip_driver('my-service-ui')\n@pytest.mark.driver_functionality('do_another_stuff')\ndef test_another_stuff(my_driver):\n   data = {}  # the data that <do_another_stuff> needs\n   my_driver(data)\n```\n\nNow the framework will skip `test_another_stuff` if the driver is for UI, and instruct PyTest to display an appropriate message.\n\n## 3. Inspire from the Sample Tests \n\nWe have a bunch of test suites that you can inspire from.  Each suite tests an imaginary service, which is either an online dummy one, either a dummy shell command. \n\n1. **Post-Service**.  This one can post to a particular server via a driver.  Each driver connects to the server it can talk to, and makes sure the returned data has the same format in order for the test to function.  We have the following drivers:\n   - `post-service-1` that connects to a REST API.\n   - `post-service-2` that connects to a GraphQL API.\n2. **Echo-Service**.  It sends a message to a Web-Sockets server and gives back the response.  In our case, the dummy WSS server echoes back whatever we're sending, so the test verifies this.\n3. **Shopping-Service**.  This test shows multiple features:\n   - Login and get an access token.  (`test_login.py`)\n   - Accessing an authorized endpoint with an access token.  (`test_products.py`)\n   - Caching some values, in this case the access token for a particular user.  (`test_login.py`)\n   - Log in from cache, which means reusing the cached access token if it's not close to expiration date.  If no suitable token is found, log in again.  (`test_products.py`)\n   - BDD using `pytest-bdd` and Gherkin.  Implements a similar test to `test_products.py`, but this time with a Gherkin feature file and `@given`, `@when`, `@then`.  Showcases matching a Gherkin declaration with regular expressions.  (`test_carts.py`)\n4. **Date-Service**.  It runs the shell command `date` with some arguments, and verifies the resulting output.\n5. **Kitchen-Service**.  Web UI test using Cypress.IO and their kitchen sink sample page.  It is called from a Python test that runs Cypress via `subprocess`.\n\nTo run all sample test suites included with this project, do this:\n\n```shell\ncd tests\npip install -r requirements.txt\npytest .\n```\n\nMore example commands:\n\n- Run only tests that are related to posts and shopping: `pytest post-service shopping-service`.\n- Run the posts tests only with the first driver: `POST_DRIVER='post-service-1' pytest post-service`.\n- Run the posts tests with all drivers explicitly: `POST_DRIVER='post-service-1,post-service-2' pytest post-service`.\n   - **Note**: In our case, this is the same as not specifying `POST_DRIVER` at all.  _However_, this is a useful pattern in case you have N>2 drivers and want to run just a few of them.\n\n## 4. Write Some Tests\n\nYou can now start writing tests!  (Perhaps by copying one of the samples.)\n\n## 5. Run Tests\n\nRun your tests as usual, by invoking `pytest`, specifying the environment name, and driver, if that's the case, and any other environment variables you might need in your tests.\n\nE.g., assuming you have:\n\n- The drivers presented in the section on [preparing drivers](#2-prepare-a-conftestpy-file-with-drivers) above.\n- The environment `sandbox`.\n- A tenant-based app.\n- The tenant `dev-test` set up for testing.\n- All your tests in the `tests/` folder,\n\nthen you could run your tests for REST and UI like this:\n\n```shell\nENV=sandbox tenant=dev-test MY_DRIVER='my-service-rest,my-service-ui' pytest tests\n```\n\n\n\n# Reference\n\nThe entire library is coded using Functional Programming principles.  Thus, you will see:\n\n- Pure functions, that return the same result given the same input, and that do not have side effects.\n- Immutability & disciplined state - functions do not alter state outside them, and there's no shared state between functions.\n- Currying - at most one argument for each function.\n- Higher-order functions - that return another function.\n- The memoize pattern used to make sure a single instance of a thing exists (in our case the config store).\n- No global variables, not even a singleton - memoize takes care of this.\n\n## Helpers\n\n- `cache.py`.  Implements a simple cache, stored in `<tests>/.<env>-cache.json` \n- `config.py`.  Loads configuration via `dotenv` package, and returns a memoized store for getting/setting values across tests.\n- `date_and_time.py`.  Some simple date/time utils, such as a diff.\n- `driver.py`.  Imports a driver function that you define, based on a driver name and functionality name.  It allows you to:\n    - Quickly define PyTest fixtures that automatically load a functionality based on it's name and the driver name.\n    - Manually load a functionality based its name, and on the driver name that's extracted from an existing fixture.\n- `generate.py`.  Functions to generate some data.\n- `iam_token.py`.  Decoding and extracting data from a JWT.\n- `login.py`.  Functions to:\n    - Log in, including by using a cached token.\n    - Building authorization values:\n      - For HTTP headers.\n      - For the Python GraphQL client.\n- `memoize.py`.  Simple memoize pattern, used by `config.py`.\n- `web_sockets.py`.  Simplifies Web-Sockets testing by offering simple functions for listening in background for received packages, and sending data.\n\n## Drivers\n\nWe have already shown a few practical steps for how to use drivers, in the above section for [preparing drivers](#2-prepare-a-conftestpy-file-with-drivers).\n\nHere, we go into more details on how this works.  We explain how the sample shopping test & driver are implemented, with respect to login.\n\nSo we want to log in from the tests to our shopping service using the endpoint that the latter offers.  For now, we only have one endpoint for this, but assuming we later might add another one, or that we will be adding UI on top of this, we want to use drivers in order to have the flexibility of using the new endpoint or the UI, without changing the test.\n\nTo achieve this, first define in `conftest.py` a parameterized PyTest fixture like this:\n\n```python\nimport pytest\nfrom verifit.driver import get_driver_params, get_driver\n@pytest.fixture(params=get_driver_params('SHOPPING_DRIVER', ['shopping-service']))  # (1)\ndef shopping_driver(request):\n    return get_driver(request)  # (2)\n```\n\nThen, in your test, say:\n\n```python\nimport pytest\nfrom verifit.driver import get_functionality_per_driver\nfrom verifit.login import login_from_cache\n@pytest.mark.driver_functionality('login')  # (3)\ndef test_products(shopping_driver):  # (4)\n    user = get_functionality_per_driver(shopping_driver)('get-main-login-user')()  # (5)\n    login_from_cache(user)(shopping_driver)  # (6)\n```\n\nExplanation:\n\n- At (1) we define a PyTest fixture that takes the params as returned by the `get_driver_params` library function from `verifit`.  This function returns either:\n   - A list obtained by splitting at comma (`,`) the value of the environment variable whose name is given in the first parameter (`'SHOPPING_DRIVER'` in this case).\n   - The list defined by the second parameter (`['shopping-service']`) in case that the environment variable is not defined.\n   - In our case, it will return `'shopping-service'`.\n- At (2), the fixture just calls `get_driver(request)`.  Here `request` is the standard PyTest way of giving the fixture access to the calling context.  What `get_driver` does, is:\n   - Compose a name from the value returned by `get_driver_params` and the `driver_functionality` specified in the test (see below).  It gets access to those values by using PyTest standard functions.\n   - In this case, the composed name will be `'shopping-service_login'`\n   - Load a Python module by that name, from the same directory as the test file.\n   - Return that module's `execute()` function.\n   - Note that the `execute()` function is not being called here, but returned as a first-class object.\n   - In our case, the driver will return the `execute(user)` function that's defined in `shopping-service_login.py`.\n- At (3), we mark the test with the `driver_functionality` option that we mentioned above.  This option is defined in `pytest.ini` as \"specifies functionality for driver to load\".  In our case, the functionality is named `'login'`.  As explained above, the driver will use this name to compose a Python file name of the form `<driver-name>_<functionality>.py`, then it will expect that file to have an `execute()` function which it will return, but not call.\n- At (4) we let PyTest know that this test needs the `shopping_driver` fixture we defined at (1).\n- At (5), we see another way of getting a functionality via an existing driver instance:\n    - In `shopping_driver` we have the `execute(user)` function that's defined in `shopping-service_login.py`.\n   - We first call `get_functionality_per_driver` with the driver instance.  This will give us a function that can load a functionality with that particular driver's name (`verifit` does some magic for this, using Python's `inspect` module).\n   - Then, call the given function with the functionality name, in this case `'get-main-login-user'`.  This will return to us the `execute()` function of the functionality we want, in this case, from the `shopping-service_main-login-user.py` file.\n   - Finally, call the `execute()` function that we got.  This will execute that functionality we wanted for that driver.  In this case, it will give us the user to use for the `'login'` functionality.\n- At (6) we put together all these pieces by calling `login_from_cache(user)(shopping_driver)`:\n   - `login_from_cache(user)` returns a function that expects a driver.\n   - We then call that function with our `shopping_driver`.\n   - That function will either load an access token from the cache, or in case this one is not usable, it will call to `login(user)(shopping_driver)`.\n   - The `login()` function again expects a user and then a driver, and it will call to that driver.  Because we specified `shopping_driver` with a functionality of `'login'`, the net result will be calling to the `execute(user)` function that's defined in `shopping-service_login.py`.\n\n\n# Development\n\n## Library\n\nIf you want to develop, build, and upload this library to PyPI, do this:\n\nFirst, set up a few things:\n\n- Install Python 3.6 or higher.\n- Install the requirements from `requirements.txt`.\n\nThe lib code is in `src/verifit`.  Make sure to use proper `.` imports to avoid importing from the installed `verifit` library accidentally.\n\nOnce your code changes are ready and documented, do the following to upload:\n\n1. Commit everything to GIT.\n\n2. Check Manifest. Run:\n\n   ```shell\n   check-manifest\n   ```\n\n3. Increase the version in `pyproject.toml`:\n\n   ```toml\n   [project]\n   version = \"X.Y.Z\"\n   ```\n\n4. Increase the minimum version in `tests/requirements.txt`:\n\n   ```\n   verifit >= X.Y.Z\n   ```\n\n5. Build package. Run:\n\n   ```shell\n   python -m build\n   ```\n\n6. Check build. Run:\n\n   ```shell\n   twine check dist/verifit-X.Y.Z*\n   ```\n\n7. Upload to Test.PyPI. Run:\n\n   ```shell\n   twine upload -r testpypi dist/verifit-X.Y.Z*\n   ```\n\n8. Install manually from Test.PyPI. Run:\n\n   ```shell\n   pip install -i https://test.pypi.org/simple verifit==X.Y.Z\n   ```\n    (First time it may fail, in this case, rerun the above command.)\n\n9. Run the sample tests:\n\n   ```shell\n   cd tests/ && pytest .\n   ```\n\n10. If everything goes well, upload to PyPI. Run:\n\n   ```shell\n   twine upload dist/verifit-X.Y.Z*\n   ```\n\n11. Install sample tests requirements. Run:\n\n   ```shell\n   cd tests/ && pip install -r requirements.txt\n   ```\n    (First time it may fail, in this case, rerun the above command.)\n\n12. Run the sample tests again:\n\n   ```shell\n   cd tests/ && pytest .\n   ```\n    If all went well, they should pass.\n\n13. You can now push to GIT.\n\n## Sample Tests\n\nSetup:\n\n- Go to `tests/kitchen-service/ui` and run `yarn install`.\n- Install sample tests requirements. Run:\n\n   ```shell\n   cd tests/ && pip install -r requirements.txt\n   ```\nChange tests code, then make sure to test, document, & push your changes.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "automatic testing,acceptance testing,bdd,Gherkin,black box testing",
+            "license": "MIT License  Copyright (c) 2022 sorelmitra  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.  THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. ",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "verifit",
+            "package_url": "https://pypi.org/project/verifit/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/verifit/",
+            "project_urls": {
+                "Homepage": "https://github.com/sorelmitra/verifit"
+            },
+            "release_url": "https://pypi.org/project/verifit/1.0.9/",
+            "requires_dist": [
+                "PyJWT",
+                "pytest",
+                "pytest-bdd",
+                "python-dotenv",
+                "python-graphql-client",
+                "requests",
+                "websockets"
+            ],
+            "requires_python": ">=3.9",
+            "summary": "Verify It: Automatic Testing helper tools & sample tests",
+            "version": "1.0.9",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17189120,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "302bd727199e96b9984feb767b5713a120826ef9fc05c32e970c940a6e3a12ea",
+                    "md5": "c3610600268efb00fcf4b4b47d2dc042",
+                    "sha256": "e7db14b574ecc56bf44ad6fb95949df03a6c40c745d09dda1091881b4582cec3"
+                },
+                "downloads": -1,
+                "filename": "verifit-1.0.9-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "c3610600268efb00fcf4b4b47d2dc042",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9",
+                "size": 14634,
+                "upload_time": "2023-03-07T10:19:49",
+                "upload_time_iso_8601": "2023-03-07T10:19:49.285459Z",
+                "url": "https://files.pythonhosted.org/packages/30/2b/d727199e96b9984feb767b5713a120826ef9fc05c32e970c940a6e3a12ea/verifit-1.0.9-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "957b26672c7a985f53c1afdb5acea491986559afb7502b9768aa24c9702547b6",
+                    "md5": "d3f632c63b5719d402e98d9de41ee830",
+                    "sha256": "861613c0037f3c02680338feb945014350a551f5c369bfa31e556a59841fd24c"
+                },
+                "downloads": -1,
+                "filename": "verifit-1.0.9.tar.gz",
+                "has_sig": false,
+                "md5_digest": "d3f632c63b5719d402e98d9de41ee830",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9",
+                "size": 20485,
+                "upload_time": "2023-03-07T10:19:50",
+                "upload_time_iso_8601": "2023-03-07T10:19:50.670186Z",
+                "url": "https://files.pythonhosted.org/packages/95/7b/26672c7a985f53c1afdb5acea491986559afb7502b9768aa24c9702547b6/verifit-1.0.9.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
