@@ -1,0 +1,68 @@
+{
+    "1.4.7": {
+        "info": {
+            "author": "Joongi Kim",
+            "author_email": "me@daybreaker.info",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: Apache Software License",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "aiotools\r\n========\r\n\r\n[![PyPI release version](https://badge.fury.io/py/aiotools.svg)](https://pypi.org/project/aiotools/)\r\n![Supported Python versions](https://img.shields.io/pypi/pyversions/aiotools.svg)\r\n[![Code Coverage](https://codecov.io/gh/achimnol/aiotools/branch/master/graph/badge.svg)](https://codecov.io/gh/achimnol/aiotools)\r\n\r\nIdiomatic asyncio utilties\r\n\r\n*NOTE:* This project is under early stage of development. The public APIs may break version by version.\r\n\r\n\r\nModules\r\n-------\r\n\r\n* [Async Context Manager](http://aiotools.readthedocs.io/en/latest/aiotools.context.html)\r\n* [Async Fork](http://aiotools.readthedocs.io/en/latest/aiotools.fork.html)\r\n* [Async Functools](http://aiotools.readthedocs.io/en/latest/aiotools.func.html)\r\n* [Async Itertools](http://aiotools.readthedocs.io/en/latest/aiotools.iter.html)\r\n* [Async Server](http://aiotools.readthedocs.io/en/latest/aiotools.server.html)\r\n* [Async TaskGroup](http://aiotools.readthedocs.io/en/latest/aiotools.taskgroup.html)\r\n* [Async Timer](http://aiotools.readthedocs.io/en/latest/aiotools.timer.html)\r\n\r\nI also recommend to try the following asyncio libraries for your happier life.\r\n\r\n* [async_timeout](https://github.com/aio-libs/async-timeout): Provides a light-weight timeout wrapper that does not spawn subtasks.\r\n* [aiojobs](https://github.com/aio-libs/aiojobs): Provides a concurrency-limited scheduler for asyncio tasks with graceful shutdown.\r\n* [trio](https://github.com/python-trio/trio): An alternative implementation of asynchronous IO stack for Python, with focus on cancellation scopes and task groups called \"nursery\".\r\n\r\n\r\nExamples\r\n--------\r\n\r\n### Async Context Manager\r\n\r\nThis is an asynchronous version of `contextlib.contextmanager` to make it\r\neasier to write asynchronous context managers without creating boilerplate\r\nclasses.\r\n\r\n```python\r\nimport asyncio\r\nimport aiotools\r\n\r\n@aiotools.actxmgr\r\nasync def mygen(a):\r\n   await asyncio.sleep(1)\r\n   yield a + 1\r\n   await asyncio.sleep(1)\r\n\r\nasync def somewhere():\r\n   async with mygen(1) as b:\r\n       assert b == 2\r\n```\r\n\r\nNote that you need to wrap `yield` with a try-finally block to\r\nensure resource releases (e.g., locks), even in the case when\r\nan exception is ocurred inside the async-with block.\r\n\r\n```python\r\nimport asyncio\r\nimport aiotools\r\n\r\nlock = asyncio.Lock()\r\n\r\n@aiotools.actxmgr\r\nasync def mygen(a):\r\n   await lock.acquire()\r\n   try:\r\n       yield a + 1\r\n   finally:\r\n       lock.release()\r\n\r\nasync def somewhere():\r\n   try:\r\n       async with mygen(1) as b:\r\n           raise RuntimeError('oops')\r\n   except RuntimeError:\r\n       print('caught!')  # you can catch exceptions here.\r\n```\r\n\r\nYou can also create a group of async context managers, which\r\nare entered/exited all at once using `asyncio.gather()`.\r\n\r\n```python\r\nimport asyncio\r\nimport aiotools\r\n\r\n@aiotools.actxmgr\r\nasync def mygen(a):\r\n   yield a + 10\r\n\r\nasync def somewhere():\r\n   ctxgrp = aiotools.actxgroup(mygen(i) for i in range(10))\r\n   async with ctxgrp as values:\r\n       assert len(values) == 10\r\n       for i in range(10):\r\n           assert values[i] == i + 10\r\n```\r\n\r\n### Async Server\r\n\r\nThis implements a common pattern to launch asyncio-based server daemons.\r\n\r\n```python\r\nimport asyncio\r\nimport aiotools\r\n\r\nasync def echo(reader, writer):\r\n   data = await reader.read(100)\r\n   writer.write(data)\r\n   await writer.drain()\r\n   writer.close()\r\n\r\n@aiotools.server\r\nasync def myworker(loop, pidx, args):\r\n   server = await asyncio.start_server(echo, '0.0.0.0', 8888,\r\n       reuse_port=True, loop=loop)\r\n   print(f'[{pidx}] started')\r\n   yield  # wait until terminated\r\n   server.close()\r\n   await server.wait_closed()\r\n   print(f'[{pidx}] terminated')\r\n\r\nif __name__ == '__main__':\r\n   # Run the above server using 4 worker processes.\r\n   aiotools.start_server(myworker, num_workers=4)\r\n```\r\n\r\nIt handles SIGINT/SIGTERM signals automatically to stop the server,\r\nas well as lifecycle management of event loops running on multiple processes.\r\nInternally it uses `aiotools.fork` module to get kernel support to resolve\r\npotential signal/PID related races via PID file descriptors on supported versions\r\n(Python 3.9+ and Linux kernel 5.4+).\r\n\r\n\r\n### Async TaskGroup\r\n\r\nA `TaskGroup` object manages the lifecycle of sub-tasks spawned via its `create_task()`\r\nmethod by guarding them with an async context manager which exits only when all sub-tasks\r\nare either completed or cancelled.\r\n\r\nThis is motivated from [trio's nursery API](https://trio.readthedocs.io/en/stable/reference-core.html#nurseries-and-spawning)\r\nand a draft implementation is adopted from [EdgeDB's Python client library](https://github.com/edgedb/edgedb-python).\r\n\r\n```python\r\nimport aiotools\r\n\r\nasync def do():\r\n    async with aiotools.TaskGroup() as tg:\r\n        tg.create_task(...)\r\n        tg.create_task(...)\r\n        ...\r\n    # at this point, all subtasks are either cancelled or done.\r\n```\r\n\r\n\r\n### Async Timer\r\n\r\n```python\r\nimport aiotools\r\n\r\ni = 0\r\n\r\nasync def mytick(interval):\r\n   print(i)\r\n   i += 1\r\n\r\nasync def somewhere():\r\n   t = aiotools.create_timer(mytick, 1.0)\r\n   ...\r\n   t.cancel()\r\n   await t\r\n```\r\n\r\n`t` is an `asyncio.Task` object.\r\nTo stop the timer, call `t.cancel(); await t`.\r\nPlease don't forget `await`-ing `t` because it requires extra steps to\r\ncancel and await all pending tasks.\r\nTo make your timer function to be cancellable, add a try-except clause\r\ncatching `asyncio.CancelledError` since we use it as a termination\r\nsignal.\r\n\r\nYou may add `TimerDelayPolicy` argument to control the behavior when the\r\ntimer-fired task takes longer than the timer interval.\r\n`DEFAULT` is to accumulate them and cancel all the remainings at once when\r\nthe timer is cancelled.\r\n`CANCEL` is to cancel any pending previously fired tasks on every interval.\r\n\r\n```python\r\nimport asyncio\r\nimport aiotools\r\n\r\nasync def mytick(interval):\r\n   await asyncio.sleep(100)  # cancelled on every next interval.\r\n\r\nasync def somewhere():\r\n   t = aiotools.create_timer(mytick, 1.0, aiotools.TimerDelayPolicy.CANCEL)\r\n   ...\r\n   t.cancel()\r\n   await t\r\n```\r\n\r\n#### Virtual Clock\r\n\r\nIt provides a virtual clock that advances the event loop time instantly upon\r\nany combination of `asyncio.sleep()` calls in multiple coroutine tasks,\r\nby temporarily patching the event loop selector.\r\n\r\nThis is also used in [our timer test suite](https://github.com/achimnol/aiotools/blob/master/tests/test_timer.py).\r\n\r\n```python\r\nimport aiotools\r\nimport pytest\r\n\r\n@pytest.mark.asyncio\r\nasync def test_sleeps():\r\n    loop = aiotools.compat.get_running_loop()\r\n    vclock = aiotools.VirtualClock()\r\n    with vclock.patch_loop():\r\n        print(loop.time())  # -> prints 0\r\n        await asyncio.sleep(3600)\r\n        print(loop.time())  # -> prints 3600\r\n```\r\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/achimnol/aiotools",
+            "keywords": "",
+            "license": "apache2",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "aiotoolsbox",
+            "package_url": "https://pypi.org/project/aiotoolsbox/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/aiotoolsbox/",
+            "project_urls": {
+                "Homepage": "https://github.com/achimnol/aiotools"
+            },
+            "release_url": "https://pypi.org/project/aiotoolsbox/1.4.7/",
+            "requires_dist": null,
+            "requires_python": ">=3.8, <=3.10",
+            "summary": "Idiomatic asyncio utilities",
+            "version": "1.4.7",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17195783,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e366b980ddac8e6426f9014b83cde7cd6d573502efb804b4025d2bc21793355c",
+                    "md5": "d17345b10c56977a974bc823a4e4f508",
+                    "sha256": "a7571b23f9b6fd911c989d0b86e2d86ba1128073543d506e8a9869b42183d05d"
+                },
+                "downloads": -1,
+                "filename": "aiotoolsbox-1.4.7.tar.gz",
+                "has_sig": false,
+                "md5_digest": "d17345b10c56977a974bc823a4e4f508",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8, <=3.10",
+                "size": 24701,
+                "upload_time": "2023-03-07T20:15:44",
+                "upload_time_iso_8601": "2023-03-07T20:15:44.730182Z",
+                "url": "https://files.pythonhosted.org/packages/e3/66/b980ddac8e6426f9014b83cde7cd6d573502efb804b4025d2bc21793355c/aiotoolsbox-1.4.7.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

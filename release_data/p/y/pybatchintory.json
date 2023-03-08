@@ -45,7 +45,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17189098,
+        "last_serial": 17192515,
         "urls": [
             {
                 "comment_text": "",
@@ -138,7 +138,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17189098,
+        "last_serial": 17192515,
         "urls": [
             {
                 "comment_text": "",
@@ -229,7 +229,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17189098,
+        "last_serial": 17192515,
         "urls": [
             {
                 "comment_text": "",
@@ -289,7 +289,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "# pybatchintory\n\n`pybatchintory` represents a middleware for batch oriented data pipelines. It enables incremental processing and provides first class support for reprocessing historical data with predictable workloads.\n\nOnly meta information of data items is consumed and processed. The actual data is not read. An **inventory** of already processed and unseen data items is managed while providing an API to interact with it.\n\n## Reasoning\n\nThis package may greatly improve data pipelines by enabling the following four features:\n\n- **Incremental processing**: Only new, unseen data items can be processed, avoiding recomputation of all data items.\n- **Backfill scenarios**: Historical data items can be reprocessed in a configurable and automated way.\n- **Predictable workloads**: The amount of data to be processed can be defined and is known upfront to adjust compute resources accordingly for best efficiency and cost/performance ratio for both incremental processing and backfill scenarios.\n- **Transparency and observability**: Each data item can be enriched with information about when it was processed by what job.\n\n## Preconditions\n\n`pybatchintory` assumes the existence of a metadata table that contains information about the data items, such as their file location and registration timestamps. Importantly, to properly generate ranges of data items constituting a single batch to be processed, `pybatchintory` requires the metadata table to provide a **unique auto-increment ID column**.\n\n## Assumptions\n\n- Data items are always processed chronologically according to monotonic increasing unique id\n- Only continuous ranges of ids can be processed\n\n### Example meta data source table\n\n**Schema**\n\n| Field           | Type         | Key          | Extra         |\n|-----------------|--------------|--------------|---------------|\n| id              | int(11)      | PRI          | auto_increment|\n| file_location   | varchar(255) |              |               |\n| size_in_bytes   | int(11)      |              |               |\n| imported        | timestamp    |              |               |\n\n**Content**\n\n| id | file_location         | size_in_bytes | imported            |\n|----|-----------------------|---------------|---------------------|\n| 6  | /path/to/sixth/file    | 32768         | 2021-01-06 00:00:00 |\n| 7  | /path/to/seventh/file  | 65536         | 2021-01-07 00:00:00 |\n| 8  | /path/to/eighth/file   | 131072        | 2021-01-08 00:00:00 |\n| 9  | /path/to/ninth/file    | 262144        | 2021-01-09 00:00:00 |\n| 10 | /path/to/tenth/file    | 524288        | 2021-01-10 00:00:00 |\n\n## Usage\n\n### Configuration\n\nSqlAlchemy connection strings for inventory and meta table need to be \nprovided. These can be provided via environment variables as follows:\n\n#### Environment variables\n\n```bash\nexport PYBATCHINTORY_INVENTORY_CONN=\"postgresql+psycopg2://user:password@host:port/dbname\"\nexport PYBATCHINTORY_META_CONN=\"postgresql+psycopg2://user:password@host:port/dbname\"\n```\n\n#### Dot-env file\nYou may also provide a path to a dot-env file via an environment variable:\n\n```bash\nexport PYBATCHINTORY_ENV_FILE=\"PATH_TO_DOT_ENV_FILE\"\n```\n\n#### Programmatically\n\nIn addition, you may set a dot-env file and explicit settings programmatically:\n\n```python\nfrom pybatchintory import configure\n\nconfigure(\n    dot_env=\"PATH_TO_DOT_ENV_FILE\", \n    settings=dict(INVENTORY_CONN=\"CONN_STRING\"))\n```\n\n### Invocation\n\n#### Incremental with predictable workload\n\n```python\nfrom pybatchintory import acquire_batch\n\nbatch = acquire_batch(\n    meta_table_name=\"meta_table\", \n    meta_table_cols={\n        \"uid\": \"id\",\n        \"item\": \"file\",\n        \"weight\": \"size_in_mib\"\n\t},\n    job=\"incremental_job\",\n    batch_weight=100\n)\n\nprocess_func(batch.items)\nbatch.succeeded()\n```\n\n#### Backfill with predictable workload\n\n```python\nfrom pybatchintory import acquire_batch\n\nbatch = acquire_batch(\n    meta_table_name=\"meta_table\", \n    meta_table_cols={\n        \"uid\": \"id\",\n        \"item\": \"file\",\n        \"weight\": \"size_in_mib\"\n\t},\n    job=\"backfill_job\", \n    batch_id_min=20,\n    batch_id_max=80,\n    batch_weight=100\n)\n\nprocess_func(batch.items)\nbatch.succeeded()\n```\n\n#### Multiple batches\n\n**Not yet implemented**\n\n```python\nfrom pybatchintory import acquire_batches\n\nbatches = acquire_batches(\n\tmeta_table_name=\"meta_table\",\n\tjob=\"incremental_job\",\n\tbatch_weight=10,\n\titerations=5\n)\n\nfor batch in batches:\n\tprocess_func(batch.items)\n\tbatch.succeeded()\n```\n\n#### Error handling\n\n```python\n\nfrom pybatchintory import acquire_batch\n\n# version 1 - manual error handling\nbatch = acquire_batch(\n\tmeta_table_name=\"meta_table\",\n\tjob=\"incremental_job\",\n\tbatch_weight=10)\ntry:\n\tprocess_func(batch.items)\n\tbatch.succeeded()\nexcept Exception as e:\n\tbatch.failed(e)\n\traise\n\n# version 2 - automatic error handling - not yet implemented\nbatch = acquire_batch(\n\tmeta_table_name=\"meta_table\",\n\tjob=\"incremental_job\",\n\tbatch_weight=10)\nbatch.process(func, args, kwargs)\n```\n\n### Requirements (non ordered)\n\n- Allow concurrent batch generation/processing for the same job identifier\n\t- read/update transactions\n\t- for secure and reliable functioning, isolation level \"serializable\" is required however \"read committed\" should be sufficent in most cases\n- Separate database connections for meta data (external) and inventory tables (backend)\n\t- use sqlalchemy for engine creation and query building (guard against sql injections)\n- Credentials to be read via environment variables or dotenv files (pydantic)\n- Allow recursive processing of inventory table itself to allow incremental/backfill on already incremental/backfilled jobs\n- Provide filter condition for meta data source table to select only relevant subset of data items\n\n\n### Inventory table\n\n| Column Name      | Type                                                  | Constraints                              |\n|------------------|-------------------------------------------------------|------------------------------------------|\n| id               | Integer                                               | primary_key=True, autoincrement=True     |\n| meta_table       | String                                                | nullable=False                           |\n| job              | String                                                | nullable=False                           |\n| job_identifier   | String                                                |                                          |\n| job_result_item  | JSON                                                  |                                          |\n| processing_start | DateTime                                              | nullable=False, default=TS               |\n| processing_end   | DateTime                                              |                                          |\n| batch_id_start   | Integer                                               | nullable=False                           |\n| batch_id_end     | Integer                                               | nullable=False                           |\n| batch_weight     | Integer                                               |                                          |\n| batch_count      | Integer                                               | nullable=False                           |\n| attempt          | Integer                                               | nullable=False, default=1                |\n| status           | Enum(*cfg.settings.INVENTORY_STATUS_ENUMS)            | nullable=False, default=\"running\"        |\n| logging          | String                                                |                                          |\n| config           | JSON                                                  | nullable=False                           |\n\n\n## Poem (thanks to chatGPT)\n\nThis Python package is a wondrous tool,\\\nFor data processing, it's oh so cool,\\\nWith middleware for batches of data,\\\nIncremental processing, a much-needed beta.\n\nNo more recomputation of all data,\\\nOnly the unseen items, a true data saver,\\\nBackfill scenarios are now a breeze,\\\nWith historical data, we can reprocess with ease.\n\nPredictable workloads, we can define,\\\nAdjusting resources, a task that's benign,\\\nFor cost and performance, it's the way to go,\\\nEfficient processing, with no overflow.\n\nTransparency and observability in tow,\\\nEach data item enriched, as we know,\\\nWhen and how it was processed, we see,\\\nA Python package that's just meant to be.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -321,7 +320,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17189098,
+        "last_serial": 17192515,
         "urls": [
             {
                 "comment_text": "",
@@ -362,6 +361,98 @@
                 "upload_time": "2023-03-07T10:17:51",
                 "upload_time_iso_8601": "2023-03-07T10:17:51.440163Z",
                 "url": "https://files.pythonhosted.org/packages/f2/aa/e6102e28b7ab4df1e0742ee9c4fd4e27cb0ae877ea28dd4190c8c3776b52/pybatchintory-0.0.7.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.8": {
+        "info": {
+            "author": "Franz W\u00f6llert",
+            "author_email": "franz.woellert@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# pybatchintory\n\n`pybatchintory` represents a middleware for batch oriented data pipelines. It enables incremental processing and provides first class support for reprocessing historical data with predictable workloads.\n\nOnly meta information of data items is consumed and processed. The actual data is not read. An **inventory** of already processed and unseen data items is managed while providing an API to interact with it.\n\n## Reasoning\n\nThis package may greatly improve data pipelines by enabling the following four features:\n\n- **Incremental processing**: Only new, unseen data items can be processed, avoiding recomputation of all data items.\n- **Backfill scenarios**: Historical data items can be reprocessed in a configurable and automated way.\n- **Predictable workloads**: The amount of data to be processed can be defined and is known upfront to adjust compute resources accordingly for best efficiency and cost/performance ratio for both incremental processing and backfill scenarios.\n- **Transparency and observability**: Each data item can be enriched with information about when it was processed by what job.\n\n## Preconditions\n\n`pybatchintory` assumes the existence of a metadata table that contains information about the data items, such as their file location and registration timestamps. Importantly, to properly generate ranges of data items constituting a single batch to be processed, `pybatchintory` requires the metadata table to provide a **unique auto-increment ID column**.\n\n## Assumptions\n\n- Data items are always processed chronologically according to monotonic increasing unique id\n- Only continuous ranges of ids can be processed\n\n### Example meta data source table\n\n**Schema**\n\n| Field           | Type         | Key          | Extra         |\n|-----------------|--------------|--------------|---------------|\n| id              | int(11)      | PRI          | auto_increment|\n| file_location   | varchar(255) |              |               |\n| size_in_bytes   | int(11)      |              |               |\n| imported        | timestamp    |              |               |\n\n**Content**\n\n| id | file_location         | size_in_bytes | imported            |\n|----|-----------------------|---------------|---------------------|\n| 6  | /path/to/sixth/file    | 32768         | 2021-01-06 00:00:00 |\n| 7  | /path/to/seventh/file  | 65536         | 2021-01-07 00:00:00 |\n| 8  | /path/to/eighth/file   | 131072        | 2021-01-08 00:00:00 |\n| 9  | /path/to/ninth/file    | 262144        | 2021-01-09 00:00:00 |\n| 10 | /path/to/tenth/file    | 524288        | 2021-01-10 00:00:00 |\n\n## Usage\n\n### Configuration\n\nSqlAlchemy connection strings for inventory and meta table need to be \nprovided. These can be provided via environment variables as follows:\n\n#### Environment variables\n\n```bash\nexport PYBATCHINTORY_INVENTORY_CONN=\"postgresql+psycopg2://user:password@host:port/dbname\"\nexport PYBATCHINTORY_META_CONN=\"postgresql+psycopg2://user:password@host:port/dbname\"\n```\n\n#### Dot-env file\nYou may also provide a path to a dot-env file via an environment variable:\n\n```bash\nexport PYBATCHINTORY_ENV_FILE=\"PATH_TO_DOT_ENV_FILE\"\n```\n\n#### Programmatically\n\nIn addition, you may set a dot-env file and explicit settings programmatically:\n\n```python\nfrom pybatchintory import configure\n\nconfigure(\n    dot_env=\"PATH_TO_DOT_ENV_FILE\", \n    settings=dict(INVENTORY_CONN=\"CONN_STRING\"))\n```\n\n### Invocation\n\n#### Incremental with predictable workload\n\n```python\nfrom pybatchintory import acquire_batch\n\nbatch = acquire_batch(\n    meta_table_name=\"meta_table\", \n    meta_table_cols={\n        \"uid\": \"id\",\n        \"item\": \"file\",\n        \"weight\": \"size_in_mib\"\n\t},\n    job=\"incremental_job\",\n    batch_weight=100\n)\n\nprocess_func(batch.items)\nbatch.succeeded()\n```\n\n#### Backfill with predictable workload\n\n```python\nfrom pybatchintory import acquire_batch\n\nbatch = acquire_batch(\n    meta_table_name=\"meta_table\", \n    meta_table_cols={\n        \"uid\": \"id\",\n        \"item\": \"file\",\n        \"weight\": \"size_in_mib\"\n\t},\n    job=\"backfill_job\", \n    batch_id_min=20,\n    batch_id_max=80,\n    batch_weight=100\n)\n\nprocess_func(batch.items)\nbatch.succeeded()\n```\n\n#### Multiple batches\n\n**Not yet implemented**\n\n```python\nfrom pybatchintory import acquire_batches\n\nbatches = acquire_batches(\n\tmeta_table_name=\"meta_table\",\n\tjob=\"incremental_job\",\n\tbatch_weight=10,\n\titerations=5\n)\n\nfor batch in batches:\n\tprocess_func(batch.items)\n\tbatch.succeeded()\n```\n\n#### Error handling\n\n```python\n\nfrom pybatchintory import acquire_batch\n\n# version 1 - manual error handling\nbatch = acquire_batch(\n\tmeta_table_name=\"meta_table\",\n\tjob=\"incremental_job\",\n\tbatch_weight=10)\ntry:\n\tprocess_func(batch.items)\n\tbatch.succeeded()\nexcept Exception as e:\n\tbatch.failed(e)\n\traise\n\n# version 2 - automatic error handling - not yet implemented\nbatch = acquire_batch(\n\tmeta_table_name=\"meta_table\",\n\tjob=\"incremental_job\",\n\tbatch_weight=10)\nbatch.process(func, args, kwargs)\n```\n\n### Requirements (non ordered)\n\n- Allow concurrent batch generation/processing for the same job identifier\n\t- read/update transactions\n\t- for secure and reliable functioning, isolation level \"serializable\" is required however \"read committed\" should be sufficent in most cases\n- Separate database connections for meta data (external) and inventory tables (backend)\n\t- use sqlalchemy for engine creation and query building (guard against sql injections)\n- Credentials to be read via environment variables or dotenv files (pydantic)\n- Allow recursive processing of inventory table itself to allow incremental/backfill on already incremental/backfilled jobs\n- Provide filter condition for meta data source table to select only relevant subset of data items\n\n\n### Inventory table\n\n| Column Name      | Type                                                  | Constraints                              |\n|------------------|-------------------------------------------------------|------------------------------------------|\n| id               | Integer                                               | primary_key=True, autoincrement=True     |\n| meta_table       | String                                                | nullable=False                           |\n| job              | String                                                | nullable=False                           |\n| job_identifier   | String                                                |                                          |\n| job_result_item  | JSON                                                  |                                          |\n| processing_start | DateTime                                              | nullable=False, default=TS               |\n| processing_end   | DateTime                                              |                                          |\n| batch_id_start   | Integer                                               | nullable=False                           |\n| batch_id_end     | Integer                                               | nullable=False                           |\n| batch_weight     | Integer                                               |                                          |\n| batch_count      | Integer                                               | nullable=False                           |\n| attempt          | Integer                                               | nullable=False, default=1                |\n| status           | Enum(*cfg.settings.INVENTORY_STATUS_ENUMS)            | nullable=False, default=\"running\"        |\n| logging          | String                                                |                                          |\n| config           | JSON                                                  | nullable=False                           |\n\n\n## Poem (thanks to chatGPT)\n\nThis Python package is a wondrous tool,\\\nFor data processing, it's oh so cool,\\\nWith middleware for batches of data,\\\nIncremental processing, a much-needed beta.\n\nNo more recomputation of all data,\\\nOnly the unseen items, a true data saver,\\\nBackfill scenarios are now a breeze,\\\nWith historical data, we can reprocess with ease.\n\nPredictable workloads, we can define,\\\nAdjusting resources, a task that's benign,\\\nFor cost and performance, it's the way to go,\\\nEfficient processing, with no overflow.\n\nTransparency and observability in tow,\\\nEach data item enriched, as we know,\\\nWhen and how it was processed, we see,\\\nA Python package that's just meant to be.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "pybatchintory",
+            "package_url": "https://pypi.org/project/pybatchintory/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/pybatchintory/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/pybatchintory/0.0.8/",
+            "requires_dist": [
+                "sqlalchemy (<1.5) ; python_version >= \"3.7\" and python_version < \"3.8\"",
+                "sqlalchemy (>=2.0,<3.0) ; python_version >= \"3.8\" and python_version < \"4\"",
+                "pandas (>=1.2,<2.0)",
+                "pydantic (>=1.8,<2.0)"
+            ],
+            "requires_python": ">=3.7.1,<4.0.0",
+            "summary": "Middleware for generating batches of data items enabling incremental processing and backfill scenarios with predictable workloads.",
+            "version": "0.0.8",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17192515,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "7a1f2b5064d93be464398bdc6744278891d8c081fe67291af7a2170723b31f1c",
+                    "md5": "0c629d15835469943a39afa1c9cc1c21",
+                    "sha256": "cd89d26e663fc157a9eed63a5258bc78cc66b4a9683039da0ba24e3fe5a2a34e"
+                },
+                "downloads": -1,
+                "filename": "pybatchintory-0.0.8-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "0c629d15835469943a39afa1c9cc1c21",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7.1,<4.0.0",
+                "size": 16146,
+                "upload_time": "2023-03-07T15:36:25",
+                "upload_time_iso_8601": "2023-03-07T15:36:25.709773Z",
+                "url": "https://files.pythonhosted.org/packages/7a/1f/2b5064d93be464398bdc6744278891d8c081fe67291af7a2170723b31f1c/pybatchintory-0.0.8-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d8c9f94ad8fe8fd08068fc9754d7cba18df56dcdad79eadf72790736c97eda63",
+                    "md5": "05f3d9259c5759589398bd8b10a13445",
+                    "sha256": "dc2cb845f26db056fdfaf600382daea81d5aa22e2953652249bf7cf6d6cf64a5"
+                },
+                "downloads": -1,
+                "filename": "pybatchintory-0.0.8.tar.gz",
+                "has_sig": false,
+                "md5_digest": "05f3d9259c5759589398bd8b10a13445",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7.1,<4.0.0",
+                "size": 13627,
+                "upload_time": "2023-03-07T15:36:27",
+                "upload_time_iso_8601": "2023-03-07T15:36:27.326079Z",
+                "url": "https://files.pythonhosted.org/packages/d8/c9/f94ad8fe8fd08068fc9754d7cba18df56dcdad79eadf72790736c97eda63/pybatchintory-0.0.8.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
