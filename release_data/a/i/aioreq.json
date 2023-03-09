@@ -53,7 +53,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16833747,
+        "last_serial": 17220113,
         "urls": [
             {
                 "comment_text": null,
@@ -155,7 +155,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16833747,
+        "last_serial": 17220113,
         "urls": [
             {
                 "comment_text": null,
@@ -256,7 +256,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16833747,
+        "last_serial": 17220113,
         "urls": [
             {
                 "comment_text": null,
@@ -357,7 +357,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16833747,
+        "last_serial": 17220113,
         "urls": [
             {
                 "comment_text": null,
@@ -462,7 +462,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16833747,
+        "last_serial": 17220113,
         "urls": [
             {
                 "comment_text": null,
@@ -568,7 +568,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16833747,
+        "last_serial": 17220113,
         "urls": [
             {
                 "comment_text": null,
@@ -632,7 +632,6 @@
                 "Programming Language :: Python :: Implementation :: CPython",
                 "Topic :: Internet :: WWW/HTTP"
             ],
-            "description": "**Aioreq** is a Python low-level asynchronous HTTP client library. It is built on top of TCP sockets and implements the HTTP protocol entirely on his own.\n\n[mygit]: https://github.com/karosis88/aioreq\n[documentation]: https://karosis88.github.io/aioreq/\n\n---\n\n## Documentation\n[Click here][documentation]\n\n## Install\n``` shell\n$ pip install aioreq\n```\n\n## Usage\n### Basic usage\n---\n``` python\n>>> import aioreq\n>>> import asyncio\n>>>\n>>> cl = aioreq.Client()\n>>>\n>>> resp = asyncio.run(\n...\tcl.get('https://www.google.com')\n...\t)\n>>> resp\n<Response 200 OK>\n>>> resp.status\n200\n>>> resp.status_message\n'OK'\n>>> resp.request\n<Request GET www.google.com>\n>>> headers = resp.headers # dict\n>>> body = resp.content # bytes object\n\n```\n\nor you can use the default client, which is a synchoronous wrapper for an asynchronous interface\n\n``` python\n>>> aioreq.get('https://www.google.com')\n<Response 200 OK>\n\n```\n\nAlternatively, the best practice is to use a **Context manager**.\n``` python\n>>> import aioreq\n>>> import asyncio\n>>>\n>>> async def main():\n...     async with aioreq.Client() as cl:\n...         return await cl.get('https://google.com')\n>>> asyncio.run(main())\n<Response 200 OK>\n\n```\n\n### More advanced usage\n---\n\nThis code will asynchronously send 100 get requests to [`google.com`](https://www.google.com), which is much faster than synchronous libraries.\nAlso, the client persistent connection mechanism was disabled, so that a connection would be opened for each request.\n\n``` python\n>>> import asyncio\n>>> import aioreq\n>>>\n>>> async def main():\n...     async with aioreq.http.Client(persistent_connections=False) as cl:\n...         tasks = []\n...         for j in range(100):\n...             tasks.append(\n...                 asyncio.create_task(\n...                     cl.get('https://www.google.com/', )\n...                 )\n...             )\n...         await asyncio.gather(*tasks)\n>>> asyncio.run(main())\n\n```\n\n### Streams\n---\nWe occasionally use the HTTP protocol to download videos, photos, and possibly files. When downloading very large files, Stream must be used instead of the default Client. When a client downloads videos or files, the server responds with all information including headers, status code, status message, and full body, which can be very large. As a result, we cannot store it in RAM. Stream only returns a portion of the body per iteration, allowing us to write it to disk, then receive another portion and solve the ram overflow problem.\n\nThere is some fundamental Stream usage.\n``` python\n>>> import aioreq\n>>> import asyncio\n>>> from aioreq import Request\n>>> \n>>> async def main():\n...     req = Request(url=\"https://www.youtube.com\", method=\"GET\")\n...     async with aioreq.StreamClient(request=req) as response:\n...         assert response.status == 200\n...         async for chunk in response.content:\n...             assert chunk   \n>>> asyncio.run(main())\n\n```\n\n## Middlewares\n**Aioreq** now supports 'middleware' power.\n\n### The first steps with middleware\n\nAioreq provides default middlewares to each client.\nWe can see that middlewares by importing 'default_middlewares'  variable.\n``` python\n>>> import aioreq\n>>> aioreq.middlewares.default_middlewares\n('RetryMiddleWare', 'RedirectMiddleWare', 'CookiesMiddleWare', 'DecodeMiddleWare', 'AuthenticationMiddleWare')\n\n```\nThe first item on this list represents the first middleware that should handle our request (i.e. the closest middleware to our client), while the last index represents the closest middleware to the server.\n\n\nTo override the default middlewares, we can pass our middlewares to the Client.\n``` python\n>>> client = aioreq.Client(middlewares=aioreq.middlewares.default_middlewares[2:])\n\n```\n\nThis client will no longer redirect or retry responses.\n\nAlso, because aioreq stores middlewares in Client objects as linked lists, we can simply change the head of that linked list to skip the first middleware.\n``` python\n>>> client = aioreq.Client()\n>>> client.middlewares.__class__.__name__\n'RetryMiddleWare'\n>>>\n>>> client.middlewares = client.middlewares.next_middleware\n>>> client.middlewares.__class__.__name__\n'RedirectMiddleWare'\n>>> \n>>> client.middlewares = client.middlewares.next_middleware\n>>> client.middlewares.__class__.__name__\n'CookiesMiddleWare'\n\n```\n\nor \n``` python\n>>> client = aioreq.Client()\n>>> client.middlewares = client.middlewares.next_middleware.next_middleware\n>>> # alternative for client = aioreq.Client(middlewares=aioreq.middlewares.default_middlewares[2:])\n\n```\n\n### Create your own middlewares!\n\nAll 'aioreq' middlewares must be subclasses of the class 'middlewares.MiddleWare'\n\nMiddleWare below would add 'test-md' header if request domain is 'www.example.com'\n``` python\n>>> import aioreq\n>>>\n>>> class CustomMiddleWare(aioreq.middlewares.MiddleWare):\n...     async def process(self, request, client):\n...         if request.host == 'www.example.com':\n...             request.headers['test_md'] = 'test'\n...         return await self.next_middleware.process(request, client)\n...\n>>> client = aioreq.Client()\n>>> client.middlewares = CustomMiddleWare(next_middleware=client.middlewares)\n\n```\nOur CustomMiddleWare will now be the first middleware (i.e. closest to the client). Because 'aioreq' middlewares are stored as linked lists, this pattern works (i.e. same as linked list insert method).\n\nAlternatively, we can alter the list of middlewares that the client receives.\n``` python\n>>> client = aioreq.Client(middlewares = (CustomMiddleWare, ) + aioreq.middlewares.default_middlewares)\n>>> client.middlewares.__class__.__name__\n'CustomMiddleWare'\n\n```\n\n\n## Benchmarks\n**Aioreq** is a very fast library, and we compared it to other Python libraries to demonstrate its speed.\n\n\n\n\nI used [httpx](https://github.com/encode/httpx) to compare speed.\n\n---\n### Benchmark run\n\nFirst, clone aioreq [repository][mygit].\n\nThen...\n\n``` shell\n$ cd aioreq\n$ python -m venv venv\n$ source ./venv/bin/activate\n$ pip install '.[dev]'\n$ cd benchmarks\n$ ./run_tests\n```\n\n---\n\n### Benchmark results\n\nThis is the **average** execution time of each library for **200 asynchronous requests** where responses was received without **chunked** transfer encoding.\n<br/>\n\n\nBenchmark settings.\n\n* **Url** - http://www.google.com\n* **Requests count** - 200\n#### With `Content-Length`\n``` shell\n$ cd becnhmarks\n$ ./run_tests\nTests with module loading\n---------------------------\naioreq benchmark\n\nreal    0m1.893s\nuser    0m0.777s\nsys     0m0.063s\n---------------------------\nhttpx benchmark\n\nreal    0m2.448s\nuser    0m0.840s\nsys     0m0.151s\n```\n\n#### With `Transfer-Encoding: Chunked`\nThis is the **average** execution time of each library for **200 asynchronous requests** where responses was received with **chunked** transfer encoding.\n<br/>\n\nBenchmark settings.\n\n* **Url** - https://www.youtube.com\n* **Requests count** - 200\n\n```shell\n$ cd benchmarks\n$ ./run_tests\nTests with module loading\n---------------------------\naioreq benchmark\n\nreal    0m2.444s\nuser    0m1.090s\nsys     0m0.089s\n---------------------------\nhttpx benchmark\n\nreal    0m2.990s\nuser    0m1.254s\nsys     0m0.127s\n```\n\nAs you can see, the synchronous code lags far behind when we make many requests at the same time.<br />\n\n## Keylog\n\nIf the **SSLKEYLOGFILE** environment variable is set, Aioreq will write keylogs to it.\n\n``` shell\n$ export SSLKEYLOGFILE=logs\n```\n\nThen just run python script.\n\n``` shell\n$ python aioreq_app.py\n$ ls -l\ntotal 8\n-rw-r--r-- 1 user user  94 Dec  5 17:19 aioreq_app.py\n-rw-r--r-- 1 user user 406 Dec  5 17:19 logs\n```\nNow, the 'logs' file contains keylogs that can be used to decrypt your TLS/SSL traffic with a tool such as 'wireshark'.\n\n## Authentication\n\nIf the `auth` parameter is included in the request, Aioreq will handle authentication.\n``` python\n>>> import aioreq\n>>> import asyncio\n>>> async def send_req():\n...     async with aioreq.Client() as cl:\n...         return await cl.get('http://httpbin.org/basic-auth/foo/bar', auth=('foo', 'bar'))\n>>> resp = asyncio.run(send_req())\n>>> resp.status\n200\n\n```\nParameter 'auth' should be a tuple with two elements: password and login.\n\nAuthentication is enabled by 'AuthenticationMiddleWare,' so exercise caution when managing middlewares manually.\n\n\n## Supported Features\n**Aioreq** support basic features to work with **HTTP/1.1**.<br />More functionality will be available in future releases.<br />\nThis is the latest version features.\n\n* [Keep-Alive (Persistent Connections)](#more-advanced-usage)\n* [Middlewares](#middlewares)\n* [Keylogs](#keylog)\n* [Authentication](#authentication)\n* Cookies\n* Automatic accepting and decoding responses. Using `Accept-Encoding` header\n* HTTPS support, TLS/SSL Verification\n* Request Timeouts\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": null,
@@ -673,7 +672,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16833747,
+        "last_serial": 17220113,
         "urls": [
             {
                 "comment_text": null,
@@ -714,6 +713,112 @@
                 "upload_time": "2023-02-13T07:42:32",
                 "upload_time_iso_8601": "2023-02-13T07:42:32.446495Z",
                 "url": "https://files.pythonhosted.org/packages/f7/e1/5c5a11f4807269891376c5854a63636e976bdc580e4f564a68101a69a57f/aioreq-1.0.4.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.0.5": {
+        "info": {
+            "author": null,
+            "author_email": null,
+            "bugtrack_url": null,
+            "classifiers": [
+                "Framework :: AsyncIO",
+                "License :: OSI Approved :: MIT License",
+                "Natural Language :: English",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Programming Language :: Python :: Implementation :: CPython",
+                "Topic :: Internet :: WWW/HTTP"
+            ],
+            "description": "**Aioreq** is a Python low-level asynchronous HTTP client library. It is built on top of TCP sockets and implements the HTTP protocol entirely on his own.\n\n[mygit]: https://github.com/karosis88/aioreq\n[documentation]: https://karosis88.github.io/aioreq/\n\n---\n\n## Documentation\n[Click here][documentation]\n\n## Install\n``` shell\n$ pip install aioreq\n```\n\n## Usage\n### Basic usage\n---\n``` python\n>>> import aioreq\n>>> import asyncio\n>>>\n>>> cl = aioreq.Client()\n>>>\n>>> resp = asyncio.run(\n...\tcl.get('https://www.google.com')\n...\t)\n>>> resp\n<Response 200 OK>\n>>> resp.status\n200\n>>> resp.status_message\n'OK'\n>>> resp.request\n<Request GET www.google.com>\n>>> headers = resp.headers # dict\n>>> body = resp.content # bytes object\n\n```\n\nor you can use the default client, which is a synchoronous wrapper for an asynchronous interface\n\n``` python\n>>> aioreq.get('https://www.google.com')\n<Response 200 OK>\n\n```\n\nAlternatively, the best practice is to use a **Context manager**.\n``` python\n>>> import aioreq\n>>> import asyncio\n>>>\n>>> async def main():\n...     async with aioreq.Client() as cl:\n...         return await cl.get('https://google.com')\n>>> asyncio.run(main())\n<Response 200 OK>\n\n```\n\n### More advanced usage\n---\n\nThis code will asynchronously send 100 get requests to [`google.com`](https://www.google.com), which is much faster than synchronous libraries.\nAlso, the client persistent connection mechanism was disabled, so that a connection would be opened for each request.\n\n``` python\n>>> import asyncio\n>>> import aioreq\n>>>\n>>> async def main():\n...     async with aioreq.http.Client(persistent_connections=False) as cl:\n...         tasks = []\n...         for j in range(100):\n...             tasks.append(\n...                 asyncio.create_task(\n...                     cl.get('https://www.google.com/', )\n...                 )\n...             )\n...         await asyncio.gather(*tasks)\n>>> asyncio.run(main())\n\n```\n\n### Streams\n---\nWe occasionally use the HTTP protocol to download videos, photos, and possibly files. When downloading very large files, Stream must be used instead of the default Client. When a client downloads videos or files, the server responds with all information including headers, status code, status message, and full body, which can be very large. As a result, we cannot store it in RAM. Stream only returns a portion of the body per iteration, allowing us to write it to disk, then receive another portion and solve the ram overflow problem.\n\nThere is some fundamental Stream usage.\n``` python\n>>> import aioreq\n>>> import asyncio\n>>> from aioreq import Request\n>>> \n>>> async def main():\n...     req = Request(url=\"https://www.youtube.com\", method=\"GET\")\n...     async with aioreq.StreamClient(request=req) as response:\n...         assert response.status == 200\n...         async for chunk in response.content:\n...             assert chunk   \n>>> asyncio.run(main())\n\n```\n\n## Middlewares\n**Aioreq** now supports 'middleware' power.\n\n### The first steps with middleware\n\nAioreq provides default middlewares to each client.\nWe can see that middlewares by importing 'default_middlewares'  variable.\n``` python\n>>> import aioreq\n>>> aioreq.middlewares.default_middlewares\n('RetryMiddleWare', 'RedirectMiddleWare', 'CookiesMiddleWare', 'DecodeMiddleWare', 'AuthenticationMiddleWare')\n\n```\nThe first item on this list represents the first middleware that should handle our request (i.e. the closest middleware to our client), while the last index represents the closest middleware to the server.\n\n\nTo override the default middlewares, we can pass our middlewares to the Client.\n``` python\n>>> client = aioreq.Client(middlewares=aioreq.middlewares.default_middlewares[2:])\n\n```\n\nThis client will no longer redirect or retry responses.\n\nAlso, because aioreq stores middlewares in Client objects as linked lists, we can simply change the head of that linked list to skip the first middleware.\n``` python\n>>> client = aioreq.Client()\n>>> client.middlewares.__class__.__name__\n'RetryMiddleWare'\n>>>\n>>> client.middlewares = client.middlewares.next_middleware\n>>> client.middlewares.__class__.__name__\n'RedirectMiddleWare'\n>>> \n>>> client.middlewares = client.middlewares.next_middleware\n>>> client.middlewares.__class__.__name__\n'CookiesMiddleWare'\n\n```\n\nor \n``` python\n>>> client = aioreq.Client()\n>>> client.middlewares = client.middlewares.next_middleware.next_middleware\n>>> # alternative for client = aioreq.Client(middlewares=aioreq.middlewares.default_middlewares[2:])\n\n```\n\n### Create your own middlewares!\n\nAll 'aioreq' middlewares must be subclasses of the class 'middlewares.MiddleWare'\n\nMiddleWare below would add 'test-md' header if request domain is 'www.example.com'\n``` python\n>>> import aioreq\n>>>\n>>> class CustomMiddleWare(aioreq.middlewares.MiddleWare):\n...     async def process(self, request, client):\n...         if request.host == 'www.example.com':\n...             request.headers['test_md'] = 'test'\n...         return await self.next_middleware.process(request, client)\n...\n>>> client = aioreq.Client()\n>>> client.middlewares = CustomMiddleWare(next_middleware=client.middlewares)\n\n```\nOur CustomMiddleWare will now be the first middleware (i.e. closest to the client). Because 'aioreq' middlewares are stored as linked lists, this pattern works (i.e. same as linked list insert method).\n\nAlternatively, we can alter the list of middlewares that the client receives.\n``` python\n>>> client = aioreq.Client(middlewares = (CustomMiddleWare, ) + aioreq.middlewares.default_middlewares)\n>>> client.middlewares.__class__.__name__\n'CustomMiddleWare'\n\n```\n\n\n## Benchmarks\n**Aioreq** is a very fast library, and we compared it to other Python libraries to demonstrate its speed.\n\n\n\n\nI used [httpx](https://github.com/encode/httpx) to compare speed.\n\n---\n### Benchmark run\n\nFirst, clone aioreq [repository][mygit].\n\nThen...\n\n``` shell\n$ cd aioreq\n$ python -m venv venv\n$ source ./venv/bin/activate\n$ pip install '.[dev]'\n$ cd benchmarks\n$ ./run_tests\n```\n\n---\n\n### Benchmark results\n\nThis is the **average** execution time of each library for **200 asynchronous requests** where responses was received without **chunked** transfer encoding.\n<br/>\n\n\nBenchmark settings.\n\n* **Url** - http://www.google.com\n* **Requests count** - 200\n#### With `Content-Length`\n``` shell\n$ cd becnhmarks\n$ ./run_tests\nTests with module loading\n---------------------------\naioreq benchmark\n\nreal    0m1.893s\nuser    0m0.777s\nsys     0m0.063s\n---------------------------\nhttpx benchmark\n\nreal    0m2.448s\nuser    0m0.840s\nsys     0m0.151s\n```\n\n#### With `Transfer-Encoding: Chunked`\nThis is the **average** execution time of each library for **200 asynchronous requests** where responses was received with **chunked** transfer encoding.\n<br/>\n\nBenchmark settings.\n\n* **Url** - https://www.youtube.com\n* **Requests count** - 200\n\n```shell\n$ cd benchmarks\n$ ./run_tests\nTests with module loading\n---------------------------\naioreq benchmark\n\nreal    0m2.444s\nuser    0m1.090s\nsys     0m0.089s\n---------------------------\nhttpx benchmark\n\nreal    0m2.990s\nuser    0m1.254s\nsys     0m0.127s\n```\n\nAs you can see, the synchronous code lags far behind when we make many requests at the same time.<br />\n\n## Keylog\n\nIf the **SSLKEYLOGFILE** environment variable is set, Aioreq will write keylogs to it.\n\n``` shell\n$ export SSLKEYLOGFILE=logs\n```\n\nThen just run python script.\n\n``` shell\n$ python aioreq_app.py\n$ ls -l\ntotal 8\n-rw-r--r-- 1 user user  94 Dec  5 17:19 aioreq_app.py\n-rw-r--r-- 1 user user 406 Dec  5 17:19 logs\n```\nNow, the 'logs' file contains keylogs that can be used to decrypt your TLS/SSL traffic with a tool such as 'wireshark'.\n\n## Authentication\n\nIf the `auth` parameter is included in the request, Aioreq will handle authentication.\n``` python\n>>> import aioreq\n>>> import asyncio\n>>> async def send_req():\n...     async with aioreq.Client() as cl:\n...         return await cl.get('http://httpbin.org/basic-auth/foo/bar', auth=('foo', 'bar'))\n>>> resp = asyncio.run(send_req())\n>>> resp.status\n200\n\n```\nParameter 'auth' should be a tuple with two elements: password and login.\n\nAuthentication is enabled by 'AuthenticationMiddleWare,' so exercise caution when managing middlewares manually.\n\n\n## Supported Features\n**Aioreq** support basic features to work with **HTTP/1.1**.<br />More functionality will be available in future releases.<br />\nThis is the latest version features.\n\n* [Keep-Alive (Persistent Connections)](#more-advanced-usage)\n* [Middlewares](#middlewares)\n* [Keylogs](#keylog)\n* [Authentication](#authentication)\n* Cookies\n* Automatic accepting and decoding responses. Using `Accept-Encoding` header\n* HTTPS support, TLS/SSL Verification\n* Request Timeouts\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": null,
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": null,
+            "keywords": null,
+            "license": null,
+            "maintainer": null,
+            "maintainer_email": null,
+            "name": "aioreq",
+            "package_url": "https://pypi.org/project/aioreq/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/aioreq/",
+            "project_urls": {
+                "Homepage": "https://github.com/karosis88/aioerq",
+                "Source": "https://github.com/karosis88/aioreq"
+            },
+            "release_url": "https://pypi.org/project/aioreq/1.0.5/",
+            "requires_dist": [
+                "dnspython",
+                "hatch; extra == 'dev'",
+                "httpx; extra == 'dev'",
+                "mkdocs-material; extra == 'dev'",
+                "pytest; extra == 'dev'",
+                "pytest-asyncio; extra == 'dev'",
+                "pytest-randomly; extra == 'dev'",
+                "starlette; extra == 'dev'",
+                "tox; extra == 'dev'",
+                "uvicorn; extra == 'dev'",
+                "uvloop; extra == 'uvloop'"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "Asynchronous HTTP library.",
+            "version": "1.0.5",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17220113,
+        "urls": [
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "93ec229a73a2654cc29a171386dfd4f9cdf4861b2d70e63e4b0fc0318ef2e33a",
+                    "md5": "a96099357ca4c41bc83c862e27c917f4",
+                    "sha256": "16a43ef6c33bafc4d3476c65cf1b75136b83060fc3bf4862b78aaeb2a6d0cce0"
+                },
+                "downloads": -1,
+                "filename": "aioreq-1.0.5-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "a96099357ca4c41bc83c862e27c917f4",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 28293,
+                "upload_time": "2023-03-09T07:31:26",
+                "upload_time_iso_8601": "2023-03-09T07:31:26.983530Z",
+                "url": "https://files.pythonhosted.org/packages/93/ec/229a73a2654cc29a171386dfd4f9cdf4861b2d70e63e4b0fc0318ef2e33a/aioreq-1.0.5-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "1674f4d045f0a15b19f88eb4f28372c7fde7cd7a83baebd0c9f98201942e36d4",
+                    "md5": "b41eae076a75afc9b6a0b1dffa953f09",
+                    "sha256": "bb6b626387a2f65164c9b294f132d5046d7fc7f7fd08c938f04344c589471dfb"
+                },
+                "downloads": -1,
+                "filename": "aioreq-1.0.5.tar.gz",
+                "has_sig": false,
+                "md5_digest": "b41eae076a75afc9b6a0b1dffa953f09",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 22842,
+                "upload_time": "2023-03-09T07:31:24",
+                "upload_time_iso_8601": "2023-03-09T07:31:24.005434Z",
+                "url": "https://files.pythonhosted.org/packages/16/74/f4d045f0a15b19f88eb4f28372c7fde7cd7a83baebd0c9f98201942e36d4/aioreq-1.0.5.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
