@@ -50,7 +50,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17280744,
+        "last_serial": 17293347,
         "urls": [
             {
                 "comment_text": "",
@@ -148,7 +148,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17280744,
+        "last_serial": 17293347,
         "urls": [
             {
                 "comment_text": "",
@@ -246,7 +246,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17280744,
+        "last_serial": 17293347,
         "urls": [
             {
                 "comment_text": "",
@@ -344,7 +344,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17280744,
+        "last_serial": 17293347,
         "urls": [
             {
                 "comment_text": "",
@@ -403,7 +403,6 @@
                 "Programming Language :: Python :: 3",
                 "Programming Language :: Python :: 3 :: Only"
             ],
-            "description": "## Pytorch Volumetric\n\n- signed distance field (SDF) pytorch implementation with parallelized query for value and gradients\n- voxel grids with automatic expanding range\n- unidirectional chamfer distance (points to mesh)\n- robot model to SDF with parallelized query over robot configurations and points\n\n## Installation\n\n```shell\npip install pytorch-volumetric\n```\n\nFor development, clone repository somewhere, then `pip3 install -e .` to install in editable mode.\nFor testing, run `pytest` in the root directory.\n\n## Usage\n\nSee `tests` for code samples; some are also shown here\n\n### SDF from mesh\n\n```python\nimport pytorch_volumetric as pv\n\n# supposing we have an object mesh (most formats supported) - from https://github.com/eleramp/pybullet-object-models\nobj = pv.MeshObjectFactory(\"YcbPowerDrill/textured_simple_reoriented.obj\")\nsdf = pv.MeshSDF(obj)\n```\n\n### Cached SDF\n\n```python\nimport pytorch_volumetric as pv\n\nobj = pv.MeshObjectFactory(\"YcbPowerDrill/textured_simple_reoriented.obj\")\nsdf = pv.MeshSDF(obj)\n# caching the SDF via a voxel grid to accelerate queries\ncached_sdf = pv.CachedSDF('drill', resolution=0.01, range_per_dim=obj.bounding_box(padding=0.1), gt_sdf=sdf)\n```\n\n### SDF value and gradient queries\n\nSuppose we have an `ObjectFrameSDF` (such as created from above)\n\n```python\nimport numpy as np\nimport pytorch_volumetric as pv\n\n# get points in a grid in the object frame\nquery_range = np.array([\n    [-1, 0.5],\n    [-0.5, 0.5],\n    [-0.2, 0.8],\n])\n\ncoords, pts = pv.get_coordinates_and_points_in_grid(0.01, query_range)\n# N x 3 points \n# we can also query with batched points B x N x 3, B can be any number of batch dimensions\nsdf_val, sdf_grad = sdf(pts)\n# sdf_val is N, or B x N, the SDF value in meters\n# sdf_grad is N x 3 or B x N x 3, the normalized SDF gradient (points along steepest increase in SDF)\n```\n\n### Plotting SDF Slice\n\n```python\nimport pytorch_volumetric as pv\nimport numpy as np\n\n# supposing we have an object mesh (most formats supported) - from https://github.com/eleramp/pybullet-object-models\nobj = pv.MeshObjectFactory(\"YcbPowerDrill/textured_simple_reoriented.obj\")\nsdf = pv.MeshSDF(obj)\n# need a dimension with no range to slice; here it's y\nquery_range = np.array([\n    [-0.15, 0.2],\n    [0, 0],\n    [-0.1, 0.2],\n])\npv.draw_sdf_slice(sdf, query_range)\n```\n\n![drill SDF](https://i.imgur.com/TFaGmx6.png)\n\n### Robot Model to SDF\n\nFor many applications such as collision checking, it is useful to have the\nSDF of a multi-link robot in certain configurations.\nFirst, we create the robot model (loaded from URDF, SDF, MJCF, ...) with\n[pytorch kinematics](https://github.com/UM-ARM-Lab/pytorch_kinematics).\nFor example, we will be using the KUKA 7 DOF arm model from pybullet data\n\n```python\nimport os\nimport torch\nimport pybullet_data\nimport pytorch_kinematics as pk\nimport pytorch_volumetric as pv\n\nurdf = \"kuka_iiwa/model.urdf\"\nsearch_path = pybullet_data.getDataPath()\nfull_urdf = os.path.join(search_path, urdf)\nchain = pk.build_serial_chain_from_urdf(open(full_urdf).read(), \"lbr_iiwa_link_7\")\nd = \"cuda\" if torch.cuda.is_available() else \"cpu\"\n\nchain = chain.to(device=d)\n# paths to the link meshes are specified with their relative path inside the URDF\n# we need to give them the path prefix as we need their absolute path to load\ns = pv.RobotSDF(chain, path_prefix=os.path.join(search_path, \"kuka_iiwa\"))\n```\n\nBy default, each link will have a `MeshSDF`. To instead use `CachedSDF` for faster queries\n\n```python\ns = pv.RobotSDF(chain, path_prefix=os.path.join(search_path, \"kuka_iiwa\"),\n                link_sdf_cls=pv.cache_link_sdf_factory(resolution=0.02, padding=1.0, device=d))\n```\n\nWhich when the `y=0.02` SDF slice is visualized:\n![sdf slice](https://i.imgur.com/Putw72A.png)\n\nWith surface points corresponding to:\n![wireframe](https://i.imgur.com/L3atG9h.png)\n![solid](https://i.imgur.com/XiAks7a.png)\n\nQueries on this SDF is dependent on the joint configurations (by default all zero).\n**Queries are batched across configurations and query points**. For example, we have a batch of\njoint configurations to query\n\n```python\nth = torch.tensor([0.0, -math.pi / 4.0, 0.0, math.pi / 2.0, 0.0, math.pi / 4.0, 0.0], device=d)\nN = 200\nth_perturbation = torch.randn(N - 1, 7, device=d) * 0.1\n# N x 7 joint values\nth = torch.cat((th.view(1, -1), th_perturbation + th))\n```\n\nAnd also a batch of points to query (same points for each configuration):\n\n```python\ny = 0.02\nquery_range = np.array([\n    [-1, 0.5],\n    [y, y],\n    [-0.2, 0.8],\n])\n# M x 3 points\ncoords, pts = pv.get_coordinates_and_points_in_grid(0.01, query_range, device=s.device)\n```\n\nWe set the batch of joint configurations and query:\n\n```python\ns.set_joint_configuration(th)\n# N x M SDF value\n# N x M x 3 SDF gradient\nsdf_val, sdf_grad = s(pts)\n```\n\nQueries are reasonably quick. For the 7 DOF Kuka arm (8 links), using `CachedSDF` on a RTX 2080 Ti,\nand using CUDA, we get\n\n```shell\nN=20, M=15251, elapsed: 37.688577ms time per config and point: 0.000124ms\nN=200, M=15251, elapsed: elapsed: 128.645445ms time per config and point: 0.000042ms\n```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -443,7 +442,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17280744,
+        "last_serial": 17293347,
         "urls": [
             {
                 "comment_text": "",
@@ -484,6 +483,105 @@
                 "upload_time": "2023-03-14T02:35:57",
                 "upload_time_iso_8601": "2023-03-14T02:35:57.359461Z",
                 "url": "https://files.pythonhosted.org/packages/ac/b1/2a4c3a0095ba9d68213aa52e4c173ef54e4aec5678ac4961f346d87a487c/pytorch_volumetric-0.3.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.3.3": {
+        "info": {
+            "author": "",
+            "author_email": "Sheng Zhong <zhsh@umich.edu>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3 :: Only"
+            ],
+            "description": "## Pytorch Volumetric\n\n- signed distance field (SDF) pytorch implementation with parallelized query for value and gradients\n- voxel grids with automatic expanding range\n- unidirectional chamfer distance (points to mesh)\n- robot model to SDF with parallelized query over robot configurations and points\n\n## Installation\n\n```shell\npip install pytorch-volumetric\n```\n\nFor development, clone repository somewhere, then `pip3 install -e .` to install in editable mode.\nFor testing, run `pytest` in the root directory.\n\n## Usage\n\nSee `tests` for code samples; some are also shown here\n\n### SDF from mesh\n\n```python\nimport pytorch_volumetric as pv\n\n# supposing we have an object mesh (most formats supported) - from https://github.com/eleramp/pybullet-object-models\nobj = pv.MeshObjectFactory(\"YcbPowerDrill/textured_simple_reoriented.obj\")\nsdf = pv.MeshSDF(obj)\n```\n\n### Cached SDF\n\n```python\nimport pytorch_volumetric as pv\n\nobj = pv.MeshObjectFactory(\"YcbPowerDrill/textured_simple_reoriented.obj\")\nsdf = pv.MeshSDF(obj)\n# caching the SDF via a voxel grid to accelerate queries\ncached_sdf = pv.CachedSDF('drill', resolution=0.01, range_per_dim=obj.bounding_box(padding=0.1), gt_sdf=sdf)\n```\n\n### SDF value and gradient queries\n\nSuppose we have an `ObjectFrameSDF` (such as created from above)\n\n```python\nimport numpy as np\nimport pytorch_volumetric as pv\n\n# get points in a grid in the object frame\nquery_range = np.array([\n    [-1, 0.5],\n    [-0.5, 0.5],\n    [-0.2, 0.8],\n])\n\ncoords, pts = pv.get_coordinates_and_points_in_grid(0.01, query_range)\n# N x 3 points \n# we can also query with batched points B x N x 3, B can be any number of batch dimensions\nsdf_val, sdf_grad = sdf(pts)\n# sdf_val is N, or B x N, the SDF value in meters\n# sdf_grad is N x 3 or B x N x 3, the normalized SDF gradient (points along steepest increase in SDF)\n```\n\n### Plotting SDF Slice\n\n```python\nimport pytorch_volumetric as pv\nimport numpy as np\n\n# supposing we have an object mesh (most formats supported) - from https://github.com/eleramp/pybullet-object-models\nobj = pv.MeshObjectFactory(\"YcbPowerDrill/textured_simple_reoriented.obj\")\nsdf = pv.MeshSDF(obj)\n# need a dimension with no range to slice; here it's y\nquery_range = np.array([\n    [-0.15, 0.2],\n    [0, 0],\n    [-0.1, 0.2],\n])\npv.draw_sdf_slice(sdf, query_range)\n```\n\n![drill SDF](https://i.imgur.com/TFaGmx6.png)\n\n### Robot Model to SDF\n\nFor many applications such as collision checking, it is useful to have the\nSDF of a multi-link robot in certain configurations.\nFirst, we create the robot model (loaded from URDF, SDF, MJCF, ...) with\n[pytorch kinematics](https://github.com/UM-ARM-Lab/pytorch_kinematics).\nFor example, we will be using the KUKA 7 DOF arm model from pybullet data\n\n```python\nimport os\nimport torch\nimport pybullet_data\nimport pytorch_kinematics as pk\nimport pytorch_volumetric as pv\n\nurdf = \"kuka_iiwa/model.urdf\"\nsearch_path = pybullet_data.getDataPath()\nfull_urdf = os.path.join(search_path, urdf)\nchain = pk.build_serial_chain_from_urdf(open(full_urdf).read(), \"lbr_iiwa_link_7\")\nd = \"cuda\" if torch.cuda.is_available() else \"cpu\"\n\nchain = chain.to(device=d)\n# paths to the link meshes are specified with their relative path inside the URDF\n# we need to give them the path prefix as we need their absolute path to load\ns = pv.RobotSDF(chain, path_prefix=os.path.join(search_path, \"kuka_iiwa\"))\n```\n\nBy default, each link will have a `MeshSDF`. To instead use `CachedSDF` for faster queries\n\n```python\ns = pv.RobotSDF(chain, path_prefix=os.path.join(search_path, \"kuka_iiwa\"),\n                link_sdf_cls=pv.cache_link_sdf_factory(resolution=0.02, padding=1.0, device=d))\n```\n\nWhich when the `y=0.02` SDF slice is visualized:\n![sdf slice](https://i.imgur.com/Putw72A.png)\n\nWith surface points corresponding to:\n![wireframe](https://i.imgur.com/L3atG9h.png)\n![solid](https://i.imgur.com/XiAks7a.png)\n\nQueries on this SDF is dependent on the joint configurations (by default all zero).\n**Queries are batched across configurations and query points**. For example, we have a batch of\njoint configurations to query\n\n```python\nth = torch.tensor([0.0, -math.pi / 4.0, 0.0, math.pi / 2.0, 0.0, math.pi / 4.0, 0.0], device=d)\nN = 200\nth_perturbation = torch.randn(N - 1, 7, device=d) * 0.1\n# N x 7 joint values\nth = torch.cat((th.view(1, -1), th_perturbation + th))\n```\n\nAnd also a batch of points to query (same points for each configuration):\n\n```python\ny = 0.02\nquery_range = np.array([\n    [-1, 0.5],\n    [y, y],\n    [-0.2, 0.8],\n])\n# M x 3 points\ncoords, pts = pv.get_coordinates_and_points_in_grid(0.01, query_range, device=s.device)\n```\n\nWe set the batch of joint configurations and query:\n\n```python\ns.set_joint_configuration(th)\n# N x M SDF value\n# N x M x 3 SDF gradient\nsdf_val, sdf_grad = s(pts)\n```\n\nQueries are reasonably quick. For the 7 DOF Kuka arm (8 links), using `CachedSDF` on a RTX 2080 Ti,\nand using CUDA, we get\n\n```shell\nN=20, M=15251, elapsed: 37.688577ms time per config and point: 0.000124ms\nN=200, M=15251, elapsed: elapsed: 128.645445ms time per config and point: 0.000042ms\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "robotics,sdf,voxels,pytorch",
+            "license": "Copyright (c) 2023 University of Michigan ARM Lab  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.  THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.  ",
+            "maintainer": "",
+            "maintainer_email": "Sheng Zhong <zhsh@umich.edu>",
+            "name": "pytorch-volumetric",
+            "package_url": "https://pypi.org/project/pytorch-volumetric/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/pytorch-volumetric/",
+            "project_urls": {
+                "Bug Reports": "https://github.com/UM-ARM-Lab/pytorch_volumetric/issues",
+                "Homepage": "https://github.com/UM-ARM-Lab/pytorch_volumetric",
+                "Source": "https://github.com/UM-ARM-Lab/pytorch_volumetric"
+            },
+            "release_url": "https://pypi.org/project/pytorch-volumetric/0.3.3/",
+            "requires_dist": [
+                "torch",
+                "numpy",
+                "open3d",
+                "arm-pytorch-utilities",
+                "multidim-indexing",
+                "pytorch-kinematics",
+                "pytest ; extra == 'test'",
+                "pybullet ; extra == 'test'"
+            ],
+            "requires_python": ">=3.6",
+            "summary": "Volumetric structures such as voxels and SDFs implemented in pytorch",
+            "version": "0.3.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17293347,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f130a1a91c8da296e37d30d143d4ad820828c7c8d3bf55e1d22f37234d3b33f4",
+                    "md5": "9c35d3d4d5166dd1aa10d4fe3f065e71",
+                    "sha256": "20f7a7a6abf3c740e8560e58190a8a49219b2579d640130c447ecdd7298cb5c5"
+                },
+                "downloads": -1,
+                "filename": "pytorch_volumetric-0.3.3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "9c35d3d4d5166dd1aa10d4fe3f065e71",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.6",
+                "size": 19026,
+                "upload_time": "2023-03-14T20:09:16",
+                "upload_time_iso_8601": "2023-03-14T20:09:16.826461Z",
+                "url": "https://files.pythonhosted.org/packages/f1/30/a1a91c8da296e37d30d143d4ad820828c7c8d3bf55e1d22f37234d3b33f4/pytorch_volumetric-0.3.3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "edecef214071c38786b41c9b834d38c7988f82a77ac5882b8779d4b938b8bd07",
+                    "md5": "25a5641c2e9d2c224b5aa73075c7a79b",
+                    "sha256": "8c2bf5d446fc155c190c86aae8d5637b6d58ebf4a37b6c1b65ee6b8898babd15"
+                },
+                "downloads": -1,
+                "filename": "pytorch_volumetric-0.3.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "25a5641c2e9d2c224b5aa73075c7a79b",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.6",
+                "size": 22034,
+                "upload_time": "2023-03-14T20:09:19",
+                "upload_time_iso_8601": "2023-03-14T20:09:19.177421Z",
+                "url": "https://files.pythonhosted.org/packages/ed/ec/ef214071c38786b41c9b834d38c7988f82a77ac5882b8779d4b938b8bd07/pytorch_volumetric-0.3.3.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
