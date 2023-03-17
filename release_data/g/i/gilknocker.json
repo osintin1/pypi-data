@@ -34,7 +34,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17302946,
+        "last_serial": 17319383,
         "urls": [
             {
                 "comment_text": "",
@@ -725,7 +725,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17302946,
+        "last_serial": 17319383,
         "urls": [
             {
                 "comment_text": "",
@@ -1395,7 +1395,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17302946,
+        "last_serial": 17319383,
         "urls": [
             {
                 "comment_text": "",
@@ -2065,7 +2065,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17302946,
+        "last_serial": 17319383,
         "urls": [
             {
                 "comment_text": "",
@@ -2706,7 +2706,6 @@
             "author_email": "Miles Granger <miles59923@gmail.com>",
             "bugtrack_url": null,
             "classifiers": [],
-            "description": "## GIL Knocker\n\n\n`pip install gilknocker`\n\n\n[![Code Style](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/python/black)\n[![CI](https://github.com/milesgranger/gilknocker/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/milesgranger/gilknocker/actions/workflows/CI.yml)\n[![PyPI](https://img.shields.io/pypi/v/gilknocker.svg)](https://pypi.org/project/gilknocker)\n![PyPI - Wheel](https://img.shields.io/pypi/wheel/gilknocker)\n[![Downloads](https://pepy.tech/badge/gilknocker/month)](https://pepy.tech/project/gilknocker)\n\n\nWhen you thought the GIL was available, and you find yourself suspecting it might be spending time\nwith another. \n\nYou probably want [py-spy](https://github.com/benfred/py-spy), however if you're\nlooking for a quick-and-dirty way to slip in a GIL contention metric within a specific\nchunk of code, this might help you.\n\n### How?\n\nUnfortunately, there doesn't appear to be any explicit C-API for checking how busy\nthe GIL is. [PyGILState_Check](https://docs.python.org/3/c-api/init.html#c.PyGILState_Check) \nwon't really work, that's limited to the current thread. \n[PyInterpreterState](https://docs.python.org/3/c-api/init.html#c.PyGILState_Check) \nis an opaque struct, and the [PyRuntimeState](https://github.com/python/cpython/blob/main/Include/internal/pycore_pystate.h)\nand other goodies are private in CPython.\n\nSo, in ~200 lines of Rusty code, I've conjured up a basic metric that seems \nto align with what is reported by `py-spy` when running the same [test case](./tests/test_knockknock.py).\nThis works by spawning a thread which, at regular intervals, re-acquires the GIL and checks \nhow long it took for the GIL to answer.\n\nNote, the `polling_interval_micros` and `sampling_interval_micros` are configurable. The lower the value, the \nmore accurate the metric, but will be more likely to slow your\nprogram down.. because it will play a larger role in competing for the GIL's attention.\n\n### Use\n\nLook at the [tests](./tests)\n\n```python\n\nfrom gilknocker import KnockKnock\n\nknocker = KnockKnock(polling_interval_micros=1_000, sampling_interval_micros=10_000, timeout_secs=1)\nknocker.start()\n\n... smart code here ...\n\nknocker.contention_metric  # float between 0-1 indicating roughly how busy the GIL was.\nknocker.reset_contention_metric()  # reset timers and meteric calculation\n\n... some more smart code ...\n\nknocker.stop()\nknocker.stop()  # Idempodent stopping behavior\n\nknocker.contention_metric  # will stay the same after `stop()` is called.\n\nknocker.is_running  # If you're ever in doubt\n\n```\n\n### How will this impact my program?\n\nShort answer, it depends, but probably not much. As stated above, the more frequent the \npolling and sampling interval, the more likely non-GIL bound programs will be affected, since there is \nmore room for contention. In GIL heavy programs, the monitoring thread will spend most of its \ntime simply waiting for a lock. This is demonstrated in the [benchmarks](./benchmarks) testing.\n\nIn general, it appears that `polling_interval_micros=1_000` is a good tradeoff in terms of accurate\nGIL contention metric and the resulting `sampling_interval_micros=10_000` (defaults to 10x polling interval)\nis high enough to relax performance impact a bit.\n\nBelow is a summary of benchmarking two different \nfunctions, one which uses the GIL, and one which releases it. For `interval=None` this means \nno polling was used, effectively just running the function without `gilknocker`. Otherwise, \nthe interval represents the value passed to `KnockKnock(polling_interval_micros=interval)`\n\n`python -m pytest -v --benchmark-only benchmarks/ --benchmark-histogram`\n\n```\n------------------------------------------------------------------------------------ benchmark: 18 tests -------------------------------------------------------------------------------------\nName (time in s)                       Min               Max              Mean            StdDev            Median               IQR            Outliers     OPS            Rounds  Iterations\n----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------\ntest_bench[a_little_gil-100000]     1.5368 (2.07)     1.6596 (2.23)     1.5968 (2.14)     0.0476 (130.12)   1.5943 (2.14)     0.0719 (140.14)        2;0  0.6262 (0.47)          5           1\ntest_bench[a_little_gil-10000]      1.5321 (2.06)     1.5989 (2.14)     1.5618 (2.09)     0.0289 (78.95)    1.5610 (2.09)     0.0510 (99.52)         2;0  0.6403 (0.48)          5           1\ntest_bench[a_little_gil-1000]       1.5246 (2.05)     1.5298 (2.05)     1.5271 (2.05)     0.0019 (5.12)     1.5269 (2.05)     0.0021 (4.00)          2;0  0.6549 (0.49)          5           1\ntest_bench[a_little_gil-100]        1.5505 (2.09)     1.5543 (2.08)     1.5528 (2.08)     0.0014 (3.96)     1.5533 (2.08)     0.0018 (3.60)          2;0  0.6440 (0.48)          5           1\ntest_bench[a_little_gil-10]         1.5863 (2.13)     1.6074 (2.16)     1.5928 (2.14)     0.0088 (23.94)    1.5896 (2.13)     0.0111 (21.60)         1;0  0.6278 (0.47)          5           1\ntest_bench[a_little_gil-None]       1.5043 (2.02)     1.5067 (2.02)     1.5051 (2.02)     0.0011 (2.95)     1.5044 (2.02)     0.0016 (3.17)          1;0  0.6644 (0.50)          5           1\ntest_bench[a_lotta_gil-100000]      0.7450 (1.00)     0.7458 (1.0)      0.7455 (1.0)      0.0004 (1.0)      0.7457 (1.0)      0.0005 (1.0)           1;0  1.3413 (1.0)           5           1\ntest_bench[a_lotta_gil-10000]       0.7471 (1.00)     0.8104 (1.09)     0.7601 (1.02)     0.0281 (76.94)    0.7472 (1.00)     0.0168 (32.82)         1;1  1.3156 (0.98)          5           1\ntest_bench[a_lotta_gil-1000]        0.7436 (1.0)      0.7472 (1.00)     0.7463 (1.00)     0.0015 (4.11)     0.7470 (1.00)     0.0013 (2.54)          1;1  1.3400 (1.00)          5           1\ntest_bench[a_lotta_gil-100]         0.7558 (1.02)     0.7680 (1.03)     0.7640 (1.02)     0.0050 (13.56)    0.7644 (1.03)     0.0061 (11.97)         1;0  1.3089 (0.98)          5           1\ntest_bench[a_lotta_gil-10]          0.7542 (1.01)     0.7734 (1.04)     0.7649 (1.03)     0.0084 (23.05)    0.7669 (1.03)     0.0151 (29.45)         2;0  1.3074 (0.97)          5           1\ntest_bench[a_lotta_gil-None]        0.7437 (1.00)     0.8490 (1.14)     0.8006 (1.07)     0.0501 (137.15)   0.8074 (1.08)     0.0969 (189.03)        1;0  1.2490 (0.93)          5           1\ntest_bench[some_gil-100000]         1.4114 (1.90)     1.4131 (1.89)     1.4122 (1.89)     0.0007 (1.81)     1.4121 (1.89)     0.0010 (2.00)          2;0  0.7081 (0.53)          5           1\ntest_bench[some_gil-10000]          1.4115 (1.90)     1.4258 (1.91)     1.4167 (1.90)     0.0059 (16.03)    1.4141 (1.90)     0.0083 (16.19)         1;0  0.7058 (0.53)          5           1\ntest_bench[some_gil-1000]           1.4169 (1.91)     1.5793 (2.12)     1.4618 (1.96)     0.0690 (188.82)   1.4232 (1.91)     0.0769 (150.04)        1;0  0.6841 (0.51)          5           1\ntest_bench[some_gil-100]            1.4468 (1.95)     1.6261 (2.18)     1.5701 (2.11)     0.0752 (205.83)   1.5998 (2.15)     0.1004 (195.70)        1;0  0.6369 (0.47)          5           1\ntest_bench[some_gil-10]             1.5269 (2.05)     1.9894 (2.67)     1.7037 (2.29)     0.1895 (518.49)   1.7301 (2.32)     0.2692 (524.96)        1;0  0.5870 (0.44)          5           1\ntest_bench[some_gil-None]           1.4115 (1.90)     1.4267 (1.91)     1.4155 (1.90)     0.0063 (17.33)    1.4136 (1.90)     0.0053 (10.24)         1;1  0.7065 (0.53)          5           1\n----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------\n```\n\n![](./benchmarks/histogram.svg)\n\n---\n\n### License\n\n[Unlicense](LICENSE) or [MIT](LICENSE-MIT), at your discretion.\n\n",
             "description_content_type": "text/markdown; charset=UTF-8; variant=GFM",
             "docs_url": null,
             "download_url": "",
@@ -2736,7 +2735,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17302946,
+        "last_serial": 17319383,
         "urls": [
             {
                 "comment_text": "",
@@ -3365,6 +3364,677 @@
                 "upload_time": "2023-03-15T12:22:43",
                 "upload_time_iso_8601": "2023-03-15T12:22:43.403742Z",
                 "url": "https://files.pythonhosted.org/packages/e9/70/c86f9f0194da19bb59ca5a5e388ab0d37437566e0472d95dbfb45793da70/gilknocker-0.3.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.4.0": {
+        "info": {
+            "author": "Miles Granger <miles59923@gmail.com>",
+            "author_email": "Miles Granger <miles59923@gmail.com>",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "## GIL Knocker\n\n\n`pip install gilknocker`\n\n\n[![Code Style](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/python/black)\n[![CI](https://github.com/milesgranger/gilknocker/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/milesgranger/gilknocker/actions/workflows/CI.yml)\n[![PyPI](https://img.shields.io/pypi/v/gilknocker.svg)](https://pypi.org/project/gilknocker)\n![PyPI - Wheel](https://img.shields.io/pypi/wheel/gilknocker)\n[![Downloads](https://pepy.tech/badge/gilknocker/month)](https://pepy.tech/project/gilknocker)\n\n\nWhen you thought the GIL was available, and you find yourself suspecting it might be spending time\nwith another. \n\nYou probably want [py-spy](https://github.com/benfred/py-spy), however if you're\nlooking for a quick-and-dirty way to slip in a GIL contention metric within a specific\nchunk of code, this might help you.\n\n### How?\n\nUnfortunately, there doesn't appear to be any explicit C-API for checking how busy\nthe GIL is. [PyGILState_Check](https://docs.python.org/3/c-api/init.html#c.PyGILState_Check) \nwon't really work, that's limited to the current thread. \n[PyInterpreterState](https://docs.python.org/3/c-api/init.html#c.PyGILState_Check) \nis an opaque struct, and the [PyRuntimeState](https://github.com/python/cpython/blob/main/Include/internal/pycore_pystate.h)\nand other goodies are private in CPython.\n\nSo, in ~200 lines of Rusty code, I've conjured up a basic metric that seems \nto align with what is reported by `py-spy` when running the same [test case](./tests/test_knockknock.py).\nThis works by spawning a thread which, at regular intervals, re-acquires the GIL and checks \nhow long it took for the GIL to answer.\n\nNote, the `polling_interval_micros`, `sampling_interval_micros`, and `sleeping_interval_micros` \nare configurable. \n\n- `polling_interval_micros`\n  - How frequently to re-acquire the GIL and measure how long it took to acquire. The more frequent, the\n    more likely the contention metric will represent accurate GIL contention. A good value for this is 1-1000.\n\n- `sampling_interval_micros`\n  - How _long_ to run the polling routine. If this is 1ms, then for 1ms it will try to re-acquire the GIL \n    at `polling_interval_micros` frequency. Defaults to 10x `sampling_interval_micros`\n\n- `sleeping_interval_micros`\n  - How long to sleep between sampling routines. Defaults to 100x `polling_interval_micros`\n\n\n### Use\n\nLook at the [tests](./tests)\n\n```python\n\nfrom gilknocker import KnockKnock\n\n# These two are equivalent. \nknocker = KnockKnock(1_000) \nknocker = KnockKnock(\n  polling_interval_micros=1_000, \n  sampling_interval_micros=10_000, \n  sleeping_interval_micros=100_000\n)\nknocker.start()\n\n... smart code here ...\n\nknocker.contention_metric  # float between 0-1 indicating roughly how busy the GIL was.\nknocker.reset_contention_metric()  # reset timers and meteric calculation\n\n... some more smart code ...\n\nknocker.stop()\nknocker.stop()  # Idempodent stopping behavior\n\nknocker.contention_metric  # will stay the same after `stop()` is called.\n\nknocker.is_running  # If you're ever in doubt\n\n```\n\n### How will this impact my program?\n\nShort answer, it depends, but probably not much. As stated above, the more frequent the \npolling and sampling interval, the more likely non-GIL bound programs will be affected, since there is \nmore room for contention. In GIL heavy programs, the monitoring thread will spend most of its \ntime simply waiting for a lock. This is demonstrated in the [benchmarks](./benchmarks) testing.\n\nIn general, it appears that `polling_interval_micros=1_000` is a good tradeoff in terms of accurate\nGIL contention metric and the resulting `sampling_interval_micros=10_000` (defaults to 10x polling interval)\nis high enough to relax performance impact a bit when combined with `sleeping_interval_micros=100_000` \n(defaults to 100x polling interval); but feel free to play with these to conform to your needs.\n\nBelow is a summary of benchmarking two different \nfunctions, one which uses the GIL, and one which releases it. For `interval=None` this means \nno polling was used, effectively just running the function without `gilknocker`. Otherwise, \nthe interval represents the value passed to `KnockKnock(polling_interval_micros=interval)`\n\n`python -m pytest -v --benchmark-only benchmarks/ --benchmark-histogram`\n\n```\n------------------------------------------------------------------------------------ benchmark: 18 tests -------------------------------------------------------------------------------------\nName (time in s)                       Min               Max              Mean            StdDev            Median               IQR            Outliers     OPS            Rounds  Iterations\n----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------\ntest_bench[a_little_gil-100000]     1.5368 (2.07)     1.6596 (2.23)     1.5968 (2.14)     0.0476 (130.12)   1.5943 (2.14)     0.0719 (140.14)        2;0  0.6262 (0.47)          5           1\ntest_bench[a_little_gil-10000]      1.5321 (2.06)     1.5989 (2.14)     1.5618 (2.09)     0.0289 (78.95)    1.5610 (2.09)     0.0510 (99.52)         2;0  0.6403 (0.48)          5           1\ntest_bench[a_little_gil-1000]       1.5246 (2.05)     1.5298 (2.05)     1.5271 (2.05)     0.0019 (5.12)     1.5269 (2.05)     0.0021 (4.00)          2;0  0.6549 (0.49)          5           1\ntest_bench[a_little_gil-100]        1.5505 (2.09)     1.5543 (2.08)     1.5528 (2.08)     0.0014 (3.96)     1.5533 (2.08)     0.0018 (3.60)          2;0  0.6440 (0.48)          5           1\ntest_bench[a_little_gil-10]         1.5863 (2.13)     1.6074 (2.16)     1.5928 (2.14)     0.0088 (23.94)    1.5896 (2.13)     0.0111 (21.60)         1;0  0.6278 (0.47)          5           1\ntest_bench[a_little_gil-None]       1.5043 (2.02)     1.5067 (2.02)     1.5051 (2.02)     0.0011 (2.95)     1.5044 (2.02)     0.0016 (3.17)          1;0  0.6644 (0.50)          5           1\ntest_bench[a_lotta_gil-100000]      0.7450 (1.00)     0.7458 (1.0)      0.7455 (1.0)      0.0004 (1.0)      0.7457 (1.0)      0.0005 (1.0)           1;0  1.3413 (1.0)           5           1\ntest_bench[a_lotta_gil-10000]       0.7471 (1.00)     0.8104 (1.09)     0.7601 (1.02)     0.0281 (76.94)    0.7472 (1.00)     0.0168 (32.82)         1;1  1.3156 (0.98)          5           1\ntest_bench[a_lotta_gil-1000]        0.7436 (1.0)      0.7472 (1.00)     0.7463 (1.00)     0.0015 (4.11)     0.7470 (1.00)     0.0013 (2.54)          1;1  1.3400 (1.00)          5           1\ntest_bench[a_lotta_gil-100]         0.7558 (1.02)     0.7680 (1.03)     0.7640 (1.02)     0.0050 (13.56)    0.7644 (1.03)     0.0061 (11.97)         1;0  1.3089 (0.98)          5           1\ntest_bench[a_lotta_gil-10]          0.7542 (1.01)     0.7734 (1.04)     0.7649 (1.03)     0.0084 (23.05)    0.7669 (1.03)     0.0151 (29.45)         2;0  1.3074 (0.97)          5           1\ntest_bench[a_lotta_gil-None]        0.7437 (1.00)     0.8490 (1.14)     0.8006 (1.07)     0.0501 (137.15)   0.8074 (1.08)     0.0969 (189.03)        1;0  1.2490 (0.93)          5           1\ntest_bench[some_gil-100000]         1.4114 (1.90)     1.4131 (1.89)     1.4122 (1.89)     0.0007 (1.81)     1.4121 (1.89)     0.0010 (2.00)          2;0  0.7081 (0.53)          5           1\ntest_bench[some_gil-10000]          1.4115 (1.90)     1.4258 (1.91)     1.4167 (1.90)     0.0059 (16.03)    1.4141 (1.90)     0.0083 (16.19)         1;0  0.7058 (0.53)          5           1\ntest_bench[some_gil-1000]           1.4169 (1.91)     1.5793 (2.12)     1.4618 (1.96)     0.0690 (188.82)   1.4232 (1.91)     0.0769 (150.04)        1;0  0.6841 (0.51)          5           1\ntest_bench[some_gil-100]            1.4468 (1.95)     1.6261 (2.18)     1.5701 (2.11)     0.0752 (205.83)   1.5998 (2.15)     0.1004 (195.70)        1;0  0.6369 (0.47)          5           1\ntest_bench[some_gil-10]             1.5269 (2.05)     1.9894 (2.67)     1.7037 (2.29)     0.1895 (518.49)   1.7301 (2.32)     0.2692 (524.96)        1;0  0.5870 (0.44)          5           1\ntest_bench[some_gil-None]           1.4115 (1.90)     1.4267 (1.91)     1.4155 (1.90)     0.0063 (17.33)    1.4136 (1.90)     0.0053 (10.24)         1;1  0.7065 (0.53)          5           1\n----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------\n```\n\n![](./benchmarks/histogram.svg)\n\n---\n\n### License\n\n[Unlicense](LICENSE) or [MIT](LICENSE-MIT), at your discretion.\n\n",
+            "description_content_type": "text/markdown; charset=UTF-8; variant=GFM",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "GIL",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "gilknocker",
+            "package_url": "https://pypi.org/project/gilknocker/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/gilknocker/",
+            "project_urls": {
+                "homepage": "https://github.com/milesgranger/gilknocker",
+                "repository": "https://github.com/milesgranger/gilknocker"
+            },
+            "release_url": "https://pypi.org/project/gilknocker/0.4.0/",
+            "requires_dist": null,
+            "requires_python": ">=3.7",
+            "summary": "Knock on the Python GIL, determine how busy it is.",
+            "version": "0.4.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17319383,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "56e4969ae27bc14efbea1563388fa471e2e94c121ce8f5a46db53298150c6420",
+                    "md5": "8e3d7ee6a423a66cbca4aa797da6189b",
+                    "sha256": "3d11cd4fe0019cc86a6de6063616a676851cd08e9f175c9c39b6fa8943f798c0"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp310-cp310-macosx_10_7_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "8e3d7ee6a423a66cbca4aa797da6189b",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.7",
+                "size": 274012,
+                "upload_time": "2023-03-16T13:46:56",
+                "upload_time_iso_8601": "2023-03-16T13:46:56.310376Z",
+                "url": "https://files.pythonhosted.org/packages/56/e4/969ae27bc14efbea1563388fa471e2e94c121ce8f5a46db53298150c6420/gilknocker-0.4.0-cp310-cp310-macosx_10_7_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "b4c2bd549e563410a8b5016c9028c280dcda2e56adedef8ea4151f5221a772c5",
+                    "md5": "d330a94de449c73419b9f38afe1ab07c",
+                    "sha256": "0ec7c6dd609b544219d74b0dcbc4a1f5af94c05c3b04271cff45f281dc351c57"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp310-cp310-macosx_10_9_x86_64.macosx_11_0_arm64.macosx_10_9_universal2.whl",
+                "has_sig": false,
+                "md5_digest": "d330a94de449c73419b9f38afe1ab07c",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.7",
+                "size": 531956,
+                "upload_time": "2023-03-16T13:46:57",
+                "upload_time_iso_8601": "2023-03-16T13:46:57.991013Z",
+                "url": "https://files.pythonhosted.org/packages/b4/c2/bd549e563410a8b5016c9028c280dcda2e56adedef8ea4151f5221a772c5/gilknocker-0.4.0-cp310-cp310-macosx_10_9_x86_64.macosx_11_0_arm64.macosx_10_9_universal2.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "0062ec3f98a14055c322a7651d4771fa1657e13e9cfb24dad85ac4b56d40d393",
+                    "md5": "3978c1455d780e5088c5786c6f8c000f",
+                    "sha256": "64ff14635dee38d7ee7bb43c2bf4ebdce6f8a7dd3bd0629834df4678e365f633"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp310-cp310-manylinux_2_12_i686.manylinux2010_i686.whl",
+                "has_sig": false,
+                "md5_digest": "3978c1455d780e5088c5786c6f8c000f",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.7",
+                "size": 632882,
+                "upload_time": "2023-03-16T13:46:59",
+                "upload_time_iso_8601": "2023-03-16T13:46:59.565558Z",
+                "url": "https://files.pythonhosted.org/packages/00/62/ec3f98a14055c322a7651d4771fa1657e13e9cfb24dad85ac4b56d40d393/gilknocker-0.4.0-cp310-cp310-manylinux_2_12_i686.manylinux2010_i686.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5c647f4bfe40fa1aac7b717d1a32e0aef2736bcfb8a021597823e7be21c56ace",
+                    "md5": "25127bd68bf816a627d5c7c12f3dc584",
+                    "sha256": "9dcfdc4e7864280d1923e2f054b8f9f5226e9e8f098c2736e83a9853d3e7a348"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "25127bd68bf816a627d5c7c12f3dc584",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.7",
+                "size": 613948,
+                "upload_time": "2023-03-16T13:47:01",
+                "upload_time_iso_8601": "2023-03-16T13:47:01.259654Z",
+                "url": "https://files.pythonhosted.org/packages/5c/64/7f4bfe40fa1aac7b717d1a32e0aef2736bcfb8a021597823e7be21c56ace/gilknocker-0.4.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d2c30ef52124bbf0c61cbb308e692b022b64fc8ca425c6a1e8f4cdec4003b8a9",
+                    "md5": "697a5669514fda84d9d2e05d8cdb0081",
+                    "sha256": "f431c15f46b14eaa428a847cfb7dcb34a099816fc77270d627ae61bc322f869f"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp310-none-win32.whl",
+                "has_sig": false,
+                "md5_digest": "697a5669514fda84d9d2e05d8cdb0081",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.7",
+                "size": 155496,
+                "upload_time": "2023-03-16T13:47:02",
+                "upload_time_iso_8601": "2023-03-16T13:47:02.847734Z",
+                "url": "https://files.pythonhosted.org/packages/d2/c3/0ef52124bbf0c61cbb308e692b022b64fc8ca425c6a1e8f4cdec4003b8a9/gilknocker-0.4.0-cp310-none-win32.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "32961a8ca1362f5c6d6c3c5f87efc8877a5157013d57fa8580f9d8ebb75cf203",
+                    "md5": "8c5cc30c8019c318483c323cdb013529",
+                    "sha256": "9666cea77c8dd9ac0b4ad58e9ae0ad03df0bf72cd002f924ac89b28d1fe90ad4"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp310-none-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "8c5cc30c8019c318483c323cdb013529",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.7",
+                "size": 163244,
+                "upload_time": "2023-03-16T13:47:03",
+                "upload_time_iso_8601": "2023-03-16T13:47:03.913883Z",
+                "url": "https://files.pythonhosted.org/packages/32/96/1a8ca1362f5c6d6c3c5f87efc8877a5157013d57fa8580f9d8ebb75cf203/gilknocker-0.4.0-cp310-none-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "8624a26fa94b2651b8578b59b7901bdebf5ce2b604d021229d6c99eaf1f8d870",
+                    "md5": "667db20f7a604ef59b6e5777c2c8494c",
+                    "sha256": "36b6c0bc9260a9b775094f5bde28faa135acb4fc6c7410b6aa5785caff46e793"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp311-cp311-macosx_10_7_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "667db20f7a604ef59b6e5777c2c8494c",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.7",
+                "size": 273975,
+                "upload_time": "2023-03-16T13:47:04",
+                "upload_time_iso_8601": "2023-03-16T13:47:04.970515Z",
+                "url": "https://files.pythonhosted.org/packages/86/24/a26fa94b2651b8578b59b7901bdebf5ce2b604d021229d6c99eaf1f8d870/gilknocker-0.4.0-cp311-cp311-macosx_10_7_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "215d0208360d3c335fe3fdb1ba99ab91b61d8425125f47482b41b5ce972c15d1",
+                    "md5": "8470d356f586aaebc994218a7b716849",
+                    "sha256": "e085368f7935116f2eca5d7d95f16a166f1aaa72e4fa48a6410081b7e3369871"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp311-cp311-macosx_10_9_x86_64.macosx_11_0_arm64.macosx_10_9_universal2.whl",
+                "has_sig": false,
+                "md5_digest": "8470d356f586aaebc994218a7b716849",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.7",
+                "size": 531908,
+                "upload_time": "2023-03-16T13:47:06",
+                "upload_time_iso_8601": "2023-03-16T13:47:06.081057Z",
+                "url": "https://files.pythonhosted.org/packages/21/5d/0208360d3c335fe3fdb1ba99ab91b61d8425125f47482b41b5ce972c15d1/gilknocker-0.4.0-cp311-cp311-macosx_10_9_x86_64.macosx_11_0_arm64.macosx_10_9_universal2.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "caa89012d3291ba16982f67516499a2d611fed87779cfdab15700cf0257aac8c",
+                    "md5": "5d5e2a12029e8ec224fc09f401aedb1f",
+                    "sha256": "efa46b6c3e9d43c2980a5510c42a0da29cf0946244dd8b93617c2924c34cc045"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp311-cp311-manylinux_2_12_i686.manylinux2010_i686.whl",
+                "has_sig": false,
+                "md5_digest": "5d5e2a12029e8ec224fc09f401aedb1f",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.7",
+                "size": 632881,
+                "upload_time": "2023-03-16T13:47:07",
+                "upload_time_iso_8601": "2023-03-16T13:47:07.312382Z",
+                "url": "https://files.pythonhosted.org/packages/ca/a8/9012d3291ba16982f67516499a2d611fed87779cfdab15700cf0257aac8c/gilknocker-0.4.0-cp311-cp311-manylinux_2_12_i686.manylinux2010_i686.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "36bb33cf549d04ac695f71b6218e863f239f1488dd285d0ede4a9c6035afc22c",
+                    "md5": "07e1343c4d93990265891a71fc4ab7a5",
+                    "sha256": "f9a6de10066a8230c4a5a2d99aaf054302c664c70bbeb959f84827feaf2e2464"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "07e1343c4d93990265891a71fc4ab7a5",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.7",
+                "size": 613949,
+                "upload_time": "2023-03-16T13:47:08",
+                "upload_time_iso_8601": "2023-03-16T13:47:08.948789Z",
+                "url": "https://files.pythonhosted.org/packages/36/bb/33cf549d04ac695f71b6218e863f239f1488dd285d0ede4a9c6035afc22c/gilknocker-0.4.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "755911e7e35d979916630ad43ab12229f3379652ff728284777a7645d5c7fbf1",
+                    "md5": "cb394c32128ea71fa9c7bf6fe61e290e",
+                    "sha256": "a9b5af8c96d8a6ae299f55acbf30ad569a7293a59238ecb1034cc2a7aafbd1b2"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp311-none-win32.whl",
+                "has_sig": false,
+                "md5_digest": "cb394c32128ea71fa9c7bf6fe61e290e",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.7",
+                "size": 155493,
+                "upload_time": "2023-03-16T13:47:10",
+                "upload_time_iso_8601": "2023-03-16T13:47:10.229174Z",
+                "url": "https://files.pythonhosted.org/packages/75/59/11e7e35d979916630ad43ab12229f3379652ff728284777a7645d5c7fbf1/gilknocker-0.4.0-cp311-none-win32.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "772f676427d42624059ac78e8963793cda0d6abb1df680ced90b5c9e4c95b293",
+                    "md5": "5abe7df42c21897e034df2c306e00c03",
+                    "sha256": "4ef589b2254f234087889d2d1835625ac2fafe783d90181cb8b57d2b4b4db834"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp311-none-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "5abe7df42c21897e034df2c306e00c03",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.7",
+                "size": 163241,
+                "upload_time": "2023-03-16T13:47:11",
+                "upload_time_iso_8601": "2023-03-16T13:47:11.980415Z",
+                "url": "https://files.pythonhosted.org/packages/77/2f/676427d42624059ac78e8963793cda0d6abb1df680ced90b5c9e4c95b293/gilknocker-0.4.0-cp311-none-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "caf43b27ea5695b16492f07ab67102da9cf8492569ef12a072b7ee11d9a4d0c3",
+                    "md5": "300d7485444ea48263df41d415d6bbbd",
+                    "sha256": "1912af2b2986c96bc92111f7a9332397d1eb6fe5a034d499d0ae8207eb20d00e"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp37-cp37m-macosx_10_7_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "300d7485444ea48263df41d415d6bbbd",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.7",
+                "size": 274748,
+                "upload_time": "2023-03-16T13:47:13",
+                "upload_time_iso_8601": "2023-03-16T13:47:13.055261Z",
+                "url": "https://files.pythonhosted.org/packages/ca/f4/3b27ea5695b16492f07ab67102da9cf8492569ef12a072b7ee11d9a4d0c3/gilknocker-0.4.0-cp37-cp37m-macosx_10_7_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5504d0b47538b880268c219fa9d6703474ae193d8d8b441ae0393a3835057bfb",
+                    "md5": "cb9968b211f00afeae0e04c853f12e78",
+                    "sha256": "bec3aaeda0f3b222c0697424a41d6850f9443b54c45a4ab5a0842c2de9afaa69"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp37-cp37m-manylinux_2_12_i686.manylinux2010_i686.whl",
+                "has_sig": false,
+                "md5_digest": "cb9968b211f00afeae0e04c853f12e78",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.7",
+                "size": 633905,
+                "upload_time": "2023-03-16T13:47:14",
+                "upload_time_iso_8601": "2023-03-16T13:47:14.166152Z",
+                "url": "https://files.pythonhosted.org/packages/55/04/d0b47538b880268c219fa9d6703474ae193d8d8b441ae0393a3835057bfb/gilknocker-0.4.0-cp37-cp37m-manylinux_2_12_i686.manylinux2010_i686.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d326edcf437106cb13eb4611568dbe2b56535df909b44b93362437c2f504b30f",
+                    "md5": "19d64b3b3cf4f49a2fb11ba37da69abe",
+                    "sha256": "2d097f412bc914dd1fac4ce66fc215f9939ae61dd608664dd3250117cf7afecb"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "19d64b3b3cf4f49a2fb11ba37da69abe",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.7",
+                "size": 614344,
+                "upload_time": "2023-03-16T13:47:15",
+                "upload_time_iso_8601": "2023-03-16T13:47:15.282002Z",
+                "url": "https://files.pythonhosted.org/packages/d3/26/edcf437106cb13eb4611568dbe2b56535df909b44b93362437c2f504b30f/gilknocker-0.4.0-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "131a9162830ed80552bf2aa076b311f68cf91d4d13be8998fc652e80e3ad905b",
+                    "md5": "ef53b071365bafee993c30b70d70a068",
+                    "sha256": "aafb7f26d583206e0157c9085292617bb1c6088d45b6a70f99317243d1783cbe"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp37-none-win32.whl",
+                "has_sig": false,
+                "md5_digest": "ef53b071365bafee993c30b70d70a068",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.7",
+                "size": 156007,
+                "upload_time": "2023-03-16T13:47:16",
+                "upload_time_iso_8601": "2023-03-16T13:47:16.246312Z",
+                "url": "https://files.pythonhosted.org/packages/13/1a/9162830ed80552bf2aa076b311f68cf91d4d13be8998fc652e80e3ad905b/gilknocker-0.4.0-cp37-none-win32.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a157e40f9c142dfe51e205fb528c3e6e34c3ea5105b3a3ab04215e38760d464c",
+                    "md5": "a6dce21f8aeb30ad685cb7bebe17b1d0",
+                    "sha256": "ca25790dafd592d1fd6e2d34f0ae3be32ebb379f8a433104b6e33c1ecc5b8a6e"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp37-none-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "a6dce21f8aeb30ad685cb7bebe17b1d0",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.7",
+                "size": 163659,
+                "upload_time": "2023-03-16T13:47:18",
+                "upload_time_iso_8601": "2023-03-16T13:47:18.037191Z",
+                "url": "https://files.pythonhosted.org/packages/a1/57/e40f9c142dfe51e205fb528c3e6e34c3ea5105b3a3ab04215e38760d464c/gilknocker-0.4.0-cp37-none-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "4d086a0b94738050754e6365535b1b17572cd72250dc097008fbd182cbd26739",
+                    "md5": "a33845027f02fa0b535dc6a5e0dd8f37",
+                    "sha256": "0ed809f4472d62045a9c54a11b7c46628980dbdafd0b4c9d9ec59a221fa36781"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp38-cp38-macosx_10_7_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "a33845027f02fa0b535dc6a5e0dd8f37",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.7",
+                "size": 274775,
+                "upload_time": "2023-03-16T13:47:19",
+                "upload_time_iso_8601": "2023-03-16T13:47:19.695530Z",
+                "url": "https://files.pythonhosted.org/packages/4d/08/6a0b94738050754e6365535b1b17572cd72250dc097008fbd182cbd26739/gilknocker-0.4.0-cp38-cp38-macosx_10_7_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "7a7d804f6e86fe7fce43afd7249dcf2c268f1ef06f5c00a61ca163a60215f67e",
+                    "md5": "4a2612c7f3e4cc72afca3db9648b1669",
+                    "sha256": "f8c61e128576a654a7cd3b539092d8f9937b86102d465421db017468e91abdca"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp38-cp38-macosx_10_9_x86_64.macosx_11_0_arm64.macosx_10_9_universal2.whl",
+                "has_sig": false,
+                "md5_digest": "4a2612c7f3e4cc72afca3db9648b1669",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.7",
+                "size": 533484,
+                "upload_time": "2023-03-16T13:47:21",
+                "upload_time_iso_8601": "2023-03-16T13:47:21.280179Z",
+                "url": "https://files.pythonhosted.org/packages/7a/7d/804f6e86fe7fce43afd7249dcf2c268f1ef06f5c00a61ca163a60215f67e/gilknocker-0.4.0-cp38-cp38-macosx_10_9_x86_64.macosx_11_0_arm64.macosx_10_9_universal2.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "394796d7b1d1872ea2f06df02272cbe688b227f649bb9d35cb8da9f417387842",
+                    "md5": "85361b43f6e5e3ac8eb60a32dbae2a18",
+                    "sha256": "98944bd56773296ad4bcb7a20c3ff217c58803f50a82738e1e405f508b89bcf5"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp38-cp38-manylinux_2_12_i686.manylinux2010_i686.whl",
+                "has_sig": false,
+                "md5_digest": "85361b43f6e5e3ac8eb60a32dbae2a18",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.7",
+                "size": 633804,
+                "upload_time": "2023-03-16T13:47:22",
+                "upload_time_iso_8601": "2023-03-16T13:47:22.415493Z",
+                "url": "https://files.pythonhosted.org/packages/39/47/96d7b1d1872ea2f06df02272cbe688b227f649bb9d35cb8da9f417387842/gilknocker-0.4.0-cp38-cp38-manylinux_2_12_i686.manylinux2010_i686.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "381736eaebc9e207998db1dc5626523405385fba7ed4b67a8a61e39f7e748117",
+                    "md5": "4920f2a6b97178e780edff249e3adb74",
+                    "sha256": "a62927e2caff28a8bcd41b9786e3332aea55332a80df090f50d17289a2c50374"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "4920f2a6b97178e780edff249e3adb74",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.7",
+                "size": 614352,
+                "upload_time": "2023-03-16T13:47:23",
+                "upload_time_iso_8601": "2023-03-16T13:47:23.511623Z",
+                "url": "https://files.pythonhosted.org/packages/38/17/36eaebc9e207998db1dc5626523405385fba7ed4b67a8a61e39f7e748117/gilknocker-0.4.0-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ab96b10a7a2107accdfc5bcdaa7cd8679366dee76de6b57030627e9d62cbe2e2",
+                    "md5": "b9e897e8e57752088d9ef89a402b3fcc",
+                    "sha256": "f875ec18b49bb7a4b0125e4dc2c9172632e6e0678c6662747f9e3dbcddb498a9"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp38-none-win32.whl",
+                "has_sig": false,
+                "md5_digest": "b9e897e8e57752088d9ef89a402b3fcc",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.7",
+                "size": 155977,
+                "upload_time": "2023-03-16T13:47:24",
+                "upload_time_iso_8601": "2023-03-16T13:47:24.661500Z",
+                "url": "https://files.pythonhosted.org/packages/ab/96/b10a7a2107accdfc5bcdaa7cd8679366dee76de6b57030627e9d62cbe2e2/gilknocker-0.4.0-cp38-none-win32.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2530110b63f5ac6bafb83551ffc2eb431b356b84c9a4b916acdf98d6f443612c",
+                    "md5": "10a3166c2b2275c2523e7d9b42633914",
+                    "sha256": "59361387cffba6d0e257b8daf725bbd8999ccf363106809c6e3943d9d7fcc9d8"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp38-none-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "10a3166c2b2275c2523e7d9b42633914",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.7",
+                "size": 163638,
+                "upload_time": "2023-03-16T13:47:25",
+                "upload_time_iso_8601": "2023-03-16T13:47:25.741879Z",
+                "url": "https://files.pythonhosted.org/packages/25/30/110b63f5ac6bafb83551ffc2eb431b356b84c9a4b916acdf98d6f443612c/gilknocker-0.4.0-cp38-none-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ebf7c2e28ef1386c3a538a2017148cb0e6d2f7b4326273a4e5199d07b5bce000",
+                    "md5": "f75129e3312e7942c85a7126c69ac33c",
+                    "sha256": "ccbbe7aa8ed0d1a3e564924bb3e4b7b8018de820b498e3bbc2f71c911caa673e"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp39-cp39-macosx_10_7_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "f75129e3312e7942c85a7126c69ac33c",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.7",
+                "size": 274475,
+                "upload_time": "2023-03-16T13:47:26",
+                "upload_time_iso_8601": "2023-03-16T13:47:26.810578Z",
+                "url": "https://files.pythonhosted.org/packages/eb/f7/c2e28ef1386c3a538a2017148cb0e6d2f7b4326273a4e5199d07b5bce000/gilknocker-0.4.0-cp39-cp39-macosx_10_7_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e377c1437f0c922c46c9b709b90aeb28ee7d931abd397edd5d244d7d6196888b",
+                    "md5": "668f3418665604ea9e3b8220d2eafcd2",
+                    "sha256": "8ab96d08c72abeb40a1d4022950a57651f8465fbdc2ba24e918903879032fca3"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp39-cp39-macosx_10_9_x86_64.macosx_11_0_arm64.macosx_10_9_universal2.whl",
+                "has_sig": false,
+                "md5_digest": "668f3418665604ea9e3b8220d2eafcd2",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.7",
+                "size": 532843,
+                "upload_time": "2023-03-16T13:47:27",
+                "upload_time_iso_8601": "2023-03-16T13:47:27.935268Z",
+                "url": "https://files.pythonhosted.org/packages/e3/77/c1437f0c922c46c9b709b90aeb28ee7d931abd397edd5d244d7d6196888b/gilknocker-0.4.0-cp39-cp39-macosx_10_9_x86_64.macosx_11_0_arm64.macosx_10_9_universal2.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "862f523356f30049022ea29061a1f55cd9dd182b54614fc3336c39050a1ec105",
+                    "md5": "fcab2e76627b8bd3d0e7ae9f7e133bfc",
+                    "sha256": "d2e89696622311198867658f8b9c59e9ea2ed73c14282cbb9536811e6187aec3"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp39-cp39-manylinux_2_12_i686.manylinux2010_i686.whl",
+                "has_sig": false,
+                "md5_digest": "fcab2e76627b8bd3d0e7ae9f7e133bfc",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.7",
+                "size": 633221,
+                "upload_time": "2023-03-16T13:47:28",
+                "upload_time_iso_8601": "2023-03-16T13:47:28.983484Z",
+                "url": "https://files.pythonhosted.org/packages/86/2f/523356f30049022ea29061a1f55cd9dd182b54614fc3336c39050a1ec105/gilknocker-0.4.0-cp39-cp39-manylinux_2_12_i686.manylinux2010_i686.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "57c044945aa8e0f72e5752f14153abf7814046174d2d8a6b05abc3daa3174475",
+                    "md5": "3cabb167fa050eba904f446b7174ce7c",
+                    "sha256": "f0e5892a56bc34ab6ce3c36ad37194448e09ec2e6b0ca1a1092e893ab2e505cf"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "3cabb167fa050eba904f446b7174ce7c",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.7",
+                "size": 614197,
+                "upload_time": "2023-03-16T13:47:30",
+                "upload_time_iso_8601": "2023-03-16T13:47:30.552638Z",
+                "url": "https://files.pythonhosted.org/packages/57/c0/44945aa8e0f72e5752f14153abf7814046174d2d8a6b05abc3daa3174475/gilknocker-0.4.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "517345c69398f97d3556d610019cb0f9b48d88ec6dd2ea8a8cbcb9126d40de02",
+                    "md5": "d44b8b403180db39053ec5feeb5a2a1f",
+                    "sha256": "b7b93d542cb0096c7e8a5d4fe5a9d82f93f22886479c1b380f9236e57eff56b3"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp39-none-win32.whl",
+                "has_sig": false,
+                "md5_digest": "d44b8b403180db39053ec5feeb5a2a1f",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.7",
+                "size": 155744,
+                "upload_time": "2023-03-16T13:47:31",
+                "upload_time_iso_8601": "2023-03-16T13:47:31.627773Z",
+                "url": "https://files.pythonhosted.org/packages/51/73/45c69398f97d3556d610019cb0f9b48d88ec6dd2ea8a8cbcb9126d40de02/gilknocker-0.4.0-cp39-none-win32.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "1fac77ce745228909964dd6b5849b3dce2d82fe63abfe536f8f999510ef370d7",
+                    "md5": "b9e6ffcdc5b415534bc2fe93c532ef87",
+                    "sha256": "db2d90d1c1c709693793395c8778cad56b2e6dbffd8c9bb470241ac77ae20d64"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0-cp39-none-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "b9e6ffcdc5b415534bc2fe93c532ef87",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.7",
+                "size": 163483,
+                "upload_time": "2023-03-16T13:47:32",
+                "upload_time_iso_8601": "2023-03-16T13:47:32.789897Z",
+                "url": "https://files.pythonhosted.org/packages/1f/ac/77ce745228909964dd6b5849b3dce2d82fe63abfe536f8f999510ef370d7/gilknocker-0.4.0-cp39-none-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d5f2803b64b1110ad4f223a822181fed11cf862ac7dc2ac7d4b57457b9ae68f0",
+                    "md5": "7f7a6a371cdbc22ff6d8fcaa6250c40f",
+                    "sha256": "6fa39689e3ddfc9c5a4bbb8684a7a3d0706e40c207d26679edc634c0c4a721d5"
+                },
+                "downloads": -1,
+                "filename": "gilknocker-0.4.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "7f7a6a371cdbc22ff6d8fcaa6250c40f",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 26468,
+                "upload_time": "2023-03-16T13:47:33",
+                "upload_time_iso_8601": "2023-03-16T13:47:33.924598Z",
+                "url": "https://files.pythonhosted.org/packages/d5/f2/803b64b1110ad4f223a822181fed11cf862ac7dc2ac7d4b57457b9ae68f0/gilknocker-0.4.0.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
