@@ -11,7 +11,6 @@
                 "Programming Language :: Python :: 3",
                 "Topic :: Scientific/Engineering"
             ],
-            "description": "# scidatacontainer\r\n\r\nThis is the Python 3 implementation of a lean container class for the storage of scientific data, in a way compliant to the [FAIR principles](https://en.wikipedia.org/wiki/FAIR_data) of modern research data management. Using a standardized container file it provides maximum flexibility and minimal restrictions. Data containers may be stored as local files and uploaded to a data storage server. The class is operating system independent.\r\n\r\nThis is a project of the cluster of Excellence [PhoenixD](https://www.phoenixd.uni-hannover.de) and the data server is currently only available for PhoenixD members. However, we intend to make the whole project including the server publicly available. If you are from outside PhoenixD and wish to get early access, you are welcome. Please contact us.\r\n\r\n## Install\r\n\r\nThe easiest way to install the latest version of [`scidatacontainer`](https://pypi.org/project/scidatacontainer/) is using PIP:\r\n```\r\n>>> pip install scidatacontainer\r\n```\r\n\r\nYou find the source code together with a test file on [GitHub](https://github.com/reincas/scidatacontainer).\r\n\r\n## Data Container Concept\r\n\r\nThe basic concept of the data container is that it keeps the raw dataset, parameter data and meta data together. Parameter data is every data which scientists traditionally record in lab books like a description of the test setup, measurement settings, simulation parameters or evaluation parameters. The idea is to make each dataset self-contained.\r\n\r\nEach data container is identified by a [UUID](https://en.wikipedia.org/wiki/Universally_unique_identifier), which is usually generated automatically. The **Container** file is a [ZIP package file](https://en.wikipedia.org/wiki/ZIP_(file_format)). The data in the container is stored in **Items** (files in ZIP package), which are organized in **Parts** (folders in ZIP package). The standard file extension of the container files is `.zdc`.\r\n\r\nOn Microsoft Windows you may inspect ZDC files with a double-click in the Windows Explorer. This requires that you register the extension `.zdc` as a copy of `.zip`. Run the following on the command prompt to achieve this behaviour:\r\n```\r\n>>> reg copy HKCR\\.zip HKCR\\.zdc /s /f\r\n```\r\n\r\nThere are no restrictions regarding data formats inside the container, but items should be represented as Python dictionaries and stored as [JSON](https://en.wikipedia.org/wiki/JSON) files in the ZIP package, whenever possible. This allows to inspect, use and even create data container files with the tools provided by the operating system without any special software. However, this container class makes these tasks much more convenient for Python programmers. We call the keys of JSON mappings data **Attributes**.\r\n\r\nOnly the two items `content.json` and `meta.json` are required and must be located in the root part of the container. The optional root item `license.txt` may be used to store the text of the license for the dataset. The data payload and the parameter data should be stored in an optional set of suggested parts as explained below.\r\n\r\n## Container Parameters\r\n\r\nThe parameters describing the container are stored in the required root item `content.json`. The following set of attributes is currently defined for this item:\r\n\r\n- `uuid`: automatic UUID\r\n- `replaces`: optional UUID of the predecessor of this dataset\r\n- `containerType`: required container type mapping\r\n    + `name`: required container name (no white space)\r\n    + `id`: optional identifier for standardized containers\r\n    + `version`: required standard version, if `id` is given\r\n- `created`: automatic creation timestamp\r\n- `modified`: automatic last modification timestamp\r\n- `static`: required boolean flag (static datasets)\r\n- `complete`: required boolean flag (multi-step datasets)\r\n- `hash`: optional hex digest of SHA256 hash, required for static datasets\r\n- `usedSoftware`: optional list of software mappings\r\n    + `name`: required software name\r\n    + `version`: required software version\r\n    + `id`: optional software identifier (e.g. UUID or URL)\r\n    + `idType`: required type of identifier, if `id` is given\r\n- `modelVersion`: automatic data model version\r\n\r\n## Description of Data\r\n\r\nThe meta data describing the data payload of the container is stored in the required root item `meta.json`. The following set of attributes is currently defined for this item:\r\n\r\n- `author`: required name of the author\r\n- `email`: required e-mail address of the author\r\n- `organization`: optional affiliation of the author\r\n- `comment`: optional comments on the dataset\r\n- `title`: required title of the dataset\r\n- `keywords`: optional list of keywords\r\n- `description`: optional abstract for the dataset\r\n- `created`: optional creation timestamp of the dataset\r\n- `doi`: optional digital object identifier of the dataset\r\n- `license`: optional data license name (e.g. [\"MIT\"](https://en.wikipedia.org/wiki/MIT_License) or [\"CC-BY\"](https://creativecommons.org/licenses/by/4.0/))\r\n\r\nIn order to simplify the generation of meta data, the data container class will try to insert default values for the author name and e-mail address. These default values are either been taken from the environment variables `DC_AUTHOR` and `DC_EMAIL` or from a configuration file. This configuration file is `%USERPROFILE%\\scidata.cfg` on Microsoft Windows and `~/.scidata` on other operating systems. The file is expected to be a text file. Leading and trailing white space is ignored, as well as lines starting with `#`. The parameters are taken from lines in the form `<key>=<value>`, with the keywords `author` and `email`. Optional white space before and after the equal sign is ignored. The keywords are case-insensitive.\r\n\r\nThe value of the attribute `created` should be a UTC timestamp string in the form `2023-02-17 15:27:00 UTC`. You may use the function `scidatacontainer.timestamp()` to generate this string.\r\n\r\n## Suggested Parts\r\n\r\nStandardization simplifies data exchange as well as reuse of data. Therefore, it is suggested to store the data payload of a container in the following part structure:\r\n\r\n- `/info`: informative parameters\r\n- `/sim`: raw simulation results\r\n- `/meas`: raw measurement results\r\n- `/data`: parameters and data required to achieve results in `/sim` or `/meas`\r\n- `/eval`: evaluation results derived from `/sim` and/or `/meas`\r\n- `/log`: log files or other unstructured data\r\n\r\n## Basic Usage\r\n\r\nOur simple application example generates and stores a list of random integer numbers. Parameters are quantity and range of the numbers. At first, we import the Python `random` module and our class `Container`:\r\n```\r\n>>> import random\r\n>>> from scidatacontainer import Container\r\n```\r\n\r\nThen we generate a parameter dictionary and the actual test data:\r\n```\r\n>>> p = {\"quantity\": 8, \"minValue\": 1, \"maxValue\": 6}\r\n>>> data = [random.randint(p[\"minValue\"], p[\"maxValue\"]) for i in range(p[\"quantity\"])]\r\n>>> data\r\n[2, 5, 1, 3, 1, 4, 4, 4]\r\n```\r\n\r\nIf a default author name and e-mail address is available as explained above, there are just two additional attributes, which you must provide. One is the type of the container and the other a title of the dataset. Together with the raw data and the dictionary of parameters, we can now build the dictionary of container items:\r\n```\r\n>>> items = {\r\n    \"content.json\": {\r\n        \"containerType\": {\"name\": \"myRandInt\"},\r\n        },\r\n    \"meta.json\": {\r\n        \"title\": \"My first set of random numbers\",\r\n        },\r\n    \"sim/dice.json\": data,\r\n    \"data/parameter.json\": p,\r\n    }\r\n```\r\n\r\nNow we are ready to build the container, store it in a local file and get a short description of its content:\r\n```\r\n>>> dc = Container(items=items)\r\n>>> dc.write(\"random.zdc\")\r\n>>> print(dc)\r\nSingle-Step Container\r\n  type:     myRandInt\r\n  uuid:     306e2c2d-a9f6-4306-8851-1ee0fceeb852\r\n  created:  2023-02-28 10:03:44 UTC\r\n  author:   Reinhard Caspary\r\n```\r\n\r\nFeel free to check the content of the file `random.zdc` now by opening it on the operating system level. Be reminded that the Windows Explorer requires the file extension `.zdc` to be registered first as explained above. Recovering the dataset from the local file as a new container object works straight forward:\r\n```\r\n>>> dc = Container(file=\"random.zdc\")\r\n>>> dc[\"sim/dice.json\"]\r\n[2, 5, 1, 3, 1, 4, 4, 4]\r\n```\r\n\r\n## Server Storage\r\n\r\nContainer files can also easily be stored on and retrieved from a specific data storage server:\r\n```\r\n>>> dc.upload()\r\n>>> dc = Container(uuid=\"306e2c2d-a9f6-4306-8851-1ee0fceeb852\")\r\n```\r\n\r\nIn order to be able to use the server, you need an account. This enables you to get an API key. It is most convenient to store the server name or IP address and the API key in the configuration file mentioned above (keywords `server` and `key`) or in the environment variables `DC_SERVER` and `DC_KEY`. Both values can also be specified as method parameters:\r\n```\r\n>>> dc.upload(server=\"...\", key=\"...\")\r\n>>> dc = Container(uuid=\"306e2c2d-a9f6-4306-8851-1ee0fceeb852\", server=\"...\", key=\"...\")\r\n```\r\n\r\nThe server makes sure that UUIDs are unique. Once uploaded, a dataset can never be modified on a server. The only exemption are multi-step containers (see below). In the rare case that a certain dataset needs to be replaced, the attribute `replaces` may be used in `content.json`. Once uploaded, the server will always deliver the new dataset, even if the dataset with the old UUID is requested. Only the owner of a dataset is allowed to replace it.\r\n\r\n## Container Types\r\n\r\nThree different types of containers are currently supported, which differ mainly in the way in which they are handled by the storage server. The standard one is the **single-step container**. The second one is a **multi-step container**, which is intended for long running measurements or simulations. As long as the attribute `complete` in `content.json` has the value `False`, the dataset may be uploaded repeatedly, each time replacing the dataset with the same UUID:\r\n```\r\n>>> items[\"content.json\"][\"complete\"] = False\r\n>>> dc = Container(items=items)\r\n>>> dc.upload()\r\n>>> dc[\"content.json\"][\"uuid\"]\r\n'306e2c2d-a9f6-4306-8851-1ee0fceeb852'\r\n```\r\n\r\nThe server will only accept containers with increasing modification timestamps. Since the resolution of the internal timestamps is a second, you must wait at least one second before the next upload:\r\n```\r\n>>> dc = Container(uuid=\"306e2c2d-a9f6-4306-8851-1ee0fceeb852\")\r\n>>> dc[\"meas/newdata.json\"] = newdata\r\n>>> dc.upload()\r\n```\r\n\r\nFor the final upload, the container must be marked as being complete. This makes this dataset immutable:\r\n```\r\n>>> dc = Container(uuid=\"306e2c2d-a9f6-4306-8851-1ee0fceeb852\")\r\n>>> dc[\"meas/finaldata.json\"] = finaldata\r\n>>> dc[\"content.json\"][\"complete\"] = True\r\n>>> dc.upload()\r\n```\r\n\r\nThe third container type is a **static container**. Static containers are intended for static parameters in contrast to measurement or simulation data. An example would be a detailed description of a measurement setup, which is used for many measurements. Instead of including the large setup data with each individual measurement dataset, the whole setup may be stored as a single static dataset and referenced by its UUID in the measurement datasets.\r\n\r\nA static container is generated by calling the method `freeze()` of the container object:\r\n```\r\n>>> dc = Container(items=items)\r\n>>> dc.freeze()\r\n>>> print(dc)\r\nStatic Container\r\n  type:     myRandInt\r\n  uuid:     2a7eb1c5-5fe8-4c92-be1d-2f1207b0d855\r\n  hash:     bafc6813d92bd23b06b63eed035ba9b33415acc770c9128f47775ab2d55cc152\r\n  created:  2023-03-01 21:01:20 UTC\r\n  author:   Reinhard Caspary\r\n```\r\n\r\nFreezing a container will set the attribute `static` in `content.json` to `True`, which makes this container immutable and it calculates an SHA256 hash of the container content. When you try to upload a static container and there is another static container with the same attributes `containerType.name` and `hash`, the content of the current container object is silently replaced by the original one from the server.\r\n\r\n## Convenience Methods\r\n\r\nThe `Container` class provides a couple of convenience methods. It can be used very similar to a dictionary:\r\n```\r\n>>> dc = Container(items=items)\r\n>>> dc[\"content.json\"][\"uuid\"]\r\n'306e2c2d-a9f6-4306-8851-1ee0fceeb852'\r\n>>> dc[\"log/console.txt\"] = \"Hello World!\"\r\n>>> \"log/console.txt\" in dc\r\nTrue\r\n>>> del dc[\"log/console.txt\"]\r\n>>> \"log/console.txt\" in dc\r\nFalse\r\n```\r\n\r\nFurthermore, the method `items()` returns a list of all full item names including the respective parts. The method `hash()` may be used to calculate an SHA256 hash of the container content. The hex digest of this value is stored in the attribute `hash` of the item `container.json`.\r\n\r\nThe container methods `read()` and `download()` are not intended to be called directly. They are called implicitly when a new container is generated with the parameters `file=...` or `uuid=...`, respectively. They replace the current content of the container.\r\n\r\nContainer objects generated from an items dictionary using the parameter `items=...` are mutable, which means that you can add, modify and delete items. As soon as you call one of the methods `write()`, `upload()`, `freeze()`, or `hash()`, the container becomes immutable. Containers loaded from a local file or a server are immutable as well. An immutable container will throw an exception if you try to modify its content. However, this feature is not bulletproof. It is not aware of any internal modifications of item objects. You can convert an immutable container into a mutable one by calling its method `release()`. This generates a new UUID and resets the attributes `replaces`, `created`, `modified`, `hash` and `modelVersion`.\r\n\r\n## File Formats\r\n\r\nThe container class can handle virtually any file format. However, in order to store and read a certain file format, it needs to know how to convert the respective Python object into a bytes stream and vice versa. File formats are identified by their file extension. The following file extensions are currently supported by `scidatacontainer` out of the box:\r\n\r\n| Extension | File format | Python object | Required modules |\r\n| --- | --- | --- | --- |\r\n| json | JSON file (UTF-8 encoding) | dictionary or others | |\r\n| txt | Text file (UTF-8 encoding) | string | |\r\n| log | Text file (UTF-8 encoding) | string | |\r\n| pgm | Text file (UTF-8 encoding) | string | |\r\n| png | PNG image file | NumPy array | cv2, numpy |\r\n| npy | NumPy array | NumPy array | numpy |\r\n| bin | Raw binary data file | bytes | |\r\n\r\nThe support for image and NumPy objects is only available when your Python environment contains the modules [`cv2`](https://pypi.org/project/opencv-python/) and/or [`numpy`](https://pypi.org/project/numpy/). The container class tries to guess the format of items with unknown extension. However, it is more reliable to use the function `register()` to add alternative file extensions to already known file formats. The following commands will register the extension `py` as text file:\r\n```\r\n>>> from scidatacontainer import register\r\n>>> register(\"py\", \"txt\")\r\n```\r\n\r\nIf you want to register another Python object, you need to provide a conversion class which can convert this object to and from a bytes string. This class should be inherited from `scidatacontainer.FileBase`. The storage of NumPy arrays for example may be realized by the following code\r\n```\r\nimport io\r\nimport numpy as np\r\nfrom scidatacontainer import FileBase, register\r\n\r\nclass NpyFile(FileBase):\r\n\r\n    allow_pickle = False\r\n\r\n    def encode(self):\r\n        with io.BytesIO() as fp:\r\n            np.save(fp, self.data, allow_pickle=self.allow_pickle)\r\n            fp.seek(0)\r\n            data = fp.read()\r\n        return data\r\n\r\n    def decode(self, data):\r\n        with io.BytesIO() as fp:\r\n            fp.write(data)\r\n            fp.seek(0)\r\n            self.data = np.load(fp, allow_pickle=self.allow_pickle)\r\n\r\nregister(\"npy\", NpyFile, np.ndarray)\r\n```\r\n\r\nThe third argument of the function `register()` sets this conversion class as default for NumPy array objects overriding any previous default class. This argument is optional.\r\n\r\nHash values are usually derived from the bytes string of an encoded object. If you require a different behaviour, you may also override the method `hash()` of `FileBase`.\r\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -42,7 +41,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17300110,
+        "last_serial": 17332782,
         "urls": [
             {
                 "comment_text": "",
@@ -83,6 +82,96 @@
                 "upload_time": "2023-03-15T07:25:08",
                 "upload_time_iso_8601": "2023-03-15T07:25:08.497220Z",
                 "url": "https://files.pythonhosted.org/packages/42/48/e99fa8bf00cf8d11e10a0157819a75a3a54d12633824b1eae528d40c9ce7/SciDataContainer-0.5.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.5.1": {
+        "info": {
+            "author": "Reinhard Caspary",
+            "author_email": "reinhard.caspary@phoenixd.uni-hannover.de",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Topic :: Scientific/Engineering"
+            ],
+            "description": "# SciDataContainer\r\n\r\nThis a Python 3 library for the container file format [SciDataContainer](https://github.com/reincas/scidatacontainer) intended to store scientific data.\r\n\r\n## Documenation\r\n\r\nYou find the [documentation](https://github.com/reincas/scidatacontainer) of the Python package `scidatacontainer` and more on [Read the Docs](https://readthedocs.org/).\r\n\r\n## Installation\r\n\r\nThe easiest way to install the latest version of [`scidatacontainer`](https://pypi.org/project/scidatacontainer/) is using PIP:\r\n```\r\n>>> pip install scidatacontainer\r\n```\r\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/reincas/scidatacontainer",
+            "keywords": "Research Data Management,Data Container,Meta Data",
+            "license": "MIT License",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "SciDataContainer",
+            "package_url": "https://pypi.org/project/SciDataContainer/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/SciDataContainer/",
+            "project_urls": {
+                "Homepage": "https://github.com/reincas/scidatacontainer"
+            },
+            "release_url": "https://pypi.org/project/SciDataContainer/0.5.1/",
+            "requires_dist": [
+                "requests"
+            ],
+            "requires_python": "",
+            "summary": "A container class for the storage of scientific data together with meta data",
+            "version": "0.5.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17332782,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "87e4666224f40cfb37f3e703f2d8cee609046f1ff9e5d6bb79f231b79c6b42d1",
+                    "md5": "c7bb129e494ee6267ed7a77a6ebc4897",
+                    "sha256": "d92fa12e12fcc4c6f5450846f940c179086c439f95a6214bf026abfc56a5e84b"
+                },
+                "downloads": -1,
+                "filename": "SciDataContainer-0.5.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "c7bb129e494ee6267ed7a77a6ebc4897",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 12145,
+                "upload_time": "2023-03-17T10:27:16",
+                "upload_time_iso_8601": "2023-03-17T10:27:16.443734Z",
+                "url": "https://files.pythonhosted.org/packages/87/e4/666224f40cfb37f3e703f2d8cee609046f1ff9e5d6bb79f231b79c6b42d1/SciDataContainer-0.5.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "cad073f1909e422153a03611185de23bf99b4669dadffef40f3453c9f011de70",
+                    "md5": "f0ff6f9908c0c25fd39e7fd0d3423302",
+                    "sha256": "1b3a7889d5124e26d4530051b28751558a261492794492c7b1c1afcf4f513ab2"
+                },
+                "downloads": -1,
+                "filename": "SciDataContainer-0.5.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "f0ff6f9908c0c25fd39e7fd0d3423302",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 11435,
+                "upload_time": "2023-03-17T10:27:18",
+                "upload_time_iso_8601": "2023-03-17T10:27:18.069531Z",
+                "url": "https://files.pythonhosted.org/packages/ca/d0/73f1909e422153a03611185de23bf99b4669dadffef40f3453c9f011de70/SciDataContainer-0.5.1.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

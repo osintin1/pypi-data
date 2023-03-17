@@ -1,0 +1,91 @@
+{
+    "1.0.1": {
+        "info": {
+            "author": "Soren Norbaek <sorennorbaek@gmail.com>",
+            "author_email": "Soren Norbaek <sorennorbaek@gmail.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: Implementation :: CPython",
+                "Programming Language :: Python :: Implementation :: PyPy",
+                "Programming Language :: Rust"
+            ],
+            "description": "# typeset-py\nAn embedded DSL for defining source code pretty printers.\n\n## Concept\nThe layout language is designed such that it fits well over a structurally recursive pass of some inductive data-structure; an abstract representation of the thing you wish to pretty print.\n\nA layout is a tree of text literals composed together with either padded, unpadded compositions or with a line-break. The layout solver will select compositions in a layout and convert them into line-breaks, in order to make the layout fit within a given layout buffer width. It will do this in a greedy way, fitting as many literals on a line as possible. While doing so it will respect the annotated properties that the compositions are constructed under.\n\nThe solver being an abstract concept, is concretely implemented via two accompanying functions, a _compiler_ implemented as `compile`, and a _renderer_ implemented as `render`.\n\n## Null constructor\nSometimes in a data-structure there might be optional data (e.g. of type 'string option'), which when omitted should not have a layout. To make this case easy to handle, the `null` element of layout composition was added. The alternative would have been that you would need to keep track of an accumulator variable of the so-far-built layout in your layout function.\n\n```Python\ndef layout_option(maybe_string: Optional[str]) -> Layout:\n  match maybe_string:\n    case None: return null()\n    case data: return text(data)\n```\nVersus, e.g with an accumulator:\n```Python\ndef layout_option(maybe_string: Optional[str], result: Layout) -> Layout:\n  match maybe_string:\n    case None: return result\n    case data: return comp(result, text(data), True, False)\n```\n\nThe `null` will be eliminated from the layout by the compiler, and will not be rendered, e.g:\n```Python\nfoobar = comp(text('foo'), comp(null(), text('bar'), False, False), False, False)\n```\n\nWhen rendering `foobar`, when the layout fits in the layout buffer, the result will be:\n```Text\n       7\n       |\nfoobar |\n       |\n```\n\n## Word literal constructor\nThese are the visible terminals that we are typesetting.\n```Python\nfoo = text('foo')\n```\nWhen rendering `foo`, when the layout fits in the layout buffer, the result will be:\n```Text\n    4\n    |\nfoo |\n    |\n```\nIt will simply overflow the buffer when it does not:\n```Text\n  2\n  |\nfo|o\n  |\n```\n\n## Fix constructor\nSometimes you need to render a part of some layout as inline, i.e. that its compositions should not be broken; this is what the `fix` constructor is for. In other words a fixed layout is treated as a literal.\n\n```Python\nfoobar = fix(comp(text('foo'), text('bar'), False, False))\n```\n\nWhen rendering the fixed layout `foobar`, when the layout fits in the layout buffer, the result will be:\n```Text\n       7\n       |\nfoobar |\n       |\n```\nIt will overflow the buffer when it does not:\n```Text\n  2\n  |\nfo|obar\n  |\n```\n\n## Grp constructor\nThe `grp` constructor prevents the solver from breaking its compositions, as long as there are compositions to the left of the group which could still be broken. This is useful when you need part of the layout to be treated as an item.\n\n```Python\nfoobarbaz = comp(text('foo'), grp(comp(text('bar'), text('baz'), False, False)), False, False)\n```\n\nWhen rendering `foobarbaz`, when the layout fits in the layout buffer, the result will be:\n```Text\n          10\n          |\nfoobarbaz |\n          |\n```\nIf one of the literals does not fit within the layout buffer, the result will be:\n```Text\n       7\n       |\nfoo    |\nbarbaz |\n       |\n```\nIn contrast, had the group not been annotated, the result would have been:\n```Text\n       7\n       |\nfoobar |\nbaz    |\n       |\n```\nSince the composition between _bar_ and _baz_ was not guarded, and the layout solver is greedy and wants to fit as many literals on the same line as possible without overflowing the buffer. If the group still does not fit within the layout buffer, the group will be broken and the result will be:\n```Text\n    4\n    |\nfoo |\nbar |\nbaz |\n    |\n```\n\n## Seq constructor\nThe `seq` constructor forces the solver to break all of its compositions as soon as one of them is broken. This is useful when you have data that is a sequence or is list-like in nature; when one item in the sequence is put on a new line, then so should the rest of the items in the sequence.\n\n```Python\nfoobarbaz = seq(comp(text('foo'), comp(text('bar'), text('baz'), False, False), False, False))\n```\n\nWhen rendering `foobarbaz`, when the layout fits in the layout buffer, the result will be:\n```Text\n          10\n          |\nfoobarbaz |\n          |\n```\nIf one of the literals does not fit within the layout buffer, the result will be:\n```text\n       7\n       |\nfoo    |\nbar    |\nbaz    |\n       |\n```\nSince the compositions were part of a sequence; i.e when one of them broke, they all broke.\n\n## Nest constructor\nThe `nest` constructor is simply there to provide an extra level of indentation for all literals that it ranges over. The width of each level of indentation is given as a parameter to the `render` function.\n\n```Python\nfoobarbaz = comp(text('foo'), nest(comp(text('bar'), text('baz'), False, False)), False, False)\n```\n\nWhen rendering `foobarbaz` with a indentation width of 2, when the layout fits in the layout buffer, the result will be:\n```Text\n          10\n          |\nfoobarbaz |\n          |\n```\nIf one of the literals does not fit within the layout buffer, the result will be;\n```Text\n       7\n       |\nfoobar |\n  baz  |\n       |\n```\nAnd when the layout buffer will only hold one of the literals, the result will be:\n```Text\n    4\n    |\nfoo |\n  ba|r\n  ba|z\n    |\n```\nIn this case _bar_ and _baz_ will overflow the layout buffer because of the given indentation.\n\n## Pack constructor\nThe `pack` constructor defines an indentation level, but implicitly sets the indentation width to the index of the first literal in the layout it annotates. This is e.g. useful if you are pretty printing terms in a lisp-like language, where all other arguments to an application is often 'indented' to the same buffer index as the first argument.\n\n```Python\nfoobarbaz = comp(text('foo'), pack(comp(text('bar'), text('baz'), False, False)), False, False)\n```\n\nWhen rendering `foobarbaz`, when the layout fits in the layout buffer, the result will be:\n```Text\n          10\n          |\nfoobarbaz |\n          |\n```\nWhen one of the literals do not fit, the result will be:\n```Text\n       7\n       |\nfoobar |\n   baz |\n       |\n```\nWhen the layout buffer will only hold one literal, the result will be:\n```Text\n    4\n    |\nfoo |\nbar |\nbaz |\n    |\n```\nThe calculation of which buffer index to indent to is:\n```Python\nmax((indent_level * indent_width), mark)\n```\nI.e the mark index will only be chosen if it is greater than the current indentation.\n\n## Forced linebreak composition\nThe forced linebreak composition does just that, it is a pre-broken composition.\n\n```Python\nfoobar = line(text('foo'), text('bar'))\n```\n\nWhen rendering `foobar`, whether or not the layout fits in the layout buffer, the result will be:\n```Text\n        8\n        |\nfoo     |\nbar     |\n        |\n```\n\n## Unpadded composition\nThe unpadded composition will compose two layouts without any whitespace.\n\n```Python\nfoobar = comp(text('foo'), text('bar'), False, False)\n```\n\nWhen rendering `foobar`, when the layout fits in the layout buffer, the result will be:\n```Text\n        8\n        |\nfoobar  |\n        |\n```\n\n## Padded composition\nThe padded composition will compose two layouts with whitespace.\n\n```Python\nfoobar = comp(text('foo'), text('bar'), True, False)\n```\n\nWhen rendering `foobar`, when the layout fits in the layout buffer, the result will be:\n```Text\n        8\n        |\nfoo bar |\n        |\n```\n\n## Infix fixed compositions\nThe infix fixed compositions are syntactic sugar for compositions where the leftmost literal of the left operand, and the rightmost literal of the right operand are fixed together. I.e. the two following layouts are equivalent:\n\n```Python\nfoobarbaz1 = comp(text('foo'), comp(text('bar'), text('baz'), False, True), False, False)\nfoobarbaz2 = comp(text('foo'), fix(comp(text('bar'), text('baz'), False, False)), False, False)\n```\n\nThe example above might make it seem trivial, and that infix fixed compositions do not give you much value; but remember that you are composing layouts, not just literals. As such normalising the infix fixed composition is actually quite challenging since there are many different cases to consider when the fix is 'sunk in place' in the layout tree; this is part of what the compiler is responsible for.\n\nInfix fixed compositions are useful when you need to fix a literal to the beginning or end of some other layout, e.g. separators between items in a sequence or list-like data structure. Without this feature you would again need to use an accumulator variable if you want to fix to the next literal, and probably need continuations if you want to fix to the last literal.\n\n## Compiling the layout\nYour custom layout function (pretty printer) will build a layout, which you then need to compile and render:\n```Python\n...\ndocument = compile(layout)\nresult = render(document, 2, 80)\nprint(result)\n...\n```\nI.e. the layout should be given to the compiler, which gives you back a document ready for rendering, which you in turn give to the renderer along with arguments for indentation width and layout buffer width; in the above case indentation width is 2 and the layout buffer width is 80.\n\nThe reason for splitting the solver into `compile` and `render`, is in case the result is to be displayed in a buffer where the width is variable; i.e. you will not need to re-compile the layout between renderings using varying buffer width.\n\n## DSL and parsing\nAdditionally a small DSL has been defined, and a parser implemented, which allow you to write your layouts more succinctly (versus spelling out the full layout tree with the given constructors, which we've so far been doing throughout in this introduction!):\n```Python\n...\nlayout = parse('{0} </> null </> {1}', fragment1, fragment2)\n...\n```\n\nThe full grammar is as such:\n```text\n{i}       (Indexed variable for layout fragment substitution with index i)\nnull      (Constructor for the empty layout)\n'x'       (Constructor for a word/text layout literal over a string x)\nfix u     (Constructor for a fixed layout over a layout u)\ngrp u     (Constructor for a group layout over a layout u)\nseq u     (Constructor for a sequence layout over a layout u)\nnest u    (Constructor for a indented/nested layout over a layout u)\npack u    (Constructor for a indexed margin layout over a layout u)\nu </> v   (Forced linebreak composition of layouts u and v)\nu <//> v  (Forced double linebreak composition of layouts u and v)\nu <&> v   (Unpadded composition of layouts u and v)\nu <!&> v  (Infix fixed unpadded composition of layouts u and v)\nu <+> v   (Padded composition of layouts u and v)\nu <!+> v  (Infix fixed padded composition of layouts u and v)\n```\n\n## Examples\nFor some examples of how to put all these layout constructors together into something more complex and useful, please reference in the examples directory.\n\n",
+            "description_content_type": "text/markdown; charset=UTF-8; variant=GFM",
+            "docs_url": null,
+            "download_url": null,
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://docs.rs/typeset/latest/typeset/",
+            "keywords": "dsl,pretty,printer",
+            "license": null,
+            "maintainer": null,
+            "maintainer_email": "Soren Norbaek <sorennorbaek@gmail.com>",
+            "name": "typeset-soren-n",
+            "package_url": "https://pypi.org/project/typeset-soren-n/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/typeset-soren-n/",
+            "project_urls": {
+                "Homepage": "https://docs.rs/typeset/latest/typeset/",
+                "documentation": "https://github.com/soren-n/typeset-py",
+                "homepage": "https://github.com/soren-n/typeset-py",
+                "repository": "https://github.com/soren-n/typeset-py"
+            },
+            "release_url": "https://pypi.org/project/typeset-soren-n/1.0.1/",
+            "requires_dist": null,
+            "requires_python": ">=3.7",
+            "summary": "A DSL for defining source code pretty printers",
+            "version": "1.0.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17333354,
+        "urls": [
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "088527f1f62b1ae1aec815452bbc44019935b27b59b327662d7ebcb0cfeb8cfc",
+                    "md5": "5e42ce9cdf670071db3fbc7455738233",
+                    "sha256": "b2c2e5ef4393c52eb7f7d64626ecbee928ea4d333d6578685a0d6eed8227fdb6"
+                },
+                "downloads": -1,
+                "filename": "typeset_soren_n-1.0.1-cp311-cp311-macosx_11_0_arm64.whl",
+                "has_sig": false,
+                "md5_digest": "5e42ce9cdf670071db3fbc7455738233",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.7",
+                "size": 294846,
+                "upload_time": "2023-03-17T11:15:42",
+                "upload_time_iso_8601": "2023-03-17T11:15:42.131458Z",
+                "url": "https://files.pythonhosted.org/packages/08/85/27f1f62b1ae1aec815452bbc44019935b27b59b327662d7ebcb0cfeb8cfc/typeset_soren_n-1.0.1-cp311-cp311-macosx_11_0_arm64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "4b84f7826e42e944ced2ecab7ae98518cb94db8236e8e92b2b0f3012c9b8a631",
+                    "md5": "7cccf6dabf23aa921dedf5a7a6b861b0",
+                    "sha256": "529e232090d0e88d22561ababcc294aa50edaa820cb872ed7657a9609e07e68f"
+                },
+                "downloads": -1,
+                "filename": "typeset_soren_n-1.0.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "7cccf6dabf23aa921dedf5a7a6b861b0",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 10817,
+                "upload_time": "2023-03-17T11:15:45",
+                "upload_time_iso_8601": "2023-03-17T11:15:45.151363Z",
+                "url": "https://files.pythonhosted.org/packages/4b/84/f7826e42e944ced2ecab7ae98518cb94db8236e8e92b2b0f3012c9b8a631/typeset_soren_n-1.0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
