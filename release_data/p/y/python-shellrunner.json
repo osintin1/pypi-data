@@ -1,0 +1,95 @@
+{
+    "0.1.0": {
+        "info": {
+            "author": "",
+            "author_email": "adamhl8 <adamhl@pm.me>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: POSIX",
+                "Operating System :: Unix",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Unix Shell",
+                "Topic :: System :: Shells",
+                "Topic :: System :: System Shells"
+            ],
+            "description": "# python-shellrunner <!-- omit from toc -->\n\nWrite safe shell scripts in Python. Combine the streamlined utility of a shell with the power of a modern programming language.\n\n- [Install](#install)\n- [Usage](#usage)\n- [Why?](#why)\n  - [Similar Projects](#similar-projects)\n- [Advanced Usage](#advanced-usage)\n  - [Multiple Commands](#multiple-commands)\n- [Options](#options)\n  - [Output](#output)\n  - [Environment Variables](#environment-variables)\n- [Examples](#examples)\n\n## Install\n\nNo dependencies required.\n\n```\npip install -U python-shellrunner\n```\n\n## Usage\n\n```python\nfrom shellrunner import X\n\nX(\"echo hello world\")\n# hello world\n```\n\nEasily get a command's output, do something with it, and run another command using the value:\n\n```python\nresult = X(\"echo hello world | sed 's/world/there/'\").out\ngreeting = result.capitalize()\nX(f\"echo 'echo {greeting}' >> .bashrc\")\n```\n\nAn exception is raised if a command exits with a non-zero status (like bash's `set -e`):\n\n```python\nX(\"curl https://invalid.url -o ~/super_important.tar.gz\") # curl exits with exit status of 6\n# ^ Raises ShellCommandError so the rest of the script doesn't run\nX(\"tar -vxzf ~/super_important.tar.gz\")\n```\n\nOr, maybe you want to handle the error:\n\n```python\ntry:\n    X(\"curl https://invalid.url -o ~/super_important.tar.gz\")\nexcept ShellCommandError:\n    X(\"curl https://definitely-valid.url -o ~/super_important.tar.gz\")\nX(\"tar -vxzf ~/super_important.tar.gz\")\n```\n\nPipeline errors are not masked (like bash's `set -o pipefail`):\n\n```python\nX(\"grep hello /non/existent/file | tee new_file\")\n# ^ Raises ShellCommandError\n```\n\n## Why?\n\n> Why not just use bash with `set -e` and `set -o pipefail`?\n\nBecause writing anything remotely complicated in bash kinda sucks :)\n\nOne of the primary advantages of ShellRunner's approach is that you can seamlessly swap between the shell and Python. Some things are just easier to do in a shell (e.g. pipelines) and a lot of things are easier/better in Python (control flow, error handling, etc).\n\nAlso, users of [fish](https://github.com/fish-shell/fish-shell) might know that it [does not offer a way to easily exit a script if a command fails](https://github.com/fish-shell/fish-shell/issues/510). ShellRunner adds `set -e` and `pipefail` like functionality to any shell. Leverage the improved syntax of your preferred shell and the (optional) saftey of bash.\n\n### Similar Projects\n\n- [zx](https://github.com/google/zx)\n- [zxpy](https://github.com/tusharsadhwani/zxpy)\n- [shellpy](https://github.com/lamerman/shellpy)\n- [plumbum](https://github.com/tomerfiliba/plumbum)\n\nShellRunner is very similar to zxpy but aims to be more simple in its implementation and has a focus on adding safety to scripts.\n\n## Advanced Usage\n\nA note on compatability: ShellRunner should work with on any POSIX-compliant system (and shell). No Windows support at this time.\n\nConfirmed compatible with `sh` (dash), `bash`, `zsh`, and `fish`.\n\nCommands are automatically run with the shell that invoked your python script (this can be overridden):\n\n```python\n# my_script.py\nX(\"echo hello | string match hello\")\n# Works if my_script.py is executed under fish. Will obviously fail if using bash.\n```\n\n`X` returns a `NamedTuple` containing the output of the command and a list of its exit status(es), accessed via `.out` and `.status` respectively.\n\n```python\nresult = X(\"echo hello\")\nprint(f'Got output \"{result.out}\" with exit status {result.status}')\n# Or unpack\noutput, status = X(\"echo hello\")\n# output = \"hello\"\n# status = [0]\n```\n\n`status` will contain the exit status of every command in a pipeline:\n\n```python\nstatuses = X(\"echo hello | grep hello\").status\n# statuses = [0, 0]\n```\n\nIf using a shell that does not support `PIPESTATUS` such as `sh`, you will only ever get the status of the last command in a pipeline. **This also means that in this case ShellRunner cannot detect if an error occured in a pipeline:**\n\n```python\nstatus = X(\"grep hello /non/existent/file | tee new_file\").status\n# if invoked with e.g. bash: ShellCommandError is raised\n# if invoked with sh: No exception is raised and status = [0]\n```\n\n### Multiple Commands\n\nSometimes you might want to do something like this:\n\n```python\n# Pretend current working directory is ~/\nX(\"curl https://definitely-valid.url -o /tmp/super_important.tar.gz\")\nX(\"cd /tmp/\")\nX(\"tar -vxzf super_important.tar.gz\")\n# ^ Raises exception because tar cannot find the file\n```\n\nThis fails because each call of `X` invokes a new instance of the shell, so things like `cd` don't persist.\n\nA (bad) solution would be to do this:\n\n```python\nX(\"\"\"\ncurl https://definitely-valid.url -o /tmp/super_important.tar.gz\ncd /tmp/\ntar -vxzf super_important.tar.gz\n\"\"\")\n```\n\nHowever, this sort of defeats the purpose of ShellRunner because that would be run as one command, so no error handling can take place.\n\nInstead, `X` also accepts a list of commands:\n\n```python\nX([\n\"curl https://definitely-valid.url -o /tmp/super_important.tar.gz\",\n\"cd /tmp/\",\n\"tar -vxzf super_important.tar.gz\"\n])\n# Works!\n```\n\nEach command is run in the same shell instance and goes through the normal error checking.\n\n## Options\n\nThere are a few keyword arguments you can provide to adjust the behavior of `X`:\n\n```python\nX(\"command\", shell=\"bash\", check=True, show_output=True, show_commands=True)\n```\n\n`shell: str` (Default: the invoking shell) - Shell that will be used to execute the commands. Can be a path or simply the name (e.g. \"/bin/bash\", \"bash\").\n\n`check: bool` (Default: True) - If True, an error will be thrown if a command exits with a non-zero status.\n\n`show_output: bool` (Default: True) - If True, command output will be printed.\n\n`show_commands: bool` (Default: True) - If True, the current command will be printed before execution.\n\n### Output\n\nSay you do this:\n\n```python\nX(\"echo hello world\")\n```\n\nThis will print the following to your terminal:\n\n```\nExecuting: echo hello world\nhello world\n```\n\nTo hide the `Executing:` lines, set `show_commands=False`.\n\nTo hide actual command output, set `show_output=False`.\n\n### Environment Variables\n\nEach option also has a corresponding environment variable to allow you to set these options \"globally\" for your script:\n\n`shell` = `SHELLRUNNER_SHELL`\n\n`check` = `SHELLRUNNER_CHECK`\n\n`show_output` = `SHELLRUNNER_SHOW_OUTPUT`\n\n`show_commands` = `SHELLRUNNER_SHOW_COMMANDS`\n\nEnvironment variables are evaluated on each call of `X`, so you could also do something like this:\n\n```python\n# Pretend that before running this file you set: export SHELLRUNNER_SHOW_OUTPUT=\"False\"\nX(\"echo hello\")\n# No output\n\n# Now you want to see output\nos.environ[\"SHELLRUNNER_SHOW_OUTPUT\"] = \"True\"\nX(\"echo hello\")\n# hello\n```\n\n## Examples\n\nPrints out installed python packages and their dependencies:\n\n```python\nfrom shellrunner import X\n\npackages = X(\"pip list -l | sed 1,2d | awk '{print $1}'\").out\npackages = packages.splitlines()\n\nfor package in packages:\n    print(f\"=== {package} ===\")\n    X(f\"pip show {package} | grep -E 'Requires|Required-by'\", show_commands=False)\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "shell scripting bash zsh fish",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "python-shellrunner",
+            "package_url": "https://pypi.org/project/python-shellrunner/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/python-shellrunner/",
+            "project_urls": {
+                "Bug tracker": "https://github.com/adamhl8/python-shellrunner/issues",
+                "Homepage": "https://github.com/adamhl8/python-shellrunner",
+                "Source": "https://github.com/adamhl8/python-shellrunner"
+            },
+            "release_url": "https://pypi.org/project/python-shellrunner/0.1.0/",
+            "requires_dist": null,
+            "requires_python": ">=3.10",
+            "summary": "Write safe shell scripts in Python.",
+            "version": "0.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17343414,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d961a7a88a02763422aae8b4777c47c389ec289b49b10a720716bbee956af6ef",
+                    "md5": "0f8b0332677831f4d2eb1556a0095353",
+                    "sha256": "961a1b5baf756dc35befa0c1c08e06c13e23c25ff8851496aa4c07fb29c7c2cb"
+                },
+                "downloads": -1,
+                "filename": "python_shellrunner-0.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "0f8b0332677831f4d2eb1556a0095353",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.10",
+                "size": 11527,
+                "upload_time": "2023-03-18T06:06:24",
+                "upload_time_iso_8601": "2023-03-18T06:06:24.561339Z",
+                "url": "https://files.pythonhosted.org/packages/d9/61/a7a88a02763422aae8b4777c47c389ec289b49b10a720716bbee956af6ef/python_shellrunner-0.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5efcdce7757d929d8c7abc04ec25738f9173c4aae6334e56a0bd27d93bfc919b",
+                    "md5": "93266b5d9b721946dfacb5f561d47bf2",
+                    "sha256": "9075d923c5fb312dc72e28bbdb3fa9ee7239de1061d4842b5ed60391556b6dd1"
+                },
+                "downloads": -1,
+                "filename": "python_shellrunner-0.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "93266b5d9b721946dfacb5f561d47bf2",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.10",
+                "size": 12741,
+                "upload_time": "2023-03-18T06:06:26",
+                "upload_time_iso_8601": "2023-03-18T06:06:26.295476Z",
+                "url": "https://files.pythonhosted.org/packages/5e/fc/dce7757d929d8c7abc04ec25738f9173c4aae6334e56a0bd27d93bfc919b/python_shellrunner-0.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
