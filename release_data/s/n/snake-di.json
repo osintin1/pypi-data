@@ -42,7 +42,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16531158,
+        "last_serial": 17340065,
         "urls": [
             {
                 "comment_text": null,
@@ -102,7 +102,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "# Snake DI\n![test](https://github.com/lionsoon/snake_di/actions/workflows/nox-test.yml/badge.svg)\n![pypi](https://img.shields.io/pypi/v/snake-di?color=%2334D058)\n![python](https://img.shields.io/pypi/pyversions/snake-di.svg?color=%2334D058)\n\n**Source Code**: https://github.com/lionsoon/snake_di  \n**Features**:\n* Lightweight - no external dependencies (only `typing_extensions`)\n  * Based on type annotations - no configuration required, less boilerplate\n  * Overridable - simple and flexible override system\n  * Pytest integration - writing unit tests was never so easy!\n  * `yeild` powered - just `yeild` your component and then write closing steps\n  * `async` support - able to work with `async` resources\n\n### Install\n```commandline\npip install snake-di\n```\n\n### Quick examples\n```python\n# file_manager.py\n\n@dataclass\nclass FileManager:\n    opened_file: typing.TextIO\n    \n    def do_some_file_work(self): \n      ...\n    \n@dataclass\nclass Settings:\n    file_name: str\n```\n```python\n# provider.py\n\nfrom snake_di import Provider\n\nprovider = Provider()\n\n@provider.include_factory\ndef provide_settings() -> Settings:\n    return Settings(file_name=\"some.txt\")\n\n@provider.include_factory\ndef provide_file(settings: Settings) -> TextIO:\n    with open(settings.file_name) as file:\n        yield file\n\n@provider.include_factory\ndef provide_file_manager(opened_file: TextIO) -> FileManager:\n    return FileManager(opened_file)\n```\n```python\n# main.py\n\ndef main():\n    with provider.build() as container:\n        assert container.keys() == {Settings, TextIO, FileManager}\n        file_manager = container[FileManager]\n        file_manager.do_some_file_work()\n\n        assert container[TextIO].closed is False\n    assert container[TextIO].closed is True\n```\n\n```python\n# override example\n\n@Provider.from_factory\ndef change_settings() -> Settings:\n    return Settings(file_name=\"other.txt\")\n\n@Provider.from_factory\ndef mock_file() -> TextIO:\n    return unittest.mock.Mock()\n    \ndef main():\n    assert type(mock_file) is type(change_settings) is Provider\n    assert type(provider | mock_file | change_settings) is Provider\n    \n    with (provider | mock_file | change_settings).build() as container:\n        assert container[Settings].file_name = \"other.txt\"\n        assert type(container[FileManager].opened_file) is unittest.mock.Mock\n```\n\n```python\n# use with pytest example\n\n@pytest.fixture\ndef any_usual_fixture():\n    return ...\n\n@pytest_provide(provider | mock_file)\ndef test_with_mocked_file(\n    file_manager: FileManager, \n    mocked_file: typing.TextIO, \n    any_usual_fixture\n):\n    assert type(mocked_file) is unittest.mock.Mock\n    assert file_manager.opened_file == mocked_file\n```\n```python\n# container.partial_solve example\ndef handle_data(file_manager: FileManager, settings: Settings, data: str):\n  ...\n\ndef main():\n    with provider.build() as container:\n        handle_data_solved = container.partial_solve(handle_data)\n        handle_data_solved(data=\"data\")\n```\n\n### Detailed Example \nLet's assume we have following `services.py`, with components we want to build.\n\n```python\n# services.py\nimport ...\n\n@dataclass\nclass Settings:\n    db_uri: str\n\n@dataclass\nclass Database:\n    engine: sqlalchemy.ext.asyncio.AsyncEngine\n\n@dataclass\nclass Application:\n    client: httpx.AsyncClient\n    database: Database\n    \n    async def run(self): ...\n\n```\nThe main concept of `snake_di` is `Provider` (and `AsyncProvider` if we need async).  \nProviders consist of factories - callables that build components. Factories are included to the provider using `provider.include_factory` method/decorator.  \nAll factory arguments should be annotated. And return type should be specified either by return annotation, or by `service_type` argument (see example below).  \n\nLet's create an `AsyncProvider` for our services in `provider.py` file:\n\n```python\n# provider.py\nimport httpx\nfrom snake_di import AsyncProvider\nfrom sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine\n\nfrom services import Settings, Database, Application\n\nprovider = AsyncProvider()\n\n\n@provider.include_factory\ndef provide_settings() -> Settings:\n    return Settings(db_uri=\"sqlite://...\")\n\n\n@provider.include_factory(service_type=AsyncEngine)\nasync def provide_engine(settings: Settings):\n    engine = create_async_engine(settings.db_uri)\n    yield engine\n    await engine.dispose()\n\n\nprovider.include_factory(Database, service_type=Database)\nprovider.include_factory(Application, service_type=Application)\n```\nNow in `main.py` we can use `provider.build_async` method to construct `Container` in this way:\n```python\nasync with provider.build_async() as container:\n    application = container[Application]\n```\n`Container` is dict-like object that maps service types to service values.\nAfter leaving `async with` context all services in `Container` will be closed (for example `await engine.dispose()` will be run on `AsyncEngine`).  \nContainer also has `container.partial_solve` method that works similar to `functools.partial` and solves those arguments whose types container contains.  \nFull example:\n```python\n# main.py\nfrom provider import provider\nfrom services import Database, Application\n\nasync def do_some_work(database: Database, some_data):\n    ...\n\nasync def main():\n    async with provider.build_async() as container:\n        partial_solved_do_some_work = container.partial_solve(do_some_work)\n        await partial_solved_do_some_work(some_data=\"some_data\")\n        \n        await container[Application].run()\n```\n\n# Test\nLet's write some tests using same example and `pytest`\n\n```python\nfrom snake_di.pytest import pytest_provide_async\n\nfrom provider import provider\nfrom services import Database\nfrom main import do_some_work\n\n\n@Provider.from_factory(service_type=Database)\ndef mock_database():\n    return ...\n\n\n@pytest_provide_async(provider | mock_database)\n@pytest.mark.asyncio\nasync def test_do_some_work(mocked_database: Database, any_usual_fixture):\n    await do_some_work(mocked_database, some_data=\"some_data\")\n    assert mocked_database.something_to_assert()\n\n```",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": null,
@@ -133,7 +132,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16531158,
+        "last_serial": 17340065,
         "urls": [
             {
                 "comment_text": null,
@@ -174,6 +173,97 @@
                 "upload_time": "2023-01-23T11:54:58",
                 "upload_time_iso_8601": "2023-01-23T11:54:58.936242Z",
                 "url": "https://files.pythonhosted.org/packages/73/1d/8254cb2f62530fbc9666eac6ca20f2205b039ecff3bfd217d14b4bb27e3f/snake-di-0.0.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.3rc0": {
+        "info": {
+            "author": null,
+            "author_email": "Ilya Cherezov <cherezov.ia@phystech.edu>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# Snake DI\n![test](https://github.com/l1onsun/snake_di/actions/workflows/quality-assurance.yml/badge.svg)\n[![coverage](https://img.shields.io/badge/coverage-100%25-%2334D058)](https://github.com/l1onsun/snake_di/actions/workflows/quality-assurance.yml)\n![pypi](https://img.shields.io/pypi/v/snake-di?color=%2334D058)\n![python](https://img.shields.io/pypi/pyversions/snake-di.svg?color=%2334D058)\n\n**Source Code**: https://github.com/l1onsun/snake_di  \n\n**Features**:\n* Lightweight - no external dependencies (only `typing_extensions`)\n* Based on type annotations - no configuration required, less boilerplate\n* Overridable - simple and flexible override system\n* Pytest integration - writing unit tests was never so easy!\n* `yeild` powered - just `yeild` your component and then write closing steps\n* `async` support - able to work with `async` resources\n\n### Install\n```commandline\npip install snake-di\n```\n\n### ToDo\n- [ ] Documentation\n- [ ] Pytest fixtures support\n- [ ] Selective builds - allow build only necessary components  \n- [ ] More helpful exception messages  \n- [ ] Scopes - reuse factories for different app configurations  \n\n\n### Quick example\n`file_manager.py`\n```python\n@dataclass\nclass FileManager:\n    opened_file: typing.TextIO\n    \n    def do_some_file_work(self): \n      ...\n    \n@dataclass\nclass Settings:\n    file_name: str\n```\n`provider.py`\n```python\nfrom snake_di import Provider\n\nprovider = Provider()\n\n@provider.include_factory\ndef provide_settings() -> Settings:\n    return Settings(file_name=\"some.txt\")\n\n@provider.include_factory\ndef provide_file(settings: Settings) -> TextIO:\n    with open(settings.file_name) as file:\n        yield file\n\n@provider.include_factory\ndef provide_file_manager(opened_file: TextIO) -> FileManager:\n    return FileManager(opened_file)\n```\n`main.py`\n```python\ndef main():\n    with provider.build() as container:\n        assert container.keys() == {Settings, TextIO, FileManager}\n        file_manager = container[FileManager]\n        file_manager.do_some_file_work()\n\n        assert container[TextIO].closed is False\n    assert container[TextIO].closed is True\n```\nOverride example - Multiple providers: \n```python\n@Provider.from_factory\ndef change_settings() -> Settings:\n    return Settings(file_name=\"other.txt\")\n\n@Provider.from_factory\ndef mock_file() -> TextIO:\n    return unittest.mock.Mock()\n    \ndef main():\n    assert type(mock_file) is type(change_settings) is Provider\n    assert type(provider | mock_file | change_settings) is Provider\n    \n    with (provider | mock_file | change_settings).build() as container:\n        assert container[Settings].file_name = \"other.txt\"\n        assert type(container[FileManager].opened_file) is unittest.mock.Mock\n```\nIntegration with `pytest` example:\n```python\nfrom snake_di.pytest import pytest_provide\n\n@pytest.fixture\ndef any_usual_fixture():\n    return ...\n\n@pytest_provide(provider | mock_file)\ndef test_with_mocked_file(\n    file_manager: FileManager, \n    mocked_file: typing.TextIO, \n    any_usual_fixture\n):\n    assert type(mocked_file) is unittest.mock.Mock\n    assert file_manager.opened_file == mocked_file\n```\n`Container.partial_solve()` example\n```python\ndef handle_data(file_manager: FileManager, settings: Settings, data: str):\n  ...\n\ndef main():\n    with provider.build() as container:\n        handle_data_solved = container.partial_solve(handle_data)\n        handle_data_solved(data=\"data\")\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": null,
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": null,
+            "keywords": null,
+            "license": null,
+            "maintainer": null,
+            "maintainer_email": null,
+            "name": "snake-di",
+            "package_url": "https://pypi.org/project/snake-di/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/snake-di/",
+            "project_urls": {
+                "Github": "https://github.com/l1onsun/snake_di"
+            },
+            "release_url": "https://pypi.org/project/snake-di/0.0.3rc0/",
+            "requires_dist": [
+                "typing_extensions"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "Simple yet powerful dependency injection framework!",
+            "version": "0.0.3rc0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17340065,
+        "urls": [
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "939764486e4600a58e33302bad4fa279499c7ac72c8c116f084cb16994ad33d7",
+                    "md5": "0a0daeb45a15b4f61b79b8ed59355185",
+                    "sha256": "f6284d7400d861f926a48597142e345e749efb51d46c50a7d3479dff52a80e2d"
+                },
+                "downloads": -1,
+                "filename": "snake_di-0.0.3rc0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "0a0daeb45a15b4f61b79b8ed59355185",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 10002,
+                "upload_time": "2023-03-17T22:33:41",
+                "upload_time_iso_8601": "2023-03-17T22:33:41.689454Z",
+                "url": "https://files.pythonhosted.org/packages/93/97/64486e4600a58e33302bad4fa279499c7ac72c8c116f084cb16994ad33d7/snake_di-0.0.3rc0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "0cc672433576d82ef936fa993cd61b679beff3e49e1495d3f2a4c9261ab199c8",
+                    "md5": "0c60bea27fed30158e115a34eb04f493",
+                    "sha256": "030227c7c7cb73dd65dd5254ba67cce424eb37d14e4b0841e9a1ecd7327e17b3"
+                },
+                "downloads": -1,
+                "filename": "snake-di-0.0.3rc0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "0c60bea27fed30158e115a34eb04f493",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 15428,
+                "upload_time": "2023-03-17T22:33:45",
+                "upload_time_iso_8601": "2023-03-17T22:33:45.792700Z",
+                "url": "https://files.pythonhosted.org/packages/0c/c6/72433576d82ef936fa993cd61b679beff3e49e1495d3f2a4c9261ab199c8/snake-di-0.0.3rc0.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
