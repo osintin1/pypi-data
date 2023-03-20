@@ -19,7 +19,6 @@
                 "Topic :: Scientific/Engineering :: Artificial Intelligence",
                 "Topic :: Scientific/Engineering :: Information Analysis"
             ],
-            "description": "# Lightning + Bagua\n\n**Deep Learning Training Acceleration with [Bagua](https://tutorials.baguasys.com/) and [Lightning AI](https://lightning.ai)**\n\n[![lightning](https://img.shields.io/badge/-Lightning_2.0+-792ee5?logo=pytorchlightning&logoColor=white)](https://lightning.ai/)\n[![PyPI Status](https://badge.fury.io/py/lightning-bagua.svg)](https://badge.fury.io/py/lightning-bagua)\n[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/lightning-bagua)](https://pypi.org/project/lightning-bagua/)\n[![PyPI Status](https://pepy.tech/badge/lightning-bagua)](https://pepy.tech/project/lightning-bagua)\n[![Deploy Docs](https://github.com/Lightning-AI/lightning-Bagua/actions/workflows/docs-deploy.yml/badge.svg)](https://lightning-ai.github.io/lightning-Bagua/)\n\n[![General checks](https://github.com/Lightning-AI/lightning-bagua/actions/workflows/ci-checks.yml/badge.svg?event=push)](https://github.com/Lightning-AI/lightning-bagua/actions/workflows/ci-checks.yml)\n[![Build Status](https://dev.azure.com/Lightning-AI/compatibility/_apis/build/status/Lightning-AI.lightning-Bagua?branchName=main)](https://dev.azure.com/Lightning-AI/compatibility/_build/latest?definitionId=47&branchName=main)\n[![pre-commit.ci status](https://results.pre-commit.ci/badge/github/Lightning-AI/lightning-Bagua/main.svg)](https://results.pre-commit.ci/latest/github/Lightning-AI/lightning-Bagua/main)\n\n[Bagua](https://github.com/BaguaSys/bagua) is a deep learning training acceleration framework which supports multiple advanced distributed\ntraining algorithms including:\n\n- [Gradient AllReduce](https://tutorials.baguasys.com/algorithms/gradient-allreduce) for centralized synchronous communication, where gradients are averaged among all workers.\n- [Decentralized SGD](https://tutorials.baguasys.com/algorithms/decentralized) for decentralized synchronous communication, where each worker exchanges data with one or a few specific workers.\n- [ByteGrad](https://tutorials.baguasys.com/algorithms/bytegrad) and [QAdam](https://tutorials.baguasys.com/algorithms/q-adam) for low precision communication, where data is compressed into low precision  before communication.\n- [Asynchronous Model Average](https://tutorials.baguasys.com/algorithms/async-model-average) for asynchronous communication, where workers are not required to be  synchronized in the same iteration in a lock-step style.\n\nBy default, Bagua uses *Gradient AllReduce* algorithm, which is also the algorithm implemented in DDP, but Bagua can usually produce a higher training throughput due to its backend written in Rust.\n\n## Installation\n\n```bash\npip install -U lightning lightning-bagua\n```\n\n## Usage\n\nSimply set the strategy argument in the Trainer:\n\n```python\nfrom lightning import Trainer\n\n# train on 4 GPUs (using Bagua mode)\ntrainer = Trainer(strategy=\"bagua\", accelerator=\"gpu\", devices=4)\n```\n\nBy specifying the `algorithm` in the `BaguaStrategy`, you can select more advanced training algorithms featured by Bagua:\n\n```python\nfrom lightning import Trainer\nfrom lightning_bagua import BaguaStrategy\n\n# train on 4 GPUs, using Bagua Gradient AllReduce algorithm\ntrainer = Trainer(\n    strategy=BaguaStrategy(algorithm=\"gradient_allreduce\"),\n    accelerator=\"gpu\",\n    devices=4,\n)\n\n# train on 4 GPUs, using Bagua ByteGrad algorithm\ntrainer = Trainer(\n    strategy=BaguaStrategy(algorithm=\"bytegrad\"),\n    accelerator=\"gpu\",\n    devices=4,\n)\n\n# train on 4 GPUs, using Bagua Decentralized SGD\ntrainer = Trainer(\n    strategy=BaguaStrategy(algorithm=\"decentralized\"),\n    accelerator=\"gpu\",\n    devices=4,\n)\n\n# train on 4 GPUs, using Bagua Low Precision Decentralized SGD\ntrainer = Trainer(\n    strategy=BaguaStrategy(algorithm=\"low_precision_decentralized\"),\n    accelerator=\"gpu\",\n    devices=4,\n)\n\n# train on 4 GPUs, using Asynchronous Model Average algorithm, with a synchronization interval of 100ms\ntrainer = Trainer(\n    strategy=BaguaStrategy(algorithm=\"async\", sync_interval_ms=100),\n    accelerator=\"gpu\",\n    devices=4,\n)\n```\n\nTo use *QAdam*, we need to initialize [QAdamOptimizer](https://bagua.readthedocs.io/en/latest/autoapi/bagua/torch_api/algorithms/q_adam/index.html#bagua.torch_api.algorithms.q_adam.QAdamOptimizer) first:\n\n```python\nfrom lightning import Trainer\nimport lightning.pytorch as pl\nfrom lightning_bagua import BaguaStrategy\nfrom bagua.torch_api.algorithms.q_adam import QAdamOptimizer\n\n\nclass MyModel(pl.LightningModule):\n    ...\n\n    def configure_optimizers(self):\n        # initialize QAdam Optimizer\n        return QAdamOptimizer(self.parameters(), lr=0.05, warmup_steps=100)\n\n\nmodel = MyModel()\ntrainer = Trainer(\n    accelerator=\"gpu\",\n    devices=4,\n    strategy=BaguaStrategy(algorithm=\"qadam\"),\n)\ntrainer.fit(model)\n```\n\nBagua relies on its own [launcher](https://tutorials.baguasys.com/getting-started/#launch-job) to schedule jobs. Below, find examples using `bagua.distributed.launch` which follows `torch.distributed.launch` API:\n\n```bash\n# start training with 8 GPUs on a single node\npython -m bagua.distributed.launch --nproc_per_node=8 train.py\n```\n\nIf the ssh service is available with passwordless login on each node, you can launch the distributed job on a single node with `baguarun` which has a similar syntax as `mpirun`. When staring the job, `baguarun` will automatically spawn new processes on each of your training node provided by `--host_list` option and each node in it is described as an ip address followed by a ssh port.\n\n```bash\n# Run on node1 (or node2) to start training on two nodes (node1 and node2), 8 GPUs per node\nbaguarun --host_list hostname1:ssh_port1,hostname2:ssh_port2 --nproc_per_node=8 --master_port=port1 train.py\n```\n\nNote\n\nYou can also start training in the same way as Distributed Data Parallel. However, system optimizations like [Bagua-Net](https://tutorials.baguasys.com/more-optimizations/bagua-net) and [Performance autotuning](https://tutorials.baguasys.com/performance-autotuning/) can only be enabled through bagua launcher. It is worth noting that with `Bagua-Net`, Distributed Data Parallel can also achieve better performance without modifying the training script.\n\nSee [Bagua Tutorials](https://tutorials.baguasys.com/) for more details on installation and advanced features.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "https://github.com/Lightning-AI/lightning-Bagua",
@@ -54,7 +53,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17322287,
+        "last_serial": 17353855,
         "urls": [
             {
                 "comment_text": "",
@@ -95,6 +94,109 @@
                 "upload_time": "2023-03-16T17:14:22",
                 "upload_time_iso_8601": "2023-03-16T17:14:22.296620Z",
                 "url": "https://files.pythonhosted.org/packages/75/d1/9da487186ea6333fceb4958e78b5198767de092902fc760d61c2715067cd/lightning-bagua-0.1.0rc1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.0rc2": {
+        "info": {
+            "author": "Lightning-AI et al.",
+            "author_email": "name@lightning.ai",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "Environment :: Console",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: Apache Software License",
+                "Natural Language :: English",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Scientific/Engineering :: Artificial Intelligence",
+                "Topic :: Scientific/Engineering :: Information Analysis"
+            ],
+            "description": "# Lightning \u26a1 Bagua\n\n**Deep Learning Training Acceleration with [Bagua](https://tutorials.baguasys.com/) and [Lightning AI](https://lightning.ai)**\n\n[![lightning](https://img.shields.io/badge/-Lightning_2.0+-792ee5?logo=pytorchlightning&logoColor=white)](https://lightning.ai/)\n[![PyPI Status](https://badge.fury.io/py/lightning-bagua.svg)](https://badge.fury.io/py/lightning-bagua)\n[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/lightning-bagua)](https://pypi.org/project/lightning-bagua/)\n[![PyPI Status](https://pepy.tech/badge/lightning-bagua)](https://pepy.tech/project/lightning-bagua)\n[![Deploy Docs](https://github.com/Lightning-AI/lightning-Bagua/actions/workflows/docs-deploy.yml/badge.svg)](https://lightning-ai.github.io/lightning-Bagua/)\n\n[![General checks](https://github.com/Lightning-AI/lightning-bagua/actions/workflows/ci-checks.yml/badge.svg?event=push)](https://github.com/Lightning-AI/lightning-bagua/actions/workflows/ci-checks.yml)\n[![Build Status](https://dev.azure.com/Lightning-AI/compatibility/_apis/build/status/Lightning-AI.lightning-Bagua?branchName=main)](https://dev.azure.com/Lightning-AI/compatibility/_build/latest?definitionId=47&branchName=main)\n[![pre-commit.ci status](https://results.pre-commit.ci/badge/github/Lightning-AI/lightning-Bagua/main.svg)](https://results.pre-commit.ci/latest/github/Lightning-AI/lightning-Bagua/main)\n\n[Bagua](https://github.com/BaguaSys/bagua) is a deep learning training acceleration framework which supports multiple advanced distributed\ntraining algorithms including:\n\n- [Gradient AllReduce](https://tutorials.baguasys.com/algorithms/gradient-allreduce) for centralized synchronous communication, where gradients are averaged among all workers.\n- [Decentralized SGD](https://tutorials.baguasys.com/algorithms/decentralized) for decentralized synchronous communication, where each worker exchanges data with one or a few specific workers.\n- [ByteGrad](https://tutorials.baguasys.com/algorithms/bytegrad) and [QAdam](https://tutorials.baguasys.com/algorithms/q-adam) for low precision communication, where data is compressed into low precision  before communication.\n- [Asynchronous Model Average](https://tutorials.baguasys.com/algorithms/async-model-average) for asynchronous communication, where workers are not required to be  synchronized in the same iteration in a lock-step style.\n\nBy default, Bagua uses *Gradient AllReduce* algorithm, which is also the algorithm implemented in DDP, but Bagua can usually produce a higher training throughput due to its backend written in Rust.\n\n## Installation\n\n```bash\npip install -U lightning-bagua\n```\n\n## Usage\n\nSimply set the strategy argument in the Trainer:\n\n```python\nfrom lightning import Trainer\n\n# train on 4 GPUs (using Bagua mode)\ntrainer = Trainer(strategy=\"bagua\", accelerator=\"gpu\", devices=4)\n```\n\nBy specifying the `algorithm` in the `BaguaStrategy`, you can select more advanced training algorithms featured by Bagua:\n\n```python\nfrom lightning import Trainer\nfrom lightning_bagua import BaguaStrategy\n\n# train on 4 GPUs, using Bagua Gradient AllReduce algorithm\ntrainer = Trainer(\n    strategy=BaguaStrategy(algorithm=\"gradient_allreduce\"),\n    accelerator=\"gpu\",\n    devices=4,\n)\n\n# train on 4 GPUs, using Bagua ByteGrad algorithm\ntrainer = Trainer(\n    strategy=BaguaStrategy(algorithm=\"bytegrad\"),\n    accelerator=\"gpu\",\n    devices=4,\n)\n\n# train on 4 GPUs, using Bagua Decentralized SGD\ntrainer = Trainer(\n    strategy=BaguaStrategy(algorithm=\"decentralized\"),\n    accelerator=\"gpu\",\n    devices=4,\n)\n\n# train on 4 GPUs, using Bagua Low Precision Decentralized SGD\ntrainer = Trainer(\n    strategy=BaguaStrategy(algorithm=\"low_precision_decentralized\"),\n    accelerator=\"gpu\",\n    devices=4,\n)\n\n# train on 4 GPUs, using Asynchronous Model Average algorithm, with a synchronization interval of 100ms\ntrainer = Trainer(\n    strategy=BaguaStrategy(algorithm=\"async\", sync_interval_ms=100),\n    accelerator=\"gpu\",\n    devices=4,\n)\n```\n\nTo use *QAdam*, we need to initialize [QAdamOptimizer](https://bagua.readthedocs.io/en/latest/autoapi/bagua/torch_api/algorithms/q_adam/index.html#bagua.torch_api.algorithms.q_adam.QAdamOptimizer) first:\n\n```python\nimport lightning as L\nfrom lightning_bagua import BaguaStrategy\nfrom bagua.torch_api.algorithms.q_adam import QAdamOptimizer\n\n\nclass MyModel(L.LightningModule):\n    ...\n\n    def configure_optimizers(self):\n        # initialize QAdam Optimizer\n        return QAdamOptimizer(self.parameters(), lr=0.05, warmup_steps=100)\n\n\nmodel = MyModel()\ntrainer = L.Trainer(\n    accelerator=\"gpu\",\n    devices=4,\n    strategy=BaguaStrategy(algorithm=\"qadam\"),\n)\ntrainer.fit(model)\n```\n\nBagua relies on its own [launcher](https://tutorials.baguasys.com/getting-started/#launch-job) to schedule jobs. Below, find examples using `bagua.distributed.launch` which follows `torch.distributed.launch` API:\n\n```bash\n# start training with 8 GPUs on a single node\npython -m bagua.distributed.launch --nproc_per_node=8 train.py\n```\n\nIf the ssh service is available with passwordless login on each node, you can launch the distributed job on a single node with `baguarun` which has a similar syntax as `mpirun`. When staring the job, `baguarun` will automatically spawn new processes on each of your training node provided by `--host_list` option and each node in it is described as an ip address followed by a ssh port.\n\n```bash\n# Run on node1 (or node2) to start training on two nodes (node1 and node2), 8 GPUs per node\nbaguarun --host_list hostname1:ssh_port1,hostname2:ssh_port2 --nproc_per_node=8 --master_port=port1 train.py\n```\n\nNote\n\nYou can also start training in the same way as Distributed Data Parallel. However, system optimizations like [Bagua-Net](https://tutorials.baguasys.com/more-optimizations/bagua-net) and [Performance autotuning](https://tutorials.baguasys.com/performance-autotuning/) can only be enabled through bagua launcher. It is worth noting that with `Bagua-Net`, Distributed Data Parallel can also achieve better performance without modifying the training script.\n\nSee [Bagua Tutorials](https://tutorials.baguasys.com/) for more details on installation and advanced features.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "https://github.com/Lightning-AI/lightning-Bagua",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/Lightning-AI/lightning-Bagua",
+            "keywords": "deep learning,pytorch,AI",
+            "license": "Apache-2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "lightning-bagua",
+            "package_url": "https://pypi.org/project/lightning-bagua/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/lightning-bagua/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/Lightning-AI/lightning-Bagua/issues",
+                "Documentation": "https://lightning-Bagua.rtfd.io/en/latest/",
+                "Download": "https://github.com/Lightning-AI/lightning-Bagua",
+                "Homepage": "https://github.com/Lightning-AI/lightning-Bagua",
+                "Source Code": "https://github.com/Lightning-AI/lightning-Bagua"
+            },
+            "release_url": "https://pypi.org/project/lightning-bagua/0.1.0rc2/",
+            "requires_dist": [
+                "lightning (>=2.0.0)",
+                "bagua-cuda116 (>=0.9.2)"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "Deep Learning Training Acceleration with Bagua and Lightning AI",
+            "version": "0.1.0rc2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17353855,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5081b5f8090eba091764b80336860df59e2c22ee16f22883e4ff31cfda8d994e",
+                    "md5": "6a704c2ea2e383adb4ffe7e97bfdf8b9",
+                    "sha256": "eeefd39d3c87240a1ae474ca28beecdcf55ff7e80150a383521b3c7e071be553"
+                },
+                "downloads": -1,
+                "filename": "lightning_bagua-0.1.0rc2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "6a704c2ea2e383adb4ffe7e97bfdf8b9",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 14064,
+                "upload_time": "2023-03-19T14:12:53",
+                "upload_time_iso_8601": "2023-03-19T14:12:53.242545Z",
+                "url": "https://files.pythonhosted.org/packages/50/81/b5f8090eba091764b80336860df59e2c22ee16f22883e4ff31cfda8d994e/lightning_bagua-0.1.0rc2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "92ff1146a05af50050a94c8fdd3ec07a1d415ca5db9e8996dc22dcd40cbdbf31",
+                    "md5": "514b2a26a122e3a13d9c8a2b40a59da2",
+                    "sha256": "5a5eef36b4e4636b9c52e4d24f4edbacad5441fd1ea9658e06f927bc143852be"
+                },
+                "downloads": -1,
+                "filename": "lightning-bagua-0.1.0rc2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "514b2a26a122e3a13d9c8a2b40a59da2",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 16222,
+                "upload_time": "2023-03-19T14:12:54",
+                "upload_time_iso_8601": "2023-03-19T14:12:54.895594Z",
+                "url": "https://files.pythonhosted.org/packages/92/ff/1146a05af50050a94c8fdd3ec07a1d415ca5db9e8996dc22dcd40cbdbf31/lightning-bagua-0.1.0rc2.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
