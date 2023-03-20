@@ -1,11 +1,11 @@
 {
-    "0.5.8": {
+    "0.6.1": {
         "info": {
             "author": "Ryo Kurosawa",
             "author_email": "a0160561@yahoo.co.jp",
             "bugtrack_url": null,
             "classifiers": [],
-            "description": "# PDIVAS : Pathogenic Predictor of Deep-Intronic Variants causing Aberrant Splicing\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)\n\n![PDIVAS image](/PDIVAS.png)\n\n## Sumary\n- PDIVAS is a pathogenic predictor of deep-intronic variants causing aberrant splicing.\n- The deep-intronic variants can cause pathogenic pseudoexons or extending exons which disturb the normal gene expression and can be the causal of patiens with Mendelian diseases. \n- PDIVAS efficiently prioritizes the causal candidates from enourmous deep-intronic variants detected by whole-genome sequencing. \n- The scope of PDIVAS prediction is variants in protein-coding genes on autosomes and X chromosome. \n- This command line interface is compatible with variant file on VCF format. \n \nPDIVAS is modeled on random forest algorism using features from  \n1) **Splicing predictors** of [SpliceAI](https://github.com/Illumina/SpliceAI) ([Jaganathan et al., Cell 2019](https://www.sciencedirect.com/science/article/pii/S0092867418316295?via%3Dihub)) and [MaxEntScan](http://hollywood.mit.edu/burgelab/maxent/Xmaxentscan_scoreseq.html) ([Yao and Berge, j. Comput. Biol. 2004](https://www.liebertpub.com/doi/10.1089/1066527041410418?url_ver=Z39.88-2003&rfr_id=ori%3Arid%3Acrossref.org&rfr_dat=cr_pub++0pubmed))  \n(*)The output module of SpliceAI wass customed for PDIVAS features (see the Option2, for the details).\n          \n 2) **Human splicing constraint score** of [ConSplice](https://github.com/mikecormier/ConSplice) ([Cormier et al., BMC Bioinfomatics 2022](https://bmcbioinformatics.biomedcentral.com/articles/10.1186/s12859-022-05041-x)).\n\n## Reference & contact\n\n## Option1. Prediction with the PDIVAS-precomputed files (SNV+ short indels(1~4nt))\nFor the quick implementation of PDIVAS, please use the score-precomputed file [file here]().\nPossible rare SNVs and short indels(1~4nt) in genes (n=4,512) of Mendelian diseases were comprehensively annotated in the file.\nTo annotate your VCF file, please run the command below,for example.\n\n**0. Installation**\n```sh\nconda install -c bioconda tabix bcftools\n(or conda install pdivas (including xsamtools))\n```\n\n**1. Peform PDIVAS prediction**\n```sh\nbgzip -c examples/input.vcf > example/input.vcf.gz\ntabix examples/input.vcf.gz\n#The site file enables quick annotation\nbcftools query -f'%CHROM\\t%POS\\n' examples/input.vcf.gz > examples/input_sites.txt\nbcftools annotate -c 'INFO/PDIVAS' -a PDIVAS_snv_precomputed_GRCh38.vcf.gz -R examples/input_sites.txt examples/input.vcf.gz | bgzip -c > examples/output_precomp.vcf.gz\n#Compare the output_precomp.vcf.gz with output_precomp_expect.vcf.gz to validate the succcessful annotation.\n```\n\n## Option2. Peform annotation of individual features and calculation of PDIVAS scores \nFor more complehensive annotation than pre-computed files, run PDIVAS by following the description below.\n\n**0-1. Installation**\n```sh\nconda install PDIVAS_env.yml\nconda activate PDIVAS\npip install PDIVAS\n```\nThe successful installation was verified on anaconda(version=.....)\n\n**0-2. Setting custom usages**\nFor output-customed SpliceAI\n```sh\ngit clone git@github.com:shiro-kur/PDIVAS.git\ncd PDIVAS/Customed_SpliceAI\ncp ./__main__for_customed_SpliceAI.py path_to_your_installed_path/__main__.py\ncp ./utils_for_customed-SpliceAI.py path_to_your_installed_path/__utils__.py\ncp -r ./annotations_for_customed_SpliceAI path_to_your_installed_path/annotations\n\n# check the successful custom by comparing the output file between ~~.vcf\n```\nFor VEP custom usage,\n- Donwload VEP cache file (version>=107, should correspond to VEP tool version).  \nFollow the instruction of \"Manually downloading caches\" part below.  \n(https://asia.ensembl.org/info/docs/tools/vep/script/vep_cache.html)\n- To implement MaxEntScan plugin, follow the instruction below.  \n(https://asia.ensembl.org/info/docs/tools/vep/script/vep_plugins.html#maxentscan)\n- Download ConSplice score file from [here]().  \nThe file was editted from the original score file of ([Cormier et al., BMC Bioinfomatics 2022](https://home.chpc.utah.edu/~u1138933/ConSplice/best_splicing_constraint_model/)).\n\n**1. Preprocessing VCF format (resolve the mullti-allelic site to biallelic sites)**\n```sh\nbcftools norm -m - multi.vcf > bi.vcf\n```\n\n**2. Add gene annotations, MaxEntScan scores and ConSplice scores with VEP.**\n```sh\nvep \\\n--cache --offline --cache_version 107 --assembly GRCh38 --hgvs --pick_allele_gene \\\n--fasta ../../reference/hg38.fa.gz --vcf --force \\\n--custom ../../reference_output/ConSplice.50bp_region.inverse_proportion_refor.bed.gz,ConSplice,bed,overlap,0 \\\n--plugin MaxEntScan,../../reference/MaxEntScan/fordownload,SWA,NCSS \\\n--fields \"Consequence,SYMBOL,Gene,INTRON,HGVSc,STRAND,ConSplice,MES-SWA_acceptor_diff,MES-SWA_acceptor_alt,MES-SWA_donor_diff,MES-SWA_donor_alt\" \\\n--compress_output bgzip\n-i examples/input.vcf.gz -o examples/input_vep.vcf.gz\n```\n\n**3. Add output-customed SpliceAI scores**\n```sh\nspliceai -I examples/input_vep.vcf.gz -O examples/input_vep_AI.vcf -R hg38.fa -A grch38 -D 300 -M 1\n```\n\n**4. Perform the detection of deep-intronic variants and PDIVAS prediction**\n```sh\npdivas -I input_vep_AI.vcf -O input_vep_AI_PD.vcf.gz -F off\n```\n## Usage of PDIVAS command line\nRequired parameters:\n - ```-I```: Input VCF(.vcf/.vcf.gz) with variants of interest.\n - ```-O```: Output VCF(.vcf/.vcf.gz) with PDIVAS predictions `GENE_ID|PDIVAS_score` Variants in multiple genes have separate predictions for each gene.\nOptional parameters:\n - ```-F```: filtering function (off/on) : Output all variants (-F off; default) or only deep-intronic variants with PDIVAS scores (-F on)\")\n \n Details of PDIVAS INFO field:\n\n|    ID    | Description |\n| -------- | ----------- |\n|  GENE_ID  | Ensembl gene ID based on GENCODE V41(GRCh38) or V19(GRCh37) |\n|  PDIVAS  | \\<Predicted result\\> <br> **Pattern 1 : 0.000-1.000 float value**  (The higher, the more deleterious) <br> \\<Exceptions\\> <br> - Output with '-F off'. Filtered with '-F on'. <br> **Pattern 2 : 'wo_annots'**, variants out of VEP or SpliceAI annotations : <br>**Pattern 3 : 'out_of_scope'**, variants without PDIVAS annotation scope<br>       (chrY, non-coding gene or non-deep-intronic variants)\u3000<br>**Pattern 4 :'no_gene_match'**, variants without matched gene annotation between VEP and SpliceAI|\n\n## Interpretation of PDIVAS score\n\n\n\n",
+            "description": "# PDIVAS : Pathogenicity Predictor for Deep-Intronic Variants causing Aberrant Splicing\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)\n\n## Sumary\n- PDIVAS is a pathogenicity predictor for deep-intronic variants causing aberrant splicing.\n- The deep-intronic variants can cause pathogenic pseudoexons or extending exons which disturb the normal gene expression and can be the causal of patiens with Mendelian diseases. \n- PDIVAS efficiently prioritizes the causal candidates from a vast number of deep-intronic variants detected by whole-genome sequencing. \n- The scope of PDIVAS prediction is variants in protein-coding genes on autosomes and X chromosome. \n- This command-line interface is compatible with variant files in VCF format. \n \nPDIVAS is modeled on random forest algorism to classify pathogenic and benign variants with referring to features from  \n1) **Splicing predictors** of [SpliceAI](https://github.com/Illumina/SpliceAI) ([Jaganathan et al., Cell 2019](https://www.sciencedirect.com/science/article/pii/S0092867418316295?via%3Dihub)) and [MaxEntScan](http://hollywood.mit.edu/burgelab/maxent/Xmaxentscan_scoreseq.html) ([Yao and Berge, j. Comput. Biol. 2004](https://www.liebertpub.com/doi/10.1089/1066527041410418?url_ver=Z39.88-2003&rfr_id=ori%3Arid%3Acrossref.org&rfr_dat=cr_pub++0pubmed))  \n(*)The output module of SpliceAI was customed for PDIVAS features (see the Option2, for the details).\n          \n 2) **Human splicing constraint score** of [ConSplice](https://github.com/mikecormier/ConSplice) ([Cormier et al., BMC Bioinfomatics 2022](https://bmcbioinformatics.biomedcentral.com/articles/10.1186/s12859-022-05041-x)).\n\n## Reference & contact\nbioarxiv?  \na0160561@yahoo.co.jp (Ryo Kurosawa at Kyoto University)\n\n## Details\nPlease view the detailed usage and methods at https://github.com/shiro-kur/PDIVAS and medRxiv. \n\n\n\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -26,7 +26,7 @@
             "project_urls": {
                 "Homepage": "https://github.com/shiro-kur/PDIVAS"
             },
-            "release_url": "https://pypi.org/project/pdivas/0.5.8/",
+            "release_url": "https://pypi.org/project/pdivas/0.6.1/",
             "requires_dist": [
                 "pandas",
                 "numpy",
@@ -34,52 +34,52 @@
                 "scikit-learn (==1.0.2)"
             ],
             "requires_python": "",
-            "summary": "PDIVAS: Pathogenicity predictor of Deep-Intronic Variants causing Aberrant Splicing",
-            "version": "0.5.8",
+            "summary": "PDIVAS: Pathogenicity predictor for Deep-Intronic Variants causing Aberrant Splicing",
+            "version": "0.6.1",
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16599487,
+        "last_serial": 17361487,
         "urls": [
             {
                 "comment_text": "",
                 "digests": {
-                    "blake2b_256": "98e03558c6c7d84714c3cec3478638273af88788e11e830126c6e769cf796430",
-                    "md5": "b5970c1e4e7678d56085cc2a497c571e",
-                    "sha256": "6e71c1033cc37c6b97ab0c384826400506a8eb7672f365f080ef15008b4ea5d2"
+                    "blake2b_256": "d1eef7c5f94ef31469cb9f9d368b2aca9b6145920c2208dbd0619c5e20cc004a",
+                    "md5": "6ea0c3028ee4022a4825190ee5cffb95",
+                    "sha256": "bb9098ab743b89451a8fa5634e80b06bdb34694a85c9c52d41bc85668e6cd093"
                 },
                 "downloads": -1,
-                "filename": "pdivas-0.5.8-py3-none-any.whl",
+                "filename": "pdivas-0.6.1-py3-none-any.whl",
                 "has_sig": false,
-                "md5_digest": "b5970c1e4e7678d56085cc2a497c571e",
+                "md5_digest": "6ea0c3028ee4022a4825190ee5cffb95",
                 "packagetype": "bdist_wheel",
                 "python_version": "py3",
                 "requires_python": null,
-                "size": 443558,
-                "upload_time": "2023-01-28T08:28:27",
-                "upload_time_iso_8601": "2023-01-28T08:28:27.494757Z",
-                "url": "https://files.pythonhosted.org/packages/98/e0/3558c6c7d84714c3cec3478638273af88788e11e830126c6e769cf796430/pdivas-0.5.8-py3-none-any.whl",
+                "size": 441773,
+                "upload_time": "2023-03-20T09:53:59",
+                "upload_time_iso_8601": "2023-03-20T09:53:59.156983Z",
+                "url": "https://files.pythonhosted.org/packages/d1/ee/f7c5f94ef31469cb9f9d368b2aca9b6145920c2208dbd0619c5e20cc004a/pdivas-0.6.1-py3-none-any.whl",
                 "yanked": false,
                 "yanked_reason": null
             },
             {
                 "comment_text": "",
                 "digests": {
-                    "blake2b_256": "c9d83b66568fae7948452fb5098c907ed52b569d8ec691aad7824275a9e4b22f",
-                    "md5": "fd5c8eafc8c99557be7b8ed8ac95feec",
-                    "sha256": "7322990f9dcd4548d5fca99e394ce03bd62708a710442d34ee975bc7523c7768"
+                    "blake2b_256": "ba798b4b5c1e60cd053f8744095a71409910f61ad0b8de4127408240353705d8",
+                    "md5": "eb45b0a657b42200ac6f7621d0a6e2a5",
+                    "sha256": "07e392dd53f023f3bf3c6b4a1408669810f1955c09155a4b3ff0684a8aedda94"
                 },
                 "downloads": -1,
-                "filename": "pdivas-0.5.8.tar.gz",
+                "filename": "pdivas-0.6.1.tar.gz",
                 "has_sig": false,
-                "md5_digest": "fd5c8eafc8c99557be7b8ed8ac95feec",
+                "md5_digest": "eb45b0a657b42200ac6f7621d0a6e2a5",
                 "packagetype": "sdist",
                 "python_version": "source",
                 "requires_python": null,
-                "size": 429306,
-                "upload_time": "2023-01-28T08:28:30",
-                "upload_time_iso_8601": "2023-01-28T08:28:30.134792Z",
-                "url": "https://files.pythonhosted.org/packages/c9/d8/3b66568fae7948452fb5098c907ed52b569d8ec691aad7824275a9e4b22f/pdivas-0.5.8.tar.gz",
+                "size": 425952,
+                "upload_time": "2023-03-20T09:54:02",
+                "upload_time_iso_8601": "2023-03-20T09:54:02.251769Z",
+                "url": "https://files.pythonhosted.org/packages/ba/79/8b4b5c1e60cd053f8744095a71409910f61ad0b8de4127408240353705d8/pdivas-0.6.1.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
