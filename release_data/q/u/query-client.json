@@ -1,0 +1,91 @@
+{
+    "0.0.1": {
+        "info": {
+            "author": "liuyixiong",
+            "author_email": "liuyixiong@saicmotor.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# Query Client\n\nThis is a simple client to query.\n\n## example\n\n### \u521d\u59cb\u5316\u5ba2\u6237\u7aef\u53ca\u5143\u6570\u636e\n\n> ```python\n> from query_client import QueryClient\n>\n> qc = QueryClient()\n>\n> tables = qc.get_meta()\n> # print(tables) \u83b7\u53d6\u5168\u90e8\u53ef\u67e5\u8868,\u53ca\u5176coloumns, \u5143\u6570\u636e\n> ## \u76ee\u524d\u53ea\u6709\u4e24\u4e2a\u76f8\u5173\u8868\u6ce8\u518c\n> can_table = tables[\"can_detail\"]\n> pcd_table = tables[\"pcd_label_desc\"]\n> ```\n>\n\n### fetch\n\n```python\npython\nfrom sqlalchemy.sql.expression import select, text, and_\nfrom query_client import QueryClient\nimport pandas as pd\n\nqc = QueryClient()\ntables = qc.get_meta()\nmytable = tables[\"pcd_label_desc\"]\n\n# 1. fetch_by_stmt \u521d\u59cb\u5316 statement, select/where/group_by\nstmt = select(mytable.c.dataset, mytable.c.batch_path, text(\"array_distinct(categories) scenes\"), text(\"cardinality(filter(categories, x -> x IN ('car'))) as target_cnt\"))\nr = qc.fetch_by_stmt(stmt)\ndf = pd.DataFrame(r)\n\n# 2. fetch_by_sql\nquery = \"select * from pcd_label_desc limit 10\"\nr = qc.fetch_by_sql(query)\ndf = pd.DataFrame(r)\n```\n\n### \u5177\u4f53\u793a\u4f8b\n\n1. \u57ce\u533a\u573a\u666f\u7684\u7b5b\u9009\n   * \u5b9a\u4e49\u5355\u5e27\u6307\u6807(\u5404\u79cd\u76ee\u6807\u6570)\n   * group by \u5e8f\u5217\n2. fetch_by_sql \u5b9e\u73b0\u65b9\u5f0f\n   * cte \u8bed\u6cd5:\n     * t \u8868\u67e5\u8be2\u5355\u5e27\u7684\u53bb\u91cd\u573a\u666f\u3001\u4e0d\u540c\u7c7b\u578b\u7684\u76ee\u6807\u6570\u6307\u6807\uff0cdataset \u53cabatch \u7ef4\u5ea6\n     * \u5229\u7528 t \u8868\u7684dataset, batch_path \u7ef4\u5ea6\u805a\u5408\u6307\u6807\n   * code example\n     ```python\n     query = \"\"\"\n     WITH t AS (\n         SELECT\n             dataset,\n             batch_path,\n             array_distinct(categories) scenes,\n             cardinality(\n                 filter(\n                     categories,\n                     x -> x IN (\n                         'car',\n                         'van',\n                         'truck',\n                         'mini_truck',\n                         'special_truck',\n                         'truck',\n                         'cyclist',\n                         'bicycle',\n                         'pedestrian'\n                     )\n                 )\n             ) AS target_cnt,\n             cardinality(\n                 filter(\n                     categories,\n                     x -> x IN (\n                         'truck',\n                         'mini_truck',\n                         'special_truck'\n                     )\n                 )\n             ) truck_cnt,\n             cardinality(filter(categories, x -> x IN ('car', 'van'))) carvan_cnt,\n             cardinality(filter(categories, x -> x = 'pedestrian')) pedestrian_cnt,\n             cardinality(\n                 filter(categories, x -> x IN ('cyclist', 'bicycle'))\n             ) cyclist_cnt\n         FROM\n             pcd_label_desc\n         WHERE\n             delivery_date = '20230310'\n             AND any_match(\n                 road_condition,\n                 x -> x = 'highway_road'\n             )\n     )\n     SELECT\n         dataset,\n         batch_path,\n         array_distinct(FLATTEN(ARRAY_AGG(scenes))) scenes,\n         SUM(target_cnt) target_cnt,\n         SUM(carvan_cnt) carvan_cnt,\n         SUM(pedestrian_cnt) pedestrian_cnt,\n         SUM(truck_cnt) truck_cnt,\n         SUM(cyclist_cnt) cyclist_cnt\n     FROM\n         t\n     GROUP BY\n         1,\n         2\n     ORDER BY\n         target_cnt DESC\n     \"\"\"\n\n     r = qc.fetch_by_sql(query)\n     df = pd.DataFrame(r)\n     ```\n3. fetch_by_stmt \u5b9e\u73b0\u65b9\u5f0f\n   ```python\n   mytable = tables[\"pcd_label_desc\"]\n\n   stmt = select(\n           mytable.c.dataset, \n           mytable.c.batch_path, # \u6307\u5b9atable\u805a\u5408\u7684\u7ef4\u5ea6\n   \ttext(\"cardinality(filter(categories, x -> x IN ('car', 'van'))) carvan_cnt\"), # \u5b9a\u4e49\u51fd\u6570\u53d8\u6362\u6307\u6807\n           # ... goon\n           )\n           .where(and_(\n               mytable.c.delivery_date == \"20230310\",\n               text(\"any_match(road_condition, x -> x = 'city_road')\") # \u8fc7\u6ee4\u57ce\u533a\u573a\u666f\n   \t))\n\n   # \u6307\u6807cte \u8868\n   cte = qc.with_cte(stmt)\n\n   # \u7ee7\u7eed\u805a\u5408\n   stmt2 = select(\n       cte.c.dataset, \n       cte.c.batch_path,\n       text(\"SUM(carvan_cnt) carvan_cnt\")\n       ).group_by(cte.c.dataset, cte.c.batch_path)\n\n   # \u67e5\u8be2\u7ed3\u679c\n   r = qc.fetch_by_stmt(stmt2)\n   df = pd.DataFrame(r)\n\n   ```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "http://mirrors.sxc.sh/pypi/simple/query_client",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "query-client",
+            "package_url": "https://pypi.org/project/query-client/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/query-client/",
+            "project_urls": {
+                "Homepage": "http://mirrors.sxc.sh/pypi/simple/query_client"
+            },
+            "release_url": "https://pypi.org/project/query-client/0.0.1/",
+            "requires_dist": [
+                "sql-metadata",
+                "trino[sqlalchemy]"
+            ],
+            "requires_python": "",
+            "summary": "A simple query client for pcd label dataset",
+            "version": "0.0.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17373072,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "b95c96233baf16fb013d409525c9f2a422d283dc80f614f5bac17a667226e3d3",
+                    "md5": "513895aa32d601ca6a0045513375d61f",
+                    "sha256": "40fba790a25f607f771e106b4cd8217514bc5b437c1335d2ad454c35cef04598"
+                },
+                "downloads": -1,
+                "filename": "query_client-0.0.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "513895aa32d601ca6a0045513375d61f",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 4412,
+                "upload_time": "2023-03-21T01:47:33",
+                "upload_time_iso_8601": "2023-03-21T01:47:33.285481Z",
+                "url": "https://files.pythonhosted.org/packages/b9/5c/96233baf16fb013d409525c9f2a422d283dc80f614f5bac17a667226e3d3/query_client-0.0.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "649a67799e79775e66eae44842696ca8c76e79004df258938ed36e47df7203b3",
+                    "md5": "919b5b5961ed34a1e4cb4dc33e2662a3",
+                    "sha256": "6ce95267438135c0b9beb432d6edf9048cd438bfc7fc43593a4e5101f8e1976e"
+                },
+                "downloads": -1,
+                "filename": "query_client-0.0.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "919b5b5961ed34a1e4cb4dc33e2662a3",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 4148,
+                "upload_time": "2023-03-21T01:47:35",
+                "upload_time_iso_8601": "2023-03-21T01:47:35.152585Z",
+                "url": "https://files.pythonhosted.org/packages/64/9a/67799e79775e66eae44842696ca8c76e79004df258938ed36e47df7203b3/query_client-0.0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

@@ -40,7 +40,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16968890,
+        "last_serial": 17373658,
         "urls": [
             {
                 "comment_text": "",
@@ -128,7 +128,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16968890,
+        "last_serial": 17373658,
         "urls": [
             {
                 "comment_text": "",
@@ -216,7 +216,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16968890,
+        "last_serial": 17373658,
         "urls": [
             {
                 "comment_text": "",
@@ -304,7 +304,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16968890,
+        "last_serial": 17373658,
         "urls": [
             {
                 "comment_text": "",
@@ -392,7 +392,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16968890,
+        "last_serial": 17373658,
         "urls": [
             {
                 "comment_text": "",
@@ -480,7 +480,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16968890,
+        "last_serial": 17373658,
         "urls": [
             {
                 "comment_text": "",
@@ -535,7 +535,6 @@
             "classifiers": [
                 "License :: OSI Approved :: Apache Software License"
             ],
-            "description": "# CLP Logging\nThis is a Python `logging` library meant to supplement CLP. To learn more about\nCLP check out the [repository][0] and [Uber's blog][1].\n\nTo achieve the best compression ratio, CLP should be used to compress large\nbatches of related log events, one batch at a time. However, individual log\nfiles are generally small and are generated across a long period of time.\n\nThis logging library helps solve this problem by logging directly in CLP's\ninternal representation (IR). A log created with a CLP logging handler is first\nparsed and then appended to a compressed output stream in IR form.\nSee [README-protocol.md](README-protocol.md) for more details on the format of\nCLP IR.\n\nThese log files containing the compressed CLP IR streams can then all be\ningested into CLP together at a later time.\n\n[0]: https://github.com/y-scope/clp\n[1]: https://www.uber.com/blog/reducing-logging-cost-by-two-orders-of-magnitude-using-clp/\n\n## Quick Start\nThe package is hosted with pypi (https://pypi.org/project/clp-logging/), so it\ncan be installed with `pip`:\n\n`python3 -m pip install --upgrade clp-logging`\n\n## Logger handlers\n### CLPStreamHandler\n- Writes encoded logs directly to a stream\n### CLPFileHandler\n- Simple wrapper around CLPStreamHandler that calls open\n#### Example: CLPFileHandler\n```python\nimport logging\nfrom pathlib import Path\nfrom clp_logging.handlers import CLPFileHandler\n\nclp_handler = CLPFileHandler(Path(\"example.clp.zst\"))\nlogger = logging.getLogger(__name__)\nlogger.addHandler(clp_handler)\nlogger.warn(\"example warning\")\n```\n\n### CLPSockHandler + CLPSockListener\n- A Unix domain socket logging handler and listener server to enable multiple\n  concurrent handlers across multiple processes to log to the same log file.\n- The handler writes encoded logs and sends them over the socket to the\n  separate listener process\n    - Socket name is the log file path passed to CLPSockHandler with a \".sock\"\n      suffix\n- On creation a CLPSockHandler will try to connect to the listener associated\n  with its socket name\n- CLPSockListener is essentially a namespace as it is a class, but only\n  contains static methods and data\n- A CLPSockListener can be explicitly created (and will run as a daemon) by\n  calling:\n    - `CLPSockListener.fork(log_path, sock_path, timezone, timestamp_format)`\n- Alternatively CLPSockHandlers can transparently start an associated\n  CLPSockListener\n    - Call `CLPSockHandler` with `create_listener=True`\n- Multiple CLPSockHandlers logging to the same file will use the same socket\n  and therefore the same listener\n    - It is safe for these handlers to all use `create_listener=True`\n        - They will race to create a listener with only one successfully\n          binding the socket and living on\n        - All the handlers will then connect to the one successful listener\n- CLPSockListener must be explicitly stopped once logging is completed\n    - Send CLPSockListener process SIGTERM\n    - Use an existing handler or create a new handler with the same log path\n      and call `stop_listener`\n        - `clp_sock_handler.stop_listener()` or\n          `CLPSockHandler(Path(\"example.clp.zst\")).stop_listener()`\n\n#### Example: CLPSockHandler + CLPSockListener\nIn the handler processes or threads:\n```python\nimport logging\nfrom pathlib import Path\nfrom clp_logging.handlers import CLPSockHandler\n\nclp_handler = CLPSockHandler(Path(\"example.clp.zst\"), create_listener=True)\nlogger = logging.getLogger(__name__)\nlogger.addHandler(clp_handler)\nlogger.warn(\"example warning\")\n```\nIn a single process or thread once logging is completed:\n```python\nfrom pathlib import Path\nfrom clp_logging.handlers import CLPSockHandler\n\nCLPSockHandler(Path(\"example.clp.zst\")).stop_listener()\n```\n\n## CLP readers (decoders)\n### CLPStreamReader\n- Read/decode any arbitrary stream\n- Can be used as an iterator that returns each log message as an object\n- Can skip n logs: `clp_reader.skip_nlogs(N)`\n- Can skip to first log after given time (since unix epoch):\n    - `clp_reader.skip_to_time(TIME)`\n\n### CLPFileReader\n- Simple wrapper around CLPStreamHandler that calls open\n\n#### Example code: CLPFileReader\n```python\nfrom pathlib import Path\nfrom typing import List\n\nfrom clp_logging.readers import CLPFileReader, Log\n\n# create a list of all Log objects\nlog_objects: List[Log] = []\nwith CLPFileReader(Path(\"example.clp.zst\")) as clp_reader:\n    for log in clp_reader:\n        log_objects.append(log)\n```\n\n## Compatibility\nTested on Python 3.6 and 3.8 and should work on any newer version.\nBuilt/packaged on Python 3.8 for convenience regarding type annotation.\n\n## Building/Packaging\n1. Create and enter a virtual environment:\n    `python3.8 -m venv venv; . ./venv/bin/activate`\n2. Install development dependencies:\n    `pip install -r requirements-dev.txt`\n3. Build:\n    `python -m build`\n\n## Testing\nNote the baseline comparison logging handler and the CLP handler both get\nunique timestamps. It is possible for these timestamps to differ, which will\nresult in a test reporting a false positive error.\n1. Create and enter a virtual environment:\n    `python -m venv venv; .  ./venv/bin/activate`\n2. Install:\n    `pip install dist/clp_logging-*-py3-none-any.whl` or `pip install -e .`\n3. Run unittest:\n    `python -m unittest -bv`\n\n## Contributing\nEnsure to run `mypy` and `black` (found in\n[requirements-dev.txt](requirements-dev.txt)) during development to ensure\nsmooth pull requests.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -569,7 +568,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16968890,
+        "last_serial": 17373658,
         "urls": [
             {
                 "comment_text": "",
@@ -610,6 +609,95 @@
                 "upload_time": "2023-02-22T01:11:48",
                 "upload_time_iso_8601": "2023-02-22T01:11:48.388653Z",
                 "url": "https://files.pythonhosted.org/packages/97/31/935c3a52af1b9336c1a72f5bb90f3efa254f9320252318bc897197ff340e/clp_logging-0.0.7.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.8": {
+        "info": {
+            "author": "",
+            "author_email": "david lion <david.lion@yscope.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: Apache Software License"
+            ],
+            "description": "# CLP Python Logging Library\nThis is a Python `logging` library meant to supplement [CLP (Compressed Log Processor)][0].\nLogs are compressed in a streaming fashion into CLP's Internal Representation (IR) format before written to disk.\nMore details are described in this [Uber's blog][1].  \n\nLogs compressed in IR format can be viewed in a [log viewer][2] or programmatically analyzed using \nAPIs provided here. They can also be decompressed back into plain-text log files using [CLP][0] (in a future release).    \n\nTo achieve the best compression ratio, CLP should be used to compress large\nbatches of logs, one batch at a time. However, individual log\nfiles are generally small and are generated across a long period of time.\n\nThis logging library helps solve this problem by logging directly in CLP's\nInternal Representation (IR). A log created with a CLP logging handler is first\nparsed and then appended to a compressed output stream in IR form.\nSee [README-protocol.md](README-protocol.md) for more details on the format of\nCLP IR.\n\nThese log files containing the compressed CLP IR streams can then all be\ningested into CLP together at a later time.\n\n[0]: https://github.com/y-scope/clp\n[1]: https://www.uber.com/blog/reducing-logging-cost-by-two-orders-of-magnitude-using-clp/\n[2]: https://github.com/y-scope/yscope-log-viewer\n\n## Quick Start\nThe package is hosted with pypi (https://pypi.org/project/clp-logging/), so it\ncan be installed with `pip`:\n\n`python3 -m pip install --upgrade clp-logging`\n\n## Logger handlers\n### CLPStreamHandler\n- Writes encoded logs directly to a stream\n### CLPFileHandler\n- Simple wrapper around CLPStreamHandler that calls open\n#### Example: CLPFileHandler\n```python\nimport logging\nfrom pathlib import Path\nfrom clp_logging.handlers import CLPFileHandler\n\nclp_handler = CLPFileHandler(Path(\"example.clp.zst\"))\nlogger = logging.getLogger(__name__)\nlogger.addHandler(clp_handler)\nlogger.warn(\"example warning\")\n```\n\n### CLPSockHandler + CLPSockListener\n\nThis library also supports multiple processes writing to the same log file.\nIn this case, all logging processes write to a listener server process through a TCP socket.  \nThe socket name is the log file path passed to CLPSockHandler with a \".sock\" suffix.\n\nA CLPSockListener can be explicitly created (and will run as a daemon) by calling:\n `CLPSockListener.fork(log_path, sock_path, timezone, timestamp_format)`.\nAlternatively CLPSockHandlers can transparently start an associated CLPSockListener\nby calling `CLPSockHandler` with `create_listener=True`.\n\nCLPSockListener must be explicitly stopped once logging is completed. \nThere are two ways to stop the listener process:\n - Calling `stop_listener()` from an existing handler, e.g., `clp_handler.stop_listener()`, or from a new handler with the same log path, e.g., `CLPSockHandler(Path(\"example.clp.zst\")).stop_listener()`\n - Kill the CLPSockListener process with SIGTERM\n\n#### Example: CLPSockHandler + CLPSockListener\nIn the handler processes or threads:\n```python\nimport logging\nfrom pathlib import Path\nfrom clp_logging.handlers import CLPSockHandler\n\nclp_handler = CLPSockHandler(Path(\"example.clp.zst\"), create_listener=True)\nlogger = logging.getLogger(__name__)\nlogger.addHandler(clp_handler)\nlogger.warn(\"example warning\")\n```\nIn a single process or thread once logging is completed:\n```python\nfrom pathlib import Path\nfrom clp_logging.handlers import CLPSockHandler\n\nCLPSockHandler(Path(\"example.clp.zst\")).stop_listener()\n```\n\n## CLP readers (decoders)\n### CLPStreamReader\n- Read/decode any arbitrary stream\n- Can be used as an iterator that returns each log message as an object\n- Can skip n logs: `clp_reader.skip_nlogs(N)`\n- Can skip to first log after given time (since unix epoch):\n    - `clp_reader.skip_to_time(TIME)`\n\n### CLPFileReader\n- Simple wrapper around CLPStreamHandler that calls open\n\n#### Example code: CLPFileReader\n```python\nfrom pathlib import Path\nfrom typing import List\n\nfrom clp_logging.readers import CLPFileReader, Log\n\n# create a list of all Log objects\nlog_objects: List[Log] = []\nwith CLPFileReader(Path(\"example.clp.zst\")) as clp_reader:\n    for log in clp_reader:\n        log_objects.append(log)\n```\n\n## Log level timeout feature: CLPLogLevelTimeout\n\nAll log handlers support a configurable timeout feature. A (user configurable)\ntimeout will be scheduled based on logs' logging level (verbosity) that will\nflush the zstandard frame and allow users to run arbitrary code.\nThis feature allows users to automatically perform log related tasks, such as\nperiodically uploading their logs for storage. By setting the timeout in\nresponse to the logs' logging level the responsiveness of a task can be\nadjusted based on the severity of logging level seen.\nAn additional timeout is always triggered on closing the logging handler.\n\nSee the class documentation for specific details.\n\n#### Example code: CLPLogLevelTimeout\n```python\nimport logging\nfrom pathlib import Path\nfrom clp_logging.handlers import CLPLogLevelTimeout, CLPSockHandler\n\nclass LogTimeoutUploader:\n    # Store relevent information/objects to carry out the timeout task\n    def __init__(self, log_path: Path) -> None:\n        self.log_path: Path = log_path\n        return\n\n    # Create any methods necessary to carry out the timeout task\n    def upload_log(self) -> None:\n        # upload the logs to the cloud\n        return\n\n    def timeout(self) -> None:\n        self.upload_log()\n\nlog_path: Path = Path(\"example.clp.zst\")\nuploader = LogTimeoutUploader(log_path)\nloglevel_timeout = CLPLogLevelTimeout(uploader.timeout)\nclp_handler = CLPSockHandler(log_path, create_listener=True, loglevel_timeout=loglevel_timeout)\nlogging.getLogger(__name__).addHandler(clp_handler)\n```\n\n## Compatibility\nTested on Python 3.6 and 3.8 and should work on any newer version.\nBuilt/packaged on Python 3.8 for convenience regarding type annotation.\n\n## Building/Packaging\n1. Create and enter a virtual environment:\n    `python3.8 -m venv venv; . ./venv/bin/activate`\n2. Install development dependencies:\n    `pip install -r requirements-dev.txt`\n3. Build:\n    `python -m build`\n\n## Testing\nNote the baseline comparison logging handler and the CLP handler both get\nunique timestamps. It is possible for these timestamps to differ, which will\nresult in a test reporting a false positive error.\n1. Create and enter a virtual environment:\n    `python -m venv venv; .  ./venv/bin/activate`\n2. Install:\n    `pip install dist/clp_logging-*-py3-none-any.whl` or `pip install -e .`\n3. Run unittest:\n    `python -m unittest -bv`\n\n## Contributing\nEnsure to run `mypy` and `black` (found in\n[requirements-dev.txt](requirements-dev.txt)) during development to ensure\nsmooth pull requests.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "Apache License 2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "clp-logging",
+            "package_url": "https://pypi.org/project/clp-logging/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/clp-logging/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/y-scope/clp-loglib-py/issues",
+                "Homepage": "https://github.com/y-scope/clp-loglib-py"
+            },
+            "release_url": "https://pypi.org/project/clp-logging/0.0.8/",
+            "requires_dist": [
+                "python-dateutil (>=2.7.0)",
+                "typing-extensions (>=4.1.1)",
+                "zstandard (>=0.18.0)"
+            ],
+            "requires_python": ">=3.6",
+            "summary": "Logging/encoding/decoding using CLP's IR stream format",
+            "version": "0.0.8",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17373658,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d9a2ea200adaebfc71fbcec67f62efea1d95a1954600cbb4ba94bdf95ce56aa8",
+                    "md5": "b6bae06a93c8c664c2e711b1fd7b081d",
+                    "sha256": "56c9995fc54188fb100c406887cfc10380aaaa919e05cf1ccb9a3c1d21fd836b"
+                },
+                "downloads": -1,
+                "filename": "clp_logging-0.0.8-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "b6bae06a93c8c664c2e711b1fd7b081d",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.6",
+                "size": 26592,
+                "upload_time": "2023-03-21T03:48:28",
+                "upload_time_iso_8601": "2023-03-21T03:48:28.290870Z",
+                "url": "https://files.pythonhosted.org/packages/d9/a2/ea200adaebfc71fbcec67f62efea1d95a1954600cbb4ba94bdf95ce56aa8/clp_logging-0.0.8-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ddbdaf5a50f7c0a9e41425b939c8bf1da40f71a32554e65990e6ce483453109e",
+                    "md5": "615620a40d17a88fd02f038de1782542",
+                    "sha256": "8dc4819404fb8f7c13f7c27570e3a6d20db6c7db6a23a822830f830864c66f07"
+                },
+                "downloads": -1,
+                "filename": "clp_logging-0.0.8.tar.gz",
+                "has_sig": false,
+                "md5_digest": "615620a40d17a88fd02f038de1782542",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.6",
+                "size": 32944,
+                "upload_time": "2023-03-21T03:48:30",
+                "upload_time_iso_8601": "2023-03-21T03:48:30.205856Z",
+                "url": "https://files.pythonhosted.org/packages/dd/bd/af5a50f7c0a9e41425b939c8bf1da40f71a32554e65990e6ce483453109e/clp_logging-0.0.8.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
