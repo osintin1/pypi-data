@@ -5,7 +5,6 @@
             "author_email": "oneil@saxonica.com",
             "bugtrack_url": null,
             "classifiers": [],
-            "description": "# Welcome to SaxonC HE!\n\nThis is the official Saxonica Python wheel package for\n[Saxon](https://www.saxonica.com/saxon-c/documentation/index.html), an\nXML document processor. SaxonC includes a range of tools for XML\ntransformations, XML queries, and schema validations.\n\nThe SaxonC release comes in separate wheels for the three product\neditions, namely: saxonche (HE: open-source), saxoncpe (PE:\nprofessional edition) and saxoncee (EE: enterprise edition). SaxonC-PE\nand SaxonC-EE are commercial products that require an activation\nlicense.\n\n## When to choose SaxonC\n\nThe main reason for using SaxonC in preference to other XML\ntools available for Python is that it supports all the latest W3C\nstandards: XSLT 3.0, XPath 3.1, XQuery 3.1, and XSD 1.1. It even\nincludes experimental support for the draft 4.0 specifications\ncurrently under development.\n\n## Installation\n\n```bash\npip install saxonche\n```\n\n## Usage\n\n```python \nfrom saxonche import *\n```\n\nImport specific modules\n```python \nfrom saxonche import PySaxonProcessor\n```\n\nNow, let's check what processors are available see our docuemntation: [Saxonica's site](https://www.saxonica.com/saxon-c/documentation/index.html#!api/saxon_c_python_api). In the API section, you will find more information about what each processor does.\n\nNext, we will use `PySaxonProcessor` to check the Saxon version.\n```python\nfrom saxonche import PySaxonProcessor\n\nwith PySaxonProcessor(license=False) as proc:\n\tprint(proc.version)\n```\nIt will print the version like below if your installation is successful.\n\n```bash\nSaxonC-he 12.0 from Saxonica\n```\nPlease **note** that `license=False` requests the open-source version of Saxon, whereas  `license=True` requests the commercial product. A license file is required for this to work. You can use the SAXONC_HOME environment variable to locate the license file or install the file next to the SaxonC library. \n\n### Example #1\nLet's parse a toy XML.\n```python\nfrom saxonche import PySaxonProcessor\n\nwith PySaxonProcessor(license=False) as proc:\n\txml = \"\"\"\\\n\t\t<out>\n\t\t\t<person att1='value1' att2='value2'>text1</person>\n\t\t\t<person>text2</person>\n\t\t\t<person>text3</person>\n\t\t</out>\n\t\t\"\"\"\n\tnode = proc.parse_xml(xml_text=xml)\n\tprint(\"node.node_kind=\"+ node.node_kind_str)\n\tprint(\"node.size=\"+ str(node.size))\n\toutNode = node.children\n\tprint(\"len of children=\"+str(len(node.children)))\n\tprint('element name='+outNode[0].name)\n\tchildren = outNode[0].children\n\tprint(*children, sep= ', ')\n\tattrs = children[1].attributes\n\tif  len(attrs) == 2:\n\t\tprint(attrs[1].string_value)\n```\nIn the output, we will get this.\n```bash\nnode.node_kind=document\nnode.size=1\nlen of children=1\nelement name=out\n        , <person att1=\"value1\" att2=\"value2\">text1</person>, \n        , <person>text2</person>, \n        , <person>text3</person>, \nvalue2\n```\nAs we can see, we can explore the XML node structure, attributes, and many other things if you check more on the [APIs](https://www.saxonica.com/saxon-c/documentation/index.html#!api/saxon_c_python_api).\n\n### Example #2\nLet's use the XML path processor. \n```python\nfrom saxonche import PySaxonProcessor\n\nwith PySaxonProcessor(license=False) as proc:\n\txml = \"\"\"\\\n\t\t<out>\n\t\t\t<person>text1</person>\n\t\t\t<person>text2</person>\n\t\t\t<person>text3</person>\n\t\t</out>\"\"\"\n\n\txp = proc.new_xpath_processor()\n\tnode = proc.parse_xml(xml_text=xml)\n\txp.set_context(xdm_item=node)\n\t\n\titem = xp.evaluate_single('//person[1]')\n\tif  isinstance(item,PyXdmNode):\n\t\tprint(item.string_value)\n\t# pay attention, Saxon's xdm data type\n\tvalue = proc.make_double_value(3.5)\n\tprint(value.primitive_type_name)\n```\nThe output shows here.\n```bash\ntext1\nQ{http://www.w3.org/2001/XMLSchema}double\n```\nSaxon shows the result given the path. \n\n### Example #3\nThe XSLT processor, #1\n```python\nfrom saxonche import PySaxonProcessor\n\nwith PySaxonProcessor(license=False) as proc:\n\txsltproc = proc.new_xslt30_processor()\n\t\n\tdocument = proc.parse_xml(xml_text=\"<out><person>text1</person><person>text2</person><person>text3</person></out>\")\n\n\txsltproc.set_source(xdm_node=document)\n\texeuctable = xsltproc.compile_stylesheet(stylesheet_text=\"<xsl:stylesheet xmlns:xsl='http://www.w3.org/1999/XSL/Transform' version='2.0'> <xsl:param name='values' select='(2,3,4)' /><xsl:output method='xml' indent='yes' /><xsl:template match='*'><output><xsl:value-of select='//person[1]'/><xsl:for-each select='$values' ><out><xsl:value-of select='. * 3'/></out></xsl:for-each></output></xsl:template></xsl:stylesheet>\")\n\n\toutput2 = exeuctable.transform_to_string()\n\tprint(output2)\n```\nHere is the output that shows the result of transformation.\n```xml\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<output>text1<out>6</out>\n   <out>9</out>\n   <out>12</out>\n</output>\n```\n### Example #4\nWatch out for the not-pythonic way!\n```python\nfrom saxonche import PySaxonProcessor\n\nwith PySaxonProcessor(license=False) as proc:\n\txsltproc = proc.new_xslt30_processor()\n\n\txml = '<a><b>Text</b></a>'\n\txslt = '''\\\n\t\t<xsl:stylesheet version=\"1.0\"\n\t\txmlns:xsl=\"http://www.w3.org/1999/XSL/Transform\">\n\t\t<xsl:param name=\"a\" />\n\t\t<xsl:output method='xml' indent='yes' />\n\t\t<xsl:template match=\"/\">\n\t\t<foo><xsl:value-of select=\"$a\" /></foo>\n\t\t</xsl:template>\n\t\t</xsl:stylesheet>'''\n\n\tdocument = proc.parse_xml(xml_text=xml)\n\n\t#please note the not Python way in the next two lines.\n\txdm_a = proc.make_string_value('a was given in the parameter')\n\txsltproc.set_parameter('a', xdm_a)\n\n\txsltproc.set_source(xdm_node=document)\n\texecutable = xsltproc.compile_stylesheet(stylesheet_text=xslt)\n\toutput2 = xsltproc.transform_to_string()\n\tprint(output2)\n```\nHere we use an XSLT/stylesheet parameter. Note that the Python string is not the same string that Saxon uses, and the same goes for other types. We need to convert it by calling `make_string_value`. This is because there isn't an exact match between the type system used by XSLT (called XDM) and Python's data types: for some types like strings and booleans there is a very close correspondence, but for numbers, dates, URIs etc it's less exact.\n\nPlease check out [Saxonica's documentation](https://www.saxonica.com/saxon-c/documentation/index.html) for `xquery`, schema validation, and others.\n\n## Why the `with` keyword?\nUsing `with` assures that the underlying processes are cleared out when\nthe block finishes.\n\n## Source code & Development\n- Source code is available here: [Saxonica's site](https://www.saxonica.com/download/c.xml) \n\n## Acknowledgement\nTo create this wheel project we had help from the Saxonpy wheel\npackage, which is a third-party project created by [github\nrepo](https://github.com/tennom/saxonpy).\n\n\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -34,7 +33,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16420001,
+        "last_serial": 17381259,
         "urls": [
             {
                 "comment_text": "",
@@ -495,6 +494,508 @@
                 "upload_time": "2023-01-13T17:18:08",
                 "upload_time_iso_8601": "2023-01-13T17:18:08.108858Z",
                 "url": "https://files.pythonhosted.org/packages/8d/7e/4bcbabfd5d7d545682f62307c942a4440dd713bc693d55f2e5c18c9fc474/saxonche-12.0.0-pp39-pypy39_pp73-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "12.1.0": {
+        "info": {
+            "author": "ONeil Delpratt",
+            "author_email": "oneil@saxonica.com",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "# Welcome to SaxonC-HE\n\nThis is the official [Saxonica](https://www.saxonica.com/) Python wheel package for\nSaxon, an XML document processor. [SaxonC](https://www.saxonica.com/saxon-c/index.xml) \nprovides APIs to run XSLT 3.0 transformations, XQuery 3.1 queries, XPath 3.1, and \nXML Schema validation.\n\nThe SaxonC release comes in separate wheels for the three product editions:\n* **saxonche** (SaxonC-HE: open-source Home Edition)\n* **saxoncpe** (SaxonC-PE: Professional Edition) \n* **saxoncee** (SaxonC-EE: Enterprise Edition)\n\nSaxonC-PE and SaxonC-EE are commercial products that require a valid\nlicense key. Licenses can be purchased from the \n[Saxonica online store](https://www.saxonica.com/shop/shop.xml). \nAlternatively a 30-day [evaluation license](https://www.saxonica.com/download/download.xml) \nis available free of charge. By downloading the software, you are agreeing to our \n[terms and conditions](https://www.saxonica.com/license/terms.xml).\n\nFor full documentation for the latest SaxonC release, see the\n[SaxonC 12 documentation](https://www.saxonica.com/saxon-c/documentation12/index.html).\n\n## Why choose SaxonC?\n\nThe main reason for using SaxonC in preference to other XML\ntools available for Python is that it supports all the latest W3C\nstandards: XSLT 3.0, XPath 3.1, XQuery 3.1, and XSD 1.1. It even\nincludes experimental support for the draft 4.0 specifications\ncurrently under development.\n\n## About SaxonC\n\nSaxonC is a version of Saxon developed by compiling the Java source code to native \nexecutables that run on the C/C++ platform, with extensions for PHP and Python. All \nfeatures of Saxon have been ported, other than those (such as collations) that are \nnecessarily platform dependent. In particular, SaxonC provides processing in XSLT, \nXQuery and XPath, and Schema validation. It therefore makes these processing capabilities \navailable to a plethora of other languages that are strongly coupled to C/C++ such as PHP, \nPerl, Python, and Ruby.\n\n\n## About Saxonica\n\nSaxon is developed by Saxonica, a company created in 2004 by Michael Kay, who was \nthe editor of the XSLT 2.0 and 3.0 specifications in W3C. The original Saxon product \non the Java platform has been continually developed for over 20 years, and has \nacquired a reputation for standards conformance, performance, and reliability.\n\n\n## Installation\n\n```bash\npip install saxonche\n```\n\n## Getting started\n\nEither import the whole API:\n\n```python \nfrom saxonche import *\n```\n\nOr specific modules:\n\n```python \nfrom saxonche import PySaxonProcessor\n```\n\nThe SaxonC API includes classes for constructing XDM data models\nand for a variety of processors. For full details see the [SaxonC Python API \ndocumentation](https://www.saxonica.com/saxon-c/documentation/index.html#!api/saxon_c_python_api).\n\nThe following short example shows how to get the Saxon version from\nthe `PySaxonProcessor`:\n\n```python\nfrom saxonche import PySaxonProcessor\n\nwith PySaxonProcessor(license=False) as proc:\n\tprint(proc.version)\n```\n\nIt will print something like this:\n\n```bash\nSaxonC-HE 12.1 from Saxonica\n```\n\n**Note**: `license=False` requests the open-source version of Saxon, whereas \n`license=True` requests the commercial product - which requires a license file.\nSaxonC looks for the license key in the directory where the main SaxonC library has been \ninstalled, and the directory identified by the environment variable `SAXONC_HOME`.\n\n### Example: Running a transformation\n\nThe following basic example shows how an XSLT stylesheet can be run against a source \nXML document in Python using SaxonC:\n\n```python \nfrom saxonche import *\n\nwith PySaxonProcessor(license=False) as proc:\n \nxsltproc = proc.new_xslt30_processor()\ndocument = proc.parse_xml(xml_text=\"<doc><item>text1</item><item>text2</item><item>text3</item></doc>\")\nexecutable = xsltproc.compile_stylesheet(stylesheet_file=\"test.xsl\")\noutput = executable.transform_to_string(xdm_node=document)\nprint(output)\n```\n\nFor more Python examples, and further details about installing and configuring the product, \nsee the [SaxonC 12 documentation](https://www.saxonica.com/saxon-c/documentation12/index.html).\n\n\n\n## Support\n\nAll users are welcome to use the public [support site](http://saxonica.plan.io) for \nreporting issues and seeking help (registration required). In addition, many \nquestions are asked and answered on [StackOverflow](https://stackoverflow.com): \nplease use the **saxon** tag.\n\n## Acknowledgement\n\nWe learned a lot about how to create Python wheels for Saxon from the\nSaxonpy wheel package, which is a third-party project\n[on github](https://github.com/tennom/saxonpy).\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://www.saxonica.com/saxon-c/index.xml",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "saxonche",
+            "package_url": "https://pypi.org/project/saxonche/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/saxonche/",
+            "project_urls": {
+                "Homepage": "https://www.saxonica.com/saxon-c/index.xml"
+            },
+            "release_url": "https://pypi.org/project/saxonche/12.1.0/",
+            "requires_dist": null,
+            "requires_python": ">=3.8",
+            "summary": "Official Saxonica python package for the SaxonC-HE 12.1 processor: for XSLT 3.0, XQuery 3.1, XPath 3.1 and XML Schema processing.",
+            "version": "12.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17381259,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "0a9bd2e0b87184528cfb6775f27ac3699173a1de0f3ebda13a13f9ebd18d2af5",
+                    "md5": "d1b25b1cccf682b6da508c67b195c399",
+                    "sha256": "9d6ed39200941d33689bfc8e4b139ee1d77a73949924d80c9f3532967be04be5"
+                },
+                "downloads": -1,
+                "filename": "saxonche-12.1.0-cp310-cp310-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "d1b25b1cccf682b6da508c67b195c399",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.8",
+                "size": 16867140,
+                "upload_time": "2023-03-21T15:04:19",
+                "upload_time_iso_8601": "2023-03-21T15:04:19.830736Z",
+                "url": "https://files.pythonhosted.org/packages/0a/9b/d2e0b87184528cfb6775f27ac3699173a1de0f3ebda13a13f9ebd18d2af5/saxonche-12.1.0-cp310-cp310-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "62def170f9544c36501a7214de7d0857c15c814baf04b2f30f6fcfff536fb88e",
+                    "md5": "6aad349c9521e2105e75f2148cc98c08",
+                    "sha256": "d9d4ce2124e3105d422cddcf702aeac47841e211f2c9c90920b31bdd09c2e1b0"
+                },
+                "downloads": -1,
+                "filename": "saxonche-12.1.0-cp310-cp310-macosx_11_0_arm64.whl",
+                "has_sig": false,
+                "md5_digest": "6aad349c9521e2105e75f2148cc98c08",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.8",
+                "size": 16929433,
+                "upload_time": "2023-03-21T15:04:24",
+                "upload_time_iso_8601": "2023-03-21T15:04:24.754562Z",
+                "url": "https://files.pythonhosted.org/packages/62/de/f170f9544c36501a7214de7d0857c15c814baf04b2f30f6fcfff536fb88e/saxonche-12.1.0-cp310-cp310-macosx_11_0_arm64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d237bf5618b401b6e65642763ef8d3dc3f94a7c94e0860fc28fd537307810852",
+                    "md5": "8c2913ad9b29a352c20eaf6851a667a1",
+                    "sha256": "40872434673d18e48e33175524a32faa6d7d18e4a253698fdea905a70038d35f"
+                },
+                "downloads": -1,
+                "filename": "saxonche-12.1.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "8c2913ad9b29a352c20eaf6851a667a1",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.8",
+                "size": 19152363,
+                "upload_time": "2023-03-21T15:04:32",
+                "upload_time_iso_8601": "2023-03-21T15:04:32.383502Z",
+                "url": "https://files.pythonhosted.org/packages/d2/37/bf5618b401b6e65642763ef8d3dc3f94a7c94e0860fc28fd537307810852/saxonche-12.1.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "135d68ae2235efd95355866831e48d566c76b1993a73ef4027a44de490479004",
+                    "md5": "05d895ee94d7fbb4a0bb654f2e47c1ad",
+                    "sha256": "f833f59fc7dddaa8751d8fad0ec8c3bb9a517bc65d9f24c7e64b18777a438b95"
+                },
+                "downloads": -1,
+                "filename": "saxonche-12.1.0-cp310-cp310-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "05d895ee94d7fbb4a0bb654f2e47c1ad",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.8",
+                "size": 16870526,
+                "upload_time": "2023-03-21T15:04:38",
+                "upload_time_iso_8601": "2023-03-21T15:04:38.756852Z",
+                "url": "https://files.pythonhosted.org/packages/13/5d/68ae2235efd95355866831e48d566c76b1993a73ef4027a44de490479004/saxonche-12.1.0-cp310-cp310-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "4fefe36c5a6691afbbcf7513c9d99dd21d54a1f931fc96702965a37e978d12d3",
+                    "md5": "5240ffd9a8129de709a9404b27ba596f",
+                    "sha256": "4c64e6fd87f74cff8eae3e445bc6ebcd66d244cd43b9d965885a56b677027928"
+                },
+                "downloads": -1,
+                "filename": "saxonche-12.1.0-cp311-cp311-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "5240ffd9a8129de709a9404b27ba596f",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.8",
+                "size": 16866660,
+                "upload_time": "2023-03-21T15:04:44",
+                "upload_time_iso_8601": "2023-03-21T15:04:44.247564Z",
+                "url": "https://files.pythonhosted.org/packages/4f/ef/e36c5a6691afbbcf7513c9d99dd21d54a1f931fc96702965a37e978d12d3/saxonche-12.1.0-cp311-cp311-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ac5a90f95be8a6b1cf5c27891f7b1f438e6e250d74cb97dc226cedf3adbe6090",
+                    "md5": "4560811789728736f8164aa86361b51b",
+                    "sha256": "96618ad97b1f9a6e4cbdc323fceea2093c7fd9962bc097f59aeed3875234840b"
+                },
+                "downloads": -1,
+                "filename": "saxonche-12.1.0-cp311-cp311-macosx_11_0_arm64.whl",
+                "has_sig": false,
+                "md5_digest": "4560811789728736f8164aa86361b51b",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.8",
+                "size": 16928806,
+                "upload_time": "2023-03-21T15:04:49",
+                "upload_time_iso_8601": "2023-03-21T15:04:49.318159Z",
+                "url": "https://files.pythonhosted.org/packages/ac/5a/90f95be8a6b1cf5c27891f7b1f438e6e250d74cb97dc226cedf3adbe6090/saxonche-12.1.0-cp311-cp311-macosx_11_0_arm64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6846c6ed42ed19e2295680b08d834798745cf2c2d453fbed2ccdd4de404c01e0",
+                    "md5": "694152e4803e82c74f057e00fec24068",
+                    "sha256": "9dc8783217a895e8eec8a6a8b00cfab5ea1cdf648d06339d6f217e30e0ebdb01"
+                },
+                "downloads": -1,
+                "filename": "saxonche-12.1.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "694152e4803e82c74f057e00fec24068",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.8",
+                "size": 19256240,
+                "upload_time": "2023-03-21T15:04:54",
+                "upload_time_iso_8601": "2023-03-21T15:04:54.268144Z",
+                "url": "https://files.pythonhosted.org/packages/68/46/c6ed42ed19e2295680b08d834798745cf2c2d453fbed2ccdd4de404c01e0/saxonche-12.1.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c633363c8cea1562ee6fb7fe51ec2a7dcb7bab27332606e5d7c8ef1042696597",
+                    "md5": "4af489d62c0d84374e767df196d17dcf",
+                    "sha256": "492d769d7772c2918734588f8c1848049dba211054734c7500c0c1e9351c0b0b"
+                },
+                "downloads": -1,
+                "filename": "saxonche-12.1.0-cp311-cp311-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "4af489d62c0d84374e767df196d17dcf",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.8",
+                "size": 16870538,
+                "upload_time": "2023-03-21T15:04:59",
+                "upload_time_iso_8601": "2023-03-21T15:04:59.481297Z",
+                "url": "https://files.pythonhosted.org/packages/c6/33/363c8cea1562ee6fb7fe51ec2a7dcb7bab27332606e5d7c8ef1042696597/saxonche-12.1.0-cp311-cp311-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c4ea31af01ea91d5a8fa9ec9b239540d050d1189de961c833e3df3c76f7f2a09",
+                    "md5": "7e852e0a598dcf84d405bd9a2209e592",
+                    "sha256": "99eb498abdc8914b615f065a8667d297c7f95b7f7756360d2bfd965a68e7d1a9"
+                },
+                "downloads": -1,
+                "filename": "saxonche-12.1.0-cp38-cp38-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "7e852e0a598dcf84d405bd9a2209e592",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.8",
+                "size": 16870083,
+                "upload_time": "2023-03-21T15:05:04",
+                "upload_time_iso_8601": "2023-03-21T15:05:04.064052Z",
+                "url": "https://files.pythonhosted.org/packages/c4/ea/31af01ea91d5a8fa9ec9b239540d050d1189de961c833e3df3c76f7f2a09/saxonche-12.1.0-cp38-cp38-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "74a2bc55d5270f4d6f2f729e16d526d2ba562b955ce8c6b0b57dd3875400cc37",
+                    "md5": "d3e57ce3ad2f7afa24aa6b9a8c0d0155",
+                    "sha256": "2896bd87d5f963cb59d13ff58b320bad1436179bf3515ed1346034407babc591"
+                },
+                "downloads": -1,
+                "filename": "saxonche-12.1.0-cp38-cp38-macosx_11_0_arm64.whl",
+                "has_sig": false,
+                "md5_digest": "d3e57ce3ad2f7afa24aa6b9a8c0d0155",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.8",
+                "size": 16932295,
+                "upload_time": "2023-03-21T15:05:08",
+                "upload_time_iso_8601": "2023-03-21T15:05:08.855408Z",
+                "url": "https://files.pythonhosted.org/packages/74/a2/bc55d5270f4d6f2f729e16d526d2ba562b955ce8c6b0b57dd3875400cc37/saxonche-12.1.0-cp38-cp38-macosx_11_0_arm64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5a2b69d14c16c301ac2203e6230af2b23d4d95999ec7ab85d762b966225e676e",
+                    "md5": "3d4327fc9887c70223147a7e95db19c2",
+                    "sha256": "2048460d7ece31062f9c3349b4206d4f321409066c0f33daaa13245c650acda6"
+                },
+                "downloads": -1,
+                "filename": "saxonche-12.1.0-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "3d4327fc9887c70223147a7e95db19c2",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.8",
+                "size": 19159057,
+                "upload_time": "2023-03-21T15:05:14",
+                "upload_time_iso_8601": "2023-03-21T15:05:14.559591Z",
+                "url": "https://files.pythonhosted.org/packages/5a/2b/69d14c16c301ac2203e6230af2b23d4d95999ec7ab85d762b966225e676e/saxonche-12.1.0-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c175c8f18568ef19910124fa2477f375cb20607bf2814a2322154abe46879afc",
+                    "md5": "bdb6fc11835f8e9467ce93b6e45d020e",
+                    "sha256": "9430c6b6ea466d789fbf082895932cd310b684d36a1ee8797ad6b4dee71d6beb"
+                },
+                "downloads": -1,
+                "filename": "saxonche-12.1.0-cp38-cp38-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "bdb6fc11835f8e9467ce93b6e45d020e",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.8",
+                "size": 16896360,
+                "upload_time": "2023-03-21T15:05:20",
+                "upload_time_iso_8601": "2023-03-21T15:05:20.075255Z",
+                "url": "https://files.pythonhosted.org/packages/c1/75/c8f18568ef19910124fa2477f375cb20607bf2814a2322154abe46879afc/saxonche-12.1.0-cp38-cp38-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "48b98a3ab556e07feefbfb7394e07867587d830a088517a00b0c15d40e4b9a24",
+                    "md5": "1f4f25223eae04f13f9e4c4527b4deac",
+                    "sha256": "aaa6f76ffa5ae7f67927eccb0336b7374e05e4ee40e4e7b8cfe551013ab602fd"
+                },
+                "downloads": -1,
+                "filename": "saxonche-12.1.0-cp39-cp39-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "1f4f25223eae04f13f9e4c4527b4deac",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.8",
+                "size": 16868308,
+                "upload_time": "2023-03-21T15:05:25",
+                "upload_time_iso_8601": "2023-03-21T15:05:25.872064Z",
+                "url": "https://files.pythonhosted.org/packages/48/b9/8a3ab556e07feefbfb7394e07867587d830a088517a00b0c15d40e4b9a24/saxonche-12.1.0-cp39-cp39-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "dd09fa28c3045daeb801c758f74eebca0a41e47c9692aeaf2563ae18b9f42daa",
+                    "md5": "9d3564699bead0d4e7cad0df978b416d",
+                    "sha256": "b241e30148c3b73bfbb10aa00689bc48ab46eb08fd168375f122249d5b7ebf76"
+                },
+                "downloads": -1,
+                "filename": "saxonche-12.1.0-cp39-cp39-macosx_11_0_arm64.whl",
+                "has_sig": false,
+                "md5_digest": "9d3564699bead0d4e7cad0df978b416d",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.8",
+                "size": 16930121,
+                "upload_time": "2023-03-21T15:05:30",
+                "upload_time_iso_8601": "2023-03-21T15:05:30.721088Z",
+                "url": "https://files.pythonhosted.org/packages/dd/09/fa28c3045daeb801c758f74eebca0a41e47c9692aeaf2563ae18b9f42daa/saxonche-12.1.0-cp39-cp39-macosx_11_0_arm64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "90a61a203b77a734ef2a9fa37597d8fe568657e4057cb892a63e2f56bc1030f1",
+                    "md5": "d2971e67ca9f94bb4d8ab77911016f89",
+                    "sha256": "a5886f507fa65eea5ed6899925e1497083325dbb41d014590dcdcd80a3a77e3e"
+                },
+                "downloads": -1,
+                "filename": "saxonche-12.1.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "d2971e67ca9f94bb4d8ab77911016f89",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.8",
+                "size": 19147064,
+                "upload_time": "2023-03-21T15:05:36",
+                "upload_time_iso_8601": "2023-03-21T15:05:36.047739Z",
+                "url": "https://files.pythonhosted.org/packages/90/a6/1a203b77a734ef2a9fa37597d8fe568657e4057cb892a63e2f56bc1030f1/saxonche-12.1.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "70fa6b1e02ce540a50c6617c417cfe44ada45184214fcbccafbd5cdecab8ca36",
+                    "md5": "248356dfefe4a7ede584f1ef51d4598d",
+                    "sha256": "3e2c2ca5b70a7d7af75cafe5ffc69b8310ea2db4bec877ed78d6452642090950"
+                },
+                "downloads": -1,
+                "filename": "saxonche-12.1.0-cp39-cp39-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "248356dfefe4a7ede584f1ef51d4598d",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.8",
+                "size": 16870518,
+                "upload_time": "2023-03-21T15:05:41",
+                "upload_time_iso_8601": "2023-03-21T15:05:41.951283Z",
+                "url": "https://files.pythonhosted.org/packages/70/fa/6b1e02ce540a50c6617c417cfe44ada45184214fcbccafbd5cdecab8ca36/saxonche-12.1.0-cp39-cp39-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "53d4b6fb0f14d3ec40b741531a67719d4f184635d734fddff7f7549d2753b6a8",
+                    "md5": "0e2bb50517d3f1fbd4a8ffe09ac08198",
+                    "sha256": "da7b1c4e881f04907fe5bc44585bb1ee4b617570ce1536faa04eb1dccd6ca15e"
+                },
+                "downloads": -1,
+                "filename": "saxonche-12.1.0-pp38-pypy38_pp73-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "0e2bb50517d3f1fbd4a8ffe09ac08198",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp38",
+                "requires_python": ">=3.8",
+                "size": 17099998,
+                "upload_time": "2023-03-21T15:05:47",
+                "upload_time_iso_8601": "2023-03-21T15:05:47.157061Z",
+                "url": "https://files.pythonhosted.org/packages/53/d4/b6fb0f14d3ec40b741531a67719d4f184635d734fddff7f7549d2753b6a8/saxonche-12.1.0-pp38-pypy38_pp73-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "74af43d20f76745f749328031d278ce6ceb049d18d3d3a92cfb8c47b59fc93c8",
+                    "md5": "be8131765093f00c048c47a1a60eefb1",
+                    "sha256": "8469b59bd55f036bf53409377bee2b6ebb7a302023767cd71fde12b1f5d4f79a"
+                },
+                "downloads": -1,
+                "filename": "saxonche-12.1.0-pp38-pypy38_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "be8131765093f00c048c47a1a60eefb1",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp38",
+                "requires_python": ">=3.8",
+                "size": 19446623,
+                "upload_time": "2023-03-21T15:05:53",
+                "upload_time_iso_8601": "2023-03-21T15:05:53.049562Z",
+                "url": "https://files.pythonhosted.org/packages/74/af/43d20f76745f749328031d278ce6ceb049d18d3d3a92cfb8c47b59fc93c8/saxonche-12.1.0-pp38-pypy38_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "bcfc34d40594c21d0e3e4d48a65bc0704b264f1af97ab1a78b4af6c83991ce65",
+                    "md5": "5139153f23b7210525b1cc7f808d01b9",
+                    "sha256": "e22d41459d7dde861d09a75b8e23ebd09d871441f4967cef6b4038a1b252e99d"
+                },
+                "downloads": -1,
+                "filename": "saxonche-12.1.0-pp38-pypy38_pp73-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "5139153f23b7210525b1cc7f808d01b9",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp38",
+                "requires_python": ">=3.8",
+                "size": 17079366,
+                "upload_time": "2023-03-21T15:05:59",
+                "upload_time_iso_8601": "2023-03-21T15:05:59.316735Z",
+                "url": "https://files.pythonhosted.org/packages/bc/fc/34d40594c21d0e3e4d48a65bc0704b264f1af97ab1a78b4af6c83991ce65/saxonche-12.1.0-pp38-pypy38_pp73-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d8bfc734fb12447e99c3d901c8ac8d29166c8717a85d86124766e81711acee99",
+                    "md5": "35ed3b188ca165f3df522934f344732b",
+                    "sha256": "adb93e4896925f8ba5f823ed8da246aa5ed0d87e02520f1cd648c7d98e6d54d4"
+                },
+                "downloads": -1,
+                "filename": "saxonche-12.1.0-pp39-pypy39_pp73-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "35ed3b188ca165f3df522934f344732b",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp39",
+                "requires_python": ">=3.8",
+                "size": 17098112,
+                "upload_time": "2023-03-21T15:06:04",
+                "upload_time_iso_8601": "2023-03-21T15:06:04.962233Z",
+                "url": "https://files.pythonhosted.org/packages/d8/bf/c734fb12447e99c3d901c8ac8d29166c8717a85d86124766e81711acee99/saxonche-12.1.0-pp39-pypy39_pp73-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "871f1a546e0b8214a7a6aee15f958bae49bae0748b41ce453d3aa30dd6eedd77",
+                    "md5": "db66972ca9b776d716d8aca82194f040",
+                    "sha256": "69aa798dba77c78e928ee3ccc56167df51763026f0a1e0b8b3e658079ed25d99"
+                },
+                "downloads": -1,
+                "filename": "saxonche-12.1.0-pp39-pypy39_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "db66972ca9b776d716d8aca82194f040",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp39",
+                "requires_python": ">=3.8",
+                "size": 19431145,
+                "upload_time": "2023-03-21T15:06:11",
+                "upload_time_iso_8601": "2023-03-21T15:06:11.273108Z",
+                "url": "https://files.pythonhosted.org/packages/87/1f/1a546e0b8214a7a6aee15f958bae49bae0748b41ce453d3aa30dd6eedd77/saxonche-12.1.0-pp39-pypy39_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a4e6dab985dc815e8174f5f746a7df380a93ab9f5333703936e05df111d97b84",
+                    "md5": "c33207cccc1d5bc3a36806740cf658ff",
+                    "sha256": "0359c2f7ddac0cb9aabe0dca8f9f78a2121a8822542d55506e1e48418dd5f332"
+                },
+                "downloads": -1,
+                "filename": "saxonche-12.1.0-pp39-pypy39_pp73-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "c33207cccc1d5bc3a36806740cf658ff",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp39",
+                "requires_python": ">=3.8",
+                "size": 17078157,
+                "upload_time": "2023-03-21T15:06:16",
+                "upload_time_iso_8601": "2023-03-21T15:06:16.558256Z",
+                "url": "https://files.pythonhosted.org/packages/a4/e6/dab985dc815e8174f5f746a7df380a93ab9f5333703936e05df111d97b84/saxonche-12.1.0-pp39-pypy39_pp73-win_amd64.whl",
                 "yanked": false,
                 "yanked_reason": null
             }
