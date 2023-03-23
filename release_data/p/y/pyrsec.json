@@ -46,7 +46,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17260691,
+        "last_serial": 17402397,
         "urls": [
             {
                 "comment_text": "",
@@ -144,7 +144,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17260691,
+        "last_serial": 17402397,
         "urls": [
             {
                 "comment_text": "",
@@ -242,7 +242,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17260691,
+        "last_serial": 17402397,
         "urls": [
             {
                 "comment_text": "",
@@ -340,7 +340,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17260691,
+        "last_serial": 17402397,
         "urls": [
             {
                 "comment_text": "",
@@ -440,7 +440,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17260691,
+        "last_serial": 17402397,
         "urls": [
             {
                 "comment_text": "",
@@ -497,7 +497,6 @@
                 "Programming Language :: Python",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "# Pyrsec\n\n> Simple parser combinator made in Python\n\n![PyPI](https://img.shields.io/pypi/v/pyrsec)\n![PyPI - License](https://img.shields.io/pypi/l/pyrsec)\n[![codecov](https://codecov.io/gh/frndmg/pyrsec/branch/main/graph/badge.svg?token=ROCVIXSZMO)](https://codecov.io/gh/frndmg/pyrsec)\n\nIn the journey of creating a parser combinator in python while being as type safe as\npossible we are here now. I don't recommend you use this for anything important but for\nexploration and fun. This library is a mostly undocumented, bare bone implementation of\na parser combinator, no error recovery is currently in place, only `None` is returned in\ncase the parser can't continue. I basically started with a minimum implementation while\nadding a basic `json` parser as a test and kept adding functionality as needed.\n\n```bash\npip install pyrsec\n```\n\n## A Json parser as an example\n\n> You should be able to inspect the types of the variables in the following code\n\n```python\n>>> from pyrsec import Parsec\n\n```\n\nLets define the type of our json values,\n\n```python\n>>> from typing import Union, List, Dict  # because 3.8 and 3.9 \ud83d\ude44\n>>> # Recursive type alias \ud83d\udc40. See how we will not parse `floats` here.\n>>> # Also at this level we can't still reference JSON recursively, idk why.\n>>> JSON = Union[bool, int, None, str, List[\"JSON\"], Dict[str, \"JSON\"]]\n\n```\n\nand the type of our parser. Since this is a parser that will output `JSON` values its\ntype will be `Parsec[JSON]`.\n\n```python\n>>> # To be defined later\n>>> json_: Parsec[JSON]\n>>> # For recursive parsers like `list_` and `dict_`\n>>> deferred_json_ = Parsec.from_deferred(lambda: json_)\n\n```\n\nLets bring up a few basic parsers.\n\n```python\n>>> import re\n>>> true = Parsec.from_string(\"true\").map(lambda _: True)\n>>> false = Parsec.from_string(\"false\").map(lambda _: False)\n>>> null = Parsec.from_string(\"null\").map(lambda _: None)\n>>> number = Parsec.from_re(re.compile(r\"-?\\d+\")).map(int)\n>>> true(\"true\")\n(True, '')\n>>> false(\"false\")\n(False, '')\n>>> null(\"null\")\n(None, '')\n>>> number(\"42\")\n(42, '')\n\n```\n\nWe need to be able to parse character sequences, lets keep it simple.\n\nThe operators `>>` and `<<` are used to discard the part that the arrow is not pointing\nat. They are meant to work well with `Parsec` instances. In this case only the result of\nthe middle parser `Parsec.from_re(re.compile(r\"[^\\\"]*\"))` is returned from the `string`\nparser.\n\nIf what you want instead is to concatenate the results you should see the `&` operator.\n(wait for the pair definition).\n\n```python\n>>> quote = Parsec.from_string('\"').ignore()\n>>> string = quote >> Parsec.from_re(re.compile(r\"[^\\\"]*\")) << quote\n>>> string('\"foo\"')\n('foo', '')\n\n```\n\nSee how the quotes got discarded?\n\nAlso, missing a quote would mean a parsing error.\n\n```python\n>>> string('foo\"'), string('\"bar')\n(None, None)\n\n```\n\nLets get a little bit more serious with the lists.\n\nSpaces are always optional on `json` strings. Other basic tokens are also needed.\n\n```python\n>>> space = Parsec.from_re(re.compile(r\"\\s*\")).ignore()\n>>> comma = Parsec.from_string(\",\").ignore()\n>>> opened_square_bracket = Parsec.from_string(\"[\").ignore()\n>>> closed_square_bracket = Parsec.from_string(\"]\").ignore()\n\n```\n\nAnd finally, the `list` parser. We need to use a deferred value here because the\ndefinition is recursive but the whole `json` parser is still not available.\n\n```python\n>>> list_ = (\n...     opened_square_bracket\n...     >> (deferred_json_.sep_by(comma))  # See here?\n...     << closed_square_bracket\n... )\n\n```\n\nLets create an incomplete one.\n\n```python\n>>> json_ = space >> (true | false | number | null | string | list_) << space\n\n```\n\nLets try it then!\n\n```python\n>>> list_(\"[]\")\n([], '')\n>>> list_(\"[1, true, false, []]\")\n([1, True, False, []], '')\n\n```\n\nDefining a dict should be pretty easy by now. Maybe the `pair` parser is interesting\nbecause its use of `&`.\n\nSome tokens,\n\n```python\n>>> opened_bracket = Parsec.from_string(\"{\").ignore()\n>>> closed_bracket = Parsec.from_string(\"}\").ignore()\n>>> colon = Parsec.from_string(\":\").ignore()\n\n```\n\nAnd `pair`, notice that the type of `pair` will be `Parsec[tuple[str, JSON]]`.\n\n```python\n>>> pair = ((space >> string << space) << colon) & deferred_json_\n>>> pair('\"foo\": [123]')\n(('foo', [123]), '')\n\n```\n\nThe `dict` parser will finally be pretty close to the `list` one.\n\n```python\n>>> dict_ = (\n...     opened_bracket\n...     >> pair.sep_by(comma).map(lambda xs: dict(xs))\n...     << closed_bracket\n... )\n\n```\n\nAnd finally lets redefine the `json` parser to embrace the full beauty of it.\n\n```python\n>>> json_ = space >> (true | false | number | null | string | list_ | dict_) << space\n>>> json_(\"\"\"\n... {\n...     \"json_parser\": [true]\n... }\n... \"\"\")\n({'json_parser': [True]}, '')\n\n```\n\nEnjoy!\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -541,7 +540,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17260691,
+        "last_serial": 17402397,
         "urls": [
             {
                 "comment_text": "",
@@ -582,6 +581,107 @@
                 "upload_time": "2023-03-12T13:50:14",
                 "upload_time_iso_8601": "2023-03-12T13:50:14.960743Z",
                 "url": "https://files.pythonhosted.org/packages/0e/74/515ca87e1612bce1927fbea83ace614c47c42e1419cd9a6f5ef8f4fb1ea8/pyrsec-0.2.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.4": {
+        "info": {
+            "author": "",
+            "author_email": "Fernando Mart\u00ednez Gonz\u00e1lez <frndmartinezglez@gmail.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# Pyrsec\n\n> Simple parser combinator made in Python\n\n![PyPI](https://img.shields.io/pypi/v/pyrsec)\n![PyPI - License](https://img.shields.io/pypi/l/pyrsec)\n[![codecov](https://codecov.io/gh/frndmg/pyrsec/branch/main/graph/badge.svg?token=ROCVIXSZMO)](https://codecov.io/gh/frndmg/pyrsec)\n\nIn the journey of creating a parser combinator in python while being as type safe as\npossible we are here now. I don't recommend you use this for anything important but for\nexploration and fun. This library is a mostly undocumented, bare bone implementation of\na parser combinator, no error recovery is currently in place, only `None` is returned in\ncase the parser can't continue. I basically started with a minimum implementation while\nadding a basic `json` parser as a test and kept adding functionality as needed.\n\n```bash\npip install pyrsec\n```\n\n## A Json parser as an example\n\n> You should be able to inspect the types of the variables in the following code\n\n```python\n>>> from pyrsec import Parsec\n\n```\n\nLets define the type of our json values,\n\n```python\n>>> from typing import Union, List, Dict  # because 3.8 and 3.9 \ud83d\ude44\n>>> # Recursive type alias \ud83d\udc40. See how we will not parse `floats` here.\n>>> # Also at this level we can't still reference JSON recursively, idk why.\n>>> JSON = Union[bool, int, None, str, List[\"JSON\"], Dict[str, \"JSON\"]]\n\n```\n\nand the type of our parser. Since this is a parser that will output `JSON` values its\ntype will be `Parsec[JSON]`.\n\n```python\n>>> # To be defined later\n>>> json_: Parsec[JSON]\n>>> # For recursive parsers like `list_` and `dict_`\n>>> deferred_json_ = Parsec.from_deferred(lambda: json_)\n\n```\n\nLets bring up a few basic parsers.\n\n```python\n>>> import re\n>>> true = Parsec.from_string(\"true\").map(lambda _: True)\n>>> false = Parsec.from_string(\"false\").map(lambda _: False)\n>>> null = Parsec.from_string(\"null\").map(lambda _: None)\n>>> number = Parsec.from_re(re.compile(r\"-?\\d+\")).map(int)\n>>> true(\"true\")\n(True, '')\n>>> false(\"false\")\n(False, '')\n>>> null(\"null\")\n(None, '')\n>>> number(\"42\")\n(42, '')\n\n```\n\nWe need to be able to parse character sequences, lets keep it simple.\n\nThe operators `>>` and `<<` are used to discard the part that the arrow is not pointing\nat. They are meant to work well with `Parsec` instances. In this case only the result of\nthe middle parser `Parsec.from_re(re.compile(r\"[^\\\"]*\"))` is returned from the `string`\nparser.\n\nIf what you want instead is to concatenate the results you should see the `&` operator.\n(wait for the pair definition).\n\n```python\n>>> quote = Parsec.from_string('\"').ignore()\n>>> string = quote >> Parsec.from_re(re.compile(r\"[^\\\"]*\")) << quote\n>>> string('\"foo\"')\n('foo', '')\n\n```\n\nSee how the quotes got discarded?\n\nAlso, missing a quote would mean a parsing error.\n\n```python\n>>> string('foo\"'), string('\"bar')\n(None, None)\n\n```\n\nLets get a little bit more serious with the lists.\n\nSpaces are always optional on `json` strings. Other basic tokens are also needed.\n\n```python\n>>> space = Parsec.from_re(re.compile(r\"\\s*\")).ignore()\n>>> comma = Parsec.from_string(\",\").ignore()\n>>> opened_square_bracket = Parsec.from_string(\"[\").ignore()\n>>> closed_square_bracket = Parsec.from_string(\"]\").ignore()\n\n```\n\nAnd finally, the `list` parser. We need to use a deferred value here because the\ndefinition is recursive but the whole `json` parser is still not available.\n\n```python\n>>> list_ = (\n...     opened_square_bracket\n...     >> (deferred_json_.sep_by(comma))  # See here?\n...     << closed_square_bracket\n... )\n\n```\n\nLets create an incomplete one.\n\n```python\n>>> json_ = space >> (true | false | number | null | string | list_) << space\n\n```\n\nLets try it then!\n\n```python\n>>> list_(\"[]\")\n([], '')\n>>> list_(\"[1, true, false, []]\")\n([1, True, False, []], '')\n\n```\n\nDefining a dict should be pretty easy by now. Maybe the `pair` parser is interesting\nbecause its use of `&`.\n\nSome tokens,\n\n```python\n>>> opened_bracket = Parsec.from_string(\"{\").ignore()\n>>> closed_bracket = Parsec.from_string(\"}\").ignore()\n>>> colon = Parsec.from_string(\":\").ignore()\n\n```\n\nAnd `pair`, notice that the type of `pair` will be `Parsec[tuple[str, JSON]]`.\n\n```python\n>>> pair = ((space >> string << space) << colon) & deferred_json_\n>>> pair('\"foo\": [123]')\n(('foo', [123]), '')\n\n```\n\nThe `dict` parser will finally be pretty close to the `list` one.\n\n```python\n>>> dict_ = (\n...     opened_bracket\n...     >> pair.sep_by(comma).map(lambda xs: dict(xs))\n...     << closed_bracket\n... )\n\n```\n\nAnd finally lets redefine the `json` parser to embrace the full beauty of it.\n\n```python\n>>> json_ = space >> (true | false | number | null | string | list_ | dict_) << space\n>>> json_(\"\"\"\n... {\n...     \"json_parser\": [true]\n... }\n... \"\"\")\n({'json_parser': [True]}, '')\n\n```\n\nEnjoy!\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "parser-combinator",
+            "license": "Pyrsec  Copyright (c) 2023 Fernando Mart\u00ednez Gonz\u00e1lez  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \u201cSoftware\u201d), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.  THE SOFTWARE IS PROVIDED \u201cAS IS\u201d, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. ",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "pyrsec",
+            "package_url": "https://pypi.org/project/pyrsec/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/pyrsec/",
+            "project_urls": {
+                "Docs": "https://frndmg.github.io/pyrsec",
+                "Homepage": "https://github.com/frndmg/pyrsec"
+            },
+            "release_url": "https://pypi.org/project/pyrsec/0.2.4/",
+            "requires_dist": [
+                "build ; extra == 'dev'",
+                "twine ; extra == 'dev'",
+                "black ; extra == 'dev'",
+                "isort ; extra == 'dev'",
+                "ruff ; extra == 'dev'",
+                "pyright ; extra == 'dev'",
+                "pytest ; extra == 'dev'",
+                "pytest-cov ; extra == 'dev'",
+                "pytest-xdist ; extra == 'dev'",
+                "hypothesis ; extra == 'dev'",
+                "mkdocs ; extra == 'docs'",
+                "mkdocs-material ; extra == 'docs'",
+                "mkdocstrings[python] ; extra == 'docs'"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "Simple parser combinator made in Python",
+            "version": "0.2.4",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17402397,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "299e4858e401e8cacd9ff6142e52ab068885ed1b8c5f0fb9f694fd3f4126c4da",
+                    "md5": "f57267a4a6d773ddd9bbd97cc567bb47",
+                    "sha256": "e7720dff848bcbc34ff6476fc5b92cffb837021cadc78e5ac54cdd2b9f4bac8c"
+                },
+                "downloads": -1,
+                "filename": "pyrsec-0.2.4-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "f57267a4a6d773ddd9bbd97cc567bb47",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 4671,
+                "upload_time": "2023-03-22T18:01:11",
+                "upload_time_iso_8601": "2023-03-22T18:01:11.121121Z",
+                "url": "https://files.pythonhosted.org/packages/29/9e/4858e401e8cacd9ff6142e52ab068885ed1b8c5f0fb9f694fd3f4126c4da/pyrsec-0.2.4-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ae377bd87effbb47750af70c2f6825ec293e9179e86198fda57b31eabd0526e7",
+                    "md5": "e78785325f2860eaab1085a40fb75d9f",
+                    "sha256": "7bc306673ed7bc60df04186c67a955ed0b1a96b7036c94cf91ebc5841b327d77"
+                },
+                "downloads": -1,
+                "filename": "pyrsec-0.2.4.tar.gz",
+                "has_sig": false,
+                "md5_digest": "e78785325f2860eaab1085a40fb75d9f",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 4957,
+                "upload_time": "2023-03-22T18:01:12",
+                "upload_time_iso_8601": "2023-03-22T18:01:12.466134Z",
+                "url": "https://files.pythonhosted.org/packages/ae/37/7bd87effbb47750af70c2f6825ec293e9179e86198fda57b31eabd0526e7/pyrsec-0.2.4.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

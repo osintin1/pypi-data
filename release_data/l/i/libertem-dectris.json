@@ -35,7 +35,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17320641,
+        "last_serial": 17399327,
         "urls": [
             {
                 "comment_text": null,
@@ -160,7 +160,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17320641,
+        "last_serial": 17399327,
         "urls": [
             {
                 "comment_text": null,
@@ -285,7 +285,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17320641,
+        "last_serial": 17399327,
         "urls": [
             {
                 "comment_text": null,
@@ -412,7 +412,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17320641,
+        "last_serial": 17399327,
         "urls": [
             {
                 "comment_text": null,
@@ -539,7 +539,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17320641,
+        "last_serial": 17399327,
         "urls": [
             {
                 "comment_text": null,
@@ -687,7 +687,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17320641,
+        "last_serial": 17399327,
         "urls": [
             {
                 "comment_text": null,
@@ -807,7 +807,6 @@
                 "Programming Language :: Python :: Implementation :: PyPy",
                 "Programming Language :: Rust"
             ],
-            "description": "# LiberTEM-dectris-rs\n\n[![LiberTEM-dectris-rs on GitHub](https://img.shields.io/badge/GitHub-MIT-informational)](https://github.com/LiberTEM/LiberTEM-dectris-rs)\n\nThis is a Python package for efficiently receiving data from DECTRIS detectors\nwith [the zeromq interface](https://media.dectris.com/210607-DECTRIS-SIMPLON-API-Manual_EIGER2-chip-based_detectros.pdf).\nThe low-level, high-frequency operations are performed in a background thread\nimplemented in rust, and multiple frames are batched together for further\nprocessing in Python.\n\n## Usage\n\n```python\nimport numpy as np\nimport libertem_dectris\nfrom libertem_live.detectors.dectris.DEigerClient import DEigerClient\n\n# trigger acquisition via the REST API, needs `libertem-live`\nnimages = 256 * 256\nec = DEigerClient('localhost', 8910)  # hostname and port of the DCU REST API\nec.setDetectorConfig('ntrigger', 1)\nec.setDetectorConfig('nimages', 1)\nec.setDetectorConfig('trigger_mode', 'exte')\nec.setDetectorConfig('ntrigger', nimages)\nresult = ec.sendDetectorCommand('arm')\nsequence_id = result['sequence id'] \n\nconn = libertem_dectris.DectrisConnection(\n    uri=\"tcp://localhost:9999\",\n    handle_path=\"/tmp/dectris_shm\",\n    frame_stack_size=32,\n    num_slots=2000,\n    bytes_per_frame=512*512,\n    huge=False,\n)\n\n# as we have armed the detector above, we know the sequence number\n# that we should expect:\n# (in other cases, can also call\n# `conn.start_passive` and `conn.wait_for_arm` to passively wait for\n# the detector to be armed)\nconn.start(sequence_id)\n\n# any other process can use a `CamClient` to use data\n# stored in the SHM:\ncam_client = libertem_dectris.CamClient(conn.get_socket_path())\n\ntry:\n    while True:\n        # get at most `max_size` frames as a stack\n        # (might get less at the end of the acquisition)\n        stack_handle = conn.get_next_stack(max_size=32)\n\n        # if the receiver is idle, stack_handle will be None here:\n        if stack_handle is None:\n            break\n\n        # the expected shape and data type:\n        frame_shape = tuple(reversed(stack_handle.get_shape()))\n        dtype = np.dtype(stack_handle.get_pixel_type()).newbyteorder(\n            stack_handle.get_endianess()\n        )\n\n        # pre-allocate some memory for the pixel data:\n        # (would be pulled out of the loop in real code)\n        buf = np.zeros((len(stack_handle),) + frame_shape, dtype=dtype)\n\n        # decompress into the pre-allocated buffer\n        cam_client.decompress_frame_stack(stack_handle, out=buf)\n\n        # free up the shared memory slot for this frame stack:\n        cam_client.done(stack_handle)\n\n        # we can still use the decompressed data:\n        buf.sum()\nfinally:\n    conn.close()  # clean up background thread etc.\n    cam_client.close()\n\n```\n\n## Changelog\n\n### v0.2.4 - v0.2.6\n\n- Updated examples and CI configuration\n\n### v0.2.3\n\n- Add `env_logger`: set environment variable `LIBERTEM_DECTRIS_LOG_LEVEL` to e.g. `'INFO'` to enable logging\n- Improved error handling: raise an exception instead of panicing on serialization errors\n- Ignore messages with mismatching series ID\n- Add explicit checks for the correct `header_detail` levels\n- Move code into monorepo\n\n### v0.2.2\n\n- Vendor `bitshuffle` and add `Frame.decompress_into` method, PR [#10](https://github.com/LiberTEM/LiberTEM-dectris-rs/pull/10)\n\n### v0.2.1\n\n- Catch frame ID mismatch, PR [#9](https://github.com/LiberTEM/LiberTEM-dectris-rs/pull/9)\n\n### v0.2.0\n\n- Added `libertem_dectris.headers` submodule that exports header classes\n- Added ways to create `libertem_dectris.Frame` and `libertem_dectris.FrameStack`\n  objects from Python, mostly useful for testing\n- Added binding to random port for the simulator\n- Properly parametrize with zmq endpoint URI\n- Fix many clippy complaints\n\n### v0.1.0\n\nInitial release!\n\n## Development\n\nThis package is using [pyo3](https://pyo3.rs/) with\n[maturin](https://maturin.rs/) to create the Python bindings.  First, make sure\n`maturin` is installed in your Python environment:\n\n```bash\n(venv) $ pip install maturin\n```\n\nThen, after each change to the rust code, run `maturin develop -r` to build and\ninstall a new version of the wheel.\n\nAs we vendor `bitshuffle`, make sure to clone with `git clone --recursive ...`, or manually\n[take care of initializing and updating submodules](https://github.blog/2016-02-01-working-with-submodules/).\n\n## Release\n\n- update changelog above\n- bump version in Cargo.toml if not already bumped, and push\n- create a release from the GitHub UI, creating a new tag vX.Y.Z\n- done!\n\n",
             "description_content_type": "text/markdown; charset=UTF-8; variant=GFM",
             "docs_url": null,
             "download_url": null,
@@ -836,7 +835,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17320641,
+        "last_serial": 17399327,
         "urls": [
             {
                 "comment_text": null,
@@ -940,6 +939,155 @@
                 "upload_time": "2023-03-16T15:16:30",
                 "upload_time_iso_8601": "2023-03-16T15:16:30.797786Z",
                 "url": "https://files.pythonhosted.org/packages/33/df/eb0a959e8fe1fb0861b479ed5ae0ce9baf4a2e7c804f4a96da7b2c4bba90/libertem_dectris-0.2.6.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.7": {
+        "info": {
+            "author": "Alexander Clausen <a.clausen@fz-juelich.de>",
+            "author_email": "Alexander Clausen <a.clausen@fz-juelich.de>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: Implementation :: CPython",
+                "Programming Language :: Python :: Implementation :: PyPy",
+                "Programming Language :: Rust"
+            ],
+            "description": "# LiberTEM-dectris-rs\n\n[![LiberTEM-dectris-rs on GitHub](https://img.shields.io/badge/GitHub-MIT-informational)](https://github.com/LiberTEM/LiberTEM-dectris-rs)\n\nThis is a Python package for efficiently receiving data from DECTRIS detectors\nwith [the zeromq interface](https://media.dectris.com/210607-DECTRIS-SIMPLON-API-Manual_EIGER2-chip-based_detectros.pdf).\nThe low-level, high-frequency operations are performed in a background thread\nimplemented in rust, and multiple frames are batched together for further\nprocessing in Python.\n\n## Usage\n\n```python\nimport numpy as np\nimport libertem_dectris\nfrom libertem_live.detectors.dectris.DEigerClient import DEigerClient\n\n# trigger acquisition via the REST API, needs `libertem-live`\nnimages = 256 * 256\nec = DEigerClient('localhost', 8910)  # hostname and port of the DCU REST API\nec.setDetectorConfig('ntrigger', 1)\nec.setDetectorConfig('nimages', 1)\nec.setDetectorConfig('trigger_mode', 'exte')\nec.setDetectorConfig('ntrigger', nimages)\nresult = ec.sendDetectorCommand('arm')\nsequence_id = result['sequence id'] \n\nconn = libertem_dectris.DectrisConnection(\n    uri=\"tcp://localhost:9999\",\n    handle_path=\"/tmp/dectris_shm\",\n    frame_stack_size=32,\n    num_slots=2000,\n    bytes_per_frame=512*512,\n    huge=False,\n)\n\n# as we have armed the detector above, we know the sequence number\n# that we should expect:\n# (in other cases, can also call\n# `conn.start_passive` and `conn.wait_for_arm` to passively wait for\n# the detector to be armed)\nconn.start(sequence_id)\n\n# any other process can use a `CamClient` to use data\n# stored in the SHM:\ncam_client = libertem_dectris.CamClient(conn.get_socket_path())\n\ntry:\n    while True:\n        # get at most `max_size` frames as a stack\n        # (might get less at the end of the acquisition)\n        stack_handle = conn.get_next_stack(max_size=32)\n\n        # if the receiver is idle, stack_handle will be None here:\n        if stack_handle is None:\n            break\n\n        # the expected shape and data type:\n        frame_shape = tuple(reversed(stack_handle.get_shape()))\n        dtype = np.dtype(stack_handle.get_pixel_type()).newbyteorder(\n            stack_handle.get_endianess()\n        )\n\n        # pre-allocate some memory for the pixel data:\n        # (would be pulled out of the loop in real code)\n        buf = np.zeros((len(stack_handle),) + frame_shape, dtype=dtype)\n\n        # decompress into the pre-allocated buffer\n        cam_client.decompress_frame_stack(stack_handle, out=buf)\n\n        # free up the shared memory slot for this frame stack:\n        cam_client.done(stack_handle)\n\n        # we can still use the decompressed data:\n        buf.sum()\nfinally:\n    conn.close()  # clean up background thread etc.\n    cam_client.close()\n\n```\n\n## Changelog\n\n### v0.2.7\n\n- Log more details in `DectrisConnection.log_shm_stats` and change log level to\n  `INFO`\n\n### v0.2.4 - v0.2.6\n\n- Updated examples and CI configuration\n\n### v0.2.3\n\n- Add `env_logger`: set environment variable `LIBERTEM_DECTRIS_LOG_LEVEL` to e.g. `'INFO'` to enable logging\n- Improved error handling: raise an exception instead of panicing on serialization errors\n- Ignore messages with mismatching series ID\n- Add explicit checks for the correct `header_detail` levels\n- Move code into monorepo\n\n### v0.2.2\n\n- Vendor `bitshuffle` and add `Frame.decompress_into` method, PR [#10](https://github.com/LiberTEM/LiberTEM-dectris-rs/pull/10)\n\n### v0.2.1\n\n- Catch frame ID mismatch, PR [#9](https://github.com/LiberTEM/LiberTEM-dectris-rs/pull/9)\n\n### v0.2.0\n\n- Added `libertem_dectris.headers` submodule that exports header classes\n- Added ways to create `libertem_dectris.Frame` and `libertem_dectris.FrameStack`\n  objects from Python, mostly useful for testing\n- Added binding to random port for the simulator\n- Properly parametrize with zmq endpoint URI\n- Fix many clippy complaints\n\n### v0.1.0\n\nInitial release!\n\n## Development\n\nThis package is using [pyo3](https://pyo3.rs/) with\n[maturin](https://maturin.rs/) to create the Python bindings.  First, make sure\n`maturin` is installed in your Python environment:\n\n```bash\n(venv) $ pip install maturin\n```\n\nThen, after each change to the rust code, run `maturin develop -r` to build and\ninstall a new version of the wheel.\n\nAs we vendor `bitshuffle`, make sure to clone with `git clone --recursive ...`, or manually\n[take care of initializing and updating submodules](https://github.blog/2016-02-01-working-with-submodules/).\n\n## Release\n\n- update changelog above\n- bump version in Cargo.toml if not already bumped, and push\n- create a release from the GitHub UI, creating a new tag vX.Y.Z\n- done!\n\n",
+            "description_content_type": "text/markdown; charset=UTF-8; variant=GFM",
+            "docs_url": null,
+            "download_url": null,
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": null,
+            "keywords": null,
+            "license": "MIT",
+            "maintainer": null,
+            "maintainer_email": null,
+            "name": "libertem-dectris",
+            "package_url": "https://pypi.org/project/libertem-dectris/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/libertem-dectris/",
+            "project_urls": {
+                "repository": "https://github.com/LiberTEM/LiberTEM-rs/"
+            },
+            "release_url": "https://pypi.org/project/libertem-dectris/0.2.7/",
+            "requires_dist": null,
+            "requires_python": ">=3.7",
+            "summary": null,
+            "version": "0.2.7",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17399327,
+        "urls": [
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "ef64ca0cf1c11adc7da87e0393afddd8d8f9beeedb88667b628a7b81904e3823",
+                    "md5": "a5284b219b40e9eadd091d6cee6ea97f",
+                    "sha256": "9c9638887ea74ec64692e6de826a9fe58b1c38857fa89a72ef564fad3a8b432a"
+                },
+                "downloads": -1,
+                "filename": "libertem_dectris-0.2.7-cp37-abi3-macosx_11_0_arm64.whl",
+                "has_sig": false,
+                "md5_digest": "a5284b219b40e9eadd091d6cee6ea97f",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.7",
+                "size": 1325411,
+                "upload_time": "2023-03-22T14:24:20",
+                "upload_time_iso_8601": "2023-03-22T14:24:20.603001Z",
+                "url": "https://files.pythonhosted.org/packages/ef/64/ca0cf1c11adc7da87e0393afddd8d8f9beeedb88667b628a7b81904e3823/libertem_dectris-0.2.7-cp37-abi3-macosx_11_0_arm64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "859a59a31da3eef5cc6c26e4295f0d412ea95d886112ff51e566471de621f361",
+                    "md5": "50f5c32e31aa972165aab1b01a338bbe",
+                    "sha256": "08bee375924961d17615533619ddbf2e4bec171aa766c92ae58c74f48fa44de5"
+                },
+                "downloads": -1,
+                "filename": "libertem_dectris-0.2.7-cp37-abi3-macosx_11_0_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "50f5c32e31aa972165aab1b01a338bbe",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.7",
+                "size": 1346726,
+                "upload_time": "2023-03-22T14:24:22",
+                "upload_time_iso_8601": "2023-03-22T14:24:22.226468Z",
+                "url": "https://files.pythonhosted.org/packages/85/9a/59a31da3eef5cc6c26e4295f0d412ea95d886112ff51e566471de621f361/libertem_dectris-0.2.7-cp37-abi3-macosx_11_0_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "47422f5403191564b28ad6c6ae0672efbfa199d2b5ad8799b75a93f8a993ccfd",
+                    "md5": "fd6f21d17dc38e7ff5379607400e2d55",
+                    "sha256": "257806ab49c3174efc467c575ba95e3d37557a7b91420dc5d72155406cd813eb"
+                },
+                "downloads": -1,
+                "filename": "libertem_dectris-0.2.7-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "fd6f21d17dc38e7ff5379607400e2d55",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.7",
+                "size": 14766182,
+                "upload_time": "2023-03-22T14:24:24",
+                "upload_time_iso_8601": "2023-03-22T14:24:24.203532Z",
+                "url": "https://files.pythonhosted.org/packages/47/42/2f5403191564b28ad6c6ae0672efbfa199d2b5ad8799b75a93f8a993ccfd/libertem_dectris-0.2.7-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "50b992ed2307627bfd94efc91523ac5e2e194e3d4ec889ca4692ba1d0d3aa4a7",
+                    "md5": "53d3e05a7c53df28ae3800caaa3a0fa8",
+                    "sha256": "7f302be7aecfe506ed68d3d3254b48a0a0ac4c1f0701024f8d075d5ffab688ef"
+                },
+                "downloads": -1,
+                "filename": "libertem_dectris-0.2.7-cp37-abi3-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "53d3e05a7c53df28ae3800caaa3a0fa8",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.7",
+                "size": 961306,
+                "upload_time": "2023-03-22T14:24:26",
+                "upload_time_iso_8601": "2023-03-22T14:24:26.372557Z",
+                "url": "https://files.pythonhosted.org/packages/50/b9/92ed2307627bfd94efc91523ac5e2e194e3d4ec889ca4692ba1d0d3aa4a7/libertem_dectris-0.2.7-cp37-abi3-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "e0d674ced877b16081553db1041cc69eeb6fcd8f0dc396bc373ac93876b03cdb",
+                    "md5": "48379ace8fb8d17cb19e38ef5bd4fb75",
+                    "sha256": "858957ef136f424f1e16fbaaa3333277bb1aae25ef618ecb17b409b08acef363"
+                },
+                "downloads": -1,
+                "filename": "libertem_dectris-0.2.7.tar.gz",
+                "has_sig": false,
+                "md5_digest": "48379ace8fb8d17cb19e38ef5bd4fb75",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 2140206,
+                "upload_time": "2023-03-22T14:24:28",
+                "upload_time_iso_8601": "2023-03-22T14:24:28.291183Z",
+                "url": "https://files.pythonhosted.org/packages/e0/d6/74ced877b16081553db1041cc69eeb6fcd8f0dc396bc373ac93876b03cdb/libertem_dectris-0.2.7.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
