@@ -37,7 +37,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17408855,
+        "last_serial": 17449958,
         "urls": [
             {
                 "comment_text": "",
@@ -126,7 +126,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17408855,
+        "last_serial": 17449958,
         "urls": [
             {
                 "comment_text": "",
@@ -218,7 +218,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17408855,
+        "last_serial": 17449958,
         "urls": [
             {
                 "comment_text": "",
@@ -310,7 +310,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17408855,
+        "last_serial": 17449958,
         "urls": [
             {
                 "comment_text": "",
@@ -402,7 +402,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17408855,
+        "last_serial": 17449958,
         "urls": [
             {
                 "comment_text": "",
@@ -493,7 +493,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17408855,
+        "last_serial": 17449958,
         "urls": [
             {
                 "comment_text": "",
@@ -584,7 +584,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17408855,
+        "last_serial": 17449958,
         "urls": [
             {
                 "comment_text": "",
@@ -644,7 +644,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "# Pydantic-resolve\n\n```python\nimport asyncio\nfrom pydantic import BaseModel\nfrom pydantic_resolve import resolve\n\nclass Student(BaseModel):\n    name: str\n    greet: str = ''\n    async def resolve_greet(self):\n        await asyncio.sleep(1)  # mock i/o\n        return f'hello {self.name}'\n\nasync def main():\n    students = [Student(name='john' )]\n    results = await resolve(students)\n    print(results)\n\nasyncio.run(main())\n\n# output: [Student(name='john', greet='hello john')]\n```\n\n- Pydantic-resolve helps you asynchoronously, resursively resolve a pydantic object (or dataclass object)\n\n- Pydantic-resolve, when used in conjunction with aiodataloader, allows you to easily generate nested data structures without worrying about generating N+1 queries.\n\n- inspired by [graphene](https://graphene-python.org/)\n\n[![CI](https://github.com/allmonday/pydantic_resolve/actions/workflows/ci.yml/badge.svg)](https://github.com/allmonday/pydantic_resolve/actions/workflows/ci.yml)\n![Python Versions](https://img.shields.io/pypi/pyversions/pydantic-resolve)\n![Test Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/allmonday/6f1661c6310e1b31c9a10b0d09d52d11/raw/covbadge.json)\n## Install\n\n```shell\npip install pydantic-resolve\n```\n\n## Demo 1, Resolve asynchoronously\n\n```python\nfrom pydantic_resolve import resolve\n\nclass Book(BaseModel):\n    name: str\n\nclass Student(BaseModel):\n    name: str\n    intro: str = ''\n    def resolve_intro(self):\n        return f'hello {self.name}'\n    \n    books: tuple[Book, ...] = tuple()\n    async def resolve_books(self):\n        return await get_books()\n\nasync def get_books():\n    await asyncio.sleep(1)\n    return [Book(name=\"sky\"), Book(name=\"sea\")]\n\nclass TestResolver(unittest.IsolatedAsyncioTestCase):\n\n    async def test_resolver_1(self):\n        stu = Student(name=\"boy\")\n        result = await resolve(stu)\n        expected = {\n            'name': 'boy',\n            'intro': 'hello boy',\n            'books': [{'name': 'sky'}, {'name': 'sea'}]\n        }\n        self.assertEqual(result.dict(), expected)\n\n    async def test_resolver_2(self):\n        stu = [Student(name=\"boy\")]\n        result = await resolve(stu)\n        expected = {\n            'name': 'boy',\n            'intro': 'hello boy',\n            'books': [{'name': 'sky'}, {'name': 'sea'}]\n        }\n        self.assertEqual(result[0].dict(), expected)\n\n    async def test_schema(self):\n        # Student.update_forward_refs(Book=Book)\n        schema = Student.schema_json()\n        expected = '''{\"title\": \"Student\", \"type\": \"object\", \"properties\": {\"name\": {\"title\": \"Name\", \"type\": \"string\"}, \"intro\": {\"title\": \"Intro\", \"default\": \"\", \"type\": \"string\"}, \"books\": {\"title\": \"Books\", \"default\": [], \"type\": \"array\", \"items\": {\"$ref\": \"#/definitions/Book\"}}}, \"required\": [\"name\"], \"definitions\": {\"Book\": {\"title\": \"Book\", \"type\": \"object\", \"properties\": {\"name\": {\"title\": \"Name\", \"type\": \"string\"}}, \"required\": [\"name\"]}}}'''\n        self.assertEqual(schema, expected)\n```\n\n### Demo 2: Integrated with aiodataloader:\n\n```python\nfrom __future__ import annotations\nfrom typing import Tuple\nimport unittest\nfrom pydantic import BaseModel\nfrom pydantic_resolve import resolve\nfrom aiodataloader import DataLoader\n\nclass TestDataloaderResolver(unittest.IsolatedAsyncioTestCase):\n    async def test_dataloader_1(self):\n\n        BOOKS = {\n            1: [{'name': 'book1'}, {'name': 'book2'}],\n            2: [{'name': 'book3'}, {'name': 'book4'}],\n        }\n\n        class Book(BaseModel):\n            name: str\n\n        class BookLoader(DataLoader):\n            async def batch_load_fn(self, keys):\n                books = [[Book(**bb) for bb in BOOKS.get(k, [])] for k in keys]\n                return books\n\n        book_loader = BookLoader()  \n\n        class Student(BaseModel):\n            id: int\n            name: str\n\n            books: Tuple[Book, ...] = tuple()\n            def resolve_books(self):\n                return book_loader.load(self.id)\n\n        students = [Student(id=1, name=\"jack\"), Student(id=2, name=\"mike\")]\n        results = await resolve(students)\n        source = [r.dict() for r in results]\n        expected = [\n            {'id': 1, 'name': 'jack', 'books': [{ 'name': 'book1'}, {'name': 'book2'}]},\n            {'id': 2, 'name': 'mike', 'books': [{ 'name': 'book3'}, {'name': 'book4'}]},\n        ]\n        self.assertEqual(source, expected)\n```\n\n## Unittest\n\n```shell\npoetry run python -m unittest  # or\npoetry run pytest  # or\npoetry run tox\n```\n\n## Coverage \n\n```shell\npoetry run coverage run -m pytest\npoetry run coverage report -m\n```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -676,7 +675,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17408855,
+        "last_serial": 17449958,
         "urls": [
             {
                 "comment_text": "",
@@ -717,6 +716,98 @@
                 "upload_time": "2023-03-23T02:33:06",
                 "upload_time_iso_8601": "2023-03-23T02:33:06.383113Z",
                 "url": "https://files.pythonhosted.org/packages/df/d3/5e3f96d2465af5d292c9b9a3ba63903c9fcf935cb4ad5bfb3b9934d00e09/pydantic_resolve-0.2.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.3": {
+        "info": {
+            "author": "tangkikodo",
+            "author_email": "allmonday@126.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# Pydantic-resolve\n\n```python\nimport asyncio\nfrom pydantic import BaseModel\nfrom pydantic_resolve import resolve\n\nclass Student(BaseModel):\n    name: str\n    greet: str = ''\n    async def resolve_greet(self):\n        await asyncio.sleep(1)  # mock i/o\n        return f'hello {self.name}'\n\nasync def main():\n    students = [Student(name='john' )]\n    results = await resolve(students)\n    print(results)\n\nasyncio.run(main())\n\n# output: [Student(name='john', greet='hello john')]\n```\n\n- Pydantic-resolve helps you asynchoronously, resursively resolve a pydantic object (or dataclass object)\n\n- Pydantic-resolve, when used in conjunction with aiodataloader, allows you to easily generate nested data structures without worrying about generating N+1 queries.\n\n- inspired by [graphene](https://graphene-python.org/)\n\n[![CI](https://github.com/allmonday/pydantic_resolve/actions/workflows/ci.yml/badge.svg)](https://github.com/allmonday/pydantic_resolve/actions/workflows/ci.yml)\n![Python Versions](https://img.shields.io/pypi/pyversions/pydantic-resolve)\n![Test Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/allmonday/6f1661c6310e1b31c9a10b0d09d52d11/raw/covbadge.json)\n## Install\n\n```shell\npip install pydantic-resolve\n```\n\n## Demo 1, Resolve asynchoronously\n\n```python\nfrom pydantic_resolve import resolve\n\nclass Book(BaseModel):\n    name: str\n\nclass Student(BaseModel):\n    name: str\n    intro: str = ''\n    def resolve_intro(self):\n        return f'hello {self.name}'\n    \n    books: tuple[Book, ...] = tuple()\n    async def resolve_books(self):\n        return await get_books()\n\nasync def get_books():\n    await asyncio.sleep(1)\n    return [Book(name=\"sky\"), Book(name=\"sea\")]\n\nclass TestResolver(unittest.IsolatedAsyncioTestCase):\n\n    async def test_resolver_1(self):\n        stu = Student(name=\"boy\")\n        result = await resolve(stu)\n        expected = {\n            'name': 'boy',\n            'intro': 'hello boy',\n            'books': [{'name': 'sky'}, {'name': 'sea'}]\n        }\n        self.assertEqual(result.dict(), expected)\n\n    async def test_resolver_2(self):\n        stu = [Student(name=\"boy\")]\n        result = await resolve(stu)\n        expected = {\n            'name': 'boy',\n            'intro': 'hello boy',\n            'books': [{'name': 'sky'}, {'name': 'sea'}]\n        }\n        self.assertEqual(result[0].dict(), expected)\n\n    async def test_schema(self):\n        # Student.update_forward_refs(Book=Book)\n        schema = Student.schema_json()\n        expected = '''{\"title\": \"Student\", \"type\": \"object\", \"properties\": {\"name\": {\"title\": \"Name\", \"type\": \"string\"}, \"intro\": {\"title\": \"Intro\", \"default\": \"\", \"type\": \"string\"}, \"books\": {\"title\": \"Books\", \"default\": [], \"type\": \"array\", \"items\": {\"$ref\": \"#/definitions/Book\"}}}, \"required\": [\"name\"], \"definitions\": {\"Book\": {\"title\": \"Book\", \"type\": \"object\", \"properties\": {\"name\": {\"title\": \"Name\", \"type\": \"string\"}}, \"required\": [\"name\"]}}}'''\n        self.assertEqual(schema, expected)\n```\n\n### Demo 2: Integrated with aiodataloader:\n\n```python\nfrom __future__ import annotations\nfrom typing import Tuple\nimport unittest\nfrom pydantic import BaseModel\nfrom pydantic_resolve import resolve\nfrom aiodataloader import DataLoader\n\nclass TestDataloaderResolver(unittest.IsolatedAsyncioTestCase):\n    async def test_dataloader_1(self):\n\n        BOOKS = {\n            1: [{'name': 'book1'}, {'name': 'book2'}],\n            2: [{'name': 'book3'}, {'name': 'book4'}],\n        }\n\n        class Book(BaseModel):\n            name: str\n\n        class BookLoader(DataLoader):\n            async def batch_load_fn(self, keys):\n                books = [[Book(**bb) for bb in BOOKS.get(k, [])] for k in keys]\n                return books\n\n        book_loader = BookLoader()  \n\n        class Student(BaseModel):\n            id: int\n            name: str\n\n            books: Tuple[Book, ...] = tuple()\n            def resolve_books(self):\n                return book_loader.load(self.id)\n\n        students = [Student(id=1, name=\"jack\"), Student(id=2, name=\"mike\")]\n        results = await resolve(students)\n        source = [r.dict() for r in results]\n        expected = [\n            {'id': 1, 'name': 'jack', 'books': [{ 'name': 'book1'}, {'name': 'book2'}]},\n            {'id': 2, 'name': 'mike', 'books': [{ 'name': 'book3'}, {'name': 'book4'}]},\n        ]\n        self.assertEqual(source, expected)\n```\n\nFor more examples, please explore in `demo`\n\n## Unittest\n\n```shell\npoetry run python -m unittest  # or\npoetry run pytest  # or\npoetry run tox\n```\n\n## Coverage \n\n```shell\npoetry run coverage run -m pytest\npoetry run coverage report -m\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/allmonday/pydantic_resolve",
+            "keywords": "pydantic,fastapi",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "pydantic-resolve",
+            "package_url": "https://pypi.org/project/pydantic-resolve/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/pydantic-resolve/",
+            "project_urls": {
+                "Homepage": "https://github.com/allmonday/pydantic_resolve",
+                "Repository": "https://github.com/allmonday/pydantic_resolve"
+            },
+            "release_url": "https://pypi.org/project/pydantic-resolve/0.2.3/",
+            "requires_dist": [
+                "pydantic (>=1.10.4,<2.0.0)"
+            ],
+            "requires_python": ">=3.8,<4.0",
+            "summary": "Make pydantic have a GraphQL-like assembly experience.",
+            "version": "0.2.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17449958,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2c363fb22bc29483fac057a81ceea3d45ba32f7b684b1fb61a2a56bd50647d4a",
+                    "md5": "b9cacd64965c9670947c16ecf0c1a159",
+                    "sha256": "4f0d052ed4775543bf40fc8bd94b883aa6da952f010240588169e3301547a658"
+                },
+                "downloads": -1,
+                "filename": "pydantic_resolve-0.2.3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "b9cacd64965c9670947c16ecf0c1a159",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8,<4.0",
+                "size": 4311,
+                "upload_time": "2023-03-26T13:41:40",
+                "upload_time_iso_8601": "2023-03-26T13:41:40.423018Z",
+                "url": "https://files.pythonhosted.org/packages/2c/36/3fb22bc29483fac057a81ceea3d45ba32f7b684b1fb61a2a56bd50647d4a/pydantic_resolve-0.2.3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "bebb2b8601d4129a25367072349e2ba60e28ae18469a7fc37421965ca69b1c80",
+                    "md5": "378a959056fe9e37b130ef4a35bb0f54",
+                    "sha256": "a0560069090d9387a56b7bbca4d1bf9c747f2cfe6d047811dff864151dc5882f"
+                },
+                "downloads": -1,
+                "filename": "pydantic_resolve-0.2.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "378a959056fe9e37b130ef4a35bb0f54",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8,<4.0",
+                "size": 4137,
+                "upload_time": "2023-03-26T13:41:42",
+                "upload_time_iso_8601": "2023-03-26T13:41:42.861258Z",
+                "url": "https://files.pythonhosted.org/packages/be/bb/2b8601d4129a25367072349e2ba60e28ae18469a7fc37421965ca69b1c80/pydantic_resolve-0.2.3.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
