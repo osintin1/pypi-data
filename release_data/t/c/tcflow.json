@@ -9,7 +9,6 @@
                 "Operating System :: OS Independent",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "# Table of contents\r\n- [About ThermalConductivity-Workflow](#ThermalConductivity-Workflow)\r\n- [Workflow Framework](#Workflow-Framework)\r\n- [Prepare Input File](#Prepare-input-file)\r\n# About ThermalConductivity-Workflow\r\nThermalConductivity-Workflow is designed to compute thermal conductivity of different materials based on Non-Equilibrium &amp; Equilibrium Molecular Dynamics Simulations.It is supported by [dflow](https://github.com/deepmodeling/dflow), a Python framework for constructing scientific computing workflows.\r\n\r\n# Environment Installation\r\n* dflow, the necessary package in the host machine\r\n* computational environment, needed in both host and computing machine\r\n## Installation of dflow\r\nWith the power of dflow, users can easily minitor the whole workflow of ThermalConductivity tasks and dispatch their tasks to various computational resources. Before you use it, you should have dflow installed on your host computer (your PC or a remote server).\r\n\r\nIt it necessary to emphasize that, the computational nodes and monitor nodes are seperated. With dflow, you can deploy dflow and ThermalConductivity on your PC and achieve expensive computation on other resources (like Slurm and Cloud Platform) without any further effort.\r\n\r\nInstructions of dflow installation are provided in detail on its [Github page](https://github.com/deepmodeling/dflow#Installdflow). Prerequisites of dflow usage are Docker and Kubenetes, where their main pages ([Docker](https://docs.docker.com/engine/install/) &amp; [Kubenetes](https://kubernetes.io/docs/tasks/tools/) include how you can install them. Besides, dflow repo also provides with easy-install shell scripts on [dflow/scripts](https://github.com/deepmodeling/dflow/tree/master/scripts) to install Docker &amp; Kubenetes &amp; dflow and make port-forwarding.\r\n\r\n## Installation of computational environment\r\nThe computational environment is supported by several third-party python packages.The following packages should be installed  both on host &amp; computing machines:\r\n* deepmd-kit & plumed lammps\r\n* dpdata\r\n* matplotlib\r\n* [sportran](https://sportran.readthedocs.io/en/latest/README.html#installation)\r\n\r\nOne may create a GPU environment containing the GPU version of DeePMD-kit and LAMMPS as following commands.Or look for more detailed installation options in deepmd-kit [easy-install](https://github.com/deepmodeling/deepmd-kit/blob/master/doc/install/easy-install.md)\r\n```bash\r\nconda create -n deepmd deepmd-kit=*=*gpu libdeepmd=*=*gpu lammps cudatoolkit=11.6 horovod -c https://conda.deepmodeling.com -c defaults\r\n```\r\n\r\nOne can install other packages with following commands:\r\n```bash\r\nconda install -c conda-forge dpdata\r\npip install sportran\r\nconda install -c conda-forge matplotlib-base\r\n```\r\n# Workflow Framework\r\n## EMD(Equilibrium Molecular Dynamics Simulations) \r\nThe process of computing thermal conductivities with EMD is as follows:\r\n\r\n```mermaid\r\ngraph TD\r\nA[Initial Structure and Force Field] -->|LAMMPS| B{NVT}\r\nB --> C[Structure 1]\r\nB --> D[Structure 2]\r\nB --> E[...]\r\nB --> F[Structure N]\r\nC -->|randon velocity| C1{NVE}\r\nD -->|randon velocity| D1{NVE}\r\nE -->|randon velocity| E1{NVE}\r\nF -->|randon velocity| F1{NVE}\r\nC1 --> G[Heat Fluxes and Mass Fluxes]\r\nD1 --> G[Heat Fluxes and Mass Fluxes]\r\nE1 --> G[Heat Fluxes and Mass Fluxes]\r\nF1 --> G[Heat Fluxes and Mass Fluxes]\r\nG -->|Sportran| H{Cesptral Analysis}\r\nH --> I[Theraml Conductivity]\r\n```\r\n## NEMD(Non-Equilibrium Molecular Dynamics Simulations) \r\nThe process of computing thermal conductivities with NEMD is as follows:\r\n```mermaid\r\ngraph TD\r\nA[Initial Cell] -->B{Cell Expansion along One Axis}\r\nB -->|e.g. 6x3x2| C[Cell 1]\r\nB -->|e.g. 15x3x2| D[Cell 2]\r\nB -->|...| E[...]\r\nB -->|e.g. 50x3x2| F[Cell N]\r\nC -->|Langevin| C1{NEMD}\r\nD -->|Langevin| D1{NEMD}\r\nE -->|Langevin| E1{NEMD}\r\nF -->|Langevin| F1{NEMD}\r\nC1 --> C2[Temperature Gradient and Kappa 1]\r\nD1 --> D2[Temperature Gradient and Kappa 2]\r\nE1 --> E2[Temperature Gradient and Kappa ...]\r\nF1 --> F2[Temperature Gradient and Kappa N]\r\nC2 -->G{Linear extrapolation}\r\nD2 -->G{Linear extrapolation}\r\nE2 -->G{Linear extrapolation}\r\nF2 -->G{Linear extrapolation}\r\nG -->H[Thermal Conductivity]\r\n```\r\n# Prepare Input Files\r\nFirstly, we introduce the input files required for the ThermalConductivity.Input files in example/ have been prepared. \r\nThe following files is needed:\r\n* data.lammps, the input structure file of lammps format\r\n* run.py, the main code to run the whole workflow, run_emd.py and run_nemd.py have been prepared\r\n* parameters.json, the settings for simulations and tasks\r\n* input_gen.py, the code to generate corresponding lammps input file\r\n* force field(if needed), the force field file used in lammps MD\r\n\r\n## Prepare run.py\r\nThe Function **slurm_remote_executor** should be setted for using remote computing resources. The varible **'your-jobname'**,**'your-env'** and **'your-workdir'** should be replaced in actual use\r\n\r\n ```Python\r\n slurm_remote_executor = SlurmRemoteExecutor(\r\n        host=\"\",\r\n        port=22,\r\n        username=\"\",\r\n        password=\"\",\r\n        header=\"\"\"#!/bin/bash\r\n#SBATCH --job-name=\"your-jobname\"\r\n#SBATCH --error=./err.txt\r\n#SBATCH --output=./stdout.inf\r\n#SBATCH --gpus=1\r\n#SBATCH --time=1000:00:00\r\nsource activate your-env-name\r\n        \"\"\",\r\n        workdir=\"/your-workdir\"+\"/{{workflow.name}}/{{pod.name}}\",\r\n    )\r\n ```\r\n \r\n The relevant settings of dflow should also be setted in run.py\r\n \r\n## Prepare parameters.json\r\n### parameters.json of EMD\r\nparameters.json for emd in /example/emd/H2O \r\n```Json\r\n{\r\n    \"type_map\": [\"C\",\"H\"],\r\n    \"mass_map\": [12.0107,1.00794],\r\n    \"temperature\":300,\r\n    \"time_step\": 0.0005,\r\n    \"thermo_print_interval\": 10,\r\n    \"traj_print_interval\": 1000,\r\n    \"structure\":\"./data.pentacene3x3x3\",\r\n    \"is_two-body-potential\":false,\r\n    \"force_field\":[\"frozen_model_compressed.pb\"],\r\n    \"load_force_field\":\"pair_style deepmd frozen_model_compressed.pb\\npair_coeff * *\\n\",\r\n    \"num_configurations\":50,\r\n    \"NVT_steps\":1000000,\r\n    \"NVE_steps\":2000000\r\n}\r\n```\r\n\r\nDescription of parameters\r\n\r\n| Parameters| Type          | Description  |\r\n| --------------------- | ---------------------- | -------------------------- |\r\n| type_map     | List of str       |                   |\r\n\r\n\r\n### parameters.json of NEMD\r\n```Json\r\n{\r\n    \"type_map\": [\"H\",\"O\"],\r\n    \"mass_map\": [1,16],\r\n    \"time_step\": 0.0005,\r\n    \"supercell\": [[4,1,1],[5,1,1],[6,1,1],[8,1,1],[10,1,1],[15,1,1]],\r\n    \"temperature\":408,\r\n    \"temperature_difference\":30,\r\n    \"linear_scale\":[0.10,0.90],\r\n    \"thermo_print_interval\": 1000,\r\n    \"traj_print_interval\": 1000,\r\n    \"structure\":\"./data.water\",\r\n    \"force_field\":[\"frozen_model_compressed.pb\"],\r\n    \"load_force_field\":\"pair_style deepmd frozen_model_compressed.pb\\npair_coeff * *\\n\",\r\n    \"langevin_damp\":0.5,\r\n    \"NVT_steps\":20000,\r\n    \"NEMD_equilibrium_steps\":200000,\r\n    \"NEMD_production_steps\":2000000,\r\n    \"num_configurations\":10\r\n}\r\n```\r\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -45,7 +44,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17450874,
+        "last_serial": 17461847,
         "urls": [
             {
                 "comment_text": "",
@@ -86,6 +85,283 @@
                 "upload_time": "2023-03-26T16:04:33",
                 "upload_time_iso_8601": "2023-03-26T16:04:33.211847Z",
                 "url": "https://files.pythonhosted.org/packages/1e/ed/2814cea5bad87aa2858d01c90a54b6c12ef3ded958ce0b4f2b85d60901d4/tcflow-0.0.4.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.5": {
+        "info": {
+            "author": "Wenjie Zhang",
+            "author_email": "gdbhcxhmjk@163.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: Apache Software License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/gdbhcxhmjk-z/ThermalConductivity-Workflow.git",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "tcflow",
+            "package_url": "https://pypi.org/project/tcflow/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/tcflow/",
+            "project_urls": {
+                "Homepage": "https://github.com/gdbhcxhmjk-z/ThermalConductivity-Workflow.git"
+            },
+            "release_url": "https://pypi.org/project/tcflow/0.0.5/",
+            "requires_dist": [
+                "pydflow (>=1.6.27)",
+                "lbg (>=1.2.13)",
+                "dpdata (>=0.2.7)",
+                "matplotlib (>=3.6.3)",
+                "sportran",
+                "numpy"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "A framework for thermal conductivity calculation based on EMD&NEMD methods",
+            "version": "0.0.5",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17461847,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "012ab3dcff4e7df0bbb440fb3a3a5cd3d83bd2ff24b46a8fcf24f790b339ec07",
+                    "md5": "bc0929afe0f73c5ada9a29456b93d696",
+                    "sha256": "042435a381457f9b7657bb6a0d2421b8408c4da216efa8d018087b9fa5f200c0"
+                },
+                "downloads": -1,
+                "filename": "tcflow-0.0.5-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "bc0929afe0f73c5ada9a29456b93d696",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 19815,
+                "upload_time": "2023-03-27T07:22:57",
+                "upload_time_iso_8601": "2023-03-27T07:22:57.247002Z",
+                "url": "https://files.pythonhosted.org/packages/01/2a/b3dcff4e7df0bbb440fb3a3a5cd3d83bd2ff24b46a8fcf24f790b339ec07/tcflow-0.0.5-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "4006b462eff878fc0bb150e164df64db7827c08e22af13e8b9925b4a5d08e57a",
+                    "md5": "e855fb38d9e87dee8a2b42f62e22c5b0",
+                    "sha256": "d5987b0c9e9e95dda188867571cb3e30ecac6f02e96df9fc0c4fe12b47995882"
+                },
+                "downloads": -1,
+                "filename": "tcflow-0.0.5.tar.gz",
+                "has_sig": false,
+                "md5_digest": "e855fb38d9e87dee8a2b42f62e22c5b0",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 17473,
+                "upload_time": "2023-03-27T07:22:59",
+                "upload_time_iso_8601": "2023-03-27T07:22:59.589217Z",
+                "url": "https://files.pythonhosted.org/packages/40/06/b462eff878fc0bb150e164df64db7827c08e22af13e8b9925b4a5d08e57a/tcflow-0.0.5.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.6": {
+        "info": {
+            "author": "Wenjie Zhang",
+            "author_email": "gdbhcxhmjk@163.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: Apache Software License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/gdbhcxhmjk-z/ThermalConductivity-Workflow.git",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "tcflow",
+            "package_url": "https://pypi.org/project/tcflow/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/tcflow/",
+            "project_urls": {
+                "Homepage": "https://github.com/gdbhcxhmjk-z/ThermalConductivity-Workflow.git"
+            },
+            "release_url": "https://pypi.org/project/tcflow/0.0.6/",
+            "requires_dist": [
+                "pydflow (>=1.6.27)",
+                "lbg (>=1.2.13)",
+                "dpdata (>=0.2.7)",
+                "matplotlib (>=3.6.3)",
+                "sportran",
+                "numpy"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "A framework for thermal conductivity calculation based on EMD&NEMD methods",
+            "version": "0.0.6",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17461847,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f5a9ff76fbe11e1c6995954f50bc808840df651e8cebc2a1f203df3cdacf124f",
+                    "md5": "7f0626c63bc0dc28aa8e88cf0b9501b1",
+                    "sha256": "a9b192f04398e61b357f248eb33c131bad38eeb54585e7038e544359428b74b3"
+                },
+                "downloads": -1,
+                "filename": "tcflow-0.0.6-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "7f0626c63bc0dc28aa8e88cf0b9501b1",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 19834,
+                "upload_time": "2023-03-27T11:02:15",
+                "upload_time_iso_8601": "2023-03-27T11:02:15.847099Z",
+                "url": "https://files.pythonhosted.org/packages/f5/a9/ff76fbe11e1c6995954f50bc808840df651e8cebc2a1f203df3cdacf124f/tcflow-0.0.6-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "20f9c0ba5a7abbf30255a8cb8be0c4c85e7c9a3fae27899d555dfdb51c066053",
+                    "md5": "67314f960f3ae92682164f99a36e0115",
+                    "sha256": "bcb7d1e5f33e0cddc9c5d95bfe807c2cf33a60da22a7a8dea9989e26882fcf3d"
+                },
+                "downloads": -1,
+                "filename": "tcflow-0.0.6.tar.gz",
+                "has_sig": false,
+                "md5_digest": "67314f960f3ae92682164f99a36e0115",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 17532,
+                "upload_time": "2023-03-27T11:02:17",
+                "upload_time_iso_8601": "2023-03-27T11:02:17.950210Z",
+                "url": "https://files.pythonhosted.org/packages/20/f9/c0ba5a7abbf30255a8cb8be0c4c85e7c9a3fae27899d555dfdb51c066053/tcflow-0.0.6.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.7": {
+        "info": {
+            "author": "Wenjie Zhang",
+            "author_email": "gdbhcxhmjk@163.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: Apache Software License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# Table of contents\r\n- [About ThermalConductivity-Workflow](#ThermalConductivity-Workflow)\r\n- [Workflow Framework](#Workflow-Framework)\r\n- [Prepare Input File](#Prepare-input-file)\r\n# About ThermalConductivity-Workflow\r\nThermalConductivity-Workflow is designed to compute thermal conductivity of different materials based on Non-Equilibrium &amp; Equilibrium Molecular Dynamics Simulations.It is supported by [dflow](https://github.com/deepmodeling/dflow), a Python framework for constructing scientific computing workflows.\r\n\r\n# Environment Installation\r\n* dflow, the necessary package in the host machine\r\n* computational environment, needed in both host and computing machine\r\n## Installation of dflow\r\nWith the power of dflow, users can easily minitor the whole workflow of ThermalConductivity tasks and dispatch their tasks to various computational resources. Before you use it, you should have dflow installed on your host computer (your PC or a remote server).\r\n\r\nIt it necessary to emphasize that, the computational nodes and monitor nodes are seperated. With dflow, you can deploy dflow and ThermalConductivity on your PC and achieve expensive computation on other resources (like Slurm and Cloud Platform) without any further effort.\r\n\r\nInstructions of dflow installation are provided in detail on its [Github page](https://github.com/deepmodeling/dflow#Installdflow). Prerequisites of dflow usage are Docker and Kubenetes, where their main pages ([Docker](https://docs.docker.com/engine/install/) &amp; [Kubenetes](https://kubernetes.io/docs/tasks/tools/) include how you can install them. Besides, dflow repo also provides with easy-install shell scripts on [dflow/scripts](https://github.com/deepmodeling/dflow/tree/master/scripts) to install Docker &amp; Kubenetes &amp; dflow and make port-forwarding.\r\n\r\n## Installation of computational environment\r\nThe computational environment is supported by several third-party python packages.The following packages should be installed  both on host &amp; computing machines:\r\n* deepmd-kit & plumed lammps\r\n* dpdata\r\n* matplotlib\r\n* [sportran](https://sportran.readthedocs.io/en/latest/README.html#installation)\r\n\r\nOne may create a GPU environment containing the GPU version of DeePMD-kit and LAMMPS as following commands.Or look for more detailed installation options in deepmd-kit [easy-install](https://github.com/deepmodeling/deepmd-kit/blob/master/doc/install/easy-install.md)\r\n```bash\r\nconda create -n deepmd deepmd-kit=*=*gpu libdeepmd=*=*gpu lammps cudatoolkit=11.6 horovod -c https://conda.deepmodeling.com -c defaults\r\n```\r\n\r\nOne can install other packages with following commands:\r\n```bash\r\nconda install -c conda-forge dpdata\r\npip install sportran\r\nconda install -c conda-forge matplotlib-base\r\n```\r\n# Workflow Framework\r\n## EMD(Equilibrium Molecular Dynamics Simulations) \r\nThe process of computing thermal conductivities with EMD is as follows:\r\n\r\n```mermaid\r\ngraph TD\r\nA[Initial Structure and Force Field] -->|LAMMPS| B{NVT}\r\nB --> C[Structure 1]\r\nB --> D[Structure 2]\r\nB --> E[...]\r\nB --> F[Structure N]\r\nC -->|randon velocity| C1{NVE}\r\nD -->|randon velocity| D1{NVE}\r\nE -->|randon velocity| E1{NVE}\r\nF -->|randon velocity| F1{NVE}\r\nC1 --> G[Heat Fluxes and Mass Fluxes]\r\nD1 --> G[Heat Fluxes and Mass Fluxes]\r\nE1 --> G[Heat Fluxes and Mass Fluxes]\r\nF1 --> G[Heat Fluxes and Mass Fluxes]\r\nG -->|Sportran| H{Cesptral Analysis}\r\nH --> I[Theraml Conductivity]\r\n```\r\n## NEMD(Non-Equilibrium Molecular Dynamics Simulations) \r\nThe process of computing thermal conductivities with NEMD is as follows:\r\n```mermaid\r\ngraph TD\r\nA[Initial Cell] -->B{Cell Expansion along One Axis}\r\nB -->|e.g. 6x3x2| C[Cell 1]\r\nB -->|e.g. 15x3x2| D[Cell 2]\r\nB -->|...| E[...]\r\nB -->|e.g. 50x3x2| F[Cell N]\r\nC -->|Langevin| C1{NEMD}\r\nD -->|Langevin| D1{NEMD}\r\nE -->|Langevin| E1{NEMD}\r\nF -->|Langevin| F1{NEMD}\r\nC1 --> C2[Temperature Gradient and Kappa 1]\r\nD1 --> D2[Temperature Gradient and Kappa 2]\r\nE1 --> E2[Temperature Gradient and Kappa ...]\r\nF1 --> F2[Temperature Gradient and Kappa N]\r\nC2 -->G{Linear extrapolation}\r\nD2 -->G{Linear extrapolation}\r\nE2 -->G{Linear extrapolation}\r\nF2 -->G{Linear extrapolation}\r\nG -->H[Thermal Conductivity]\r\n```\r\n# Prepare Input Files\r\nFirstly, we introduce the input files required for the ThermalConductivity.Input files in example/ have been prepared. \r\nThe following files is needed:\r\n* data.lammps, the input structure file of lammps format\r\n* run.py, the main code to run the whole workflow, run_emd.py and run_nemd.py have been prepared\r\n* parameters.json, the settings for simulations and tasks\r\n* input_gen.py, the code to generate corresponding lammps input file\r\n* force field(if needed), the force field file used in lammps MD\r\n\r\n## Prepare run.py\r\nThe Function **slurm_remote_executor** should be setted for using remote computing resources. The varible **'your-jobname'**,**'your-env'** and **'your-workdir'** should be replaced in actual use\r\n\r\n ```Python\r\n slurm_remote_executor = SlurmRemoteExecutor(\r\n        host=\"\",\r\n        port=22,\r\n        username=\"\",\r\n        password=\"\",\r\n        header=\"\"\"#!/bin/bash\r\n#SBATCH --job-name=\"your-jobname\"\r\n#SBATCH --error=./err.txt\r\n#SBATCH --output=./stdout.inf\r\n#SBATCH --gpus=1\r\n#SBATCH --time=1000:00:00\r\nsource activate your-env-name\r\n        \"\"\",\r\n        workdir=\"/your-workdir\"+\"/{{workflow.name}}/{{pod.name}}\",\r\n    )\r\n ```\r\n \r\n The relevant settings of dflow should also be setted in run.py\r\n \r\n## Prepare parameters.json\r\n### parameters.json of EMD\r\nparameters.json for emd in /example/emd/H2O \r\n```Json\r\n{\r\n    \"type_map\": [\"C\",\"H\"],\r\n    \"mass_map\": [12.0107,1.00794],\r\n    \"temperature\":300,\r\n    \"time_step\": 0.0005,\r\n    \"thermo_print_interval\": 10,\r\n    \"traj_print_interval\": 1000,\r\n    \"structure\":\"./data.pentacene3x3x3\",\r\n    \"is_two-body-potential\":false,\r\n    \"force_field\":[\"frozen_model_compressed.pb\"],\r\n    \"load_force_field\":\"pair_style deepmd frozen_model_compressed.pb\\npair_coeff * *\\n\",\r\n    \"num_configurations\":50,\r\n    \"NVT_steps\":1000000,\r\n    \"NVE_steps\":2000000\r\n}\r\n```\r\n\r\nDescription of parameters\r\n\r\n| Parameters| Type          | Description  |\r\n| --------------------- | ---------------------- | -------------------------- |\r\n| type_map     | List of str       |                   |\r\n\r\n\r\n### parameters.json of NEMD\r\n```Json\r\n{\r\n    \"type_map\": [\"H\",\"O\"],\r\n    \"mass_map\": [1,16],\r\n    \"time_step\": 0.0005,\r\n    \"supercell\": [[4,1,1],[5,1,1],[6,1,1],[8,1,1],[10,1,1],[15,1,1]],\r\n    \"temperature\":408,\r\n    \"temperature_difference\":30,\r\n    \"linear_scale\":[0.10,0.90],\r\n    \"thermo_print_interval\": 1000,\r\n    \"traj_print_interval\": 1000,\r\n    \"structure\":\"./data.water\",\r\n    \"force_field\":[\"frozen_model_compressed.pb\"],\r\n    \"load_force_field\":\"pair_style deepmd frozen_model_compressed.pb\\npair_coeff * *\\n\",\r\n    \"langevin_damp\":0.5,\r\n    \"NVT_steps\":20000,\r\n    \"NEMD_equilibrium_steps\":200000,\r\n    \"NEMD_production_steps\":2000000,\r\n    \"num_configurations\":10\r\n}\r\n```\r\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/gdbhcxhmjk-z/ThermalConductivity-Workflow.git",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "tcflow",
+            "package_url": "https://pypi.org/project/tcflow/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/tcflow/",
+            "project_urls": {
+                "Homepage": "https://github.com/gdbhcxhmjk-z/ThermalConductivity-Workflow.git"
+            },
+            "release_url": "https://pypi.org/project/tcflow/0.0.7/",
+            "requires_dist": [
+                "pydflow (>=1.6.27)",
+                "lbg (>=1.2.13)",
+                "dpdata (>=0.2.7)",
+                "matplotlib (>=3.6.3)",
+                "sportran",
+                "numpy"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "A framework for thermal conductivity calculation based on EMD&NEMD methods",
+            "version": "0.0.7",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17461847,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "1a5a159b4427d9f5e73292721a783428ae5a0e67cc8c7723dbcb4aa9c23b01ec",
+                    "md5": "e67bd7050fdf45bfc63b6eada2bf9f15",
+                    "sha256": "0f4b277fe283ab712f73364cf8cd16955e605c94a98e9e5e4181ae2153b9cec4"
+                },
+                "downloads": -1,
+                "filename": "tcflow-0.0.7-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "e67bd7050fdf45bfc63b6eada2bf9f15",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 19862,
+                "upload_time": "2023-03-27T14:20:43",
+                "upload_time_iso_8601": "2023-03-27T14:20:43.622617Z",
+                "url": "https://files.pythonhosted.org/packages/1a/5a/159b4427d9f5e73292721a783428ae5a0e67cc8c7723dbcb4aa9c23b01ec/tcflow-0.0.7-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "027c3a6614f60603f3ed5ed9de19451b24363a05ad4e323c72f90bab569ff48f",
+                    "md5": "5be464d18aa94432f434bd6114218890",
+                    "sha256": "60e31402b7db5b8e9386d7f754d43f229d5a17a5a545be130cc4bf532156adde"
+                },
+                "downloads": -1,
+                "filename": "tcflow-0.0.7.tar.gz",
+                "has_sig": false,
+                "md5_digest": "5be464d18aa94432f434bd6114218890",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 17434,
+                "upload_time": "2023-03-27T14:20:46",
+                "upload_time_iso_8601": "2023-03-27T14:20:46.017805Z",
+                "url": "https://files.pythonhosted.org/packages/02/7c/3a6614f60603f3ed5ed9de19451b24363a05ad4e323c72f90bab569ff48f/tcflow-0.0.7.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
