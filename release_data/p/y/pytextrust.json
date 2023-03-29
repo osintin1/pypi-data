@@ -1,0 +1,113 @@
+{
+    "0.2.1": {
+        "info": {
+            "author": "Guillermo Gonzalez <guillermogsjc@gmail.com>",
+            "author_email": "Guillermo Gonzalez <guillermogsjc@gmail.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# PyTextRust\n\n<img align=\"right\" width=\"80\" height=\"100\" src=\"misc/pytextrust.png\">\n\n- **main**:\n  - [![pipeline status](https://gitlab.com/g6313/pytextrust/badges/main/pipeline.svg)](https://gitlab.com/g6313/pytextrust/-/commits/main)\n  - [![coverage report](https://gitlab.com/g6313/pytextrust/badges/main/coverage.svg)](https://gitlab.com/g6313/pytextrust/-/commits/main)\n- **develop**:\n  - [![pipeline status](https://gitlab.com/g6313/pytextrust/badges/develop/pipeline.svg)](https://gitlab.com/g6313/pytextrust/-/commits/develop)\n  - [![coverage report](https://gitlab.com/g6313/pytextrust/badges/develop/coverage.svg)](https://gitlab.com/g6313/pytextrust/-/commits/develop)\n\n[Donnations](https://www.paypal.com/donate/?business=V4NHA93BU6WPA&no_recurring=0&item_name=The+children+need+to+eat+but+I+am+too+busy&currency_code=EUR)\n\nLibrary defined to achieve easily high performance on regex and text processing inside Python, being built as a direct Wrapper of Rust regex and text crates.\n\nOn short text, sparsity of found elements is the common denominator, this library focuses on algorithms that aknowledge this sparsity and efficiently achieves good performance from simple Python API calls to Rust optimized logics.\n\n# Regex\n\n`Regexset` and `Regex`are the main engines.\n\nConfiguration of regexsetbuilder <https://rust-lang.github.io/regex/regex/struct.RegexSetBuilder.html>\n\n## Locally build\n\n<https://maturin.rs/project_layout.html#mixed-rustpython-project>\n\nBIG INFORMATION\n\n- pending logging?\n\n```shell\nmaturin build --release\npip install --force-reinstall target/wheels/pytextrust-0.1.0-cp38-cp38-linux_x86_64.whl\n```\n\n## Learning doc\n\n- [The Rust Programming Language](https://doc.rust-lang.org/book/title-page.html)\n- [Rust CookBook](https://rust-lang-nursery.github.io/rust-cookbook/intro.html)\n- [Rust by example](https://doc.rust-lang.org/rust-by-example/)\n- [PyO3](https://pyo3.rs/v0.16.3/index.html)\n- [Maturin](https://maturin.rs/)\n- [A comparison of regex engines](https://rust-leipzig.github.io/regex/2017/03/28/comparison-of-regex-engines/)\n\n## Reference Rust pattern matching packages\n\n- <https://docs.rs/fst/latest/fst/>, particularly <https://docs.rs/fst/latest/fst/#example-searching-multiple-sets-efficiently> for entities\n- <https://docs.rs/regex-automata/latest/regex_automata/>\n- <https://docs.rs/aho-corasick/0.7.18/aho_corasick/>\n- <https://docs.rs/regex-syntax/latest/regex_syntax/>\n\n## Features\n\n## `RegexOperator`\n\n- Rust phase:\n    1. Try to compile in `regex::Regex` for the list of patterns. Get the list of valid ones and invalid ones.\n    2. Compile `regex::RegexSet` with valid patterns and apply over the list of haystacks.\n    3. Operate compiled `regex::Regex`, finding them over all the haystacks, for the subset of pairs that have matched in the `regex::RegexSet`.\n    4. Try to compile invalid patterns with `fancy_regex::Regex` and find matches over the haystacks. Reduce final invalid\n    patterns list to give back to python.\n    5. Operate compiled `fancy_regex::Regex`, finding them over all the haystacks.\n    6. Give back to Python.\n- Python phase:\n    1. Try to apply all failed patterns, finding them over all the haystacks.\n    2. Return the final result.\n\n## Entities\n\nEntities are found by overlapping and have a hierarchichal folder structure.\n\n- **Literal entities**: fast only literal based entities. Those entities are based in literal alternations, and\nare built from a list of strings, is like matching (lit_1|...|lit_N)`. Can be:\n  - Private: only used by regex entities by composition. The only interest on them is for composition so those are only matched not finded.\n  - Public: calculated and reported. Those reports enforce that matched boundaries are `\\b`, just if the literal matching where `\\b(lit_1|...|lit_N)\\b`. *Tech note: positions reported by aho corasick should be mapped from byte to char position.*\n- **Regex entities**: a list of regex patterns, possibly containing literal entities calls with template language. For example if `month` is a literal entity,\n    Then `\\d+ of \\d+ of {{month}}` is a possible entity. The regex entities that depend positively (no negative lookback or lookahead), only are searched on the texts where the literal entity has been found, minimizing computational weight.\n\nFeeding of entity matches:\n\n- From python list of objects, where each object is equivalent to the file JSON loaded. Each object contains a field `kind` with one of two values: `re` or `lit`.\n- From local folder with folders:\n  - Structured hierarchically.\n\nSteps of entity recognition:\n\n1. Load the entity system:\n    - Deserialize all defined entities.\n    - Build `LiteralEntityPool`. There are public and private literal entities:\n        - **Private literal entities** will not be reported only used internally by regex entities.\n        - **Public literal entities** will be reported as entities.\n        **NOTE: the bound of the literal public entities is calculated after all as Aho Corasick has not bound allowed**.\n    - Build `RegexEntityPool` using literals from `LiteralEntityPool`, then there are two kinds of regex entities\n        - The ones that use any literal entity.\n        - The ones that do not use any literal entity.\n2. Process texts and get entities:\n    - Get literal entity raw index matches.\n    - Literal-based regex entities perform find if the ordered set of matches of literal entities is satisfied from literal entities results.\n    - Non literal-based regex entities find is performed using `regex::RegexSet`\n3. Ensemble together public literal entities, literal-based regex entities and non literal-based regex entities and give output.\n\nA pattern in a regex entity has two type of categorizations:\n\n- Pattern that can be compiled at `regex` crate:\n  - Pattern with at least one positive capture group related to a literal entity. Match will be decided by aho corasick and literal entity order. This is a regex were `entities::extract_required_template_structure` throws a non-empty vector.\n  - Pattern that does not fit the previous case, this pattern will be matched through `RegexSet`. This is a pattern with `entities::extract_required_template_structure` throwing an empty vector.\n- Regex that can not be compiled by `regex` crate will receive a direct find from `fancy_regex` crate. This pattern\n  receives an Error from `entities::extract_required_template_structure`.\n\nNaming convention for entity files is:\n\n## Literal replacer\n\nThis is a very concrete function to perform high performance literal replacement using Rust `aho_corasick` implementation. It accepts parallelization by chunks of text.\n\n## Performance advices\n\n- <https://github.com/rust-lang/regex/blob/master/PERFORMANCE.md#unicode-word-boundaries-may-prevent-the-dfa-from-being-used>\n- *there is no problem with using non-greedy matching or having lots of alternations in your regex*  <https://github.com/rust-lang/regex/blob/master/PERFORMANCE.md#resist-the-temptation-to-optimize-regexes>\n\n## CICD\n\nThis repository pretends to be a perfect CICD example for a Python+Rust lib based on `pyo3`. Any suggestions (caching, badges, anything, ...) just let me know by issue :)\n\n",
+            "description_content_type": "text/markdown; charset=UTF-8; variant=GFM",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://gitlab.com/g6313/pytextrust",
+            "keywords": "text-processing,regex-matching,entity-system,literal-replacement",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "pytextrust",
+            "package_url": "https://pypi.org/project/pytextrust/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/pytextrust/",
+            "project_urls": {
+                "Homepage": "https://gitlab.com/g6313/pytextrust"
+            },
+            "release_url": "https://pypi.org/project/pytextrust/0.2.1/",
+            "requires_dist": [
+                "Pydantic<1.11.0",
+                "typing",
+                "regex"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "Library designed as a python wrapper to unleash Rust text processing power combined with Python",
+            "version": "0.2.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17493012,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "0dbfa6955a3869ec0b747ec98a4752f0257d259ebf0b5bd8691f77abc98e5470",
+                    "md5": "0cbb8c7090c483610b171642c6819e8e",
+                    "sha256": "7f0da66005ed5f289010ea16cfd70cdc17494c0e81b6363ac82294c65ef0ac02"
+                },
+                "downloads": -1,
+                "filename": "pytextrust-0.2.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "0cbb8c7090c483610b171642c6819e8e",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.7",
+                "size": 2049438,
+                "upload_time": "2023-03-29T11:58:31",
+                "upload_time_iso_8601": "2023-03-29T11:58:31.237864Z",
+                "url": "https://files.pythonhosted.org/packages/0d/bf/a6955a3869ec0b747ec98a4752f0257d259ebf0b5bd8691f77abc98e5470/pytextrust-0.2.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5f7348d23465677e0402e96b5e46867c398a7506643d1d0be6f8bc935be06df4",
+                    "md5": "89c7df211c65aa18a0b3b7483fd39207",
+                    "sha256": "f7e65d85f1156b8092808d5b6ba21ad16627096915c714db467cde010fdd8be9"
+                },
+                "downloads": -1,
+                "filename": "pytextrust-0.2.1-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "89c7df211c65aa18a0b3b7483fd39207",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.7",
+                "size": 2048598,
+                "upload_time": "2023-03-29T11:58:35",
+                "upload_time_iso_8601": "2023-03-29T11:58:35.539809Z",
+                "url": "https://files.pythonhosted.org/packages/5f/73/48d23465677e0402e96b5e46867c398a7506643d1d0be6f8bc935be06df4/pytextrust-0.2.1-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f7419fa11b00e677cc3de13126cd09f0ab98a46d2dd019928c2fb82a10cc2465",
+                    "md5": "68fda3ea65b7f0e8f0137e121d7a47bd",
+                    "sha256": "898cdc7e15f9ee862614d31bdfa0ab88f73f5c42791070c067541bbb58fd178a"
+                },
+                "downloads": -1,
+                "filename": "pytextrust-0.2.1-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "68fda3ea65b7f0e8f0137e121d7a47bd",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.7",
+                "size": 2049262,
+                "upload_time": "2023-03-29T11:58:26",
+                "upload_time_iso_8601": "2023-03-29T11:58:26.759483Z",
+                "url": "https://files.pythonhosted.org/packages/f7/41/9fa11b00e677cc3de13126cd09f0ab98a46d2dd019928c2fb82a10cc2465/pytextrust-0.2.1-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
