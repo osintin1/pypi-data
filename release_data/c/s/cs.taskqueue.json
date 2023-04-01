@@ -55,7 +55,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17524954,
+        "last_serial": 17538237,
         "urls": [
             {
                 "comment_text": "",
@@ -158,7 +158,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17524954,
+        "last_serial": 17538237,
         "urls": [
             {
                 "comment_text": "",
@@ -261,7 +261,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17524954,
+        "last_serial": 17538237,
         "urls": [
             {
                 "comment_text": "",
@@ -321,7 +321,6 @@
                 "Programming Language :: Python :: 3",
                 "Topic :: Software Development :: Libraries :: Python Modules"
             ],
-            "description": "A general purpose Task and TaskQueue for running tasks with\ndependencies and failure/retry, potentially in parallel.\n\n*Latest release 20230331*:\n* Task: subclass BaseTask instead of (FSM, RunStateMixin).\n* BaseTask.__init__: use @uses_runstate to ensure we've got a RunState.\n\n## Class `BaseTask(cs.fsm.FSM, cs.gvutils.DOTNodeMixin, cs.resources.RunStateMixin)`\n\nA base class subclassing `cs.fsm.FSM` with a `RunStateMixin`.\n\nNote that this class and the `FSM` base class does not provide\na `FSM_DEFAULT_STATE` attribute; a default `state` value of\n`None` will leave `.fsm_state` _unset_.\n\nThis behaviour is is chosen mostly to support subclasses\nwith unusual behaviour, particularly Django's `Model` class\nwhose `refresh_from_db` method seems to not refresh fields\nwhich already exist, and setting `.fsm_state` from a\n`FSM_DEFAULT_STATE` class attribute thus breaks this method.\nSubclasses of this class and `Model` should _not_ provide a\n`FSM_DEFAULT_STATE` attribute, instead relying on the field\ndefinition to provide this default in the usual way.\n\n## Class `BlockedError(TaskError, cs.fsm.FSMError, builtins.Exception, builtins.BaseException)`\n\nRaised by a blocked `Task` if attempted.\n\n## Function `main(argv)`\n\nDummy main programme to exercise something.\n\n## Function `make(*tasks, fail_fast=False, queue=None)`\n\nGenerator which completes all the supplied `tasks` by dispatching them\nonce they are no longer blocked.\nYield each task from `tasks` as it completes (or becomes cancelled).\n\nParameters:\n* `tasks`: `Task`s as positional parameters\n* `fail_fast`: default `False`; if true, cease evaluation as soon as a\n  task completes in a state with is not `DONE`\n* `queue`: optional callable to submit a task for execution later\n  via some queue such as `Later` or celery\n\nThe following rules are applied by this function:\n- if a task is being prepared, raise an `FSMError`\n- if a task is already running or queued, wait for its completion\n- if a task is pending:\n  * if any prerequisite has failed, fail this task\n  * if any prerequisite is cancelled, cancel this task\n  * if any prerequisite is pending, make it first\n  * if any prerequisite is not done, fail this task\n  * otherwise dispatch this task and then yield it\n- if `fail_fast` and the task is not done, return\n\nExamples:\n\n    >>> t1 = Task('t1', lambda: print('doing t1'), track=True)\n    >>> t2 = t1.then('t2', lambda: print('doing t2'), track=True)\n    >>> list(make(t2))    # doctest: +ELLIPSIS\n    t1 PENDING->dispatch->RUNNING\n    doing t1\n    t1 RUNNING->done->DONE\n    t2 PENDING->dispatch->RUNNING\n    doing t2\n    t2 RUNNING->done->DONE\n    [Task('t2',<function <lambda> at ...>,state='DONE')]\n\n## Function `make_later(L, *tasks, fail_fast=False)`\n\nDispatch the `tasks` via `L:Later` for asynchronous execution\nif it is not already completed.\nThe caller can wait on `t.result` for completion.\n\nThis calls `make_now()` in a thread and uses `L.defer` to\nqueue the task and its prerequisites for execution.\n\n## Function `make_now(*tasks, fail_fast=False, queue=None)`\n\nRun the generator `make(*tasks)` to completion and return the\nlist of completed tasks.\n\n## Class `Task(BaseTask, cs.fsm.FSM, cs.gvutils.DOTNodeMixin, cs.resources.RunStateMixin, cs.threads.HasThreadState, cs.context.ContextManagerMixin)`\n\nA task which may require the completion of other tasks.\n\nThe model here may not be quite as expected; it is aimed at\ntasks which can be repaired and rerun.\nAs such, if `self.run(func,...)` raises an exception from\n`func` then this `Task` will still block dependent `Task`s.\nDually, a `Task` which completes without an exception is\nconsidered complete and does not block dependent `Task`s.\n\nKeyword parameters:\n* `cancel_on_exception`: if true, cancel this `Task` if `.run`\n  raises an exception; the default is `False`, allowing repair\n  and retry\n* `cancel_on_result`: optional callable to test the `Task.result`\n  after `.run`; if the callable returns `True` the `Task` is marked\n  as cancelled, allowing repair and retry\n* `func`: the function to call to complete the `Task`;\n  it will be called as `func(*func_args,**func_kwargs)`\n* `func_args`: optional positional arguments, default `()`\n* `func_kwargs`: optional keyword arguments, default `{}`\n* `lock`: optional lock, default an `RLock`\n* `state`: initial state, default from `self._state.initial_state`,\n  which is initally '`PENDING`'\n* `track`: default `False`;\n  if `True` then apply a callback for all states to print task transitions;\n  otherwise it should be a callback function suitable for `FSM.fsm_callback`\nOther arguments are passed to the `Result` initialiser.\n\nExample:\n\n    t1 = Task(name=\"task1\")\n    t1.bg(time.sleep, 10)\n    t2 = Task(name=\"task2\")\n    # prevent t2 from running until t1 completes\n    t2.require(t1)\n    # try to run sleep(5) for t2 immediately after t1 completes\n    t1.notify(t2.call, sleep, 5)\n\nUsers wanting more immediate semantics can supply\n`cancel_on_exception` and/or `cancel_on_result` to control\nthese behaviours.\n\nExample:\n\n    t1 = Task(name=\"task1\")\n    t1.bg(time.sleep, 2)\n    t2 = Task(name=\"task2\")\n    # prevent t2 from running until t1 completes\n    t2.require(t1)\n    # try to run sleep(5) for t2 immediately after t1 completes\n    t1.notify(t2.call, sleep, 5)\n\n## Class `TaskError(cs.fsm.FSMError, builtins.Exception, builtins.BaseException)`\n\nRaised by `Task` related errors.\n\n## Class `TaskQueue`\n\nA task queue for managing and running a set of related tasks.\n\nUnlike `make` and `Task.make`, this is aimed at a \"dispatch\" worker\nwhich dispatches individual tasks as required.\n\nExample 1, put 2 dependent tasks in a queue and run:\n\n     >>> t1 = Task(\"t1\", lambda: print(\"t1\"))\n     >>> t2 = t1.then(\"t2\", lambda: print(\"t2\"))\n     >>> q = TaskQueue(t1, t2)\n     >>> for _ in q.run(): pass\n     ...\n     t1\n     t2\n\nExample 2, put 1 task in a queue and run.\nThe queue only runs the specified tasks:\n\n     >>> t1 = Task(\"t1\", lambda: print(\"t1\"))\n     >>> t2 = t1.then(\"t2\", lambda: print(\"t2\"))\n     >>> q = TaskQueue(t1)\n     >>> for _ in q.run(): pass\n     ...\n     t1\n\nExample 2, put 1 task in a queue with `run_dependent_tasks=True` and run.\nThe queue pulls in the dependencies of completed tasks and also runs those:\n\n     >>> t1 = Task(\"t1\", lambda: print(\"t1\"))\n     >>> t2 = t1.then(\"t2\", lambda: print(\"t2\"))\n     >>> q = TaskQueue(t1, run_dependent_tasks=True)\n     >>> for _ in q.run(): pass\n     ...\n     t1\n     t2\n\n*Method `TaskQueue.__init__(self, *tasks, run_dependent_tasks=False)`*:\nInitialise the queue with the supplied `tasks`.\n\n# Release Log\n\n\n\n*Release 20230331*:\n* Task: subclass BaseTask instead of (FSM, RunStateMixin).\n* BaseTask.__init__: use @uses_runstate to ensure we've got a RunState.\n\n*Release 20230217*:\nTask: subclass HasThreadState, drop .current_task() class method.\n\n*Release 20221207*:\n* Pull out core stuff from Task into BaseTask, aids subclassing.\n* BaseTask: explainatory docustring about unusual FSM_DEFAULT_STATE design choice.\n* BaseTask.tasks_as_dot: express the edges using the node ids instead of their labels.\n* BaseTask: new tasks_as_svg() method like tasks_as_dot() but returning SVG.\n\n*Release 20220805*:\nInitial PyPI release.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -365,7 +364,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17524954,
+        "last_serial": 17538237,
         "urls": [
             {
                 "comment_text": "",
@@ -406,6 +405,111 @@
                 "upload_time": "2023-03-31T10:29:19",
                 "upload_time_iso_8601": "2023-03-31T10:29:19.264237Z",
                 "url": "https://files.pythonhosted.org/packages/a1/96/88686be0e29f9e89f4814c72acd2fdf3f5fd9cc32ec4cb049c4963166991/cs.taskqueue-20230331.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "20230401": {
+        "info": {
+            "author": "Cameron Simpson",
+            "author_email": "Cameron Simpson <cs@cskk.id.au>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Topic :: Software Development :: Libraries :: Python Modules"
+            ],
+            "description": "A general purpose Task and TaskQueue for running tasks with\ndependencies and failure/retry, potentially in parallel.\n\n*Latest release 20230401*:\nAdd missing requirement to DISTINFO.\n\n## Class `BaseTask(cs.fsm.FSM, cs.gvutils.DOTNodeMixin, cs.resources.RunStateMixin)`\n\nA base class subclassing `cs.fsm.FSM` with a `RunStateMixin`.\n\nNote that this class and the `FSM` base class does not provide\na `FSM_DEFAULT_STATE` attribute; a default `state` value of\n`None` will leave `.fsm_state` _unset_.\n\nThis behaviour is is chosen mostly to support subclasses\nwith unusual behaviour, particularly Django's `Model` class\nwhose `refresh_from_db` method seems to not refresh fields\nwhich already exist, and setting `.fsm_state` from a\n`FSM_DEFAULT_STATE` class attribute thus breaks this method.\nSubclasses of this class and `Model` should _not_ provide a\n`FSM_DEFAULT_STATE` attribute, instead relying on the field\ndefinition to provide this default in the usual way.\n\n## Class `BlockedError(TaskError, cs.fsm.FSMError, builtins.Exception, builtins.BaseException)`\n\nRaised by a blocked `Task` if attempted.\n\n## Function `main(argv)`\n\nDummy main programme to exercise something.\n\n## Function `make(*tasks, fail_fast=False, queue=None)`\n\nGenerator which completes all the supplied `tasks` by dispatching them\nonce they are no longer blocked.\nYield each task from `tasks` as it completes (or becomes cancelled).\n\nParameters:\n* `tasks`: `Task`s as positional parameters\n* `fail_fast`: default `False`; if true, cease evaluation as soon as a\n  task completes in a state with is not `DONE`\n* `queue`: optional callable to submit a task for execution later\n  via some queue such as `Later` or celery\n\nThe following rules are applied by this function:\n- if a task is being prepared, raise an `FSMError`\n- if a task is already running or queued, wait for its completion\n- if a task is pending:\n  * if any prerequisite has failed, fail this task\n  * if any prerequisite is cancelled, cancel this task\n  * if any prerequisite is pending, make it first\n  * if any prerequisite is not done, fail this task\n  * otherwise dispatch this task and then yield it\n- if `fail_fast` and the task is not done, return\n\nExamples:\n\n    >>> t1 = Task('t1', lambda: print('doing t1'), track=True)\n    >>> t2 = t1.then('t2', lambda: print('doing t2'), track=True)\n    >>> list(make(t2))    # doctest: +ELLIPSIS\n    t1 PENDING->dispatch->RUNNING\n    doing t1\n    t1 RUNNING->done->DONE\n    t2 PENDING->dispatch->RUNNING\n    doing t2\n    t2 RUNNING->done->DONE\n    [Task('t2',<function <lambda> at ...>,state='DONE')]\n\n## Function `make_later(L, *tasks, fail_fast=False)`\n\nDispatch the `tasks` via `L:Later` for asynchronous execution\nif it is not already completed.\nThe caller can wait on `t.result` for completion.\n\nThis calls `make_now()` in a thread and uses `L.defer` to\nqueue the task and its prerequisites for execution.\n\n## Function `make_now(*tasks, fail_fast=False, queue=None)`\n\nRun the generator `make(*tasks)` to completion and return the\nlist of completed tasks.\n\n## Class `Task(BaseTask, cs.fsm.FSM, cs.gvutils.DOTNodeMixin, cs.resources.RunStateMixin, cs.threads.HasThreadState, cs.context.ContextManagerMixin)`\n\nA task which may require the completion of other tasks.\n\nThe model here may not be quite as expected; it is aimed at\ntasks which can be repaired and rerun.\nAs such, if `self.run(func,...)` raises an exception from\n`func` then this `Task` will still block dependent `Task`s.\nDually, a `Task` which completes without an exception is\nconsidered complete and does not block dependent `Task`s.\n\nKeyword parameters:\n* `cancel_on_exception`: if true, cancel this `Task` if `.run`\n  raises an exception; the default is `False`, allowing repair\n  and retry\n* `cancel_on_result`: optional callable to test the `Task.result`\n  after `.run`; if the callable returns `True` the `Task` is marked\n  as cancelled, allowing repair and retry\n* `func`: the function to call to complete the `Task`;\n  it will be called as `func(*func_args,**func_kwargs)`\n* `func_args`: optional positional arguments, default `()`\n* `func_kwargs`: optional keyword arguments, default `{}`\n* `lock`: optional lock, default an `RLock`\n* `state`: initial state, default from `self._state.initial_state`,\n  which is initally '`PENDING`'\n* `track`: default `False`;\n  if `True` then apply a callback for all states to print task transitions;\n  otherwise it should be a callback function suitable for `FSM.fsm_callback`\nOther arguments are passed to the `Result` initialiser.\n\nExample:\n\n    t1 = Task(name=\"task1\")\n    t1.bg(time.sleep, 10)\n    t2 = Task(name=\"task2\")\n    # prevent t2 from running until t1 completes\n    t2.require(t1)\n    # try to run sleep(5) for t2 immediately after t1 completes\n    t1.notify(t2.call, sleep, 5)\n\nUsers wanting more immediate semantics can supply\n`cancel_on_exception` and/or `cancel_on_result` to control\nthese behaviours.\n\nExample:\n\n    t1 = Task(name=\"task1\")\n    t1.bg(time.sleep, 2)\n    t2 = Task(name=\"task2\")\n    # prevent t2 from running until t1 completes\n    t2.require(t1)\n    # try to run sleep(5) for t2 immediately after t1 completes\n    t1.notify(t2.call, sleep, 5)\n\n## Class `TaskError(cs.fsm.FSMError, builtins.Exception, builtins.BaseException)`\n\nRaised by `Task` related errors.\n\n## Class `TaskQueue`\n\nA task queue for managing and running a set of related tasks.\n\nUnlike `make` and `Task.make`, this is aimed at a \"dispatch\" worker\nwhich dispatches individual tasks as required.\n\nExample 1, put 2 dependent tasks in a queue and run:\n\n     >>> t1 = Task(\"t1\", lambda: print(\"t1\"))\n     >>> t2 = t1.then(\"t2\", lambda: print(\"t2\"))\n     >>> q = TaskQueue(t1, t2)\n     >>> for _ in q.run(): pass\n     ...\n     t1\n     t2\n\nExample 2, put 1 task in a queue and run.\nThe queue only runs the specified tasks:\n\n     >>> t1 = Task(\"t1\", lambda: print(\"t1\"))\n     >>> t2 = t1.then(\"t2\", lambda: print(\"t2\"))\n     >>> q = TaskQueue(t1)\n     >>> for _ in q.run(): pass\n     ...\n     t1\n\nExample 2, put 1 task in a queue with `run_dependent_tasks=True` and run.\nThe queue pulls in the dependencies of completed tasks and also runs those:\n\n     >>> t1 = Task(\"t1\", lambda: print(\"t1\"))\n     >>> t2 = t1.then(\"t2\", lambda: print(\"t2\"))\n     >>> q = TaskQueue(t1, run_dependent_tasks=True)\n     >>> for _ in q.run(): pass\n     ...\n     t1\n     t2\n\n*Method `TaskQueue.__init__(self, *tasks, run_dependent_tasks=False)`*:\nInitialise the queue with the supplied `tasks`.\n\n# Release Log\n\n\n\n*Release 20230401*:\nAdd missing requirement to DISTINFO.\n\n*Release 20230331*:\n* Task: subclass BaseTask instead of (FSM, RunStateMixin).\n* BaseTask.__init__: use @uses_runstate to ensure we've got a RunState.\n\n*Release 20230217*:\nTask: subclass HasThreadState, drop .current_task() class method.\n\n*Release 20221207*:\n* Pull out core stuff from Task into BaseTask, aids subclassing.\n* BaseTask: explainatory docustring about unusual FSM_DEFAULT_STATE design choice.\n* BaseTask.tasks_as_dot: express the edges using the node ids instead of their labels.\n* BaseTask: new tasks_as_svg() method like tasks_as_dot() but returning SVG.\n\n*Release 20220805*:\nInitial PyPI release.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://bitbucket.org/cameron_simpson/css/commits/all",
+            "keywords": "python3",
+            "license": "GNU General Public License v3 or later (GPLv3+)",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "cs.taskqueue",
+            "package_url": "https://pypi.org/project/cs.taskqueue/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/cs.taskqueue/",
+            "project_urls": {
+                "Homepage": "https://bitbucket.org/cameron_simpson/css/commits/all",
+                "URL": "https://bitbucket.org/cameron_simpson/css/commits/all"
+            },
+            "release_url": "https://pypi.org/project/cs.taskqueue/20230401/",
+            "requires_dist": [
+                "cs.deco (>=20230331)",
+                "cs.fsm (>=20221118)",
+                "cs.gvutils (>=20221207)",
+                "cs.logutils (>=20230212)",
+                "cs.pfx (>=20230331)",
+                "cs.py.func (>=20230331)",
+                "cs.queues (>=20230331)",
+                "cs.resources (>=20230331)",
+                "cs.result (>=20230331)",
+                "cs.seq (>=20221118)",
+                "cs.threads (>=20230331)",
+                "cs.typingutils (>=20230331)",
+                "icontract",
+                "typeguard"
+            ],
+            "requires_python": "",
+            "summary": "A general purpose Task and TaskQueue for running tasks with dependencies and failure/retry, potentially in parallel.",
+            "version": "20230401",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17538237,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c238172e9c226010633f34bb849b1ffca243a775bbb44d72c883e0327ebff831",
+                    "md5": "78adc9d23d0ba61d809affba1e13a610",
+                    "sha256": "682f46a5b50af25ff29add8ed346dda5a5eb07191ce433f418c97005434d6a85"
+                },
+                "downloads": -1,
+                "filename": "cs.taskqueue-20230401-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "78adc9d23d0ba61d809affba1e13a610",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 13171,
+                "upload_time": "2023-04-01T08:48:24",
+                "upload_time_iso_8601": "2023-04-01T08:48:24.248818Z",
+                "url": "https://files.pythonhosted.org/packages/c2/38/172e9c226010633f34bb849b1ffca243a775bbb44d72c883e0327ebff831/cs.taskqueue-20230401-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "508aae0c1a0f0a39aef9d729b8ea2051f7b5c5d8be96254c44b8e47ca7e05730",
+                    "md5": "80bcf2bf99ec3ce16b343360f38ba4ba",
+                    "sha256": "bf819d8bdcc36e6b92b4341460b25153c970671c6b40840e5c1dc601fac61cf0"
+                },
+                "downloads": -1,
+                "filename": "cs.taskqueue-20230401.tar.gz",
+                "has_sig": false,
+                "md5_digest": "80bcf2bf99ec3ce16b343360f38ba4ba",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 15328,
+                "upload_time": "2023-04-01T08:48:26",
+                "upload_time_iso_8601": "2023-04-01T08:48:26.207020Z",
+                "url": "https://files.pythonhosted.org/packages/50/8a/ae0c1a0f0a39aef9d729b8ea2051f7b5c5d8be96254c44b8e47ca7e05730/cs.taskqueue-20230401.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
