@@ -1,0 +1,118 @@
+{
+    "0.5.0": {
+        "info": {
+            "author": null,
+            "author_email": "Atomi <1456417373@qq.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Environment :: Web Environment",
+                "Framework :: FastAPI",
+                "License :: OSI Approved :: Apache Software License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: System :: Systems Administration"
+            ],
+            "description": "[\u7b80\u4f53\u4e2d\u6587](https://github.com/amisadmin/fastapi_user_auth/blob/master/README.zh.md)\n| [English](https://github.com/amisadmin/fastapi_user_auth)\n\n# Project Introduction\n\n<h2 align=\"center\">\n  FastAPI-User-Auth\n</h2>\n<p align=\"center\">\n    <em>FastAPI-User-Auth is a simple and powerful FastAPI user RBAC authentication and authorization library.</em><br/>\n    <em>It is based on FastAPI-Amis-Admin and provides a freely extensible visual management interface.</em>\n</p>\n<p align=\"center\">\n    <a href=\"https://github.com/amisadmin/fastapi_amis_admin/actions/workflows/pytest.yml\" target=\"_blank\">\n        <img src=\"https://github.com/amisadmin/fastapi_amis_admin/actions/workflows/pytest.yml/badge.svg\" alt=\"Pytest\">\n    </a>\n    <a href=\"https://pypi.org/project/fastapi_user_auth\" target=\"_blank\">\n        <img src=\"https://badgen.net/pypi/v/fastapi-user-auth?color=blue\" alt=\"Package version\">\n    </a>\n    <a href=\"https://pepy.tech/project/fastapi-user-auth\" target=\"_blank\">\n        <img src=\"https://pepy.tech/badge/fastapi-user-auth\" alt=\"Downloads\">\n    </a>\n    <a href=\"https://gitter.im/amisadmin/fastapi-amis-admin\">\n        <img src=\"https://badges.gitter.im/amisadmin/fastapi-amis-admin.svg\" alt=\"Chat on Gitter\"/>\n    </a>\n    <a href=\"https://jq.qq.com/?_wv=1027&k=U4Dv6x8W\" target=\"_blank\">\n        <img src=\"https://badgen.net/badge/qq%E7%BE%A4/229036692/orange\" alt=\"229036692\">\n    </a>\n</p>\n<p align=\"center\">\n  <a href=\"https://github.com/amisadmin/fastapi_user_auth\" target=\"_blank\">SourceCode</a>\n  \u00b7\n  <a href=\"http://user-auth.demo.amis.work/\" target=\"_blank\">OnlineDemo</a>\n  \u00b7\n  <a href=\"http://docs.amis.work\" target=\"_blank\">Documentation</a>\n  \u00b7\n  <a href=\"http://docs.gh.amis.work\" target=\"_blank\">Can't open the document\uff1f</a>\n</p>\n\n------\n\n`FastAPI-User-Auth` It is an application plug -in based on [FastAPI-Amis-Admin](https://github.com/amisadmin/fastapi_amis_admin)\n, which is deeply integrated to provide user authentication and authorization..\n\n## Install\n\n```bash\npip install fastapi-user-auth\n```\n\n## Simple example\n\n```python\nfrom fastapi import FastAPI\nfrom fastapi_amis_admin.admin.settings import Settings\nfrom fastapi_user_auth.site import AuthAdminSite\nfrom starlette.requests import Request\nfrom sqlmodel import SQLModel\n\n# Create Fast API application\napp = FastAPI()\n\n# Create an Admin Site instance\nsite = AuthAdminSite(settings=Settings(database_url_async='sqlite+aiosqlite:///amisadmin.db'))\nauth = site.auth\n# Mount the Site management system to the FastAPI instance\nsite.mount_app(app)\n\n# Create initialization database table\n@app.on_event(\"startup\")\nasync def startup():\n    await site.db.async_run_sync(SQLModel.metadata.create_all, is_session=False)\n    # Create default admin user,user name:admin,password:admin,please change it after login!!!\n    await auth.create_role_user('admin')\n    await auth.create_role_user('vip')\n\n# Requirements: User must be logged in\n@app.get(\"/auth/get_user\")\n@auth.requires()\ndef get_user(request: Request):\n    return request.user\n\nif __name__ == '__main__':\n    import uvicorn\n\n    uvicorn.run(app, debug=True)\n\n```\n\n## Ways of identifying\n\n### Decorator\n\n- Recommended scenario: Single route. Supports synchronous and asynchronous routing.\n\n```python\n# Requirements: User must be logged in\n@app.get(\"/auth/user\")\n@auth.requires()\ndef user(request: Request):\n    return request.user  # current request user object.\n\n# Authentication route: user has admin role\n@app.get(\"/auth/admin_roles\")\n@auth.requires('admin')\ndef admin_roles(request: Request):\n    return request.user\n\n# Requirement: User has vip role\n# Support synchronous and asynchronous routing\n@app.get(\"/auth/vip_roles\")\n@auth.requires(['vip'])\nasync def vip_roles(request: Request):\n    return request.user\n\n# Requirements: User has admin role or vip role\n@app.get(\"/auth/admin_or_vip_roles\")\n@auth.requires(roles=['admin', 'vip'])\ndef admin_or_vip_roles(request: Request):\n    return request.user\n\n# Requirement: The user belongs to the admin user group\n@app.get(\"/auth/admin_groups\")\n@auth.requires(groups=['admin'])\ndef admin_groups(request: Request):\n    return request.user\n\n# Requirements: The user has the admin role and belongs to the admin user group\n@app.get(\"/auth/admin_roles_and_admin_groups\")\n@auth.requires(roles=['admin'], groups=['admin'])\ndef admin_roles_and_admin_groups(request: Request):\n    return request.user\n\n# Requirements: The user has the vip role and has the `article:update` permission\n@app.get(\"/auth/vip_roles_and_article_update\")\n@auth.requires(roles=['vip'], permissions=['article:update'])\ndef vip_roles_and_article_update(request: Request):\n    return request.user\n\n```\n\n### Dependencies (recommended)\n\n- Recommended scenarios: single route, route collection, FastAPI application.\n\n```python\nfrom fastapi import Depends\nfrom typing import Tuple\nfrom fastapi_user_auth.auth import Auth\nfrom fastapi_user_auth.auth.models import User\n\n# Route parameter dependencies, this method is recommended\n@app.get(\"/auth/admin_roles_depend_1\")\ndef admin_roles(user: User = Depends(auth.get_current_user)):\n    return user  # or request.user\n\n# Path manipulation decorator dependencies\n@app.get(\"/auth/admin_roles_depend_2\", dependencies=[Depends(auth.requires('admin')())])\ndef admin_roles(request: Request):\n    return request.user\n\n# Global dependencies\n# All requests under the app application require the admin role\napp = FastAPI(dependencies=[Depends(auth.requires('admin')())])\n\n@app.get(\"/auth/admin_roles_depend_3\")\ndef admin_roles(request: Request):\n    return request.user\n\n```\n\n### Middleware\n\n- Recommended Scenario: FastAPI Application\n\n```python\napp = FastAPI()\n# Append `request.auth` and `request.user` objects before each request processing under the app\nauth.backend.attach_middleware(app)\n\n```\n\n### Call directly\n\n- Recommended scenarios: non-routing methods\n\n```python\nfrom fastapi_user_auth.auth.models import User\n\nasync def get_request_user(request: Request) -> Optional[User]:\n    # user= await auth.get_current_user(request)\n    if await auth.requires('admin', response=False)(request):\n        return request.user\n    else:\n        return None\n\n```\n\n## Token storage backend\n\n`fastapi-user-auth` Supports multiple token storage methods. The default is: `DbTokenStore`, It is recommended to customize the modification to: `JwtTokenStore`\n\n### JwtTokenStore\n\n```python\nfrom fastapi_user_auth.auth.backends.jwt import JwtTokenStore\nfrom sqlalchemy.ext.asyncio import create_async_engine\nfrom sqlalchemy_database import AsyncDatabase\n\n# Create an asynchronous database engine\nengine = create_async_engine(url='sqlite+aiosqlite:///amisadmin.db', future=True)\n# Create auth object using `Jwt Token Store`\nauth = Auth(\n    db=AsyncDatabase(engine),\n    token_store=JwtTokenStore(secret_key='09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7')\n)\n\n# Pass the auth object into the Admin Site\nsite = AuthAdminSite(\n    settings=Settings(database_url_async='sqlite+aiosqlite:///amisadmin.db'),\n    auth=auth\n)\n\n```\n\n### DbTokenStore\n\n```python\n# Create auth object using `Db Token Store`\nfrom fastapi_user_auth.auth.backends.db import DbTokenStore\n\nauth = Auth(\n    db=AsyncDatabase(engine),\n    token_store=DbTokenStore(db=AsyncDatabase(engine))\n)\n```\n\n### RedisTokenStore\n\n```python\n# Create auth object using `Redis Token Store`\nfrom fastapi_user_auth.auth.backends.redis import RedisTokenStore\nfrom aioredis import Redis\n\nauth = Auth(\n    db=AsyncDatabase(engine),\n    token_store=RedisTokenStore(redis=Redis.from_url('redis://localhost?db=0'))\n)\n```\n\n## RBAC model\n\nThe `RBAC` model adopted by this system is as follows, you can also expand it according to your own needs.\n\n- Reference: [Design of Permission System](https://blog.csdn.net/qq_25889465/article/details/98473611)\n\n```mermaid\nflowchart LR\n\t User -. m:n .-> Group \n\t User -. m:n .-> Role \n     Group -. m:n .-> Role \n\t Role -. m:n .-> Perimission \n```\n\n## Advanced Extension\n\n```bash\n### Extending the `User` model\n\n```python\nfrom datetime import date\n\nfrom fastapi_amis_admin.models.fields import Field\nfrom fastapi_user_auth.auth.models import User\n\n# Customize `User` model, inherit `User`\nclass MyUser(User, table = True):\n    point: float = Field(default = 0, title = 'Source', description = 'User source')\n    phone: str = Field(None, title = 'Phone number', max_length = 15)\n    parent_id: int = Field(None, title = \"Superior\", foreign_key = \"auth_user.id\")\n    birthday: date = Field(None, title = \"Date of birth\")\n    location: str = Field(None, title = \"Location\")\n\n# Create an auth object using a custom `User` model\nauth = Auth(db = AsyncDatabase(engine), user_model = MyUser)\n```\n\n### Extend the `Role`, `Group`, `Permission` models\n\n```python\nfrom fastapi_amis_admin.models.fields import Field\nfrom fastapi_user_auth.auth.models import Group\n\n# Customize the `Group` model, inherit `Base RBAC`; override the `Role`, the `Permission` model is similar, \n# the difference is the table name.\nclass MyGroup(Group, table=True):\n    __tablename__ = 'auth_group'  # Database table name, must be this to override the default model\n    icon: str = Field(None, title='Icon')\n    is_active: bool = Field(default=True, title=\"Activate now\")\n\n```\n\n### Custom `User Auth App` default management class\n\nDefault management classes can be overridden and replaced by inheritance.\nFor Example: `UserLoginFormAdmin`,`UserRegFormAdmin`,`UserInfoFormAdmin`,\n`UserAdmin`,`GroupAdmin`,`RoleAdmin`,`PermissionAdmin`\n\n```python\n# Customize the model management class, inherit and override the corresponding default management class\nclass MyGroupAdmin(admin.ModelAdmin):\n    page_schema = PageSchema(label='\u7528\u6237\u7ec4\u7ba1\u7406', icon='fa fa-group')\n    model = MyGroup\n    link_model_fields = [Group.roles]\n    readonly_fields = ['key']\n\n# Customize the user authentication application, inherit and override the default user authentication application\nclass MyUserAuthApp(UserAuthApp):\n    GroupAdmin = MyGroupAdmin\n\n# Customize the user management site, inherit and override the default user management site\nclass MyAuthAdminSite(AuthAdminSite):\n    UserAuthApp = MyUserAuthApp\n\n# Create a site object using a custom `Auth Admin Site` class\nsite = MyAuthAdminSite(settings, auth=auth)\n```\n\n## Interface/UI preview\n\n- Open `http://127.0.0.1:8000/admin/auth/form/login` in your browser:\n\n![Login](https://s2.loli.net/2022/03/20/SZy6sjaVlBT8gin.png)\n\n- Open `http://127.0.0.1:8000/admin/` in your browser:\n\n![ModelAdmin](https://s2.loli.net/2022/03/20/ItgFYGUONm1jCz5.png)\n\n- Open `http://127.0.0.1:8000/admin/docs` in your browser:\n\n![Docs](https://s2.loli.net/2022/03/20/1GcCiPdmXayxrbH.png)\n\n## License\n\n- `fastapi-amis-admin` is based on `Apache2.0` Open source is free to use and can be freely used for commercial purposes, but please clearly display the copyright information about Fast API-Amis-Admin in the display interface.\n\n## Thanks\n\nThanks to the following developers for their contributions to FastAPI-User-Auth:\n\n<a href=\"https://github.com/amisadmin/fastapi_user_auth/graphs/contributors\">\n  <img src=\"https://contrib.rocks/image?repo=amisadmin/fastapi_user_auth\"  alt=\"\"/>\n</a>\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": null,
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": null,
+            "keywords": "fastapi,fastapi-user-auth,fastapi-amis-admin,fastapi-auth,fastapi-users,fastapi-jwt-auth,sqlmodel",
+            "license": null,
+            "maintainer": null,
+            "maintainer_email": "Atomi <1456417373@qq.com>",
+            "name": "nasone_userauth",
+            "package_url": "https://pypi.org/project/nasone_userauth/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/nasone_userauth/",
+            "project_urls": {
+                "Documentation": "http://docs.amis.work/",
+                "FastAPI-Amis-Admin": "https://github.com/amisadmin/fastapi_amis_admin",
+                "Source": "https://github.com/amisadmin/fastapi_user_auth"
+            },
+            "release_url": "https://pypi.org/project/nasone_userauth/0.5.0/",
+            "requires_dist": [
+                "pydantic>=1.9",
+                "fastapi-amis-admin>=0.5.0,<0.6.0",
+                "email-validator",
+                "passlib>=1.7.4",
+                "bcrypt>=4.0.0",
+                "sqlmodelx>=0.0.2",
+                "fastapi-user-auth[dev] ; extra == \"all\"",
+                "fastapi-user-auth[test] ; extra == \"dev\"",
+                "pre-commit>=2.20.0 ; extra == \"dev\"",
+                "python-jose==3.3.0 ; extra == \"jwt\"",
+                "aioredis ; extra == \"redis\"",
+                "uvicorn[standard] >=0.19.0,<1.0 ; extra == \"test\"",
+                "pytest >=6.2.4 ; extra == \"test\"",
+                "pytest-asyncio>=0.17 ; extra == \"test\"",
+                "aiosqlite>=0.15.0 ; extra == \"test\"",
+                "python-jose==3.3.0 ; extra == \"test\"",
+                "jinja2 >=2.11.2,<4.0.0 ; extra == \"test\"",
+                "ujson>=5.5.0 ; extra == \"test\"",
+                "requests>=2.28.1 ; extra == \"test\""
+            ],
+            "requires_python": ">=3.7",
+            "summary": "FastAPI-User-Auth is a simple and powerful FastAPI user RBAC authentication and authorization library. Based on FastAPI-Amis-Admin and provides a freely extensible visual management interface.",
+            "version": "0.5.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17539862,
+        "urls": [
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "cba430100a28579eb1fe307726a536cc901b8b254519799e406e77337703cc04",
+                    "md5": "38a8189184d3fb7465dd324c1202b873",
+                    "sha256": "9fa06b3652e75114093882fad7a165a42b8a2b7aa5807f2eeaa0892781402aa8"
+                },
+                "downloads": -1,
+                "filename": "nasone_userauth-0.5.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "38a8189184d3fb7465dd324c1202b873",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 23580,
+                "upload_time": "2023-04-01T13:30:28",
+                "upload_time_iso_8601": "2023-04-01T13:30:28.552519Z",
+                "url": "https://files.pythonhosted.org/packages/cb/a4/30100a28579eb1fe307726a536cc901b8b254519799e406e77337703cc04/nasone_userauth-0.5.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "13f59d2c92960ca23712e43ab4f620c894329cb793eeb45cfb3c0fc2c90c03ee",
+                    "md5": "a1325cdbc4d454fbde9586190c47d2c9",
+                    "sha256": "5b4786f2dc7f2d972d7b8b6e04a1c7f50991563971b7e03152cf1705c451de34"
+                },
+                "downloads": -1,
+                "filename": "nasone_userauth-0.5.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "a1325cdbc4d454fbde9586190c47d2c9",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 89473,
+                "upload_time": "2023-04-01T13:30:40",
+                "upload_time_iso_8601": "2023-04-01T13:30:40.428268Z",
+                "url": "https://files.pythonhosted.org/packages/13/f5/9d2c92960ca23712e43ab4f620c894329cb793eeb45cfb3c0fc2c90c03ee/nasone_userauth-0.5.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
