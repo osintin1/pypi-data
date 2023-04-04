@@ -8,7 +8,6 @@
                 "License :: OSI Approved :: Apache Software License",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "# FastChat\nAn open platform for training, serving, and evaluating large language model based chatbots.\n\n## Release\n- \ud83d\udd25 We released **Vicuna: An Open-Source Chatbot Impressing GPT-4 with 90% ChatGPT Quality**. Checkout the blog [post](https://vicuna.lmsys.org) and [demo](https://chat.lmsys.org/).\n\n\n<!-- ![demo](assets/demo-narrow.gif) -->\n<a href=\"https://chat.lmsys.org\"><img src=\"assets/demo-narrow.gif\" width=\"70%\"></a>\n\nJoin our [Discord](https://discord.gg/h6kCZb72G7) server and follow our [Twitter](https://twitter.com/lmsysorg) to get the latest updates.\n\n## Contents\n- [Install](#install)\n- [Serving](#serving)\n- [Evaluation](#evaluation)\n- [Fine-tuning](#fine-tuning)\n\n## Install\n\n```\ngit clone https://github.com/lm-sys/FastChat.git\ncd FastChat\npip3 install -e .\n\n# Install the latest main branch of huggingface/transformers\npip3 install git+https://github.com/huggingface/transformers\n```\n\n## Serving\nWe plan to release the model weights by providing a version of delta weights that build on the original LLaMA weights, but we are still figuring out a proper way to do so.\nIn this example, we demonstrate the usage of our distributed serving system using OPT models.\nLater, you can apply similar commands to serve Vicuna, just as shown in our demo.\n\n### Command Line Interface\n```\npython3 -m fastchat.serve.cli --model-name facebook/opt-1.3b\n```\n\n### Web UI\n```\n# Launch a controller\npython3 -m fastchat.serve.controller\n\n# Launch a model worker\npython3 -m fastchat.serve.model_worker --model-path facebook/opt-1.3b\n\n# Send a test message\npython3 -m fastchat.serve.test_message\n\n# Luanch a gradio web server.\npython3 -m fastchat.serve.gradio_web_server\n\n# You can open your brower and chat with a model now.\n```\n\n## Evaluation\n\nOur AI-enhanced [evaluation](fastchat/eval) pipeline is based on GPT-4. Here are some high-level instructions for using the pipeline:\n\nFirst, generate answers from different models. Use `qa_baseline_gpt35.py` for ChatGPT, or specify the model checkpoint and run `model_qa.py` for Vicuna and other models.\n\nThen, use GPT-4 to generate reviews automatically, which can be done manually if the GPT-4 API is not available to you. Once you have your evaluation data, visualize the results by running `generate_webpage_data_from_table.py`, which generates data for a static website.\n\nFinally, serve a static website under the `webpage` directory. You can simply use `python3 -m http.server` to serve the website locally.\n\nBesides the evaluation workflow, we also document the data format used for evaluation, which is encoded with JSON Lines and includes information on models, prompts, reviewers, questions, answers, and reviews. You can customize the evaluation process or contribute to our project by accessing relevant [data](fastchat/eval/table/).\n\nCheck [evaluation](fastchat/eval) for detailed instructions.\n\n## Fine-tuning\n### Data\n\nVicuna is created by fine-tuning a LLaMA base model using approximately 70K user-shared conversations gathered from ShareGPT.com with public APIs. To ensure data quality, we convert the HTML back to markdown and filter out some inappropriate or low-quality samples. Additionally, we divide lengthy conversations into smaller segments that fit the model's maximum context length.\n\nDue to some concerns, we may not release the data at the moment. If you would like to try the fine-tuning code, you can try to run it with our [preprocessed alpaca dataset](playground/data/alpaca-data-conversation.json) (originally from [here](https://github.com/tatsu-lab/stanford_alpaca)).\n\n### Code and Hyperparameters\nWe fine-tune the model using the code from [Stanford Alpaca](https://github.com/tatsu-lab/stanford_alpaca), with some modifications to support gradient checkpointing and [Flash Attention](https://github.com/HazyResearch/flash-attention). We use the similar hyperparameters as the Stanford Alpaca.\n\n| Hyperparameter | Global Batch Size | Learning rate | Epochs | Max length | Weight decay |\n| --- | ---: | ---: | ---: | ---: | ---: |\n| Vicuna-13B | 128 | 2e-5 | 3 | 2048 | 0 |\n\n### Fine-tuning on Any Cloud with SkyPilot\n[SkyPilot](https://github.com/skypilot-org/skypilot) is a framework built by UC Berkeley for easily and cost effectively running ML workloads on any cloud (AWS, GCP, Azure, Lambda, etc.). \nTo use SkyPilot, install it with the following command and setup the cloud credentials locally following the instructions [here](https://skypilot.readthedocs.io/en/latest/getting-started/installation.html).\n```bash\n# Install skypilot from the master branch\npip install git+https://github.com/skypilot-org/skypilot.git\n```\n#### Vicuna\nVicuna can be trained on 8 A100 GPUs with 80GB memory. The following command will automatically launch a node satisfying the requirement, setup and run the training job on it.\n```bash\nsky launch -c vicuna -s scripts/train-vicuna.yaml --env WANDB_API_KEY\n```\nOther options are also valid:\n```bash\n# Launch it on managed spot to save 3x cost\nsky spot launch -n vicuna scripts/train-vicuna.yaml --env WANDB_API_KEY\n\n# Train a 7B model\nsky launch -c vicuna -s scripts/train-vicuna.yaml --env WANDB_API_KEY --env MODEL_SIZE=7\n```\nNote: Please make sure the `WANDB_API_KEY` has been setup on your local machine. You can find the API key on your [wandb profile page](https://wandb.ai/authorize). If you would like to train the model without using wandb, you can replace the `--env WANDB_API_KEY` flag with `--env WANDB_MODE=offline`.\n\n#### Alpaca\nLaunch the training job with the following line (will be launched on a single node with 4 A100-80GB GPUs)\n```\nsky launch -c alpaca -s scripts/train-alpaca.yaml --env WANDB_API_KEY\n```\n\n### Fine-tuning with Local GPUs\nVicuna can also be trained on 8 A100 GPUs with 80GB memory with the following code. To train on less GPUs, you can reduce the `per_device_train_batch_size` and increase the `gradient_accumulation_steps` accordingly to keep the global batch size the same. To setup the environment, please see the setup section in [scripts/train-vicuna.yaml](scripts/train-vicuna.yaml).\n```bash\ntorchrun --nnodes=1 --nproc_per_node=8 --master_port=<your_random_port> \\\n    fastchat/train/train_mem.py \\\n    --model_name_or_path <path-to-llama-model-weight> \\\n    --data_path <path-to-data> \\\n    --bf16 True \\\n    --output_dir ./checkpoints \\\n    --num_train_epochs 3 \\\n    --per_device_train_batch_size 4 \\\n    --per_device_eval_batch_size 4 \\\n    --gradient_accumulation_steps 1 \\\n    --evaluation_strategy \"no\" \\\n    --save_strategy \"steps\" \\\n    --save_steps 1200 \\\n    --save_total_limit 100 \\\n    --learning_rate 2e-5 \\\n    --weight_decay 0. \\\n    --warmup_ratio 0.03 \\\n    --lr_scheduler_type \"cosine\" \\\n    --logging_steps 1 \\\n    --fsdp \"full_shard auto_wrap\" \\\n    --fsdp_transformer_layer_cls_to_wrap 'LlamaDecoderLayer' \\\n    --tf32 True \\\n    --model_max_length 2048 \\\n    --gradient_checkpointing True \\\n    --lazy_preprocess True\n```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -51,7 +50,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17534031,
+        "last_serial": 17562768,
         "urls": [
             {
                 "comment_text": "",
@@ -92,6 +91,202 @@
                 "upload_time": "2023-03-31T23:45:19",
                 "upload_time_iso_8601": "2023-03-31T23:45:19.256123Z",
                 "url": "https://files.pythonhosted.org/packages/0c/31/48d461f2ddc0f23e64c01373de4148732798e3509cf9901a2e3bdcbba1f7/fschat-0.1.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.2": {
+        "info": {
+            "author": "",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: Apache Software License",
+                "Programming Language :: Python :: 3"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "fschat",
+            "package_url": "https://pypi.org/project/fschat/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/fschat/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/lm-sys/fastchat/issues",
+                "Homepage": "https://github.com/lm-sys/fastchat"
+            },
+            "release_url": "https://pypi.org/project/fschat/0.1.2/",
+            "requires_dist": [
+                "accelerate",
+                "fastapi",
+                "gradio (==3.23)",
+                "markdown2[all]",
+                "numpy",
+                "requests",
+                "sentencepiece",
+                "tokenizers (==0.12.1)",
+                "torch",
+                "transformers (>=4.26.1)",
+                "uvicorn",
+                "wandb"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "An open platform for training, serving, and evaluating large language model based chatbots.",
+            "version": "0.1.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17562768,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "1fefd935a7d4aad800fc670930c4bf70aa466a127b988810a68179570badc360",
+                    "md5": "3befb79c1de729909edf15015985100e",
+                    "sha256": "a451422fe250d0578c26b8798823976eab7817c6d2aaab189c388c4734107ff9"
+                },
+                "downloads": -1,
+                "filename": "fschat-0.1.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "3befb79c1de729909edf15015985100e",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 49055,
+                "upload_time": "2023-04-03T13:50:17",
+                "upload_time_iso_8601": "2023-04-03T13:50:17.969806Z",
+                "url": "https://files.pythonhosted.org/packages/1f/ef/d935a7d4aad800fc670930c4bf70aa466a127b988810a68179570badc360/fschat-0.1.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d83e380dc18642957eb86080d60a6cb1f65a7b53d57fd5ca865453282181d6be",
+                    "md5": "4968c2593eaafc82629e6cde31cf36f3",
+                    "sha256": "714448cbacb6e49a3d1b469a46834343047a400215177309bc2c46921ee567fb"
+                },
+                "downloads": -1,
+                "filename": "fschat-0.1.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "4968c2593eaafc82629e6cde31cf36f3",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 41883,
+                "upload_time": "2023-04-03T13:50:19",
+                "upload_time_iso_8601": "2023-04-03T13:50:19.630387Z",
+                "url": "https://files.pythonhosted.org/packages/d8/3e/380dc18642957eb86080d60a6cb1f65a7b53d57fd5ca865453282181d6be/fschat-0.1.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.3": {
+        "info": {
+            "author": "",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: Apache Software License",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# FastChat\nAn open platform for training, serving, and evaluating large language model based chatbots.\n\n## Release\n- \ud83d\udd25 We released **Vicuna: An Open-Source Chatbot Impressing GPT-4 with 90% ChatGPT Quality**. Checkout the blog [post](https://vicuna.lmsys.org) and [demo](https://chat.lmsys.org/).\n\n<a href=\"https://chat.lmsys.org\"><img src=\"assets/demo-narrow.gif\" width=\"70%\"></a>\n\nJoin our [Discord](https://discord.gg/h6kCZb72G7) server and follow our [Twitter](https://twitter.com/lmsysorg) to get the latest updates.\n\n## Contents\n- [Install](#install)\n- [Vicuna Weights](#vicuna-weights)\n- [Serving](#serving)\n- [Evaluation](#evaluation)\n- [Fine-tuning](#fine-tuning)\n\n## Install\n\n### Method 1: With pip\n\n```bash\n# Install FastChat\npip3 install fschat\n\n# Install a specific commit of huggingface/transformers\n# Our released weights do not work with commits after this due to some upstream changes in the tokenizer.\npip3 install git+https://github.com/huggingface/transformers@c612628045822f909020f7eb6784c79700813eda\n```\n\n### Method 2: From source\n\n1. Clone this repository and navigate to FastChat folder\n```bash\ngit clone https://github.com/lm-sys/FastChat.git\ncd FastChat\n```\n\n2. Install Package\n```bash\npip3 install --upgrade pip  # enable PEP 660 support\npip3 install -e .\n```\n\n## Vicuna Weights\nWe release Vicuna weights as delta weights to comply with the LLaMA model license.\nYou can add our delta to the original LLaMA weights to obtain the Vicuna weights. Instructions:\n\n1. Get the orignal LLaMA weights in the huggingface format by following the instructions [here](https://huggingface.co/docs/transformers/main/model_doc/llama).\n2. Use the following scripts to get Vicuna weights by applying our delta.\n\n**NOTE**:\nOur released weights are only compatible with huggingface/transformers commit: `c612628045822f909020f7eb6784c79700813eda`.\nThe weights do not work with commits after this due to some upstream changes in the tokenizer. We install the correct version of\ntransformers when fastchat is installed.\n\n### Vicuna-13B\nThis conversion command needs around 60 GB of CPU RAM.\n```bash\npython3 -m fastchat.model.apply_delta --base /path/to/llama-13b --target /output/path/to/vicuna-13b --delta lmsys/vicuna-13b-delta-v0\n```\n\n### Vicuna-7B\nComing soon.\n\n## Serving\n\n### Command Line Interface\n\n#### Single GPU\nThe command below requires around 28GB of GPU memory for Vicuna-13B.\n```\npython3 -m fastchat.serve.cli --model-name /path/to/vicuna/weights\n```\n\n#### Multi GPU\nIf you do not have enough GPU memory, you can use model parallelism to aggregate memory from multiple GPUs on the same machine.\n```\npython3 -m fastchat.serve.cli --model-name /path/to/vicuna/weights --num-gpus 2\n```\n\n#### CPU Only\nThis runs on CPU only. It requires around 60GB of CPU memory for Vicuna-13B.\n```\npython3 -m fastchat.serve.cli --model-name /path/to/vicuna/weights --device cpu\n```\n\n### Web UI\n\n#### Launch a controller\n```bash\npython3 -m fastchat.serve.controller\n```\n\n#### Launch a model worker\n```bash\npython3 -m fastchat.serve.model_worker --model-path /path/to/vicuna/weights\n```\n\n#### Send a test message\n```bash\npython3 -m fastchat.serve.test_message\n```\n\n#### Launch a gradio web server.\n```bash\npython3 -m fastchat.serve.gradio_web_server\n```\n#### You can open your browser and chat with a model now.\n\n## Evaluation\n\nOur AI-enhanced [evaluation](fastchat/eval) pipeline is based on GPT-4. Here are some high-level instructions for using the pipeline:\n\nFirst, generate answers from different models. Use `qa_baseline_gpt35.py` for ChatGPT, or specify the model checkpoint and run `model_qa.py` for Vicuna and other models.\n\nThen, use GPT-4 to generate reviews automatically, which can be done manually if the GPT-4 API is not available to you. Once you have your evaluation data, visualize the results by running `generate_webpage_data_from_table.py`, which generates data for a static website.\n\nFinally, serve a static website under the `webpage` directory. You can simply use `python3 -m http.server` to serve the website locally.\n\nBesides the evaluation workflow, we also document the data format used for evaluation, which is encoded with JSON Lines and includes information on models, prompts, reviewers, questions, answers, and reviews. You can customize the evaluation process or contribute to our project by accessing relevant [data](fastchat/eval/table/).\n\nCheck [evaluation](fastchat/eval) for detailed instructions.\n\n## Fine-tuning\n### Data\n\nVicuna is created by fine-tuning a LLaMA base model using approximately 70K user-shared conversations gathered from ShareGPT.com with public APIs. To ensure data quality, we convert the HTML back to markdown and filter out some inappropriate or low-quality samples. Additionally, we divide lengthy conversations into smaller segments that fit the model's maximum context length. For detailed instructions to clean the ShareGPT data, check out [here](docs/commands/data_cleaning.md).\n\nDue to some concerns, we may not release the data at the moment. If you would like to try the fine-tuning code, you can try to run it with our [preprocessed alpaca dataset](playground/data/alpaca-data-conversation.json) (originally from [here](https://github.com/tatsu-lab/stanford_alpaca)).\n\n### Code and Hyperparameters\nWe fine-tune the model using the code from [Stanford Alpaca](https://github.com/tatsu-lab/stanford_alpaca), with some modifications to support gradient checkpointing and [Flash Attention](https://github.com/HazyResearch/flash-attention). We use similar hyperparameters as the Stanford Alpaca.\n\n| Hyperparameter | Global Batch Size | Learning rate | Epochs | Max length | Weight decay |\n| --- | ---: | ---: | ---: | ---: | ---: |\n| Vicuna-13B | 128 | 2e-5 | 3 | 2048 | 0 |\n\n### Fine-tuning on Any Cloud with SkyPilot\n[SkyPilot](https://github.com/skypilot-org/skypilot) is a framework built by UC Berkeley for easily and cost effectively running ML workloads on any cloud (AWS, GCP, Azure, Lambda, etc.). \nTo use SkyPilot, install it with the following command and setup the cloud credentials locally following the instructions [here](https://skypilot.readthedocs.io/en/latest/getting-started/installation.html).\n```bash\n# Install skypilot from the master branch\npip install git+https://github.com/skypilot-org/skypilot.git\n```\n#### Vicuna\nVicuna can be trained on 8 A100 GPUs with 80GB memory. The following command will automatically launch a node satisfying the requirement, setup and run the training job on it.\n```bash\nsky launch -c vicuna -s scripts/train-vicuna.yaml --env WANDB_API_KEY\n```\nOther options are also valid:\n```bash\n# Launch it on managed spot to save 3x cost (train Vicuna-13B with around $300)\nsky spot launch -n vicuna scripts/train-vicuna.yaml --env WANDB_API_KEY\n\n# Train a 7B model\nsky launch -c vicuna -s scripts/train-vicuna.yaml --env WANDB_API_KEY --env MODEL_SIZE=7\n```\nNote: Please make sure the `WANDB_API_KEY` has been setup on your local machine. You can find the API key on your [wandb profile page](https://wandb.ai/authorize). If you would like to train the model without using wandb, you can replace the `--env WANDB_API_KEY` flag with `--env WANDB_MODE=offline`.\n\n#### Alpaca\nLaunch the training job with the following line (will be launched on a single node with 4 A100-80GB GPUs)\n```\nsky launch -c alpaca -s scripts/train-alpaca.yaml --env WANDB_API_KEY\n```\n\n### Fine-tuning with Local GPUs\nVicuna can also be trained on 8 A100 GPUs with 80GB memory with the following code. To train on fewer GPUs, you can reduce the `per_device_train_batch_size` and increase the `gradient_accumulation_steps` accordingly to keep the global batch size the same. To setup the environment, please see the setup section in [scripts/train-vicuna.yaml](scripts/train-vicuna.yaml).\n```bash\ntorchrun --nnodes=1 --nproc_per_node=8 --master_port=<your_random_port> \\\n    fastchat/train/train_mem.py \\\n    --model_name_or_path <path-to-llama-model-weight> \\\n    --data_path <path-to-data> \\\n    --bf16 True \\\n    --output_dir ./checkpoints \\\n    --num_train_epochs 3 \\\n    --per_device_train_batch_size 4 \\\n    --per_device_eval_batch_size 4 \\\n    --gradient_accumulation_steps 1 \\\n    --evaluation_strategy \"no\" \\\n    --save_strategy \"steps\" \\\n    --save_steps 1200 \\\n    --save_total_limit 100 \\\n    --learning_rate 2e-5 \\\n    --weight_decay 0. \\\n    --warmup_ratio 0.03 \\\n    --lr_scheduler_type \"cosine\" \\\n    --logging_steps 1 \\\n    --fsdp \"full_shard auto_wrap\" \\\n    --fsdp_transformer_layer_cls_to_wrap 'LlamaDecoderLayer' \\\n    --tf32 True \\\n    --model_max_length 2048 \\\n    --gradient_checkpointing True \\\n    --lazy_preprocess True\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "fschat",
+            "package_url": "https://pypi.org/project/fschat/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/fschat/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/lm-sys/fastchat/issues",
+                "Homepage": "https://github.com/lm-sys/fastchat"
+            },
+            "release_url": "https://pypi.org/project/fschat/0.1.3/",
+            "requires_dist": [
+                "accelerate",
+                "fastapi",
+                "gradio (==3.23)",
+                "markdown2[all]",
+                "numpy",
+                "requests",
+                "sentencepiece",
+                "tokenizers (==0.12.1)",
+                "torch",
+                "uvicorn",
+                "wandb"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "An open platform for training, serving, and evaluating large language model based chatbots.",
+            "version": "0.1.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17562768,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "47c2af6a9dc62130135c5cd70fb2300bf1cc7a13e1d5c60c89e3853756298fc5",
+                    "md5": "8f25f33434b23be6acfeb096f69c9210",
+                    "sha256": "cc9fcde2d0e01189b5645cd8323ff65090593c0a7a65bbf86a44bfbb5510558d"
+                },
+                "downloads": -1,
+                "filename": "fschat-0.1.3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "8f25f33434b23be6acfeb096f69c9210",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 49327,
+                "upload_time": "2023-04-03T17:28:49",
+                "upload_time_iso_8601": "2023-04-03T17:28:49.239257Z",
+                "url": "https://files.pythonhosted.org/packages/47/c2/af6a9dc62130135c5cd70fb2300bf1cc7a13e1d5c60c89e3853756298fc5/fschat-0.1.3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2371419dd1a853441aa8f9f4c26f1227f79a0ae75cb2ba47b12e6e921d30b0a8",
+                    "md5": "0c4e60a0272b6a3c6eb2d1f31e1ec04c",
+                    "sha256": "9523512e11bf9dcd3fbccc3da7efcec1faef5c564999cf3eb426c966546525cb"
+                },
+                "downloads": -1,
+                "filename": "fschat-0.1.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "0c4e60a0272b6a3c6eb2d1f31e1ec04c",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 42193,
+                "upload_time": "2023-04-03T17:28:51",
+                "upload_time_iso_8601": "2023-04-03T17:28:51.515125Z",
+                "url": "https://files.pythonhosted.org/packages/23/71/419dd1a853441aa8f9f4c26f1227f79a0ae75cb2ba47b12e6e921d30b0a8/fschat-0.1.3.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

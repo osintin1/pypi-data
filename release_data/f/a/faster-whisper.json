@@ -55,7 +55,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17429417,
+        "last_serial": 17561302,
         "urls": [
             {
                 "comment_text": "",
@@ -120,7 +120,6 @@
                 "Programming Language :: Python :: 3.9",
                 "Topic :: Scientific/Engineering :: Artificial Intelligence"
             ],
-            "description": "[![CI](https://github.com/guillaumekln/faster-whisper/workflows/CI/badge.svg)](https://github.com/guillaumekln/faster-whisper/actions?query=workflow%3ACI) [![PyPI version](https://badge.fury.io/py/faster-whisper.svg)](https://badge.fury.io/py/faster-whisper)\n\n# Faster Whisper transcription with CTranslate2\n\n**faster-whisper** is a reimplementation of OpenAI's Whisper model using [CTranslate2](https://github.com/OpenNMT/CTranslate2/), which is a fast inference engine for Transformer models.\n\nThis implementation is up to 4 times faster than [openai/whisper](https://github.com/openai/whisper) for the same accuracy while using less memory. The efficiency can be further improved with 8-bit quantization on both CPU and GPU.\n\n## Benchmark\n\nFor reference, here's the time and memory usage that are required to transcribe [**13 minutes**](https://www.youtube.com/watch?v=0u7tTptBo9I) of audio using different implementations:\n\n* [openai/whisper](https://github.com/openai/whisper)@[6dea21fd](https://github.com/openai/whisper/commit/6dea21fd7f7253bfe450f1e2512a0fe47ee2d258)\n* [whisper.cpp](https://github.com/ggerganov/whisper.cpp)@[3b010f9](https://github.com/ggerganov/whisper.cpp/commit/3b010f9bed9a6068609e9faf52383aea792b0362)\n* [faster-whisper](https://github.com/guillaumekln/faster-whisper)@[cce6b53e](https://github.com/guillaumekln/faster-whisper/commit/cce6b53e4554f71172dad188c45f10fb100f6e3e)\n\n### Large-v2 model on GPU\n\n| Implementation | Precision | Beam size | Time | Max. GPU memory | Max. CPU memory |\n| --- | --- | --- | --- | --- | --- |\n| openai/whisper | fp16 | 5 | 4m30s | 11325MB | 9439MB |\n| faster-whisper | fp16 | 5 | 54s | 4755MB | 3244MB |\n| faster-whisper | int8 | 5 | 59s | 3091MB | 3117MB |\n\n*Executed with CUDA 11.7.1 on a NVIDIA Tesla V100S.*\n\n### Small model on CPU\n\n| Implementation | Precision | Beam size | Time | Max. memory |\n| --- | --- | --- | --- | --- |\n| openai/whisper | fp32 | 5 | 10m31s | 3101MB |\n| whisper.cpp | fp32 | 5 | 17m42s | 1581MB |\n| whisper.cpp | fp16 | 5 | 12m39s | 873MB |\n| faster-whisper | fp32 | 5 | 2m44s | 1675MB |\n| faster-whisper | int8 | 5 | 2m04s | 995MB |\n\n*Executed with 8 threads on a Intel(R) Xeon(R) Gold 6226R.*\n\n## Installation\n\nThe module can be installed from [PyPI](https://pypi.org/project/faster-whisper/):\n\n```bash\npip install faster-whisper\n```\n\n**Other installation methods:**\n\n```bash\n# Install the master branch:\npip install --force-reinstall \"faster-whisper @ https://github.com/guillaumekln/faster-whisper/archive/refs/heads/master.tar.gz\"\n\n# Install a specific commit:\npip install --force-reinstall \"faster-whisper @ https://github.com/guillaumekln/faster-whisper/archive/a4f1cc8f11433e454c3934442b5e1a4ed5e865c3.tar.gz\"\n\n# Install for development:\ngit clone https://github.com/guillaumekln/faster-whisper.git\npip install -e faster-whisper/\n```\n\n### GPU support\n\nGPU execution requires the NVIDIA libraries cuBLAS 11.x and cuDNN 8.x to be installed on the system. Please refer to the [CTranslate2 documentation](https://opennmt.net/CTranslate2/installation.html).\n\n## Usage\n\n### Transcription\n\n```python\nfrom faster_whisper import WhisperModel\n\nmodel_size = \"large-v2\"\n\n# Run on GPU with FP16\nmodel = WhisperModel(model_size, device=\"cuda\", compute_type=\"float16\")\n\n# or run on GPU with INT8\n# model = WhisperModel(model_size, device=\"cuda\", compute_type=\"int8_float16\")\n# or run on CPU with INT8\n# model = WhisperModel(model_size, device=\"cpu\", compute_type=\"int8\")\n\nsegments, info = model.transcribe(\"audio.mp3\", beam_size=5)\n\nprint(\"Detected language '%s' with probability %f\" % (info.language, info.language_probability))\n\nfor segment in segments:\n    print(\"[%.2fs -> %.2fs] %s\" % (segment.start, segment.end, segment.text))\n```\n\n#### Word-level timestamps\n\n```python\nsegments, _ = model.transcribe(\"audio.mp3\", word_timestamps=True)\n\nfor segment in segments:\n    for word in segment.words:\n        print(\"[%.2fs -> %.2fs] %s\" % (word.start, word.end, word.word))\n```\n\nSee more model and transcription options in the [`WhisperModel`](https://github.com/guillaumekln/faster-whisper/blob/master/faster_whisper/transcribe.py) class implementation.\n\n## Model conversion\n\nWhen loading a model from its size such as `WhisperModel(\"large-v2\")`, the correspondig CTranslate2 model is automatically downloaded from the [Hugging Face Hub](https://huggingface.co/guillaumekln).\n\nWe also provide a script to convert any Whisper models compatible with the Transformers library. They could be the original OpenAI models or user fine-tuned models.\n\nFor example the command below converts the [original \"large-v2\" Whisper model](https://huggingface.co/openai/whisper-large-v2) and saves the weights in FP16:\n\n```bash\npip install transformers[torch]>=4.23\n\nct2-transformers-converter --model openai/whisper-large-v2 --output_dir whisper-large-v2-ct2 \\\n    --copy_files tokenizer.json --quantization float16\n```\n\n* The option `--model` accepts a model name on the Hub or a path to a model directory.\n* If the option `--copy_files tokenizer.json` is not used, the tokenizer configuration is automatically downloaded when the model is loaded later.\n\nModels can also be converted from the code. See the [conversion API](https://opennmt.net/CTranslate2/python/ctranslate2.converters.TransformersConverter.html).\n\n## Comparing performance against other implementations\n\nIf you are comparing the performance against other Whisper implementations, you should make sure to run the comparison with similar settings. In particular:\n\n* Verify that the same transcription options are used, especially the same beam size. For example in openai/whisper, `model.transcribe` uses a default beam size of 1 but here we use a default beam size of 5.\n* When running on CPU, make sure to set the same number of threads. Many frameworks will read the environment variable `OMP_NUM_THREADS`, which can be set when running your script:\n\n```bash\nOMP_NUM_THREADS=4 python3 my_script.py\n```\n\n\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -159,7 +158,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17429417,
+        "last_serial": 17561302,
         "urls": [
             {
                 "comment_text": "",
@@ -200,6 +199,111 @@
                 "upload_time": "2023-03-24T09:58:25",
                 "upload_time_iso_8601": "2023-03-24T09:58:25.074622Z",
                 "url": "https://files.pythonhosted.org/packages/4a/92/a3e75c399c0ba7f3a3c4d554744bacae45390fde65726ad84adee0f16a43/faster-whisper-0.3.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.4.0": {
+        "info": {
+            "author": "Guillaume Klein",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Intended Audience :: Developers",
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Scientific/Engineering :: Artificial Intelligence"
+            ],
+            "description": "[![CI](https://github.com/guillaumekln/faster-whisper/workflows/CI/badge.svg)](https://github.com/guillaumekln/faster-whisper/actions?query=workflow%3ACI) [![PyPI version](https://badge.fury.io/py/faster-whisper.svg)](https://badge.fury.io/py/faster-whisper)\n\n# Faster Whisper transcription with CTranslate2\n\n**faster-whisper** is a reimplementation of OpenAI's Whisper model using [CTranslate2](https://github.com/OpenNMT/CTranslate2/), which is a fast inference engine for Transformer models.\n\nThis implementation is up to 4 times faster than [openai/whisper](https://github.com/openai/whisper) for the same accuracy while using less memory. The efficiency can be further improved with 8-bit quantization on both CPU and GPU.\n\n## Benchmark\n\nFor reference, here's the time and memory usage that are required to transcribe [**13 minutes**](https://www.youtube.com/watch?v=0u7tTptBo9I) of audio using different implementations:\n\n* [openai/whisper](https://github.com/openai/whisper)@[6dea21fd](https://github.com/openai/whisper/commit/6dea21fd7f7253bfe450f1e2512a0fe47ee2d258)\n* [whisper.cpp](https://github.com/ggerganov/whisper.cpp)@[3b010f9](https://github.com/ggerganov/whisper.cpp/commit/3b010f9bed9a6068609e9faf52383aea792b0362)\n* [faster-whisper](https://github.com/guillaumekln/faster-whisper)@[cce6b53e](https://github.com/guillaumekln/faster-whisper/commit/cce6b53e4554f71172dad188c45f10fb100f6e3e)\n\n### Large-v2 model on GPU\n\n| Implementation | Precision | Beam size | Time | Max. GPU memory | Max. CPU memory |\n| --- | --- | --- | --- | --- | --- |\n| openai/whisper | fp16 | 5 | 4m30s | 11325MB | 9439MB |\n| faster-whisper | fp16 | 5 | 54s | 4755MB | 3244MB |\n| faster-whisper | int8 | 5 | 59s | 3091MB | 3117MB |\n\n*Executed with CUDA 11.7.1 on a NVIDIA Tesla V100S.*\n\n### Small model on CPU\n\n| Implementation | Precision | Beam size | Time | Max. memory |\n| --- | --- | --- | --- | --- |\n| openai/whisper | fp32 | 5 | 10m31s | 3101MB |\n| whisper.cpp | fp32 | 5 | 17m42s | 1581MB |\n| whisper.cpp | fp16 | 5 | 12m39s | 873MB |\n| faster-whisper | fp32 | 5 | 2m44s | 1675MB |\n| faster-whisper | int8 | 5 | 2m04s | 995MB |\n\n*Executed with 8 threads on a Intel(R) Xeon(R) Gold 6226R.*\n\n## Installation\n\nThe module can be installed from [PyPI](https://pypi.org/project/faster-whisper/):\n\n```bash\npip install faster-whisper\n```\n\n**Other installation methods:**\n\n```bash\n# Install the master branch:\npip install --force-reinstall \"faster-whisper @ https://github.com/guillaumekln/faster-whisper/archive/refs/heads/master.tar.gz\"\n\n# Install a specific commit:\npip install --force-reinstall \"faster-whisper @ https://github.com/guillaumekln/faster-whisper/archive/a4f1cc8f11433e454c3934442b5e1a4ed5e865c3.tar.gz\"\n\n# Install for development:\ngit clone https://github.com/guillaumekln/faster-whisper.git\npip install -e faster-whisper/\n```\n\n### GPU support\n\nGPU execution requires the NVIDIA libraries cuBLAS 11.x and cuDNN 8.x to be installed on the system. Please refer to the [CTranslate2 documentation](https://opennmt.net/CTranslate2/installation.html).\n\n## Usage\n\n### Library\n\n```python\nfrom faster_whisper import WhisperModel\n\nmodel_size = \"large-v2\"\n\n# Run on GPU with FP16\nmodel = WhisperModel(model_size, device=\"cuda\", compute_type=\"float16\")\n\n# or run on GPU with INT8\n# model = WhisperModel(model_size, device=\"cuda\", compute_type=\"int8_float16\")\n# or run on CPU with INT8\n# model = WhisperModel(model_size, device=\"cpu\", compute_type=\"int8\")\n\nsegments, info = model.transcribe(\"audio.mp3\", beam_size=5)\n\nprint(\"Detected language '%s' with probability %f\" % (info.language, info.language_probability))\n\nfor segment in segments:\n    print(\"[%.2fs -> %.2fs] %s\" % (segment.start, segment.end, segment.text))\n```\n\n#### Word-level timestamps\n\n```python\nsegments, _ = model.transcribe(\"audio.mp3\", word_timestamps=True)\n\nfor segment in segments:\n    for word in segment.words:\n        print(\"[%.2fs -> %.2fs] %s\" % (word.start, word.end, word.word))\n```\n\n#### VAD filter\n\nThe library integrates the [Silero VAD](https://github.com/snakers4/silero-vad) model to filter out parts of the audio without speech:\n\n```python\nsegments, _ = model.transcribe(\"audio.mp3\", vad_filter=True)\n```\n\nThe default behavior is conservative and only removes silence longer than 2 seconds. See the available VAD parameters and default values in the function [`get_speech_timestamps`](https://github.com/guillaumekln/faster-whisper/blob/master/faster_whisper/vad.py). They can be customized with the dictionary argument `vad_parameters`:\n\n```python\nsegments, _ = model.transcribe(\"audio.mp3\", vad_filter=True, vad_parameters=dict(min_silence_duration_ms=500))\n```\n\n#### Going further\n\nSee more model and transcription options in the [`WhisperModel`](https://github.com/guillaumekln/faster-whisper/blob/master/faster_whisper/transcribe.py) class implementation.\n\n### CLI\n\nYou can use [jordimas/whisper-ctranslate2](https://github.com/jordimas/whisper-ctranslate2) to access `faster-whisper` through a CLI interface similar to what is offered by Whisper.\n\n## Model conversion\n\nWhen loading a model from its size such as `WhisperModel(\"large-v2\")`, the correspondig CTranslate2 model is automatically downloaded from the [Hugging Face Hub](https://huggingface.co/guillaumekln).\n\nWe also provide a script to convert any Whisper models compatible with the Transformers library. They could be the original OpenAI models or user fine-tuned models.\n\nFor example the command below converts the [original \"large-v2\" Whisper model](https://huggingface.co/openai/whisper-large-v2) and saves the weights in FP16:\n\n```bash\npip install transformers[torch]>=4.23\n\nct2-transformers-converter --model openai/whisper-large-v2 --output_dir whisper-large-v2-ct2 \\\n    --copy_files tokenizer.json --quantization float16\n```\n\n* The option `--model` accepts a model name on the Hub or a path to a model directory.\n* If the option `--copy_files tokenizer.json` is not used, the tokenizer configuration is automatically downloaded when the model is loaded later.\n\nModels can also be converted from the code. See the [conversion API](https://opennmt.net/CTranslate2/python/ctranslate2.converters.TransformersConverter.html).\n\n## Comparing performance against other implementations\n\nIf you are comparing the performance against other Whisper implementations, you should make sure to run the comparison with similar settings. In particular:\n\n* Verify that the same transcription options are used, especially the same beam size. For example in openai/whisper, `model.transcribe` uses a default beam size of 1 but here we use a default beam size of 5.\n* When running on CPU, make sure to set the same number of threads. Many frameworks will read the environment variable `OMP_NUM_THREADS`, which can be set when running your script:\n\n```bash\nOMP_NUM_THREADS=4 python3 my_script.py\n```\n\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/guillaumekln/faster-whisper",
+            "keywords": "openai whisper speech ctranslate2 inference quantization transformer",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "faster-whisper",
+            "package_url": "https://pypi.org/project/faster-whisper/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/faster-whisper/",
+            "project_urls": {
+                "Homepage": "https://github.com/guillaumekln/faster-whisper"
+            },
+            "release_url": "https://pypi.org/project/faster-whisper/0.4.0/",
+            "requires_dist": [
+                "av (==10.*)",
+                "ctranslate2 (<4,>=3.10)",
+                "huggingface-hub (>=0.13)",
+                "tokenizers (==0.13.*)",
+                "onnxruntime (==1.14.*) ; python_version < \"3.11\"",
+                "transformers[torch] (>=4.23) ; extra == 'conversion'",
+                "black (==23.*) ; extra == 'dev'",
+                "flake8 (==6.*) ; extra == 'dev'",
+                "isort (==5.*) ; extra == 'dev'",
+                "pytest (==7.*) ; extra == 'dev'"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "Faster Whisper transcription with CTranslate2",
+            "version": "0.4.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17561302,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "217303f50ab85d3e90a715d1789356abcb987fa25757cdae7b6d884f74df0553",
+                    "md5": "9f21551b70fe88c71422cf00e67c815c",
+                    "sha256": "ddcbf3b8a7d84b31d1772438e9f85155151e0676acd59bb7cd6e02a41c645d04"
+                },
+                "downloads": -1,
+                "filename": "faster_whisper-0.4.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "9f21551b70fe88c71422cf00e67c815c",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 1535897,
+                "upload_time": "2023-04-03T15:26:38",
+                "upload_time_iso_8601": "2023-04-03T15:26:38.748598Z",
+                "url": "https://files.pythonhosted.org/packages/21/73/03f50ab85d3e90a715d1789356abcb987fa25757cdae7b6d884f74df0553/faster_whisper-0.4.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "068ca3f39c8e9f3360f72ef988acf6fd1a46f7594f6343a232249f2b2d25c40c",
+                    "md5": "d2a2f719b928e654d8f854312ee1b835",
+                    "sha256": "ac5482ffd9eeae03cca8cb70a6a29c2e397b6f8278b7865c7695b73f04deb219"
+                },
+                "downloads": -1,
+                "filename": "faster-whisper-0.4.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "d2a2f719b928e654d8f854312ee1b835",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 1539254,
+                "upload_time": "2023-04-03T15:26:40",
+                "upload_time_iso_8601": "2023-04-03T15:26:40.063367Z",
+                "url": "https://files.pythonhosted.org/packages/06/8c/a3f39c8e9f3360f72ef988acf6fd1a46f7594f6343a232249f2b2d25c40c/faster-whisper-0.4.0.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
