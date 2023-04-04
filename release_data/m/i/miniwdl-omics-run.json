@@ -1,0 +1,95 @@
+{
+    "0.1.0": {
+        "info": {
+            "author": "",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License"
+            ],
+            "description": "# miniwdl-omics-run\n\nThis command-line tool makes it easier to launch [WDL](https://openwdl.org/) workflow runs on [Amazon Omics](https://docs.aws.amazon.com/omics/latest/dev/workflows.html). It uses [miniwdl](https://github.com/chanzuckerberg/miniwdl) locally to register WDL workflows with the service, validate command-line inputs, and start a run.\n\n```\npip3 install miniwdl-omics-run\n\nminiwdl-omics-run \\\n    --role-arn {SERVICE_ROLE_ARN} \\\n    --output-uri s3://{BUCKET_NAME}/{PREFIX} \\\n    {MAIN_WDL_FILE} input1=value1 input2=value2 ...\n```\n\n## Quick start\n\nPrerequisites: up-to-date [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) installed locally, and [configured](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html) with full [AdministratorAccess](https://us-east-1.console.aws.amazon.com/iam/home#/policies/arn:aws:iam::aws:policy/AdministratorAccess$jsonEditor) to your AWS account.\n\n### S3 bucket\n\nCreate an S3 bucket with a test input file.\n\n```\nAWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)\nAWS_DEFAULT_REGION=$(aws configure get region)\n\naws s3 mb --region \"$AWS_DEFAULT_REGION\" \"s3://${AWS_ACCOUNT_ID}-${AWS_DEFAULT_REGION}-omics\"\necho test | aws s3 cp - s3://${AWS_ACCOUNT_ID}-${AWS_DEFAULT_REGION}-omics/test/test.txt\n```\n\n### Service role\n\nCreate an IAM service role for your Omics workflow runs to use (to access S3, ECR, etc.).\n\n```\naws iam create-role --role-name poweromics --assume-role-policy-document '{\n    \"Version\":\"2012-10-17\",\n    \"Statement\":[{\n        \"Effect\":\"Allow\",\n        \"Action\":\"sts:AssumeRole\",\n        \"Principal\":{\"Service\":\"omics.amazonaws.com\"}\n    }]\n}'\n\naws iam attach-role-policy --role-name poweromics \\\n    --policy-arn arn:aws:iam::aws:policy/PowerUserAccess\n```\n\n**WARNING:** PowerUserAccess, suggested here only for brevity, is far more powerful than needed. See [Omics docs on service roles](https://docs.aws.amazon.com/omics/latest/dev/permissions-service.html) for the least privileges necessary, especially if you plan to use third-party WDL and/or Docker images.\n\n### ECR repository\n\nCreate an ECR repository suitable for Omics to pull Docker images from.\n\n```\naws ecr create-repository --repository-name omics\naws ecr set-repository-policy --repository-name omics --policy-text '{\n    \"Version\": \"2012-10-17\",\n    \"Statement\": [{\n        \"Sid\": \"omics workflow\",\n        \"Effect\": \"Allow\",\n        \"Principal\": {\"Service\": \"omics.amazonaws.com\"},\n        \"Action\": [\n            \"ecr:GetDownloadUrlForLayer\",\n            \"ecr:BatchGetImage\",\n            \"ecr:BatchCheckLayerAvailability\"\n        ]\n    }]\n}'\n```\n\nPush a plain Ubuntu image to the repository.\n\n```\nECR_ENDPT=\"${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com\"\naws ecr get-login-password | docker login --username AWS --password-stdin \"$ECR_ENDPT\"\n\ndocker pull ubuntu:22.04\ndocker tag ubuntu:22.04 \"${ECR_ENDPT}/omics:ubuntu-22.04\"\ndocker push \"${ECR_ENDPT}/omics:ubuntu-22.04\"\n```\n\n### Run test workflow\n\n```\npip3 install miniwdl-omics-run\n\nminiwdl-omics-run \\\n    --role-arn arn:aws:iam::${AWS_ACCOUNT_ID}:role/poweromics \\\n    --output-uri \"s3://${AWS_ACCOUNT_ID}-${AWS_DEFAULT_REGION}-omics/test/out\" \\\n    https://raw.githubusercontent.com/miniwdl-ext/miniwdl-omics-run/main/test/TestFlow.wdl \\\n    input_txt_file=\"s3://${AWS_ACCOUNT_ID}-${AWS_DEFAULT_REGION}-omics/test/test.txt\" \\\n    docker=\"${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/omics:ubuntu-22.04\"\n```\n\nThis zips up [the specified WDL](https://raw.githubusercontent.com/miniwdl-ext/miniwdl-omics-run/main/test/TestFlow.wdl), registers it as an Omics workflow, validates the given inputs, and starts the workflow run.\n\nThe WDL source code may be set to a local filename or a public HTTP(S) URL. The tool automatically bundles any WDL files imported by the main one. On subsequent invocations, it'll reuse the previously-registered workflow if the source code hasn't changed.\n\nThe command-line interface accepts WDL inputs using the `input_key=value` syntax exactly like [`miniwdl run`](https://miniwdl.readthedocs.io/en/latest/runner_cli.html), including the option of a JSON file with `--input FILE.json`. Each input File must be set to an existing S3 URI accessible by the service role.\n\n## Advice\n\n- Omics can use Docker images *only* from your ECR in the same account & region.\n  - This often means pulling, re-tagging, and pushing images as illustrated above with `ubuntu:22.04`.\n  - And editing any WDL tasks that hard-code public registries in their `runtime.docker`.\n  - Each ECR repository must have the Omics-specific repository policy set as shown above.\n  - We therefore tend to use a single ECR repository for multiple Docker images, disambiguating them using lengthier tags.\n  - If you prefer to use per-image repositories, just remember to set the repository policy on each one.\n- To quickly list a workflow's inputs, try `miniwdl run workflow.wdl ?`\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "miniwdl-omics-run",
+            "package_url": "https://pypi.org/project/miniwdl-omics-run/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/miniwdl-omics-run/",
+            "project_urls": {
+                "repository": "https://github.com/miniwdl-ext/miniwdl-omics-run.git"
+            },
+            "release_url": "https://pypi.org/project/miniwdl-omics-run/0.1.0/",
+            "requires_dist": [
+                "miniwdl (<2,>=1.9.1)",
+                "boto3 (>=1.26.42)",
+                "setuptools ; extra == 'dev'",
+                "build ; extra == 'dev'",
+                "twine ; extra == 'dev'",
+                "pre-commit ; extra == 'dev'",
+                "black ; extra == 'dev'",
+                "ruff ; extra == 'dev'"
+            ],
+            "requires_python": "~=3.8",
+            "summary": "WDL launcher for Amazon Omics",
+            "version": "0.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17569784,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e4d537838df14d1871f055a068256a5651b84bf9d4671d3cbd0fd3442f8828b7",
+                    "md5": "17e2820525db355d4340b59cd5502913",
+                    "sha256": "492bc0df3735e91b6c6f1676326c057886d7a45b438b864f5b11db6f405d99d4"
+                },
+                "downloads": -1,
+                "filename": "miniwdl_omics_run-0.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "17e2820525db355d4340b59cd5502913",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": "~=3.8",
+                "size": 8288,
+                "upload_time": "2023-04-04T03:54:43",
+                "upload_time_iso_8601": "2023-04-04T03:54:43.311978Z",
+                "url": "https://files.pythonhosted.org/packages/e4/d5/37838df14d1871f055a068256a5651b84bf9d4671d3cbd0fd3442f8828b7/miniwdl_omics_run-0.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c6d9b02329f3e15b8912a5feaa2fbaa2e444e1a32834d15df1e77dad7e1169c3",
+                    "md5": "6821a057c1f05368969fa9d411342672",
+                    "sha256": "da43fcd9ea7362a00c2d7e3171d092bdd8e6f2f2fcbad4deff89fef88defcb2d"
+                },
+                "downloads": -1,
+                "filename": "miniwdl-omics-run-0.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "6821a057c1f05368969fa9d411342672",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": "~=3.8",
+                "size": 9074,
+                "upload_time": "2023-04-04T03:54:45",
+                "upload_time_iso_8601": "2023-04-04T03:54:45.281448Z",
+                "url": "https://files.pythonhosted.org/packages/c6/d9/b02329f3e15b8912a5feaa2fbaa2e444e1a32834d15df1e77dad7e1169c3/miniwdl-omics-run-0.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
