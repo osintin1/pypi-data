@@ -1,0 +1,98 @@
+{
+    "0.1.0": {
+        "info": {
+            "author": "",
+            "author_email": "Amelie Luecke <amelie.luecke@cap-on.de>, Philipp Ratz <philipp.ratz@cap-on.de>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "\n# celery-sqlalchemy-kit \n  \n## About  \nThis kit enables you to store periodic celery tasks in an SQLAlchemy compatible database. \nThe schedules can be set as **crontabs** or **time-intervals**. \nScheduled tasks in the database can be **set active or inactive** to control whether they should run.   \nThis kit also allows your celery workers to **run asynchronous tasks**.   \n  \nThis package is under active development and used in production at cap-on.   \n\n**NOTE**: This package was developed and tested with a PostgreSQL backend. \nTheoretically, any other SQLAlchemy compatible database, that supports JSON type, can be used. \nBut this has not been tested yet.\n  \n  \n## Getting Started  \n### Requirements  \n- python >= 3.10  \n- celery >= 5.2.7  \n- sqlalchemy >= 1.4.46  - 2.0 should work as well\n- psycopg2 >= 2.9.3 / mysql-connector / other connector depending on database\n- redis >= 4.5.1 / other broker/backend for celery\n\nEarlier versions should work as well, they just have not been tested yet.\n  \n### Installation  \nYou can install this package from PyPi:  \n  \n```bash  \npip install celery-sqlalchemy-kit\n```  \n\n## SQL Table 'routines'\nUsing this package will create a table that contains your scheduled celery tasks. \nThe structure of table 'routines' is as follows:\n\n| Column           | Type                        | Nullable  | \n|------------------|-----------------------------|-----------|\n| id               | uuid                        | not null  |\n| name             | character varying(50)       | not null  |\n| task             | character varying(50)       | not null  |\n| schedule         | json                        | not null  |\n| last_run_at      | timestamp without time zone |           |\n| total_run_count  | integer                     |           |\n| active           | boolean                     | not null  |\n| kwargs           | json                        |           |\n| options          | json                        |           |\n\n  \n## Usage & Configuration \nTo demonstrate how to use the features of this package, there are examples in the 'example'-directory. \nThese are being explained in the following.  \n  \n### 1. Configuration\n  \nFirst you need to instantiate celery, as you would normally do. \nHave a look at the [celery documentation](https://docs.celeryq.dev/en/stable/#).  \nIf you define your tasks in another file, include the path to their file via `include`.  \n```python  \ncelery = Celery(  \n    \"celery\", \n    include=[\"celery-sqlalchemy-kit.example.custom_tasks\"], \n    backend=your_result_backend, \n    broker=your_broker_url\n)  \n```  \n\nTo use this package you have to configure some variables of your celery instance like so:  \n  \n```python\ncelery.conf.update(  \n    {  \n        \"scheduler_db_uri\": scheduler_db_uri,  \n        \"scheduler_max_interval\": scheduler_max_interval,  \n        \"scheduler_sync_every\": scheduler_sync_every,  \n        \"celery_max_retry\": celery_max_retry,  \n        \"celery_retry_delay\": celery_retry_delay,  \n        \"create_table\": True,  \n  },  \n)\n```\n\n| variable                 | explanation                                                                                                                              | default\t                  |\n|--------------------------|------------------------------------------------------------------------------------------------------------------------------------------|---------------------------|\n| `scheduler_db_uri`       | db uri used by scheduler (must be synchronous)                                                                                           | \"psycopg2:///schedule.db\" |\n| `scheduler_max_interval` | maximum time to sleep between re-checking the schedule                                                                                   | 300 (seconds)             |\n| `scheduler_sync_every`   | How often to sync the schedule                                                                                                           | 3 * 60 (seconds)          |\n| `celery_max_retry`       | How often to retry a task when it fails                                                                                                  | 3                         |\n| `celery_retry_delay`     | How long to wait before next retry of failed task is started                                                                             | 300 (seconds)             |\n| `create_table`           | If set `True`, table 'routines' for scheduled tasks is created automatically with sqlalchemy. If you wish to use alembic, set to `False` | True                      |\n\nMake sure to use the correct `scheduler_db_uri` of your project allowing the `RoutineScheduler` to create a table named `routines` and save your scheduled tasks in it.\nThese variables are also available as environment variables in upper case (except for `create_table`).\n\n### 2.1. Create scheduled tasks\nTo create tasks that run after your desired schedule, you have to inherit from class `SyncTask` like so:\n\n```python  \nclass CeleryTestTask(SyncTask):  \n    name = \"celery test\"  \n    schedule = 15   \n  \n    def run(self, *args, **kwargs):  \n        # do stuff\n```  \n\nThe task that you want to be executed, has to be defined as the `run`method from your task class. Make sure to define a name for your task and set the variable `schedule`. For the schedule you have to options:\n\n| schedule type   | explanation                                    | example\t                                                | syntax in db\t                                |\n|-----------------|------------------------------------------------|---------------------------------------------------------|----------------------------------------------|\n| time interval   | run your task every ... seconds                | schedule = 15                                           | {\"timedelta\": 15}                            |\n| crontab         | define schedule as crontab, by creating a dict | schedule = {\"minute\": 0, \"hour\": 9, \"day_of_month\": 15} | {\"minute\": 0, \"hour\": 9, \"day_of_month\": 15} |\n\nNow when you start your program, the scheduled tasks are added to your database in `routines` table and executed by a celery worker within the schedule you defined.\n\n**NOTE**: In your database the schedules of tasks are saved as type JSON. \nMake sure to keep the correct syntax.\n\n\n### 2.2. Create asynchronous scheduled tasks\n\nThis works the same way as with synchronous tasks, except that your custom tasks has to inherit from class `AsnycTask` and the task logic has to be implemented within the async method `execute`:\n\n```python  \nclass CeleryTestTask(AsyncTask):  \n    name = \"celery test\"  \n    schedule = 15   \n  \n    async def execute(self, *args, **kwargs):  \n        # do stuff\n\n```  \n\n## 3. Change schedule / (in-) activate tasks\n\nIf you wish to change the schedule of a task, just update the corresponding db entry. \nThe next time the `RoutineScheduler` synchronizes, it will acknowledge the new schedule. \nSame thing with activating or inactivating tasks. \nTo activate a task, set column `active` in your db to `t` (True). \nTo inactivate a task, set column `active` in your db to `f` (False).  \nA task that is inactive will not be executed as long as you change it to active again.\n\n\n## 4. Source of truth for schedule\n- New scheduled task in code, that is not in db: new db entry is created automatically\n- Scheduled task in code as well as db: schedule in db is used to run task\n- Tasks that are deleted in code will be removed from db after redeploy\n- Inactive tasks in db will not be executed\n\n\n## 5. Run celery worker and beat\nTo start celery worker:\n```bash\n$ celery -A celery_instance worker --loglevel=INFO\n```\n\nTo start celery beat:\n```bash\n$ celery -A celery_instance beat --loglevel=INFO --scheduler=scheduler.RoutineScheduler\n```\n\n`celery_instance` is the file containing your celery instance. \nUse the correct path of your project.",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "celery-sqlalchemy-kit",
+            "package_url": "https://pypi.org/project/celery-sqlalchemy-kit/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/celery-sqlalchemy-kit/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/cap-on/celery-sqlalchemy-kit/issues",
+                "Homepage": "https://github.com/cap-on/celery-sqlalchemy-kit"
+            },
+            "release_url": "https://pypi.org/project/celery-sqlalchemy-kit/0.1.0/",
+            "requires_dist": [
+                "celery<6,>=5.2.7",
+                "psycopg2<3,>=2.9.3",
+                "sqlalchemy<3,>=1.4.46",
+                "redis<5,>=4.5.1; extra == 'broker'",
+                "pytest<8,>7.2.1; extra == 'tests'",
+                "tenacity<9,>8.1.0; extra == 'tests'",
+                "tenacity<9,>=8.1.0; extra == 'tests'"
+            ],
+            "requires_python": ">=3.10",
+            "summary": "Schedule tasks in an SQL Database and define Async Celery Tasks.",
+            "version": "0.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17588489,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "df1c8263fc2961d3e9af62951acd712abe9fd35853cf3c4e77a86beb81061116",
+                    "md5": "a53e7466225a967dc49490a66ad78522",
+                    "sha256": "0fdad8621f64c68d785255951d3a95e5e840191be4523d705b88b3f1921d155e"
+                },
+                "downloads": -1,
+                "filename": "celery_sqlalchemy_kit-0.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "a53e7466225a967dc49490a66ad78522",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.10",
+                "size": 13114,
+                "upload_time": "2023-04-05T11:34:43",
+                "upload_time_iso_8601": "2023-04-05T11:34:43.831278Z",
+                "url": "https://files.pythonhosted.org/packages/df/1c/8263fc2961d3e9af62951acd712abe9fd35853cf3c4e77a86beb81061116/celery_sqlalchemy_kit-0.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "adff14b608e31304f7a77fd2810ae36d3235e88753fcd49a7a3431071867e646",
+                    "md5": "ddd8d6aa40e0fd1229be97aee4bf322a",
+                    "sha256": "6b962d524ec1fc969d3e4ab8402d878520bf2f89c4b8d6f3bc3f6b11090b2545"
+                },
+                "downloads": -1,
+                "filename": "celery_sqlalchemy_kit-0.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "ddd8d6aa40e0fd1229be97aee4bf322a",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.10",
+                "size": 13692,
+                "upload_time": "2023-04-05T11:34:45",
+                "upload_time_iso_8601": "2023-04-05T11:34:45.634894Z",
+                "url": "https://files.pythonhosted.org/packages/ad/ff/14b608e31304f7a77fd2810ae36d3235e88753fcd49a7a3431071867e646/celery_sqlalchemy_kit-0.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

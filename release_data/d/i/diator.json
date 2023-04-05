@@ -51,7 +51,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17464579,
+        "last_serial": 17585837,
         "urls": [
             {
                 "comment_text": "",
@@ -150,7 +150,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17464579,
+        "last_serial": 17585837,
         "urls": [
             {
                 "comment_text": "",
@@ -249,7 +249,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17464579,
+        "last_serial": 17585837,
         "urls": [
             {
                 "comment_text": "",
@@ -308,7 +308,6 @@
                 "Programming Language :: Python :: 3.10",
                 "Programming Language :: Python :: 3.11"
             ],
-            "description": "# Diator - CQRS Library for Python\n\nDiator is a Python library for implementing CQRS pattern in your Python applications. It provides a set of abstractions and utilities to help you separate your read and write concerns, allowing for better scalability, performance, and maintainability of your application.\n\n## Features\n\n- Implements the CQRS pattern\n- Simple, yet flexible API\n- Works with Redis Pub/Sub (and will support the other message brokers)\n- Easy to integrate with existing codebases\n- Well-documented\n\n## Installation\n\nYou can install Diator using pip:\n\n```bash\npip install diator[redis]  # Currently only Redis is supported\n```\n\n## Basic usage\n\n### Define Commands and Queries\n\n```python\nfrom diator.requests import Request\nfrom diator.response import Response\n\n\n@dataclasses.dataclass(frozen=True, kw_only=True)\nclass JoinMeetingCommand(Request)\n    meeting_id: int = dataclasses.field(default=1)\n    user_id: int = dataclasses.field(default=1)\n\n\n@dataclasses.dataclass(frozen=True, kw_only=True)\nclass ReadMeetingQuery(Request)\n    meeting_id: int = dataclasses.field(default=1)\n\n\n@dataclasses.dataclass(frozen=True, kw_only=True)\nclass ReadMeetingQueryResult(Response)\n    meeting_id: int = dataclasses.field(default=1)\n    link: str = dataclasses.field()\n\n```\n\n### Define Events\n\n```python\nfrom diator.events import DomainEvent, NotificationEvent\n\n\n@dataclasses.dataclass(frozen=True, kw_only=True)\nclass UserJoinedDomainEvent(Event):  # will be handled by special event handler\n    user_id: int = dataclasses.field()\n    meeting_id: int = dataclasses.field()\n    timestamp: datetime = dataclasses.field()\n\n\n@dataclasses.dataclass(frozen=True, kw_only=True)\nclass UserJoinedNotificationEvent(NotificationEvent):  # will be sent to a message broker\n    user_id: int = dataclasses.field()\n\n```\n\n### Define Command and Event Handlers\n\n```python\nfrom diator.requests import RequestHandler\nfrom diator.events import EventHandler\n\n\nclass JoinMeetingCommandHandler(RequestHandler[JoinMeetingCommand, None]):  # Command Handler doesn't return anything\n    def __init__(self, meeting_api: MeetingAPI) -> None:\n        self._meeting_api = meeting_api\n        self._events: list[Event] = []\n\n    @property\n    def events(self) -> list[Event]:\n        return self._events\n\n    async def handle(self, request: JoinMeetingCommand) -> None:\n        await self._meeting_api.join(request.meeting_id, request.user_id)\n        self._events.append(\n            UserJoinedDomainEvent(user_id=request.user_id, timestamp=datetime.utcnow(), meeting_id=request.meeting_id)\n        )\n        self._events.append(\n            UserJoinedNotificationEvent(user_id=request.user_id)\n        )\n\n\nclass UserJoinedDomainEventHandler(EventHandler[UserJoinedDomainEvent]):\n    def __init__(self, meeting_api: MeetingAPI) -> None:\n        self._meeting_api = meeting_api\n\n    async def handle(self, event: UserJoinedDomainEvent) -> None:\n        await self._meeting_api.notify(event.meeting_id, \"New user joined!\")\n\n\nclass ReadMeetingQueryHandler(RequestHandler[ReadMeetingQuery, ReadMeetingQueryResult]):  # Request Handler returns query result\n    def __init__(self, meeting_api: MeetingAPI) -> None:\n        self._meeting_api = meeting_api\n        self._events: list[Event] = []\n\n    @property\n    def events(self) -> list[Event]:\n        return self._events\n\n    async def handle(self, request: ReadMeetingQuery) -> ReadMeetingQueryResult:\n        link = await self._meeting_api.get_link(request.meeting_id)\n        return ReadMeetingQueryResult(\n            meeting_id=request.meeting_id,\n            link=link\n        )\n\n```\n\n### Setup dependencies\n\n```python\nfrom rodi import Container as ExternalContainer  # using rodi as di-framework\nfrom diator.container.rodi import RodiContainer\n\n\ndef setup_di() -> RodiContainer:\n    external_container = ExternalContainer()\n\n    external_container.register(UserJoinedDomainEventHandler)\n    external_container.register(JoinMeetingCommandHandler)\n    external_container.register(ReadMeetingQueryHandler)\n\n    container = RodiContainer()\n    container.attach_external_container(external_container)\n\n    return container\n\n```\n\n### Define Middleware\n\n```python\nfrom diator.requests import Request\n\n\nclass SomeMiddleware:\n    async def __call__(request: Request, handle):\n        \"\"\"\n        Some logic related to request part of the circle.\n        \"\"\"\n\n        response = await handle(request)\n\n        \"\"\"\n        Some logic related to response part of the circle.\n        \"\"\"\n        return response\n\n```\n\n### Build Mediator object\n\n```python\nfrom diator.requests import RequestMap\nfrom diator.events.message_brokers.redis import RedisMessageBroker\nfrom diator.events import EventEmitter\nfrom diator.mediator import Mediator\nfrom diator.events import EventMap\nfrom diator.middlewares import MiddlewareChain\n\n\nasync def main() -> None:\n    container = setup_di()\n\n    event_map = EventMap()\n    event_map.bind(UserJoinedDomainEvent, UserJoinedDomainEventHandler)  # Mapping event to event handler\n    request_map = RequestMap()\n    request_map.bind(JoinMeetingCommand, JoinMeetingCommandHandler)  # Mapping command to command handler\n    request_map.bind(ReadMeetingQuery, ReadMeetingQueryHandler)  # Mapping query to query handler\n\n    redis_client = redis.Redis.from_url(\"redis://localhost:6379/0\")  # Creating Async Redis Client\n\n    middleware_chain = MiddlewareChain()\n    middleware_chain.add(SomeMiddleware())  # Adding Middleware to a chain\n\n    event_emitter = EventEmitter(\n        message_broker=RedisMessageBroker(redis_client),\n        event_map=event_map,\n        container=container,\n    )\n\n    mediator = Mediator(\n        request_map=request_map, \n        event_emitter=event_emitter, \n        container=container, \n        middleware_chain=MiddlewareChain\n    )\n\n    \"\"\" \n    1. JoinMeetingCommand is handled by JoinMeetingCommandHandler\n    2. JoinMeetingCommandHandler publishes Domain and Notification Events\n    3. UserJoinedDomainEvent is handled by UserJoinedDomainEventHandler\n    4. UserJoinedNotificationEvent is sent to the Redis Pub/Sub\n    \"\"\"\n    await mediator.send(JoinMeetingCommand(user_id=1))\n\n    # Returns ReadMeetingQueryResult\n    response = await mediator.send(ReadMeetingQuery(meeting_id=1))\n\n\nif __name__ == \"__main__\":\n    asyncio.run(main())\n\n```\n\nRedis Pub/Sub output:\n\n```json\n{\n   \"message_type\":\"notification_event\",\n   \"message_name\":\"UserJoinedNotificationEvent\",\n   \"message_id\":\"9f62e977-73f7-462b-92cb-8ea658d3bcb5\",\n   \"payload\":{\n      \"event_id\":\"9f62e977-73f7-462b-92cb-8ea658d3bcb5\",\n      \"event_timestamp\":\"2023-03-07T09:26:02.588855\",\n      \"user_id\":123\n   }\n}\n```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -349,7 +348,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17464579,
+        "last_serial": 17585837,
         "urls": [
             {
                 "comment_text": "",
@@ -390,6 +389,107 @@
                 "upload_time": "2023-03-27T17:28:20",
                 "upload_time_iso_8601": "2023-03-27T17:28:20.058760Z",
                 "url": "https://files.pythonhosted.org/packages/fe/6c/5f9e9bdca53130775b3a2066b392a94c061ebb6be51c1bac125fa9dfaffa/diator-0.0.4.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.0": {
+        "info": {
+            "author": "",
+            "author_email": "Murad Akhundov <akhundov1murad@gmail.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11"
+            ],
+            "description": "# Diator - CQRS Library for Python\n\nDiator is a Python library for implementing CQRS pattern in your Python applications. It provides a set of abstractions and utilities to help you separate your read and write concerns, allowing for better scalability, performance, and maintainability of your application.\n\n## Features :bulb:\n\n- Implements the CQRS pattern\n- Simple, yet flexible API\n- Supports multiple message brokers, such as [Redis Pub/Sub](https://redis.io/docs/manual/pubsub/) and [Azure Service Bus](https://learn.microsoft.com/en-us/azure/service-bus-messaging/service-bus-messaging-overview)\n- Easy to integrate with existing codebases\n\n## Installation :triangular_ruler:\n\nInstall the Diator library with [pip](https://pypi.org/project/diator/)\n\n- To use Redis as Message Broker\n\n    ```bash\n    pip install diator[redis]\n    ```\n\n- Or Azure Service Bus\n\n    ```bash\n    pip install diator[azure]\n    ```\n\n## Documentation :blue_book:\n\nTo use the Diator library, there are several components to familiarize yourself with. These include Commands and Command Handlers, Queries and Query Handlers, Events and Event Handlers, and Message Brokers. By utilizing these components, you can effectively manage the exchange of information between the read and write models in your application.\n\n### **Commands and Command Handlers**\n\n**Command** represents an intention to perform an action or change the state of an application. Here is an example of the Command:\n\n```python\nfrom diator.requests import Request\nfrom diator.response import Response\n\n\n@dataclasses.dataclass(frozen=True, kw_only=True)\nclass JoinMeetingCommand(Request)\n    meeting_id: int = dataclasses.field(default=1)\n    user_id: int = dataclasses.field(default=1)\n\n```\n\n**Command Handler** is a component responsible for handling a Command and executing the corresponding action:\n\n```python\nfrom diator.requests import RequestHandler\nfrom diator.events import EventHandler\n\n\nclass JoinMeetingCommandHandler(RequestHandler[JoinMeetingCommand, None]):\n    def __init__(self, meeting_api: MeetingAPI) -> None:\n        self._meeting_api = meeting_api\n        self._events: list[Event] = []\n\n    @property\n    def events(self) -> list[Event]:\n        return self._events\n\n    async def handle(self, request: JoinMeetingCommand) -> None:\n        await self._meeting_api.join(request.meeting_id, request.user_id)\n        self._events.append(\n            UserJoinedDomainEvent(user_id=request.user_id, timestamp=datetime.utcnow(), meeting_id=request.meeting_id)\n        )\n        self._events.append(\n            UserJoinedNotificationEvent(user_id=request.user_id)\n        )\n\n```\n\n### **Queries and Query Handlers**\n\n**Query** represents a request for information or data from the application's read model. The process of handling queries **SHOULD NOT** modify the state of the application:\n\n```python\nfrom diator.requests import Request\n\n\n@dataclasses.dataclass(frozen=True, kw_only=True)\nclass ReadMeetingQuery(Request)\n    meeting_id: int = dataclasses.field(default=1)\n\n```\n\n**Query Result** is an object that contains the data requested by a Query. It is returned by a Query Handler after it processes a Query against the read model:\n\n```python\nfrom diator.response import Response\n\n@dataclasses.dataclass(frozen=True, kw_only=True)\nclass ReadMeetingQueryResult(Response)\n    meeting_id: int = dataclasses.field(default=1)\n    link: str = dataclasses.field()\n\n```\n\n**Query Handler** is a component responsible for processing a Query against the read model and returning the requested data as a Query Result:\n\n```python\nfrom diator.requests import RequestHandler\n\n\nclass ReadMeetingQueryHandler(RequestHandler[ReadMeetingQuery, ReadMeetingQueryResult]):\n    def __init__(self, meeting_api: MeetingAPI) -> None:\n        self._meeting_api = meeting_api\n        self._events: list[Event] = []\n\n    @property\n    def events(self) -> list[Event]:\n        return self._events\n\n    async def handle(self, request: ReadMeetingQuery) -> ReadMeetingQueryResult:\n        link = await self._meeting_api.get_link(request.meeting_id)\n        return ReadMeetingQueryResult(\n            meeting_id=request.meeting_id,\n            link=link\n        )\n```\n\n### **Events and Event Handlers**\n\n**Event** represents a fact that has occurred in the application. It typically represents a significant change in the application's state that is of interest to other parts of the application or external systems.\nThere are several event types:\n\n- **Domain Event** - is a message describing a significant event that has\noccurred in the business domain.\n- **Notification Event** - is a message regarding a change in the business domain that other components will react to.\n- **Event-carried state transfer (ECST)** - messages notify subscribers about changes in the producer\u2019s internal state.\n\n```python\nfrom diator.events import DomainEvent, NotificationEvent, ECSTEvent\n\n\n@dataclasses.dataclass(frozen=True, kw_only=True)\nclass UserJoinedDomainEvent(Event):  # will be handled by an event handler\n    user_id: int = dataclasses.field()\n    meeting_id: int = dataclasses.field()\n    timestamp: datetime = dataclasses.field()\n\n\n@dataclasses.dataclass(frozen=True, kw_only=True)\nclass UserJoinedNotificationEvent(NotificationEvent):  # will be sent to a message broker\n    user_id: int = dataclasses.field()\n\n\n@dataclasses.dataclass(frozen=True, kw_only=True)\nclass UserChangedECSTEvent(ECSTEvent):  # will be sent to a message broker\n    user_id: int = dataclasses.field()\n    new_username: str = dataclasses.field()\n\n```\n\n**Event Handler** is a component responsible for processing an Event that has occurred in the application:\n\n```python\nfrom diator.events import EventHandler\n\nclass UserJoinedDomainEventHandler(EventHandler[UserJoinedDomainEvent]):\n    def __init__(self, meeting_api: MeetingAPI) -> None:\n        self._meeting_api = meeting_api\n\n    async def handle(self, event: UserJoinedDomainEvent) -> None:\n        await self._meeting_api.notify(event.meeting_id, \"New user joined!\")\n```\n\nAlso the diator library supports different message brokers:\n\n- Redis Pub/Sub (`diator.message_brokers.redis.RedisMessageBroker`)\n- Azure Service Bus (`diator.message_brokers.azure.AzureMessageBroker`)\n\n### **Dependency Injection**\n\nCurrently the library supports only di frameworks like [di](https://github.com/adriangb/di) and [rodi](https://github.com/Neoteroi/rodi)\n\nExample of the rodi usage:\n\n```python\nfrom rodi import Container\nfrom diator.container.rodi import RodiContainer\n\n\ndef setup_di() -> RodiContainer:\n    external_container = Container()\n\n    external_container.register(UserJoinedDomainEventHandler)\n    external_container.register(JoinMeetingCommandHandler)\n    external_container.register(ReadMeetingQueryHandler)\n\n    container = RodiContainer()\n    container.attach_external_container(external_container)\n\n    return container\n\n```\n\nExample of the di lib usage:\n\n```python\nfrom di import Container, bind_by_type  # using di lib as di-framework\nfrom diator.container.di import DIContainer\n\n\ndef setup_di() -> DIContainer:\n    external_container = Container()\n\n    container.bind(\n        bind_by_type(\n            Dependent(UserJoinedDomainEventHandler, scope=\"request\"), \n            UserJoinedDomainEventHandler\n        )\n    )\n    container.bind(\n        bind_by_type(\n            Dependent(JoinMeetingCommandHandler, scope=\"request\"),\n            JoinMeetingCommandHandler,\n        )\n    )\n    container.bind(\n        bind_by_type(\n            Dependent(ReadMeetingQueryHandler, scope=\"request\"),\n            ReadMeetingQueryHandler,\n        )\n    )\n\n    container = DIContainer()\n    container.attach_external_container(external_container)\n\n    return container\n\n```\n\n### **Middlewares**\n\n```python\nfrom diator.requests import Request\n\n\nclass SomeMiddleware:\n    async def __call__(request: Request, handle):\n        \"\"\"\n        Some logic related to request part of the circle.\n        \"\"\"\n\n        response = await handle(request)\n\n        \"\"\"\n        Some logic related to response part of the circle.\n        \"\"\"\n        return response\n\n```\n\n### **Putting it all together** :nut_and_bolt:\n\n```python\nfrom diator.requests import RequestMap\nfrom diator.message_brokers.redis import RedisMessageBroker\nfrom diator.events import EventEmitter\nfrom diator.mediator import Mediator\nfrom diator.events import EventMap\nfrom diator.middlewares import MiddlewareChain\n\n\nasync def main() -> None:\n    container = setup_di()\n\n    event_map = EventMap()\n    event_map.bind(UserJoinedDomainEvent, UserJoinedDomainEventHandler)  # Mapping event to event handler\n    request_map = RequestMap()\n    request_map.bind(JoinMeetingCommand, JoinMeetingCommandHandler)  # Mapping command to command handler\n    request_map.bind(ReadMeetingQuery, ReadMeetingQueryHandler)  # Mapping query to query handler\n\n    redis_client = redis.Redis.from_url(\"redis://localhost:6379/0\")  # Creating Async Redis Client\n\n    middleware_chain = MiddlewareChain()\n    middleware_chain.add(SomeMiddleware())  # Adding Middleware to a chain\n\n    event_emitter = EventEmitter(\n        message_broker=RedisMessageBroker(redis_client),\n        event_map=event_map,\n        container=container,\n    )\n\n    mediator = Mediator(\n        request_map=request_map, \n        event_emitter=event_emitter, \n        container=container, \n        middleware_chain=MiddlewareChain\n    )\n\n    \"\"\" \n    1. JoinMeetingCommand is handled by JoinMeetingCommandHandler\n    2. JoinMeetingCommandHandler publishes Domain and Notification Events\n    3. UserJoinedDomainEvent is handled by UserJoinedDomainEventHandler\n    4. UserJoinedNotificationEvent is sent to the Redis Pub/Sub\n    \"\"\"\n    await mediator.send(JoinMeetingCommand(user_id=1))\n\n    # Returns ReadMeetingQueryResult\n    response = await mediator.send(ReadMeetingQuery(meeting_id=1))\n\n\nif __name__ == \"__main__\":\n    asyncio.run(main())\n\n```\n\nRedis Pub/Sub output:\n\n```json\n{\n   \"message_type\":\"notification_event\",\n   \"message_name\":\"UserJoinedNotificationEvent\",\n   \"message_id\":\"9f62e977-73f7-462b-92cb-8ea658d3bcb5\",\n   \"payload\":{\n      \"event_id\":\"9f62e977-73f7-462b-92cb-8ea658d3bcb5\",\n      \"event_timestamp\":\"2023-03-07T09:26:02.588855\",\n      \"user_id\":123\n   }\n}\n```\n\n## Further reading :scroll:\n\n- [Udi Dahan - Clarified CQRS](https://udidahan.com/2009/12/09/clarified-cqrs/)\n- [Martin Fowler - CQRS](https://martinfowler.com/bliki/CQRS.html)\n- [Marting Fowler - What do you mean by \u201cEvent-Driven\u201d?](https://martinfowler.com/articles/201701-event-driven.html)\n- [Vlad Khononov - Learning Domain-Driven Design](https://www.oreilly.com/library/view/learning-domain-driven-design/9781098100124/)\n- [Vaughn Vernon - Really Simple CQRS](https://kalele.io/really-simple-cqrs/)\n\n## License\n\nThis project is licensed under the terms of the MIT license.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "CQRS,async,asyncio,command,commands,di,diator,event,events,mediator,mediatr,queries,query",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "diator",
+            "package_url": "https://pypi.org/project/diator/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/diator/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/akhundMurad/diator/issues",
+                "Homepage": "https://github.com/akhundMurad/diator"
+            },
+            "release_url": "https://pypi.org/project/diator/0.1.0/",
+            "requires_dist": [
+                "dataclass-factory",
+                "orjson",
+                "azure-servicebus; extra == 'azure'",
+                "redis; extra == 'redis'",
+                "black; extra == 'test'",
+                "isort; extra == 'test'",
+                "mypy; extra == 'test'",
+                "pytest; extra == 'test'",
+                "pytest-asyncio; extra == 'test'",
+                "types-redis; extra == 'test'",
+                "vulture; extra == 'test'"
+            ],
+            "requires_python": ">=3.10",
+            "summary": "Diator is a Python library for implementing CQRS pattern in your Python applications.",
+            "version": "0.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17585837,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "19c8a42772e90d06aa824f0e48e0f2706d70f35631b46605cbc2d1b3e7f05391",
+                    "md5": "3a70ec9c9b98a9677cf50d32ebc26e61",
+                    "sha256": "5d175feb376ea82aba35df9bb19235bfc4fb37dd2a6ad0105d138c72aee72619"
+                },
+                "downloads": -1,
+                "filename": "diator-0.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "3a70ec9c9b98a9677cf50d32ebc26e61",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.10",
+                "size": 17703,
+                "upload_time": "2023-04-05T06:45:37",
+                "upload_time_iso_8601": "2023-04-05T06:45:37.710730Z",
+                "url": "https://files.pythonhosted.org/packages/19/c8/a42772e90d06aa824f0e48e0f2706d70f35631b46605cbc2d1b3e7f05391/diator-0.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "79b798efb8351c2ea323cf206ec006729ddcda58db85af3c8fdc9c5b3e1f869c",
+                    "md5": "d1c9762196a5758b08e1d95b154690a2",
+                    "sha256": "ffc2c1bf77066350ca6afec3d67c34f1f4ea94fb02dfac12347b18101a78fb45"
+                },
+                "downloads": -1,
+                "filename": "diator-0.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "d1c9762196a5758b08e1d95b154690a2",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.10",
+                "size": 12655,
+                "upload_time": "2023-04-05T06:45:40",
+                "upload_time_iso_8601": "2023-04-05T06:45:40.340805Z",
+                "url": "https://files.pythonhosted.org/packages/79/b7/98efb8351c2ea323cf206ec006729ddcda58db85af3c8fdc9c5b3e1f869c/diator-0.1.0.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
