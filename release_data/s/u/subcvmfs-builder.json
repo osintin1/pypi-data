@@ -1,0 +1,98 @@
+{
+    "1.0.1": {
+        "info": {
+            "author": "Alexandre F. Boyer",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.5",
+                "Programming Language :: Python :: 3.6",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# SubCVMFS-builder\n\n![schema](subCVMFS-builder.png)\n\n## Purpose\n\n`SubCVMFS-builder` aims to help scientific communities to build a subset of CVMFS containing the minimal requirements to execute applications of interests and deploy it on a remote computing infrastructure.\nThe tool is mainly used on supercomputers having no outbound connectivity.\n\n## Installation\n\n- Before starting, you need to have `singularity`, `CVMFS` and `CVMFS-shrinkwrap` installed on the machine.\n\n```bash\ngit clone https://gitlab.cern.ch/alboyer/subcvmfs-builder.git\ncd subcvmfs-builder\npip install . --user\n```\n\n## Usage\n\n- Get the help:\n\n```bash\nsubcvmfs --help\n```\n\n- Trace: run applications in a singularity container and return the list of dependencies related to CVMFS.\n\n  ```bash\n  subcvmfs trace <config> \\\n\t\t--apps-dir <required_input_directory>\n\t\t--path-list <output_file>\n\t\t--container <optional_input_string>\n\t\t--number-core <optional_input_int>\n  ```\n\n  *Trace is generally used when one has no idea about the dependencies of the applications to include in the subset of CVMFS*.\n\n  - `apps-dir` should be a directory of applications structured as follows:  `<apps_dir>/<command>/command.sh`.\n  - `container` provides a specific environment to run the applications (generally the one present in the remote computing infrastructure).\n  - `path-list` should contain the result of the command, namely a list of CVMFS dependencies related to the applications to trace.\n  - `number-core` can be used to run multiple applications in parallel.\n\n- Build: with a list of dependencies, build a subset of CVMFS using the `cvmfs-shrinkwrap` tool.\n\n  ```bash\n  subcvmfs build <config> \\\n\t\t--path-list <Trace_output> <another_input_list>\n\t\t--subset-path <output_subset_path>\n  ```\n\n  *Build is a required step to build a subset of CVMFS*.\n\n  - `path-list` should be a file - or a list of files - containing the CVMFS dependencies to include in the subset. It can be obtain from Trace or built from scratch.\n  - `subset-path` should the path of the generated subset.\n\n- Test: execute application using a subset of dependencies instead of CVMFS.\n\n  ```bash\n  subcvmfs test <config> \\\n\t\t--apps-dir <required_input_directory>\n\t\t--subset-path <required_input_path>\n\t\t--container <optional_input_str>\n\t\t--number-core <optional_input_int>\n  ```\n\n  *Test is generally used before deploying a subset of CVMFS. One may want to make sure the subset is valid against a certain set of applications*.\n\n  - `apps-dir` should be a directory of applications structured as follows:  `<apps_dir>/<command>/command.sh`.\n  - `subset-path` should the path of a subset of CVMFS.\n  - `container` provides a specific environment to run the applications (generally the one present in the remote computing infrastructure).\n  - `number-core` can be used to run multiple applications in parallel.\n\n- Deploy: Deploy the subset of CVMFS - within a container if needed - on the remote computing infrastructure.\n\n  ```bash\n  subcvmfs deploy <config> \\\n\t\t--subset-path <required_input_subset_path>\n\t\t--remote-location <required_input_str>\n\t\t--container <optional_input_path>\n\t\t--bootstrap <optional_input_path>\n\t\t--post-command <optional_input_path>\n\t\t--bundle-path <optional_output_path>\n  ```\n\n  *Deploy requires one to have access to the remote computing infrastructure*.\n\n  - `subset-path` should the path of a subset of CVMFS.\n  - `remote-location` the remote computing infrastructure that will host the subset of CVMFS.\n  - `bundle-path` should be used if one wants to merge a subset of CVMFS with a container (not recommended if the subset of CVMFS is updated periodically).\n  - `container` provides a specific environment to run the applications. If provided, it will be merged with the subset of CVMFS. Mandatory if `bundle-path` is present.\n  - `bootstrap` the type of container. Mandatory if `bundle-path` is provided.\n  - `post-command` should represent a command to run before launching the container. Mandatory if `bundle-path` is present.\n\n## Configuration\n\n- Minimal configuration possible:\n\n```json\n{\n\t\"cvmfs_extensions\":\n\t{\n\t\t\"<repository_name>\":\n\t\t{\n\t\t\t\"url\": \"<repository_url>\",\n\t\t\t\"public_key\": \"<repository_pubkey>\",\n\t\t},\n\t}\n}\n```\n\nIn this case, arguments should be passed through the CLI.\n\n- A concrete example:\n\n```json\n{\n\t\"cvmfs_extensions\":\n\t{\n\t\t\"lhcb.cern.ch\":\n\t\t{\n\t\t\t\"url\": \"http://cvmfs-stratum-one.cern.ch/cvmfs/lhcb.cern.ch\",\n\t\t\t\"public_key\": \"/cvmfs/cvmfs-config.cern.ch/etc/cvmfs/keys/<key.pub>\",\n\t\t},\n\t\t\"lhcb-condb.cern.ch\":\n\t\t{\n\t\t\t\"url\": \"http://cvmfs-stratum-one.cern.ch/cvmfs/lhcb-condb.cern.ch\",\n\t\t\t\"public_key\": \"/cvmfs/cvmfs-config.cern.ch/etc/cvmfs/keys/<key.pub>\",\n\t\t}\n\t},\n\t\"steps\":\n\t{\n\t\t\"trace\":\n\t\t{\n\t\t\t\"apps_dir\": \"inputs_trace\",\n\t\t\t\"path_list\": \"namelist1.txt\"\n\t\t},\n\t\t\"build\":\n\t\t{\n\t\t\t\"path_list\": [\"namelist1.txt\", \"namelist2.txt\"],\n\t\t},\n\t\t\"test\":\n\t\t{\n\t\t\t\"apps_dir\": \"inputs_test\",\n\t\t},\n\t\t\"commons\":\n\t\t{\n\t\t\t\"subset_path\": \"/path/to/subcvmfs\"\n\t\t}\n\t},\n\t\"tools\":\n\t{\n\t\t\"parrot\":\n\t\t{\n\t\t\t\"http_proxy\": \"DIRECT\"\n\t\t},\n\t\t\"singularity\":\n\t\t{\n\t\t\t\"name\": \"/cvmfs/cernvm-prod/cvm4\"\n\t\t}\n\t}\n}\n```\n\nArguments are entirely provided by the configuration, there is no need to provide them individually to the CLI unless overloading them is necessary.\nA few details here:\n- `/tools/singularity/name` is used as the `container` option in the command.\n- `/steps/commons` gathers parameters that are common to all the steps.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://gitlab.cern.ch/alboyer/subcvmfs-builder",
+            "keywords": "",
+            "license": "GPL-3.0-only",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "subcvmfs-builder",
+            "package_url": "https://pypi.org/project/subcvmfs-builder/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/subcvmfs-builder/",
+            "project_urls": {
+                "Homepage": "https://gitlab.cern.ch/alboyer/subcvmfs-builder"
+            },
+            "release_url": "https://pypi.org/project/subcvmfs-builder/1.0.1/",
+            "requires_dist": [
+                "pytest (>=4.6) ; extra == 'testing'",
+                "pytest-cov ; extra == 'testing'",
+                "pylint (>=1.6.5) ; extra == 'testing'",
+                "pycodestyle ; extra == 'testing'"
+            ],
+            "requires_python": "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*",
+            "summary": "Help to generate subsets of CVMFS",
+            "version": "1.0.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17575973,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "26f43fa553927cd5f5924362e75cb1de9de2522698f1c405e098eaed6a45a62b",
+                    "md5": "42a0b15fe938e58449f353cf108335be",
+                    "sha256": "3dab2c64eef4b6583507869e3adb728f7e3ab8f13d6cf5b605c2e1cfdd3501d3"
+                },
+                "downloads": -1,
+                "filename": "subcvmfs_builder-1.0.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "42a0b15fe938e58449f353cf108335be",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*",
+                "size": 16784,
+                "upload_time": "2023-04-04T14:39:25",
+                "upload_time_iso_8601": "2023-04-04T14:39:25.982492Z",
+                "url": "https://files.pythonhosted.org/packages/26/f4/3fa553927cd5f5924362e75cb1de9de2522698f1c405e098eaed6a45a62b/subcvmfs_builder-1.0.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2af630bdf16c2ec6d67b50fc6c353eccff299e1aa92b7f3e53fbb5bdf63e76df",
+                    "md5": "ad6efeba0c3ae6ee17ef17a0d336d397",
+                    "sha256": "8b97fa7323e0d52d5dbf049b162457e75b8bffb96f8badf3be0345f401e5f414"
+                },
+                "downloads": -1,
+                "filename": "subcvmfs-builder-1.0.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "ad6efeba0c3ae6ee17ef17a0d336d397",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*",
+                "size": 99493,
+                "upload_time": "2023-04-04T14:39:27",
+                "upload_time_iso_8601": "2023-04-04T14:39:27.794018Z",
+                "url": "https://files.pythonhosted.org/packages/2a/f6/30bdf16c2ec6d67b50fc6c353eccff299e1aa92b7f3e53fbb5bdf63e76df/subcvmfs-builder-1.0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
