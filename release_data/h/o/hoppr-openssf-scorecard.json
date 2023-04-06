@@ -1,0 +1,113 @@
+{
+    "0.0.1": {
+        "info": {
+            "author": "LMCO Open Source",
+            "author_email": "open.source@lmco.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 2 - Pre-Alpha",
+                "Framework :: Pydantic",
+                "Framework :: Pytest",
+                "Framework :: Trio",
+                "Intended Audience :: Developers",
+                "Intended Audience :: Information Technology",
+                "Intended Audience :: System Administrators",
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.12",
+                "Topic :: Communications :: File Sharing",
+                "Topic :: Security",
+                "Topic :: Software Development :: Version Control",
+                "Topic :: System :: Archiving :: Packaging",
+                "Topic :: System :: Software Distribution",
+                "Typing :: Typed"
+            ],
+            "description": "# Hoppr OpenSSF Scorecard Plugin\n\nPlugin for [Hoppr](https://hoppr.dev) to populate component metadata in a [CycloneDX](https://cyclonedx.org) Software Bill of Materials (SBOM) with data from [OpenSSF Scorecard](https://securityscorecards.dev).\n\n## How to use this plugin\n\n### Get a Libraries.io API key\n\nIn order to use this plugin, an API key from `Libraries.io` is required.\n\n- Log in to [Libraries.io](https://libraries.io) using a GitHub, GitLab, or BitBucket account\n- Retrieve the API key from [account settings](https://libraries.io/account)\n\nOnce you have this API key, you can provide it to the plugin in one of the following ways:\n\n- Set the `LIBRARIES_API_KEY` environment variable in the shell before running Hoppr\n\n    ```shell\n    export LIBRARIES_API_KEY=\"<your key here>\"\n    ```\n\n- Create a [Hoppr credentials file](https://hoppr.dev/docs/using-hoppr/tutorials/processing-101#credentials) with an entry for `https://libraries.io/api` and an environment variable of your choosing that holds the value of the API key\n\n    ```yaml\n    ---\n    schemaVersion: v1\n    kind: Credentials\n\n    credential_required_services:\n      - url: https://libraries.io/api\n        user: \"\"\n        pass_env: API_KEY_ENV_VAR\n    ```\n\n### Create a transfer file\n\nA [Hoppr transfer file](https://hoppr.dev/docs/using-hoppr/tutorials/processing-101#transfers) defines the stages to be run and which plugins will be run in those stages.\n\nCreate a transfer file that defines a stage with this plugin (identified by `hoppr_openssf_scorecard.plugin`) specified. For example:\n\n```yaml\n---\nschemaVersion: v1\nkind: Transfer\n\nstages:\n  ScorecardData:\n    plugins:\n      - name: hoppr_openssf_scorecard.plugin\n  Bundle:\n    plugins:\n      - name: hoppr.core_plugins.bundle_tar\n        config:\n          tarfile_name: tarfile.tar.gz\n\nmax_processes: 10\n```\n\n### Run Hoppr\n\nThat's everything! Run `hopctl bundle` as normal and the SBOM with Scorecard data will be located in the specified bundle file.\n\n## How does it work?\n\n### Get the source control repository URL\n\nVarious API endpoints are leveraged in an attempt to retrieve a component's source control repository URL in order to request a Scorecard report.\n\nFirst, a REST API or well-known metadata URL for the package manager specific to the PURL type of the component is tried.\n\n| PURL Type | URL Endpoint(s)                                                                                        |\n| --------- | ------------------------------------------------------------------------------------------------------ |\n| `deb`     | `https://sources.debian.org/api` for Debian, `https://api.launchpad.net/1.0` for Ubuntu                |\n| `gem`     | `https://rubygems.org/api/v1`                                                                          |\n| `git`     | Searches both `https://api.github.com` and `https://gitlab.com/api/v4`                                 |\n| `golang`  | First `https://proxy.golang.org`, then `https://libraries.io/api/Go` if not found |\n| `helm`    | `https://artifacthub.io/api/v1/packages/helm`                                                          |\n| `maven`   | First, `https://search.maven.org/remotecontent`, then `https://libraries.io/api/Maven` if not found                                                               |\n| `npm`     | `https://registry.npmjs.com`                                                                           |\n| `pypi`    | `https://pypi.org/pypi`                                                                                |\n| `rpm`     | Repository metadata from either `rpm` repositories defined in the manifest file, or sensible defaults. |\n\nThese are the defaults for RPM components if not provided.\n\n| Distribution          | Metadata URL                                                                                                                                                                                                                                        |\n| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |\n| Red Hat 7             | `http://mirror.centos.org/centos/7/os/x86_64`<br>`http://mirror.centos.org/centos/7/extras/x86_64`                                                                                                                                                  |\n| Red Hat/Rocky Linux 8 | `https://dl.rockylinux.org/pub/rocky/8/AppStream/x86_64/os`<br>`https://dl.rockylinux.org/pub/rocky/8/BaseOS/x86_64/os`<br>`https://dl.rockylinux.org/pub/rocky/8/PowerTools/x86_64/os`<br>`https://dl.rockylinux.org/pub/rocky/8/extras/x86_64/os` |\n| Red Hat/Rocky Linux 9 | `https://dl.rockylinux.org/pub/rocky/9/AppStream/x86_64/os`<br>`https://dl.rockylinux.org/pub/rocky/9/BaseOS/x86_64/os`<br>`https://dl.rockylinux.org/pub/rocky/9/CRB/x86_64/os`<br>`https://dl.rockylinux.org/pub/rocky/9/extras/x86_64/os`        |\n| Fedora                | `https://dl.fedoraproject.org/pub/fedora/linux/releases/<Fedora release>/Everything/x86_64/os`                                                                                                                                                      |\n\nIf a source control repository isn't found this way, the next attempt is to search `Libraries.io` and try to narrow down and intuit the correct repo URL from the results.\n\nFinally, as a last-ditch effort, the GitHub API is queried in a similar fashion. If no repository URL is found by this point, the component is skipped and the plugin will move on to the next one.\n\nIf a repository URL was found during any of these passes, it gets added to the SBOM compoment's `externalReferences` as a URL with a type of `vcs`.\n\n### Request the report data from Scorecard API\n\nFor components that have a `vcs` repository URL (whether identified as outlined in the previous section or explicitly defined in the SBOM), a request is made to the OpenSSF Scorecard API using that project URL.\n\nThe response data is then used to populate the SBOM according to the taxonomy outlined below.\n\n## SBOM property taxonomy\n\nProperties generated by this plugin consist of a `name` prefixed with `hoppr:scorecard` and a `value` corresponding to the associated Scorecard field.\n\n| Name                                         | Description                                             |\n| -------------------------------------------- | ------------------------------------------------------- |\n| hoppr:scorecard:date                         | Date of the Scorecard report                            |\n| hoppr:scorecard:metadata                     | Metadata for the Scorecard report                       |\n| hoppr:scorecard:repo:commit                  | Commit ref/SHA the report was run on                    |\n| hoppr:scorecard:repo:name                    | Name of the repository                                  |\n| hoppr:scorecard:score                        | Aggregate score for all checks                          |\n| hoppr:scorecard:scorecard:commit             | Commit ref/SHA of Scorecard used to generate the report |\n| hoppr:scorecard:scorecard:version            | Version of Scorecard used to generate the report        |\n| hoppr:scorecard:check:Binary-Artifacts       | Score for the `Binary-Artifacts` check                  |\n| hoppr:scorecard:check:Branch-Protection      | Score for the `Branch-Protection` check                 |\n| hoppr:scorecard:check:CI-Tests               | Score for the `CI-Tests` check                          |\n| hoppr:scorecard:check:CII-Best-Practices     | Score for the `CII-Best-Practices` check                |\n| hoppr:scorecard:check:Code-Review            | Score for the `Code-Review` check                       |\n| hoppr:scorecard:check:Contributors           | Score for the `Contributors` check                      |\n| hoppr:scorecard:check:Dangerous-Workflow     | Score for the `Dangerous-Workflow` check                |\n| hoppr:scorecard:check:Dependency-Update-Tool | Score for the `Dependency-Update-Tool` check            |\n| hoppr:scorecard:check:Fuzzing                | Score for the `Fuzzing` check                           |\n| hoppr:scorecard:check:License                | Score for the `License` check                           |\n| hoppr:scorecard:check:Maintained             | Score for the `Maintained` check                        |\n| hoppr:scorecard:check:Packaging              | Score for the `Packaging` check                         |\n| hoppr:scorecard:check:Pinned-Dependencies    | Score for the `Pinned-Dependencies` check               |\n| hoppr:scorecard:check:SAST                   | Score for the `SAST` check                              |\n| hoppr:scorecard:check:Security-Policy        | Score for the `Security-Policy` check                   |\n| hoppr:scorecard:check:Signed-Releases        | Score for the `Signed-Releases` check                   |\n| hoppr:scorecard:check:Token-Permissions      | Score for the `Token-Permissions` check                 |\n| hoppr:scorecard:check:Vulnerabilities        | Score for the `Vulnerabilities` check                   |\n| hoppr:scorecard:check:Webhooks               | Score for the `Webhooks` check                          |\n\nFor descriptions of all the checks performed by Scorecard, see [this table](https://github.com/ossf/scorecard#scorecard-checks).\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://hoppr.dev",
+            "keywords": "hoppr,plugin,openssf,scorecard",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "hoppr-openssf-scorecard",
+            "package_url": "https://pypi.org/project/hoppr-openssf-scorecard/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/hoppr-openssf-scorecard/",
+            "project_urls": {
+                "Homepage": "https://hoppr.dev",
+                "Repository": "https://gitlab.com/hoppr/plugins/hoppr-openssf-scorecard-plugin"
+            },
+            "release_url": "https://pypi.org/project/hoppr-openssf-scorecard/0.0.1/",
+            "requires_dist": [
+                "hoppr (>=1.8.0,<2.0.0)",
+                "httpx (>=0.23.3,<0.24.0)",
+                "jmespath (>=1.0.1,<2.0.0)",
+                "packageurl-python (>=0.10.4,<0.11.0)",
+                "pydantic (>=1.10.6,<2.0.0)",
+                "trio (>=0.22.0,<0.23.0)",
+                "xmltodict (>=0.13.0,<0.14.0)"
+            ],
+            "requires_python": ">=3.10,<4.0",
+            "summary": "Hoppr plugin to generate an OpenSSF scorecard",
+            "version": "0.0.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17592827,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "742c9e5ce0ad300c58fb9b5b09a36239b794d6bfad7a06c8cb962a7eaf6b5a84",
+                    "md5": "102aec639c3d9b42411cb5d6d1618321",
+                    "sha256": "21c4798515fd1df3f28c81349f1a2d914b01d2f84a4535393fa9b503782e48a7"
+                },
+                "downloads": -1,
+                "filename": "hoppr_openssf_scorecard-0.0.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "102aec639c3d9b42411cb5d6d1618321",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.10,<4.0",
+                "size": 30094,
+                "upload_time": "2023-04-05T17:05:04",
+                "upload_time_iso_8601": "2023-04-05T17:05:04.808766Z",
+                "url": "https://files.pythonhosted.org/packages/74/2c/9e5ce0ad300c58fb9b5b09a36239b794d6bfad7a06c8cb962a7eaf6b5a84/hoppr_openssf_scorecard-0.0.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "1dd34cf1d3858190203388ec963cc2586de763461978c1dc6ab18f3d902e9ef3",
+                    "md5": "62e87d3e916b87349a7efb1fccd70751",
+                    "sha256": "e0ca84d613619f8bd285af82c3ec692496206f9c845357b113ed7fd692afb089"
+                },
+                "downloads": -1,
+                "filename": "hoppr_openssf_scorecard-0.0.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "62e87d3e916b87349a7efb1fccd70751",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.10,<4.0",
+                "size": 21359,
+                "upload_time": "2023-04-05T17:05:06",
+                "upload_time_iso_8601": "2023-04-05T17:05:06.711805Z",
+                "url": "https://files.pythonhosted.org/packages/1d/d3/4cf1d3858190203388ec963cc2586de763461978c1dc6ab18f3d902e9ef3/hoppr_openssf_scorecard-0.0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

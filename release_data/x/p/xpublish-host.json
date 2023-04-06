@@ -1,0 +1,103 @@
+{
+    "1.0.0": {
+        "info": {
+            "author": "",
+            "author_email": "Kyle Wilcox <kyle@axds.co>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Environment :: Web Environment",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Internet :: WWW/HTTP",
+                "Topic :: Internet :: WWW/HTTP :: Dynamic Content"
+            ],
+            "description": "# xpublish-host\n\nA collection tools and standards for deploying [`xpublish`](https://github.com/xarray-contrib/xpublish) instances.\n\n## Why?\n\nWith ~50 netCDF-based datasets to be published through `xpublish`, Axiom needed a standard way to configure each of these deployments. We could have created single repository and defined each individual `xpublish` deployment, we could have created individual repositories for each dataset, or we could have done something in the middle. We decided to abstract out the parts common to each deployment and put it here into `xpublish-host`. This prevents the re-implementation of things like authentication (tbd), logging, metrics, and allows data engineers to focus on the data and not the deployment.\n\n## Goals\n\n* Standardize the configuration of an `xpublish` deployment (plugins, ports, cache, dask clusters, datasets, etc.) using config files and environmental variables, not python code.\n* Standardize monitoring and metrics of an `xpublish` deployment,\n* Provide a pre-built Docker image to run an opinionated `xpublish` deployment.\n\n## Ideas\n\n`xpublish-host` makes no assumptions about the datasets you want to publish through `xpublish` and only requires the path to an importable python function that returns the object you want to be passed in as an argument to `xpublish.Rest`. This will allow `xpublish-host` to support datasets in addition to `xarray.Dataset` in the future, such as Parquet files.\n\nWe maintain an `xpublish-inventory` repository that defines YAML configurations and python functions for each `xpublish` dataset we want to publish. Those YAML configurations and python functions are installed as library into the `xpublish-host` container on deployment. There are better ways to do this (auto-discovery) but you have to start somewhere.\n\n## Installation\n\nMost users will not need to install `xpublish_host` directly as a library but instead will use the Docker image to deploy an `xpublish` instance. If you want to use the `xpublish_host` tools and config objects directly in python code, you can of course install it:\n\nFor `conda` users you can\n\n```shell\nconda install --channel conda-forge xpublish_host\n```\n\nor, if you are a `pip` user\n\n```shell\npip install xpublish_host\n```\n\n## Usage\n\n### Configruation\n\nThe configuration is managed using `Pydantic` [BaseSettings](https://docs.pydantic.dev/usage/settings/) and [GoodConf](https://github.com/lincolnloop/goodconf/) for loading configuration from files.\n\nThe `xpublish_host` configuration can be set in a few ways\n\n* **Environmental variables** - prefixed with `XPUB_`, they map directly to the `pydantic` settings classes,\n* **Environment files** - Load environmental variables from a file. Uses `XPUB_ENV_FILES` to control the location of this file if it is defined. See the [`Pydantic` docs](https://docs.pydantic.dev/usage/settings/#dotenv-env-support) for more information,\n* **Configuration files (JSON and YAML)** - [`GoodConf` based](https://github.com/lincolnloop/goodconf) configuration files. When using the `xpublish_host.config.serve` helper this file can be set by defining `XPUB_CONFIG_FILE`.\n* **Python arguments (API only)** - When using `xpublish-host` as a library you can use the args/kwargs of each configuration object to control your `xpublish` instance.\n\nThere are three Settings classes:\n\n* `PluginConfig` - configure `xpublish` plugins,\n* `DatasetConfig` - configure the datasets available to `xpublish`,\n* `RestConfig` - configure how the `xpublish` instance is run, including the `PluginConfig` and `DatasetConfig`.\n\nThe best way to get familiar with which configuration options are available (until the documentation catches up) is to look at the actually configuration classes in `xpublish_host/config.py` and the tests in `tests/test_config.py`.\n\nA feature-full configuration is as follows, which includes the defaults for each field.\n\n```yaml\n# These are passed into the `xpublish.Rest.serve` method to control how the\n# server is run\npublish_host: \"0.0.0.0\"\npublish_port: 9000\nlog_level: debug\n\n# Dask cluster configuration. Current uses a LocalCluster.\n# The keyword arguments are passed directly into `dask.distributed.LocalCluster`\n# Omitting cluster_config or setting to null will load the defaults.\n# Settings cluster_config to an empty dict will avoid using a dask cluster.\ncluster_config:\n  processes: true\n  n_workers: 8\n  threads_per_worker: 1\n  memory_limit: 4GiB\n  host: \"0.0.0.0\"\n  scheduler_port: 0  # random port\n  dashboard_address: 0.0.0.0:0  # random port\n  worker_dashboard_address: 0.0.0.0:0  # random port\n\n# Should xpublish discover and load plugins?\nplugins_load_defaults: true\n\n# Define any additional plugins. This is where you can override\n# default plugins. These will replace any auto-discovered plugins.\n# The keys here (pc1) are not important and are not used internally\nplugins_config:\n  pc1:\n    module: xpublish.plugins.included.zarr.ZarrPlugin\n      kwargs:\n        dataset_router_prefix: /zarr\n\n# Keyword arguments to pass into `xpublish.Rest` as app_kws\n# i.e. xpublish.Rest(..., app_kws=app_config)\napp_config:\n  docs_url: /api\n  openapi_url: /api.json\n\n# Keyword arguments to pass into `xpublish.Rest` as cache_kws\n# i.e. xpublish.Rest(..., cache_kws=cache_config)\ncache_config:\n  available_bytes: 1e11\n\n# Define all of the datasets to load into the xpublish instance.\n# The keys here (dc1) are not important and are not used internally\ndatasets_config:\n  dc1:\n    # The ID is used as the \"key\" of the dataset in `xpublish.Rest`\n    # i.e. xpublish.Rest({ [dataset.id]: [loader_function_return] })\n    id: dataset_id\n    title: Dataset Title\n    description: Dataset Description\n    # Path to an importable python function that returns the dataset you want\n    # to pass into `xpublish.Rest`\n    loader: [python module path]\n    # Arguments passed into the `loader` function\n    args:\n      - [loader arg1]\n      - [loader arg2]\n    # Keyword arguments passed into the `loader` function. See the `examples`\n    # directory for more details on how this can be used.\n    kwargs:\n      t_axis: 'time'\n      y_axis: 'lat'\n      x_axis: 'lon'\n      open_kwargs:\n        parallel: false\n```\n\n### API\n\nTo deploy an `xpublish` instance while pulling settings from a yaml file and environmental variables you can use the `serve` function. This is what is used under the hood in the Docker image.\n\n```python\nfrom xpublish_host.config import serve\n\nserve('config.yaml')\n\nos.environ['XPUB_ENV_FILES'] = '/home/user/.env'\nserve()\n\nos.environ['XPUB_CONFIG_FILE'] = 'config.yaml'\nserve()\n```\n\nYou can also use the `RestConfig` and `DatasetConfig` objects directly to serve datasets\n\n#### `RestConfig`\n\n```python\nfrom xpublish_host.config import RestConfig\n\ndc = DatasetConfig(\n    id='id',\n    title='title',\n    description='description',\n    loader='[python function path]',\n)\n\nrc = RestConfig(datasets_config={'ds': dc})\nrc.load('[config_file]')  # optionally load a configuration file\nrest = rc.setup()  # This returns an `xpublish.Rest` instance\nrest.serve(\n    host='0.0.0.0',\n    port=9000,\n    log_level='debug',\n)\n```\n\n#### `DatsetConfig`\n\n```python\nfrom xpublish_host.config import DatasetConfig\n\ndc = DatasetConfig(\n    id='id',\n    title='title',\n    description='description',\n    loader='[python function path]',\n)\n\n# Keyword arguments are passed into RestConfig and can include all of the\n# top level configuration options.\ndc.serve()\n```\n\n### CLI\n\nThere is a CLI command you can use to run an `xpublish` server and optionally pass in the path to a configuration file:\n\n```shell\n# Pass in a config file\npython xpublish_host/config.py -c xpublish_host/examples/example.yaml\n\n# Use ENV variables\nXPUB_CONFIG_FILE=xpublish_host/examples/example.yaml python xpublish_host/config.py\n```\n\nEither way, `xpublish` will be running on port 9000 with (2) datasets: `simple` and `kwargs`. You can access the instance at `http://[host]:9000/datasets/`.\n\n### Docker\n\nThe Docker image by default loads a configuration file from `/xpd/config.yaml` and an environmental variable file from `/xpd/.env`. You can change the location of those files by setting the env variables `XPUB_CONFIG_FILE` and `XPUB_ENV_FILES` respectively.\n\n```shell\ndocker build -t xpublish-host .\n\n# Using default config path\ndocker run --rm -p 9000:9000 -v \"$(pwd)/xpublish_host/examples/example.yaml:/xpd/config.yaml\" xpublish-host\n\n# Using ENV variables\ndocker run --rm -p 9000:9000 -e \"XPUB_CONFIG_FILE=/xpd/xpublish_host/examples/example.yaml\" xpublish-host\n```\n\nEither way, `xpublish` will be running on port 9000 with (2) datasets: `simple` and `kwargs`. You can access the instance at `http://[host]:9000/datasets/`.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT License  Copyright (c) 2023 Axiom Data Science  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.  THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. ",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "xpublish-host",
+            "package_url": "https://pypi.org/project/xpublish-host/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/xpublish-host/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/axiom-data-science/xpublish-host/issues",
+                "Homepage": "https://github.com/axiom-data-science/xpublish-host"
+            },
+            "release_url": "https://pypi.org/project/xpublish-host/1.0.0/",
+            "requires_dist": [
+                "goodconf",
+                "pydantic",
+                "xpublish"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "A collection of tools to standardize xpublish hosting",
+            "version": "1.0.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17591229,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d9d330c8f772538565d0b067cdde9b733f252ad035bd4443f9428b5c457309cc",
+                    "md5": "0154b6d8d2d00c119ac9c477db7bbdfa",
+                    "sha256": "d899d6e422897a0b0bb226aaec94a217cc5c11c5f450a7bf47af406115632ab9"
+                },
+                "downloads": -1,
+                "filename": "xpublish_host-1.0.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "0154b6d8d2d00c119ac9c477db7bbdfa",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 9427,
+                "upload_time": "2023-04-05T15:33:30",
+                "upload_time_iso_8601": "2023-04-05T15:33:30.581434Z",
+                "url": "https://files.pythonhosted.org/packages/d9/d3/30c8f772538565d0b067cdde9b733f252ad035bd4443f9428b5c457309cc/xpublish_host-1.0.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "35a1d4a8e5f8bbdaf56735dd8e89eca6196d3a6e3203650b16ba9d1c1362bc9b",
+                    "md5": "11603c09ba0eadf745eb077a7392fea1",
+                    "sha256": "9089f3fd19b58407133fb7bb9d3676abd1d5045d33ed89855c43028e494a3248"
+                },
+                "downloads": -1,
+                "filename": "xpublish-host-1.0.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "11603c09ba0eadf745eb077a7392fea1",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 9128,
+                "upload_time": "2023-04-05T15:33:32",
+                "upload_time_iso_8601": "2023-04-05T15:33:32.377971Z",
+                "url": "https://files.pythonhosted.org/packages/35/a1/d4a8e5f8bbdaf56735dd8e89eca6196d3a6e3203650b16ba9d1c1362bc9b/xpublish-host-1.0.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
