@@ -37,7 +37,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17543633,
+        "last_serial": 17604212,
         "urls": [
             {
                 "comment_text": "",
@@ -90,7 +90,6 @@
             "author_email": "bang.fu@zilliz.com",
             "bugtrack_url": null,
             "classifiers": [],
-            "description": "# GPT Cache\n\n## \ud83e\udd20 What is GPT Cache?\n\nLarge Language Models (LLMs) are a promising and transformative technology that has rapidly advanced in recent years. These models are capable of generating natural language text and have numerous applications, including chatbots, language translation, and creative writing. However, as the size of these models increases, so do the costs and performance requirements needed to utilize them effectively. This has led to significant challenges in developing on top of large models such as ChatGPT.\n\nTo address this issue, we have developed GPT Cache, a project that focuses on caching responses from language models, also known as a semantic cache. The system offers two major benefits:\n\n1. Quick response to user requests: the caching system provides faster response times compared to large model inference, resulting in lower latency and faster response to user requests.\n2. Reduced service costs: most LLM services are currently charged based on the number of tokens. If user requests hit the cache, it can reduce the number of requests and lower service costs.\n\n## \ud83e\udd14 Why would GPT Cache be helpful?\n\nA good analogy for GptCache is to think of it as a more semantic version of Redis. In GptCache, hits are not limited to exact matches, but rather also include prompts and context similar to previous queries. We believe that the traditional cache design still works for AIGC applications for the following reasons:\n\n- Locality is present everywhere. Like traditional application systems, AIGC applications also face similar hot topics. For instance, ChatGPT itself may be a popular topic among programmers.\n- For purpose-built SaaS services, users tend to ask questions within a specific domain, with both temporal and spatial locality.\n- By utilizing vector similarity search, it is possible to find a similarity relationship between questions and answers at a relatively low cost.\n\nWe provide [benchmarks](https://github.com/zilliztech/gpt-cache/blob/main/example/benchmark/benchmark_sqlite_faiss_towhee.py) to illustrate the concept. In semantic caching, there are three key measurement dimensions: false positives, false negatives, and hit latency. With the plugin-style implementation, users can easily tradeoff these three measurements according to their needs.\n\n## \ud83d\ude0a Quick Start\n\n**Note**:\n- You can quickly try GPT cache and put it into a production environment without heavy development. However, please note that the repository is still under heavy development.\n- By default, only a limited number of libraries are installed to support the basic cache functionalities. When you need to use additional features, the related libraries will be **automatically installed**.\n- If you encounter issues installing a library due to a low pip version, run: `python -m pip install --upgrade pip`.\n\n### pip install\n\n```bash\npip install gptcache\n```\n\n### dev install\n\n```bash\n# clone gpt cache repo\ngit clone https://github.com/zilliztech/gptcache\ncd gpt-cache\n\n# install the repo\npip install -r requirements.txt\npython setup.py install\n```\n\n### example usage\n\nIf you just want to achieve precise matching cache of requests, that is, two identical requests, you **ONLY** need **TWO** steps to access this cache\n\n1. Cache init\n\n```python\nfrom gptcache.core import cache\n\ncache.init()\n# If you use the `openai.api_key = xxx` to set the api key, you need use `cache.set_openai_key()` to replace it.\n# it will read the `OPENAI_API_KEY` environment variable and set it to ensure the security of the key.\ncache.set_openai_key()\n```\n2. Replace the original openai package\n\n```python\nfrom gptcache.adapter import openai\n\n# openai requests DON'T need ANY changes\nanswer = openai.ChatCompletion.create(\n    model=\"gpt-3.5-turbo\",\n    messages=[\n        {\"role\": \"system\", \"content\": \"You are a helpful assistant.\"},\n        {\"role\": \"user\", \"content\": \"foo\"}\n    ],\n)\n```\n\nIf you want to experience vector similarity search cache locally, you can use the example [Sqlite + Faiss + Towhee](example/sqlite_faiss_towhee/sqlite_faiss_towhee.py).\n\nMore Docs\uff1a\n- [System Design, how it was constructed](doc/system.md)\n- [Features, all features currently supported by the cache](doc/feature.md)\n- [Examples, learn better custom caching](example/example.md)\n\n\n## \ud83e\udd17 Modules Overview\n\n![GPTCache Struct](doc/GPTCacheStructure.png)\n\n- **Adapter**: The user interface to adapt different LLM model requests to the GPT cache protocol. \n    - [x]  Support OpenAI chatGPT API\n    - [ ]  Support for other LLMs, such as Hugging Face Hub, Anthropic, and self-hosted models like LLaMa.\n- **Pre-processor**: Extracts the key information from the request and preprocess\n    - [x]  Basic analysis and parse of the request\n    - [ ]  Apply user-defined preprocessing logic.\n- [ ] **Context Buffer**: Maintains session context.\n    - [ ] Store conversation windows.\n    - [ ] Store conversation summary.\n    - [ ] Store prompts.\n- **Encoder**: Embed the text into a dense vector for similarity search.\n    - [x]  Use [towhee](https://towhee.io/) with the paraphrase-albert-small-v2 model for English and uer/albert-base-chinese-cluecorpussmall for Chinese.\n    - [x]  Use the OpenAI embedding API.\n    - [x]  Keep the text as a string without any changes.\n    - [ ]  Use the [cohere](https://docs.cohere.ai/reference/embed) embedding API.\n    - [ ]  Support [Hugging Face](https://huggingface.co/) embedding API.\n- **Cache manager**: which includes searching, saving, or evicting data. Additional storage support will be added in the future, and contributions are welcome.\n    - Scalar store:\n        - [x]  Use [SQLite](https://sqlite.org/docs.html).\n        - [ ]  Use [PostgreSQL](https://www.postgresql.org/).\n        - [ ]  Use [MySQL](https://www.mysql.com/).\n    - Vector store:\n        - [x]  Use [Milvus](https://milvus.io/).\n        - [x]  Use [Zilliz Cloud](https://cloud.zilliz.com/).\n        - [x]  Use [FAISS](https://faiss.ai/).\n        - [ ]  Use other vector databases\n    - Eviction Policy\n        - [x]  LRU eviction policy\n        - [x]  FIFO eviction policy\n        - [ ]  More complicated eviction policies\n- **Ranker**: Evaluate similarity by judging the quality of cached answers.\n    - [x] Use the search distance, as described in `simple.py#pair_evaluation`.\n    - [x] [towhee](https://towhee.io/) uses the albert_duplicate model for precise comparison between questions and answers. It supports only 512 tokens.\n    - [x] Exact string comparison, judge the cache request and the original request based on the exact match of characters.\n    - [x] For numpy arrays, use `linalg.norm`.\n    - [ ] BM25 and other similarity measurements\n    - [ ] Other deap learning models\n- **Post-processor**: Determine which cached answers to the user, and generate the response.\n    - [X] Choose the most similar answer.\n    - [X] Choose randomly.\n    - [ ] Other Probability-based policy \n\n\n## \ud83d\ude06 Contributing\n\nWould you like to contribute to the development of GPT Cache? Take a look at [our contribution guidelines](doc/contributing.md).\n\n\n## \ud83d\ude4f Thank\n\nThanks to my colleagues in the company [Zilliz](https://zilliz.com/) for their inspiration and technical support.\n\n\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -123,7 +122,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17543633,
+        "last_serial": 17604212,
         "urls": [
             {
                 "comment_text": "",
@@ -164,6 +163,262 @@
                 "upload_time": "2023-04-01T23:03:13",
                 "upload_time_iso_8601": "2023-04-01T23:03:13.532277Z",
                 "url": "https://files.pythonhosted.org/packages/a4/0b/9a18121ff603cdb8808a4fa45a2f06ba8c8db23745ebf65418ba1db9e0b7/gptcache-0.1.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.3": {
+        "info": {
+            "author": "SimFG",
+            "author_email": "bang.fu@zilliz.com",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/zilliztech/gptcache",
+            "keywords": "",
+            "license": "http://www.apache.org/licenses/LICENSE-2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "gptcache",
+            "package_url": "https://pypi.org/project/gptcache/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/gptcache/",
+            "project_urls": {
+                "Homepage": "https://github.com/zilliztech/gptcache"
+            },
+            "release_url": "https://pypi.org/project/gptcache/0.1.3/",
+            "requires_dist": [
+                "openai",
+                "numpy",
+                "cachetools"
+            ],
+            "requires_python": ">=3.8.1",
+            "summary": "GPT Cache, a powerful caching library that can be used to speed up and lower the cost of chat applications that rely on the LLM service. GPT Cache works as a memcache for AIGC applications, similar to how Redis works for traditional applications.",
+            "version": "0.1.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17604212,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6bca5305e8d21bef1cce24917e5930b0fb3075e27a9eea97c555c16f6e1b5fde",
+                    "md5": "c4d3aea997c6e25a060f83cd7b2e1f26",
+                    "sha256": "5f0f184bbf406c1a1ae80a59005725fee2becccb7a66c71c7f0aee678220972d"
+                },
+                "downloads": -1,
+                "filename": "gptcache-0.1.3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "c4d3aea997c6e25a060f83cd7b2e1f26",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8.1",
+                "size": 31746,
+                "upload_time": "2023-04-06T02:23:28",
+                "upload_time_iso_8601": "2023-04-06T02:23:28.490951Z",
+                "url": "https://files.pythonhosted.org/packages/6b/ca/5305e8d21bef1cce24917e5930b0fb3075e27a9eea97c555c16f6e1b5fde/gptcache-0.1.3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3b555e8e12b2a2e017135a6b6cd2a66983d9f8cf032dba9cff6856410933d41e",
+                    "md5": "02fdfe37a2daecb9e1dc9f4e8ba0a48b",
+                    "sha256": "d0f8362e7bae38a0ee415ef8ed05841a9f9e77246f69fea35e5d0dba1d8173ca"
+                },
+                "downloads": -1,
+                "filename": "gptcache-0.1.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "02fdfe37a2daecb9e1dc9f4e8ba0a48b",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8.1",
+                "size": 26384,
+                "upload_time": "2023-04-06T02:23:30",
+                "upload_time_iso_8601": "2023-04-06T02:23:30.391471Z",
+                "url": "https://files.pythonhosted.org/packages/3b/55/5e8e12b2a2e017135a6b6cd2a66983d9f8cf032dba9cff6856410933d41e/gptcache-0.1.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.4": {
+        "info": {
+            "author": "SimFG",
+            "author_email": "bang.fu@zilliz.com",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/zilliztech/GPTCache",
+            "keywords": "",
+            "license": "https://opensource.org/license/mit/",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "gptcache",
+            "package_url": "https://pypi.org/project/gptcache/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/gptcache/",
+            "project_urls": {
+                "Homepage": "https://github.com/zilliztech/GPTCache"
+            },
+            "release_url": "https://pypi.org/project/gptcache/0.1.4/",
+            "requires_dist": [
+                "openai",
+                "numpy",
+                "cachetools"
+            ],
+            "requires_python": ">=3.8.1",
+            "summary": "GPT Cache, a powerful caching library that can be used to speed up and lower the cost of chat applications that rely on the LLM service. GPT Cache works as a memcache for AIGC applications, similar to how Redis works for traditional applications.",
+            "version": "0.1.4",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17604212,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "1966b1d722702193417e2db1ad34e14e5431d9a85f03d96f6da72e2ab9d959b1",
+                    "md5": "0e821d4fb8031662d3faa9e39452097d",
+                    "sha256": "243918f4647b02663514ae35c7b24ede9047a80a3cf16e67d0aaa783308cf9ba"
+                },
+                "downloads": -1,
+                "filename": "gptcache-0.1.4-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "0e821d4fb8031662d3faa9e39452097d",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8.1",
+                "size": 34559,
+                "upload_time": "2023-04-06T09:08:17",
+                "upload_time_iso_8601": "2023-04-06T09:08:17.082675Z",
+                "url": "https://files.pythonhosted.org/packages/19/66/b1d722702193417e2db1ad34e14e5431d9a85f03d96f6da72e2ab9d959b1/gptcache-0.1.4-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a483637d0b03edf1350af04012a90e9d61e6a85e7b6922aa07b523328358f117",
+                    "md5": "0b2e6730e790f8bffb037e767ee10587",
+                    "sha256": "78cb582a30a66cfce854762d2c1f1149bfee84a6dabcfd48e0fd5830b35c7a48"
+                },
+                "downloads": -1,
+                "filename": "gptcache-0.1.4.tar.gz",
+                "has_sig": false,
+                "md5_digest": "0b2e6730e790f8bffb037e767ee10587",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8.1",
+                "size": 28399,
+                "upload_time": "2023-04-06T09:08:19",
+                "upload_time_iso_8601": "2023-04-06T09:08:19.583473Z",
+                "url": "https://files.pythonhosted.org/packages/a4/83/637d0b03edf1350af04012a90e9d61e6a85e7b6922aa07b523328358f117/gptcache-0.1.4.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.5": {
+        "info": {
+            "author": "SimFG",
+            "author_email": "bang.fu@zilliz.com",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "# GPTCache : A Library for Creating Semantic Cache for LLM Queries\nSlash Your LLM API Costs by 10x \ud83d\udcb0, Boost Speed by 100x \u26a1 \n\n[![Release](https://img.shields.io/pypi/v/gptcache?label=Release&color)](https://pypi.org/project/gptcache/)\n[![CI](https://github.com/zilliztech/gptcache/actions/workflows/CI_main.yaml/badge.svg)](https://github.com/zilliztech/gptcache/actions/workflows/CI_main.yaml)\n[![pip download](https://img.shields.io/pypi/dm/gptcache.svg?color=bright-green)](https://pypi.org/project/gptcache/)\n[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/license/mit/)\n[![Twitter](https://img.shields.io/twitter/url/https/twitter.com/zilliz_universe.svg?style=social&label=Follow%20%40Zilliz)](https://twitter.com/zilliz_universe)\n[![Discord](https://dcbadge.vercel.app/api/server/Q8C6WEjSWV?compact=true&style=flat)](https://discord.gg/Q8C6WEjSWV)\n\nDocumentation: https://gptcache.readthedocs.io/en/latest/.\n\nDiscord: https://discord.gg/Q8C6WEjSWV.\n\nTwitter: https://twitter.com/zilliz_universe.\n\n\n## Quick Install\n\n`pip install gptcache`\n\n## \ud83d\ude80 What is GPTCache?\n\nChatGPT and various large language models (LLMs) boast incredible versatility, enabling the development of a wide range of applications. However, as your application grows in popularity and encounters higher traffic levels, the expenses related to LLM API calls can become substantial. Additionally, LLM services might exhibit slow response times, especially when dealing with a significant number of requests.\n\nTo tackle this challenge, we have created GPTCache, a project dedicated to building a semantic cache for storing LLM responses. This library offers the following primary benefits:\n\n1. **Decreased expenses**: Most LLM services charge fees based on a combination of number of requests and [token count](https://openai.com/pricing). By caching query results, GPTCache reduces both the number of requests and the number of tokens sent to the LLM service. This minimizes the overall cost of using the service. \n2. **Enhanced performance**: LLMs employ generative AI algorithms to generate responses in real-time, a process that can sometimes be time-consuming. However, when a similar query is cached, the response time significantly improves, as the result is fetched directly from the cache, eliminating the need to interact with the LLM service. In most situations, GPTCache can also provide superior query throughput compared to standard LLM services.\n3. **Improved scalability and availability**: LLM services frequently enforce [rate limits](https://platform.openai.com/docs/guides/rate-limits), which are constraints that APIs place on the number of times a user or client can access the server within a given timeframe. Hitting a rate limit means that additional requests will be blocked until a certain period has elapsed, leading to a service outage. With GPTCache, you can easily scale to accommodate an increasing volume of of queries, ensuring consistent performance as your application's user base expands.\n4. **Flexible development environment**: When developing LLM applications, an LLM APIs connection is required to prove concepts. GPTCache offers the same interface as LLM APIs and can store LLM-generated or mocked data. This helps to verify your application's features without connecting to the LLM APIs or even the network.\n\n## \ud83e\udd14 How does it work?\n\nA good analogy for GptCache is to think of it as a more semantic version of Redis. In GPTCache, hits are not limited to exact matches, but rather also include prompts and context similar to previous queries. We believe that the traditional cache design still works for AIGC applications due to the following reasons:\n\n- Locality is present everywhere. Like traditional application systems, AIGC applications also face similar hot topics. For instance, ChatGPT itself may be a popular topic among programmers.\n- For purpose-built SaaS services, users tend to ask questions within a specific domain, with both temporal and spatial locality.\n- By utilizing vector similarity search, it is possible to find a similarity relationship between questions and answers at a relatively low cost.\n\nWe provide [benchmarks](https://github.com/zilliztech/gpt-cache/blob/main/examples/benchmark/benchmark_sqlite_faiss_onnx.py) to illustrate the concept. In semantic caching, there are three key measurement dimensions: false positives, false negatives, and hit latency. With the plugin-style implementation, users can easily tradeoff these three measurements according to their needs.\n\n## \ud83d\ude0a Quick Start\n\n**Note**:\n\n- You can quickly try GPTCache and put it into a production environment without heavy development. However, please note that the repository is still under heavy development.\n- By default, only a limited number of libraries are installed to support the basic cache functionalities. When you need to use additional features, the related libraries will be **automatically installed**.\n- Make sure that the Python version is **3.8.1 or higher**, check: `python --version`\n- If you encounter issues installing a library due to a low pip version, run: `python -m pip install --upgrade pip`.\n\n### dev install\n\n```bash\n# clone GPTCache repo\ngit clone https://github.com/zilliztech/GPTCache.git\ncd GPTCache\n\n# install the repo\npip install -r requirements.txt\npython setup.py install\n```\n\n### example usage\n\nThese examples will help you understand how to use exact and similar matching with caching. \n\nBefore running the example, **make sure** the OPENAI_API_KEY environment variable is set by executing `echo $OPENAI_API_KEY`. \n\nIf it is not already set, it can be set by using `export OPENAI_API_KEY=YOUR_API_KEY` on Unix/Linux/MacOS systems or `set OPENAI_API_KEY=YOUR_API_KEY` on Windows systems. \n\n> It is important to note that this method is only effective temporarily, so if you want a permanent effect, you'll need to modify the environment variable configuration file. For instance, on a Mac, you can modify the file located at `/etc/profile`.\n\n<details>\n\n<summary> Click to <strong>SHOW</strong> example code </summary>\n\n#### OpenAI API original usage\n\n```python\nimport os\nimport time\n\nimport openai\n\n\ndef response_text(openai_resp):\n    return openai_resp['choices'][0]['message']['content']\n\n\nquestion = 'what\u2018s chatgpt'\n\n# OpenAI API original usage\nopenai.api_key = os.getenv(\"OPENAI_API_KEY\")\nstart_time = time.time()\nresponse = openai.ChatCompletion.create(\n  model='gpt-3.5-turbo',\n  messages=[\n    {\n        'role': 'user',\n        'content': question\n    }\n  ],\n)\nprint(f'Question: {question}')\nprint(\"Time consuming: {:.2f}s\".format(time.time() - start_time))\nprint(f'Answer: {response_text(response)}\\n')\n\n```\n\n#### OpenAI API + GPTCache, exact match cache\n\n> If you ask ChatGPT the exact same two questions, the answer to the second question will be obtained from the cache without requesting ChatGPT again.\n\n```python\nimport time\n\n\ndef response_text(openai_resp):\n    return openai_resp['choices'][0]['message']['content']\n\nprint(\"Cache loading.....\")\n\n# To use GPTCache, that's all you need\n# -------------------------------------------------\nfrom gptcache import cache\nfrom gptcache.adapter import openai\n\ncache.init()\ncache.set_openai_key()\n# -------------------------------------------------\n\nquestion = \"what's github\"\nfor _ in range(2):\n    start_time = time.time()\n    response = openai.ChatCompletion.create(\n      model='gpt-3.5-turbo',\n      messages=[\n        {\n            'role': 'user',\n            'content': question\n        }\n      ],\n    )\n    print(f'Question: {question}')\n    print(\"Time consuming: {:.2f}s\".format(time.time() - start_time))\n    print(f'Answer: {response_text(response)}\\n')\n```\n\n#### OpenAI API + GPTCache, similar search cache\n\n> After obtaining an answer from ChatGPT in response to several similar questions, the answers to subsequent questions can be retrieved from the cache without the need to request ChatGPT again.\n\n```python\nimport time\n\n\ndef response_text(openai_resp):\n    return openai_resp['choices'][0]['message']['content']\n\nfrom gptcache import cache\nfrom gptcache.adapter import openai\nfrom gptcache.embedding import Onnx\nfrom gptcache.manager.factory import get_data_manager\nfrom gptcache.similarity_evaluation.distance import SearchDistanceEvaluation\n\nprint(\"Cache loading.....\")\n\nonnx = Onnx()\ndata_manager = get_data_manager(\"sqlite\", \"faiss\", dimension=onnx.dimension)\ncache.init(\n    embedding_func=onnx.to_embeddings,\n    data_manager=data_manager,\n    similarity_evaluation=SearchDistanceEvaluation(),\n    )\ncache.set_openai_key()\n\nquestions = [\n    \"what's github\",\n    \"can you explain what GitHub is\",\n    \"can you tell me more about GitHub\"\n    \"what is the purpose of GitHub\"\n]\n\nfor question in questions:\n    start_time = time.time()\n    response = openai.ChatCompletion.create(\n        model='gpt-3.5-turbo',\n        messages=[\n            {\n                'role': 'user',\n                'content': question\n            }\n        ],\n    )\n    print(f'Question: {question}')\n    print(\"Time consuming: {:.2f}s\".format(time.time() - start_time))\n    print(f'Answer: {response_text(response)}\\n')\n```\n\n</details>\n\nTo use GPTCache exclusively, only the following lines of code are required, and there is no need to modify any existing code.\n\n```python\nfrom gptcache import cache\nfrom gptcache.adapter import openai\n\ncache.init()\ncache.set_openai_key()\n```\n\nMore Docs\uff1a\n\n- [Usage, how to use GPTCache better](docs/usage.md)\n- [Features, all features currently supported by the cache](docs/feature.md)\n- [Examples, learn better custom caching](examples/README.md)\n\n## \ud83e\udd17 Modules\n\n![GPTCache Struct](docs/GPTCacheStructure.png)\n\n- **LLM Adapter**: \nThe LLM Adapter is designed to integrate different LLM models by unifying their APIs and request protocols. GPTCache offers a standardized interface for this purpose, with current support for ChatGPT integration.\n  - [x] Support OpenAI ChatGPT API.\n  - [x] Support langchain.\n  - [ ] Support other LLMs, such as Hugging Face Hub, Bard, Anthropic, and self-hosted models like LLaMa.\n- **Embedding Generator**: \nThis module is created to extract embeddings from requests for similarity search. GPTCache offers a generic interface that supports multiple embedding APIs, and presents a range of solutions to choose from. \n  - [x] Disable embedding. This will turn GPTCache into a keyword-matching cache.\n  - [x] Support OpenAI embedding API.\n  - [x] Support [ONNX](https://onnx.ai/) with the GPTCache/paraphrase-albert-onnx model.\n  - [x] Support [Hugging Face](https://huggingface.co/) embedding API.\n  - [x] Support [Cohere](https://docs.cohere.ai/reference/embed) embedding API.\n  - [x] Support [fastText](https://fasttext.cc) embedding API.\n  - [x] Support [SentenceTransformers](https://www.sbert.net) embedding API.\n  - [ ] Support other embedding apis\n- **Cache Storage**:\n**Cache Storage** is where the response from LLMs, such as ChatGPT, is stored. Cached responses are retrieved to assist in evaluating similarity and are returned to the requester if there is a good semantic match. At present, GPTCache supports SQLite and offers a universally accessible interface for extension of this module.\n  - [x] Support [SQLite](https://sqlite.org/docs.html).\n  - [x] Support [PostgreSQL](https://www.postgresql.org/).\n  - [x] Support [MySQL](https://www.mysql.com/).\n  - [x] Support [MariaDB](https://mariadb.org/).\n  - [x] Support [SQL Server](https://www.microsoft.com/en-us/sql-server/).\n  - [x] Support [Oracle](https://www.oracle.com/).\n  - [ ] Support [MongoDB](https://www.mongodb.com/).\n  - [ ] Support [Redis](https://redis.io/).\n  - [ ] Support [Minio](https://min.io/).\n  - [ ] Support [HBase](https://hbase.apache.org/).\n  - [ ] Support [ElasticSearch](https://www.elastic.co/)\n  - [ ] Support [zincsearch](https://zinc.dev/)\n  - [ ] Support other storages\n- **Vector Store**:\nThe **Vector Store** module helps find the K most similar requests from the input request's extracted embedding. The results can help assess similarity. GPTCache provides a user-friendly interface that supports various vector stores, including Milvus, Zilliz Cloud, and FAISS. More options will be available in the future.\n  - [x] Support [Milvus](https://milvus.io/).\n  - [x] Support [Zilliz Cloud](https://cloud.zilliz.com/).\n  - [x] Support [FAISS](https://faiss.ai/).\n  - [ ] Support other vector databases\n- **Cache Manager**:\nThe **Cache Manager** is responsible for controlling the operation of both the **Cache Storage** and **Vector Store**.\n  - **Eviction Policy**:\n  Currently, GPTCache makes decisions about evictions based solely on the number of lines. This approach can result in inaccurate resource evaluation and may cause out-of-memory (OOM) errors. We are actively investigating and developing a more sophisticated strategy.\n    - [x] LRU eviction policy\n    - [x] FIFO eviction policy\n    - [ ] More complicated eviction policies\n- **Similarity Evaluator**: \nThis module collects data from both the **Cache Storage** and **Vector Store**, and uses various strategies to determine the similarity between the input request and the requests from the **Vector Store**. Based on this similarity, it determines whether a request matches the cache. GPTCache provides a standardized interface for integrating various strategies, along with a collection of implementations to use. The following similarity definitions are currently supported or will be supported in the future:\n  - [x] The distance we obtain from the **Vector Store**.\n  - [x] A model-based similarity determined using the GPTCache/albert-duplicate-onnx model from [ONNX](https://onnx.ai/).\n  - [x] Exact matches between the input request and the requests obtained from the **Vector Store**.\n  - [x] Distance represented by applying linalg.norm from numpy to the embeddings.\n  - [ ] BM25 and other similarity measurements\n  - [ ] Support other model serving framework such as PyTorch\n \n  \n  **Note**:Not all combinations of different modules may be compatible with each other. For instance, if we disable the **Embedding Extractor**, the **Vector Store** may not function as intended. We are currently working on implementing a combination sanity check for **GPTCache**.\n\n## \ud83d\ude07 Roadmap\nComing soon! [Stay tuned!](https://twitter.com/zilliz_universe)\n\n## \ud83d\ude0d Contributing\nWe are extremely open to contributions, be it through new features, enhanced infrastructure, or improved documentation.\n\nFor comprehensive instructions on how to contribute, please refer to our [contribution guide](docs/contributing.md).\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/zilliztech/GPTCache",
+            "keywords": "",
+            "license": "https://opensource.org/license/mit/",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "gptcache",
+            "package_url": "https://pypi.org/project/gptcache/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/gptcache/",
+            "project_urls": {
+                "Homepage": "https://github.com/zilliztech/GPTCache"
+            },
+            "release_url": "https://pypi.org/project/gptcache/0.1.5/",
+            "requires_dist": [
+                "openai",
+                "numpy",
+                "cachetools"
+            ],
+            "requires_python": ">=3.8.1",
+            "summary": "GPT Cache, a powerful caching library that can be used to speed up and lower the cost of chat applications that rely on the LLM service. GPT Cache works as a memcache for AIGC applications, similar to how Redis works for traditional applications.",
+            "version": "0.1.5",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17604212,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "88fdc27398fdbb43bf6c86bda48da2f5628402e2466d426e7636183c4d330a2a",
+                    "md5": "32869ae75352c685dcc9fdd9de1438c5",
+                    "sha256": "bd88f976e51be95287eed2fc1c22adc7e0621d06c45cca7b68d360551ca9d9d4"
+                },
+                "downloads": -1,
+                "filename": "gptcache-0.1.5-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "32869ae75352c685dcc9fdd9de1438c5",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8.1",
+                "size": 37024,
+                "upload_time": "2023-04-06T12:47:35",
+                "upload_time_iso_8601": "2023-04-06T12:47:35.944816Z",
+                "url": "https://files.pythonhosted.org/packages/88/fd/c27398fdbb43bf6c86bda48da2f5628402e2466d426e7636183c4d330a2a/gptcache-0.1.5-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d5a2c2c44865c62f87909b839317947a401725bbe33450f0c9fd0c658b21fcbc",
+                    "md5": "826b4c4ca33d2ac0cbfa53397c26ca98",
+                    "sha256": "1cefbf6c14170b1ade9a7ab2c7d8890a364978b90bcdaa5c99646d03d31e83e8"
+                },
+                "downloads": -1,
+                "filename": "gptcache-0.1.5.tar.gz",
+                "has_sig": false,
+                "md5_digest": "826b4c4ca33d2ac0cbfa53397c26ca98",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8.1",
+                "size": 30497,
+                "upload_time": "2023-04-06T12:47:38",
+                "upload_time_iso_8601": "2023-04-06T12:47:38.422623Z",
+                "url": "https://files.pythonhosted.org/packages/d5/a2/c2c44865c62f87909b839317947a401725bbe33450f0c9fd0c658b21fcbc/gptcache-0.1.5.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
