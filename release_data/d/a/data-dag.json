@@ -42,11 +42,12 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 15170508,
+        "last_serial": 17608082,
         "urls": [
             {
                 "comment_text": "",
                 "digests": {
+                    "blake2b_256": "4e8502cdf69e9d93c13890f8013b6f57166c0a58d5f7710ebcf02577ff04425f",
                     "md5": "0ffeac77245091bafb3d4c63c61699ea",
                     "sha256": "2d4bef9545da3fc2ff222d25a5f37d808d7b6f4147b1f54e3d62c45090e53d13"
                 },
@@ -67,6 +68,7 @@
             {
                 "comment_text": "",
                 "digests": {
+                    "blake2b_256": "852caea2a20936abefdbe4c3287c7105d3782105b2b02472cfb2c4d93e4072d1",
                     "md5": "9b2e75b802c7acc4a5942d10967ec3a7",
                     "sha256": "65065b37508dbe20722cfd7d17109d7d5d8ba84336e6ba59157a587cddc5da10"
                 },
@@ -130,11 +132,12 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 15170508,
+        "last_serial": 17608082,
         "urls": [
             {
                 "comment_text": "",
                 "digests": {
+                    "blake2b_256": "bd5da19f9a84271e588495c52f46eda7be1167a4672b6dfd17598c016f22d6ef",
                     "md5": "55eaa7cc64259ab25cd0396b52e38f9c",
                     "sha256": "011fae3d5d19b04f00f93471a5f51f415a54d0e63302def20cfc9abe4118c99b"
                 },
@@ -155,6 +158,7 @@
             {
                 "comment_text": "",
                 "digests": {
+                    "blake2b_256": "f67b5829b845b4284f74ba63b2add359f9bebe6522dcbe1322f289a7169216f8",
                     "md5": "dbbfdc44affd39e1eec89fecbe523eca",
                     "sha256": "894150adacd8768de0c42142f15f8d19414eed6e772eb883a6acc51ff46209ba"
                 },
@@ -185,7 +189,6 @@
                 "Operating System :: OS Independent",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "[![Documentation Status](https://readthedocs.org/projects/data-dag/badge/?version=latest)](https://data-dag.readthedocs.io/en/latest/?badge=latest) ![PyPI](https://img.shields.io/pypi/v/data-dag)\n\n# Overview\n\n`data-dag` is a library for writing data-defined Airflow DAGs and operators.\n\n# Installation\n\n```pip install data-dag```\n\n# Example\n\nRe-usable operator and DAG template can be stored in a central location, such as a custom Airflow plugin (or a package within `dags/` works fine too):\n\n```python\n# plugins/my_factories/download.py\n\nfrom data_dag.operator_factory import OperatorFactory\nfrom data_dag.dag_factory import DagFactory\n\nfrom urllib.request import urlretrieve\nfrom typing import List\nfrom airflow.operators.dummy import DummyOperator\nfrom airflow.providers.http.sensors.http import HttpSensor\nfrom airflow.operators.python import PythonOperator\nfrom airflow.utils.task_group import TaskGroup\n\n\nclass DownloadOperator(OperatorFactory):\n    \"\"\"An operator factory for safely downloading files to a known location\"\"\"\n\n    name: str\n    url: str\n    path: str\n\n    def make_operator(self):\n        with TaskGroup(group_id=f'download_{self.name}') as group:\n            check = HttpSensor(\n                task_id='check_exists',\n                endpoint=self.url\n            )\n            download = PythonOperator(\n                task_id=f'download',\n                python_callable=lambda: urlretrieve(self.url, self.path)\n            )\n            check >> download\n\n        return group\n\n\nclass DownloaderDag(DagFactory):\n    \"\"\"A DAG factory for producing simple DAGs that just download a bunch of files\"\"\"\n\n    downloads: List[DownloadOperator]\n\n    def _make_dag(self):\n        start = DummyOperator(task_id='start')\n        end = DummyOperator(task_id='end')\n\n        for download in self.downloads:\n            start >> download.make_operator() >> end\n```\n\nThen a definition for a particular DAG can live in a data file:\n\n```yaml\n# dags/yaml/sample_dag.yaml\n\ndag_id: sample_dag\ndescription: An example of how to write a data-driven DAG\nschedule_interval: '@daily'\nstart_date: '2020-01-01T00:00:00'\ndownloads:\n- name: data\n  url: https://www.example.com/data.zip\n  path: data.zip\n- name: manifest\n  url: https://www.example.com/manifest.json\n  path: manifest.json\n```\n\nThat data file can then be loaded into a DAG. Per Airflow's requirements, this must be done in a file located in `dags/` and the result must be saved into a uniquely named global variable. The simplest possible example is this:\n\n```python\n# dags/sample_dag.py\n\nfrom yaml import safe_load\nfrom my_factories.download import DownloaderDag\n\nwith open('yaml/sample_dag.yaml', 'r') as f:\n    dag_data = safe_load(f)\n\ndag = DownloaderDag.parse_obj(dag_data).make_dag()\n```\n\n![img.png](docs/_images/img.png)\n\n## Multiple DAGs\n\nObviously, using a template isn't much use if you only fill it in once. Here's a simple example of a loader that will load any number of YML files from a folder and publish each one as a DAG in Airflow:\n\n```python\n# dags/load_yml_files.py\n\nfrom pathlib import Path\nfrom airflow import DAG\nimport yaml\nfrom my_factories import BaseDag\n\ndag_dir = Path(__file__).parent\n\n# For each YAML file in a particular directory...\nfor yaml_file_path in dag_dir.glob('typical_dags/**.yml'):\n    with open(yaml_file_path) as f:\n        dag_metadata = yaml.safe_load(f)\n\n    # ... generate a DAG from that metadata\n    dag_metadata_obj = BaseDag.parse_obj(dag_metadata)\n    dag = dag_metadata_obj.make_dag()\n\n    # See https://www.astronomer.io/guides/dynamically-generating-dags/\n    dag_name = yaml_file_path.with_suffix('').name\n    globals()[dag_name] = dag\n```\n\n# Documentation\n\n[Complete docs can be found here](https://data-dag.rtfd.org/)\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -219,11 +222,12 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 15170508,
+        "last_serial": 17608082,
         "urls": [
             {
                 "comment_text": "",
                 "digests": {
+                    "blake2b_256": "c2cd8bcb2ab5b6ccea0dceb74ee3871f05388979df26f4498cebfcd45b443af8",
                     "md5": "516dc1bc3851cabe6e2b90fcdc36bd55",
                     "sha256": "f6ce9c6160814ef0cbb8260a1ed521e3b56f996730ed196202e4cb96dea8e4b7"
                 },
@@ -244,6 +248,7 @@
             {
                 "comment_text": "",
                 "digests": {
+                    "blake2b_256": "1988ef179e3985c4ac01ad7f0c39e505b181d746813bd3c572e45522281eb4d7",
                     "md5": "71a934e373a3e4fa4eaa7f10171ae35f",
                     "sha256": "83cb67fd1eeabb74f666aa1bc40c70b7044fb6b479165802c7c03f7e937fa2b2"
                 },
@@ -258,6 +263,88 @@
                 "upload_time": "2022-09-21T21:22:53",
                 "upload_time_iso_8601": "2022-09-21T21:22:53.133847Z",
                 "url": "https://files.pythonhosted.org/packages/19/88/ef179e3985c4ac01ad7f0c39e505b181d746813bd3c572e45522281eb4d7/data_dag-0.2.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.2": {
+        "info": {
+            "author": null,
+            "author_email": "Rearc Data <data@rearc.io>",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "[![Documentation Status](https://readthedocs.org/projects/data-dag/badge/?version=latest)](https://data-dag.readthedocs.io/en/latest/?badge=latest) ![PyPI](https://img.shields.io/pypi/v/data-dag)\n\n# Overview\n\n`data-dag` is a library for writing data-defined Airflow DAGs and operators.\n\n# Installation\n\n```pip install data-dag```\n\n# Example\n\nRe-usable operator and DAG template can be stored in a central location, such as a custom Airflow plugin (or a package within `dags/` works fine too):\n\n```python\n# plugins/my_factories/download.py\n\nfrom data_dag.operator_factory import OperatorFactory\nfrom data_dag.dag_factory import DagFactory\n\nfrom urllib.request import urlretrieve\nfrom typing import List\nfrom airflow.operators.dummy import DummyOperator\nfrom airflow.providers.http.sensors.http import HttpSensor\nfrom airflow.operators.python import PythonOperator\nfrom airflow.utils.task_group import TaskGroup\n\n\nclass DownloadOperator(OperatorFactory):\n    \"\"\"An operator factory for safely downloading files to a known location\"\"\"\n\n    name: str\n    url: str\n    path: str\n\n    def make_operator(self):\n        with TaskGroup(group_id=f'download_{self.name}') as group:\n            check = HttpSensor(\n                task_id='check_exists',\n                endpoint=self.url\n            )\n            download = PythonOperator(\n                task_id=f'download',\n                python_callable=lambda: urlretrieve(self.url, self.path)\n            )\n            check >> download\n\n        return group\n\n\nclass DownloaderDag(DagFactory):\n    \"\"\"A DAG factory for producing simple DAGs that just download a bunch of files\"\"\"\n\n    downloads: List[DownloadOperator]\n\n    def _make_dag(self):\n        start = DummyOperator(task_id='start')\n        end = DummyOperator(task_id='end')\n\n        for download in self.downloads:\n            start >> download.make_operator() >> end\n```\n\nThen a definition for a particular DAG can live in a data file:\n\n```yaml\n# dags/yaml/sample_dag.yaml\n\ndag_id: sample_dag\ndescription: An example of how to write a data-driven DAG\nschedule_interval: '@daily'\nstart_date: '2020-01-01T00:00:00'\ndownloads:\n- name: data\n  url: https://www.example.com/data.zip\n  path: data.zip\n- name: manifest\n  url: https://www.example.com/manifest.json\n  path: manifest.json\n```\n\nThat data file can then be loaded into a DAG. Per Airflow's requirements, this must be done in a file located in `dags/` and the result must be saved into a uniquely named global variable. The simplest possible example is this:\n\n```python\n# dags/sample_dag.py\n\nfrom yaml import safe_load\nfrom my_factories.download import DownloaderDag\n\nwith open('yaml/sample_dag.yaml', 'r') as f:\n    dag_data = safe_load(f)\n\ndag = DownloaderDag.parse_obj(dag_data).make_dag()\n```\n\n![img.png](docs/_images/img.png)\n\n## Multiple DAGs\n\nObviously, using a template isn't much use if you only fill it in once. Here's a simple example of a loader that will load any number of YML files from a folder and publish each one as a DAG in Airflow:\n\n```python\n# dags/load_yml_files.py\n\nfrom pathlib import Path\nfrom airflow import DAG\nimport yaml\nfrom my_factories import BaseDag\n\ndag_dir = Path(__file__).parent\n\n# For each YAML file in a particular directory...\nfor yaml_file_path in dag_dir.glob('typical_dags/**.yml'):\n    with open(yaml_file_path) as f:\n        dag_metadata = yaml.safe_load(f)\n\n    # ... generate a DAG from that metadata\n    dag_metadata_obj = BaseDag.parse_obj(dag_metadata)\n    dag = dag_metadata_obj.make_dag()\n\n    # See https://www.astronomer.io/guides/dynamically-generating-dags/\n    dag_name = yaml_file_path.with_suffix('').name\n    globals()[dag_name] = dag\n```\n\n# Documentation\n\n[Complete docs can be found here](https://data-dag.rtfd.org/)\n\n[//]: # (TODO)\n[//]: # (- Add DAG loader factory to enable a 2-liner DAG python file\n[//]: # (- Add dependency group mixin or something )\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": null,
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": null,
+            "keywords": null,
+            "license": null,
+            "maintainer": null,
+            "maintainer_email": null,
+            "name": "data-dag",
+            "package_url": "https://pypi.org/project/data-dag/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/data-dag/",
+            "project_urls": {
+                "Home": "https://github.com/rearc-data/data-dag"
+            },
+            "release_url": "https://pypi.org/project/data-dag/0.2.2/",
+            "requires_dist": null,
+            "requires_python": null,
+            "summary": "Tooling to help build data-driven DAGs",
+            "version": "0.2.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17608082,
+        "urls": [
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "612264bf836924a23ff9311ad2023a616f863f7f14b52fb707eb1cf9dddf6456",
+                    "md5": "83b1bee1836318b0d27d2fa1435782d2",
+                    "sha256": "1c585ba91f7813fb4861026b079c3463ccdf565f5252c768e7dddc60134a309c"
+                },
+                "downloads": -1,
+                "filename": "data_dag-0.2.2-py2.py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "83b1bee1836318b0d27d2fa1435782d2",
+                "packagetype": "bdist_wheel",
+                "python_version": "py2.py3",
+                "requires_python": null,
+                "size": 9578,
+                "upload_time": "2023-04-06T17:32:53",
+                "upload_time_iso_8601": "2023-04-06T17:32:53.855902Z",
+                "url": "https://files.pythonhosted.org/packages/61/22/64bf836924a23ff9311ad2023a616f863f7f14b52fb707eb1cf9dddf6456/data_dag-0.2.2-py2.py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "32f0f9a81316533e2f0a59ee67ca4e2a000f4240f6dbc747ee842819028181fe",
+                    "md5": "58ae9d09ccadc10ad3116e64971fe87c",
+                    "sha256": "18145d0bc6546b1baef8f436a9db81a120e4946d0a698a04fa70453f18712510"
+                },
+                "downloads": -1,
+                "filename": "data-dag-0.2.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "58ae9d09ccadc10ad3116e64971fe87c",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 60519,
+                "upload_time": "2023-04-06T17:32:57",
+                "upload_time_iso_8601": "2023-04-06T17:32:57.790512Z",
+                "url": "https://files.pythonhosted.org/packages/32/f0/f9a81316533e2f0a59ee67ca4e2a000f4240f6dbc747ee842819028181fe/data-dag-0.2.2.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

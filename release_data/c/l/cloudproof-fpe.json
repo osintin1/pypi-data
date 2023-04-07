@@ -1,0 +1,109 @@
+{
+    "0.1.0": {
+        "info": {
+            "author": "Th\u00e9ophile Br\u00e9zot<theophile.brezot@cosmian.com>",
+            "author_email": "Th\u00e9ophile Br\u00e9zot<theophile.brezot@cosmian.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: Implementation :: CPython",
+                "Programming Language :: Python :: Implementation :: PyPy",
+                "Programming Language :: Rust"
+            ],
+            "description": "# Format Preserving Encryption\n\nThis library provides `Format Preserving Encryption` (FPE) techniques for use in a zero-trust environment. These techniques are based on FPE-FF1 which is described in [NIST:800-38G](https://nvlpubs.nist.gov/nistpubs/specialpublications/nist.sp.800-38g.pdf).\n\n<!-- toc -->\n\n- [Format Preserving Encryption (FPE)](#format-preserving-encryption-fpe)\n  * [Implementation](#implementation)\n  * [Using FPE](#using-fpe)\n    + [Encrypting Text](#encrypting-text)\n      - [Encrypting and decrypting an alphanumeric text](#encrypting-and-decrypting-an-alphanumeric-text)\n      - [Encrypting and decrypting a credit card number](#encrypting-and-decrypting-a-credit-card-number)\n      - [Encrypting and decrypting a Chinese text with spaces](#encrypting-and-decrypting-a-chinese-text-with-spaces)\n    + [Encrypting Integers](#encrypting-integers)\n    + [Encrypting Floats](#encrypting-floats)\n    + [Tweaks](#tweaks)\n- [Benchmarks](#benchmarks)\n  * [Run quick start](#run-quick-start)\n  * [Run detailed report (Linux, MacOS)](#run-detailed-report-linux-macos)\n\n<!-- tocstop -->\n\n## Format Preserving Encryption (FPE)\n\nFPE aims to encrypt plaintext while retaining its format (alphabet). FPE-FF1 is a normalized algorithm that uses symmetric encryption, but it's not as fast or secure as standardized symmetric (or public key) encryption methods like AES or ChaCha. It should only be used where the format of the ciphertext container is constrained (e.g., a fixed database schema that cannot be changed).\n\n### Implementation\n\nThe FPE implementation follows NIST specifications for FF1 (found in the [NIST SP 800-38G specification](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-38G.pdf#page=19&zoom=100,0,0)).\n\nThe code is based on the `cosmian_fpe` directory found on [GitHub](https://github.com/Cosmian/cosmian_fpe), which is based on `str4d/fpe`. The number of Feistel rounds has been increased to 18 following the recommendations of this [cryptanalysis paper](https://eprint.iacr.org/2020/1311.pdf).\n\nThe implementation also enforces the requirement that `radix^min_len > 1_000_000`. For the `Alphabet` and `Integer` FPE facilities, this requirement is met with the following parameters:\n\n| radix | example alphabet    | min text len |\n|-------|---------------------|--------------|\n| 2     | \"01\"                | 20           |\n| 10    | \"01234567890\"       | 6            |\n| 16    | \"01234567890abcdef\" | 5            |\n\n### Using FPE\n\nCosmian FPE proposes 3 structures:\n\n- `fpe::Alphabet` to encrypt text\n- `fpe::Integer` to encrypt integers with various radixes\n- `fpe::Float` to encrypt floating numbers\n\n#### Encrypting Text\n\nThe `fpe::Alphabet` structure provides the ability to encrypt a plaintext using an `alphabet`.\nCharacters of the plaintext that belong to the alphabet are encrypted while the others are left unchanged at their original location in the ciphertext.\n\nAn alphabet can be instantiated using the `Alphabet::instantiate()` method:\n\n```rust\nlet hexadecimal_alphabet = Alphabet::instantiate(\"01234567890abcdef\").unwrap();\n```\n\nThere are multiple pre-defined alphabets available:\n\n- `Alphabet::alpha()`\n- `Alphabet::alpha_lower()`\n- `Alphabet::alpha_upper()`\n- `Alphabet::numeric()`\n- `Alphabet::hexa_decimal()`\n- `Alphabet::alpha_numeric()`\n- `Alphabet::chinese()`\n- `Alphabet::latin1sup()`\n- `Alphabet::latin1sup_alphanum()`\n\nThese alphabets can easily be extended using the `extend_with` method\n\n```rust\n//0-9a-zA-Z\nlet mut alphabet = Alphabet::alphanumeric();\n// add the space character\nalphabet.extend_with(\" \");\n```\n\n##### Encrypting and decrypting an alphanumeric text\n\n```rust\nlet key = [0_u8; 32];\nlet tweak = b\"unique tweak\";\n\nlet alphabet = Alphabet::alpha_numeric(); //0-9a-zA-Z\n\nlet ciphertext = alphabet.encrypt(&key, tweak, \"alphanumeric\").unwrap();\nassert_eq!(\"jraqSuFWZmdH\", ciphertext);\n\nlet plaintext = alphabet.decrypt(&key, tweak, &ciphertext).unwrap();\nassert_eq!(\"alphanumeric\", plaintext);\n```\n\n##### Encrypting and decrypting a credit card number\n\n```rust\nlet key = [0_u8; 32];\nlet tweak = b\"unique tweak\";\n\nlet alphabet = Alphabet::numeric(); //0-9\n\nlet ciphertext = alphabet\n   .encrypt(&key, tweak, \"1234-1234-1234-1234\")\n   .unwrap();\nassert_eq!(\"1415-4650-5562-7272\", ciphertext);\n\nlet plaintext = alphabet.decrypt(&key, tweak, &ciphertext).unwrap();\nassert_eq!(\"1234-1234-1234-1234\", plaintext);\n```\n\n_Note_: since the `-` character is not part of the alphabet it is preserved during encryption and decryption.\n\n##### Encrypting and decrypting a Chinese text with spaces\n\n```rust\nlet key = [0_u8; 32];\nlet tweak = b\"unique tweak\";\n\nlet mut alphabet = Alphabet::chinese();\n// add the space character to the alphabet\nalphabet.extend_with(\" \");\n\nlet ciphertext = alphabet.encrypt(&key, tweak, \"\u5929\u5730\u7384\u9ec4 \u5b87\u5b99\u6d2a\u8352\").unwrap();\nassert_eq!(\"\u5116\u6fe3\u920d\u5aba\u60d0\u58b7\u793f\u622a\u5a83\", ciphertext);\n\nlet plaintext = alphabet.decrypt(&key, tweak, &ciphertext).unwrap();\nassert_eq!(\"\u5929\u5730\u7384\u9ec4 \u5b87\u5b99\u6d2a\u8352\", plaintext);\n```\n\n_Note_: since the space character was added to the alphabet, it is also encrypted.\n\n#### Encrypting Integers\n\nThe `fpe::Integer` structure offers the ability to encrypt integers with a radix between 2 (binary) and 16 (hexadecimal) and up to a maximum power of this radix.\n\nTo encrypt decimal integers up to u64::MAX, use:\n\n```rust\nlet key = [0_u8; 32];\nlet tweak = b\"unique tweak\";\n\n// decimal number with digits 0-9\nlet radix = 10_u32;\n// the number of digits of the biggest number = radix^digits -1\n// In this case 6 decimal digits -> 999_999\nlet digits = 6;\n\nlet itg = Integer::instantiate(radix, digits).unwrap();\n\nlet ciphertext = itg.encrypt(&key, tweak, 123_456_u64).unwrap();\nassert_eq!(110_655_u64, ciphertext);\n\nlet plaintext = itg.decrypt(&key, tweak, ciphertext).unwrap();\nassert_eq!(123_456_u64, plaintext);\n```\n\nThere is also support for Big Unsigned Integers\n\n```rust\nlet key = [0_u8; 32];\nlet tweak = b\"unique tweak\";\n\n// decimal number with digits 0-9\nlet radix = 10_u32;\n// the number of digits of the greatest number = radix^digits -1 = 10^20-1\nlet digits = 20;\n\n// the value to encrypt: 10^17\nlet value = BigUint::from_str_radix(\"100000000000000000\", radix).unwrap();\n\nlet itg = Integer::instantiate(radix, digits).unwrap();\n\nlet ciphertext = itg.encrypt_big(&key, tweak, &value).unwrap();\nassert_eq!(\n   BigUint::from_str_radix(\"65348521845006160218\", radix).unwrap(),\n   ciphertext\n);\n\nlet plaintext = itg.decrypt_big(&key, tweak, &ciphertext).unwrap();\nassert_eq!(\n   BigUint::from_str_radix(\"100000000000000000\", radix).unwrap(),\n   plaintext\n);\n```\n\n#### Encrypting Floats\n\nThe `fpe::Float` structure provides support for encrypting floats of type `f64`:\n\n```rust\nlet key = [0_u8; 32];\nlet tweak = b\"unique tweak\";\n\nlet flt = Float::instantiate().unwrap();\nlet ciphertext = flt.encrypt(&key, tweak, 123_456.789_f64).unwrap();\nassert_eq!(1.170438892319619e91_f64, ciphertext);\n\nlet plaintext = flt.decrypt(&key, tweak, ciphertext).unwrap();\nassert_eq!(123_456.789_f64, plaintext);\n```\n\n#### Tweaks\n\n`Tweaks` are public parameters that should vary with each instance of the encryption whenever possible. `Tweaks` are described in [NIST:800-38G: Appendix C](https://nvlpubs.nist.gov/nistpubs/specialpublications/nist.sp.800-38g.pdf). There is no size limit for the `tweak`.\n\n## Benchmarks\n\n### Run quick start\n\nRun `cargo criterion` from the current directory (./crates/fpe).\n\n### Run detailed report (Linux, MacOS)\n\n1. Install criterion and criterion-table\n\n   ```sh\n   cargo install cargo-criterion\n   cargo install criterion-table\n   ```\n\n2. From the root of the project, run\n\n   ```bash\n   bash ./benches/benches.sh\n   ```\n\n3. The benchmarks are then available in [./benches/BENCHMARKS.md](./benches/BENCHMARKS.md)\n\n",
+            "description_content_type": "text/markdown; charset=UTF-8; variant=GFM",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT/Apache-2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "cloudproof-fpe",
+            "package_url": "https://pypi.org/project/cloudproof-fpe/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/cloudproof-fpe/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/cloudproof-fpe/0.1.0/",
+            "requires_dist": [
+                "cffi"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "Cosmian Cloudproof FPE library",
+            "version": "0.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17608107,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "22d3105b83aacb0ab0c96e5a5a7eba0bfffe279f3060bd3d840071c2ac0f51f1",
+                    "md5": "66de5329dd8935cb3ebf22c35d419ade",
+                    "sha256": "eb1020a745eb53abe3e772c79e86a529b97a75dc624773a3977acf3af0ed47c8"
+                },
+                "downloads": -1,
+                "filename": "cloudproof_fpe-0.1.0-cp37-abi3-macosx_10_7_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "66de5329dd8935cb3ebf22c35d419ade",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.7",
+                "size": 262687,
+                "upload_time": "2023-04-06T17:35:16",
+                "upload_time_iso_8601": "2023-04-06T17:35:16.245366Z",
+                "url": "https://files.pythonhosted.org/packages/22/d3/105b83aacb0ab0c96e5a5a7eba0bfffe279f3060bd3d840071c2ac0f51f1/cloudproof_fpe-0.1.0-cp37-abi3-macosx_10_7_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "9c6a044ce8413539c3e729c0462ca0ed43ee481c5a672cbaaa86165a5ea1bbdf",
+                    "md5": "12079a9c51aedeed05f1cd12b3f9c2df",
+                    "sha256": "160085f0893aa0e4233aae55a8e83d84442f0070ebb73c9588093fab3d88debd"
+                },
+                "downloads": -1,
+                "filename": "cloudproof_fpe-0.1.0-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "12079a9c51aedeed05f1cd12b3f9c2df",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.7",
+                "size": 270472,
+                "upload_time": "2023-04-06T17:34:55",
+                "upload_time_iso_8601": "2023-04-06T17:34:55.103118Z",
+                "url": "https://files.pythonhosted.org/packages/9c/6a/044ce8413539c3e729c0462ca0ed43ee481c5a672cbaaa86165a5ea1bbdf/cloudproof_fpe-0.1.0-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "bd67adb6a776fa01b451a36c0375cbb8f2f05bda8cd9718712447a8441ee4a8b",
+                    "md5": "377dff71f9cceacca659e8b2dbf68736",
+                    "sha256": "66facf5214ec2ba68436ab715f0c87a783a61d1fb5e7588aa01f5ee320487feb"
+                },
+                "downloads": -1,
+                "filename": "cloudproof_fpe-0.1.0-cp37-abi3-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "377dff71f9cceacca659e8b2dbf68736",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.7",
+                "size": 258242,
+                "upload_time": "2023-04-06T17:35:03",
+                "upload_time_iso_8601": "2023-04-06T17:35:03.499204Z",
+                "url": "https://files.pythonhosted.org/packages/bd/67/adb6a776fa01b451a36c0375cbb8f2f05bda8cd9718712447a8441ee4a8b/cloudproof_fpe-0.1.0-cp37-abi3-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
