@@ -1,0 +1,95 @@
+{
+    "0.1.0": {
+        "info": {
+            "author": "Makoto Shing",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "# SVDiff-pytorch\n<a href=\"https://colab.research.google.com/gist/mkshing/9bf428a4f34eefd0fad6c950a8015240/svdiff-pytorch.ipynb\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>\n[![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/mshing/SVDiff-pytorch-UI)\n\n\nAn implementation of [SVDiff: Compact Parameter Space for Diffusion Fine-Tuning](https://arxiv.org/abs/2303.11305) by using d\ud83e\udde8ffusers. \n\nMy summary tweet is found [here](https://twitter.com/mk1stats/status/1642865505106272257).\n\n\n![result](assets/dog.png)\nleft: LoRA, right: SVDiff\n\n\nCompared with LoRA, the number of trainable parameters is 0.6 M less parameters and the file size is only <1MB (LoRA: 3.1MB)!!\n\n![kumamon](assets/kumamon.png)\n\n## Installation \n```bash\n$ git clone https://github.com/mkshing/svdiff-pytorch\n$ pip install -r requirements.txt\n```\n\n## Training\nThe following example script is for \"Single-Subject Generation\", which is a domain-tuning on a single object or concept (using 3-5 images). (See Section 4.1)\n\nAccording to the paper, the learning rate for SVDiff needs to be 1000 times larger than the lr used for fine-tuning. \n\n```bash\nexport MODEL_NAME=\"runwayml/stable-diffusion-v1-5\"\nexport INSTANCE_DIR=\"path-to-instance-images\"\nexport CLASS_DIR=\"path-to-class-images\"\nexport OUTPUT_DIR=\"path-to-save-model\"\n\naccelerate launch train_svdiff.py \\\n  --pretrained_model_name_or_path=$MODEL_NAME  \\\n  --instance_data_dir=$INSTANCE_DIR \\\n  --class_data_dir=$CLASS_DIR \\\n  --output_dir=$OUTPUT_DIR \\\n  --with_prior_preservation --prior_loss_weight=1.0 \\\n  --instance_prompt=\"photo of a sks dog\" \\\n  --class_prompt=\"photo of a dog\" \\\n  --resolution=512 \\\n  --train_batch_size=1 \\\n  --gradient_accumulation_steps=1 \\\n  --learning_rate=5e-3 \\\n  --lr_scheduler=\"constant\" \\\n  --lr_warmup_steps=0 \\\n  --num_class_images=200 \\\n  --max_train_steps=800\n```\n\n\n## Inference\n\n```python\nfrom diffusers import DiffusionPipeline, DPMSolverMultistepScheduler\nimport torch\n\nfrom svdiff_pytorch import load_unet_for_svdiff\n\npretrained_model_name_or_path = \"runwayml/stable-diffusion-v1-5\"\nspectral_shifts_ckpt = \"spectral_shifts.safetensors-path\"\nunet = load_unet_for_svdiff(pretrained_model_name_or_path, spectral_shifts_ckpt=spectral_shifts_ckpt, subfolder=\"unet\")\n# load pipe\npipe = StableDiffusionPipeline.from_pretrained(\n    pretrained_model_name_or_path,\n    unet=unet,\n)\npipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)\npipe.to(\"cuda\")\nimage = pipe(\"A picture of a sks dog in a bucket\", num_inference_steps=25).images[0]\n```\n\nYou can use the following CLI too! Once it's done, you will see `grid.png` for the result.\n\n```bash\npython inference.py \\\n  --pretrained_model_name_or_path=\"runwayml/stable-diffusion-v1-5\"  \\\n  --spectral_shifts_ckpt=\"spectral_shifts.safetensors-path\"  \\\n  --prompt=\"A picture of a sks dog in a bucket\"  \\\n  --scheduler_type=\"dpm_solver++\"  \\\n  --num_inference_steps=25  \\\n  --num_images_per_prompt=2 \n```\n\n## Additional Features\n### Spectral Shift Scaling\n\n![scale](assets/scale.png)\n\nYou can adjust the strength of the weights by `--spectral_shifts_scale`\n\nHere's a result for 0.8, 1.0, 1.2 (1.0 is the default).\n![scale-result](assets/scale-result.png)\n\n\n### Fast prior generation by using ToMe\nBy using [ToMe for SD](https://github.com/dbolya/tomesd), the prior generation can be faster! \n```\n$ pip install tomesd\n```\nAnd, add `--enable_tome_merging` to your training arguments!\n\n## Citation\n\n```bibtex\n@misc{https://doi.org/10.48550/arXiv.2303.11305,\n      title         = {SVDiff: Compact Parameter Space for Diffusion Fine-Tuning}, \n      author        = {Ligong Han and Yinxiao Li and Han Zhang and Peyman Milanfar and Dimitris Metaxas and Feng Yang},\n      year          = {2023},\n      eprint        = {2303.11305},\n      archivePrefix = {arXiv},\n      primaryClass  = {cs.CV},\n      url           = {https://arxiv.org/abs/2303.11305}\n}\n```\n\n```bibtex\n@misc{hu2021lora,\n      title         = {LoRA: Low-Rank Adaptation of Large Language Models},\n      author        = {Hu, Edward and Shen, Yelong and Wallis, Phil and Allen-Zhu, Zeyuan and Li, Yuanzhi and Wang, Lu and Chen, Weizhu},\n      year          = {2021},\n      eprint        = {2106.09685},\n      archivePrefix = {arXiv},\n      primaryClass  = {cs.CL}\n}\n```\n\n```bibtex\n@article{bolya2023tomesd,\n      title   = {Token Merging for Fast Stable Diffusion},\n      author  = {Bolya, Daniel and Hoffman, Judy},\n      journal = {arXiv},\n      url     = {https://arxiv.org/abs/2303.17604},\n      year    = {2023}\n}\n```\n\n## Reference\n- [DreamBooth in diffusers](https://github.com/huggingface/diffusers/tree/main/examples/dreambooth)\n- [DreamBooth in ShivamShrirao](https://github.com/ShivamShrirao/diffusers/tree/main/examples/dreambooth)\n- [Data from custom-diffusion](https://github.com/adobe-research/custom-diffusion#getting-started) \n\n## TODO\n- [x] Training\n- [x] Inference\n- [x] Scaling spectral shifts\n- [ ] Support multiple spectral shifts (Section 3.2)\n- [ ] Cut-Mix-Unmix (Section 3.3)\n- [ ] SVDiff + LoRA\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/mkshing/svdiff-pytorch",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "svdiff-pytorch",
+            "package_url": "https://pypi.org/project/svdiff-pytorch/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/svdiff-pytorch/",
+            "project_urls": {
+                "Homepage": "https://github.com/mkshing/svdiff-pytorch"
+            },
+            "release_url": "https://pypi.org/project/svdiff-pytorch/0.1.0/",
+            "requires_dist": [
+                "diffusers (==0.14.0)",
+                "accelerate",
+                "torchvision",
+                "safetensors",
+                "transformers (>=4.25.1)",
+                "ftfy",
+                "tensorboard",
+                "Jinja2",
+                "einops",
+                "wandb"
+            ],
+            "requires_python": "",
+            "summary": "Implementation of 'SVDiff: Compact Parameter Space for Diffusion Fine-Tuning'",
+            "version": "0.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17628500,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "819631e361b25ca99a66c11867277a15addbe53bd0393e0d978715a2ff6bd15f",
+                    "md5": "93c21e25f5501d7b2aabcc098d9c9577",
+                    "sha256": "0cf3ca7e345fd1bd81b7ba59f2451b3aa27bd5d63fd8b941012bdc3e984c877e"
+                },
+                "downloads": -1,
+                "filename": "svdiff_pytorch-0.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "93c21e25f5501d7b2aabcc098d9c9577",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 48921,
+                "upload_time": "2023-04-08T08:23:10",
+                "upload_time_iso_8601": "2023-04-08T08:23:10.854430Z",
+                "url": "https://files.pythonhosted.org/packages/81/96/31e361b25ca99a66c11867277a15addbe53bd0393e0d978715a2ff6bd15f/svdiff_pytorch-0.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "fcb0e5f9296b0ae9d85911822822c4423c31336d1b20f2bfd10aac7ffae8e41e",
+                    "md5": "7f3532dba140a27a2b56bb272038a9bd",
+                    "sha256": "acebb8055e8f456610191b02805358cd1528107efc082891b356d2823655fc3c"
+                },
+                "downloads": -1,
+                "filename": "svdiff-pytorch-0.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "7f3532dba140a27a2b56bb272038a9bd",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 43587,
+                "upload_time": "2023-04-08T08:23:12",
+                "upload_time_iso_8601": "2023-04-08T08:23:12.701620Z",
+                "url": "https://files.pythonhosted.org/packages/fc/b0/e5f9296b0ae9d85911822822c4423c31336d1b20f2bfd10aac7ffae8e41e/svdiff-pytorch-0.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
