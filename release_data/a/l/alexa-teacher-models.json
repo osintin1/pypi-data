@@ -1,0 +1,113 @@
+{
+    "1.0.1": {
+        "info": {
+            "author": "amazon-alexa",
+            "author_email": "ssoltan@amazon.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "Environment :: Console",
+                "Intended Audience :: Developers",
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: Apache Software License",
+                "Natural Language :: English",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Scientific/Engineering :: Artificial Intelligence"
+            ],
+            "description": "# Alexa Teacher Models\n\nThis is the official Alexa Teacher Model program github page.\n\n## AlexaTM 20B\n\nAlexaTM 20B is a 20B-Parameter sequence-to-sequence transformer model created by the Alexa Teacher Model (AlexaTM) team at Amazon. The model was trained on a mixture of Common Crawl (mC4) and Wikipedia data across 12 languages using denoising and Causal Language Modeling (CLM) tasks.\n\nAlexaTM 20B can be used for in-context learning. \"In-context learning,\" also known as \"prompting,\" refers to a method for using NLP models in which no fine tuning is required per task. Training examples are provided to the model only as part of the prompt given as inference input, a paradigm known as \"few-shot in-context learning.\" In some cases, the model can perform well without any training data at all, a paradigm known as \"zero-shot in-context learning.\"\n\nTo learn more about the model, please read the [Amazon Science blog post](https://www.amazon.science/blog/20b-parameter-alexa-model-sets-new-marks-in-few-shot-learning) and the [paper](https://arxiv.org/abs/2208.01448).\n\nThe model is currently available for noncommercial use via SageMaker JumpStart, as described in our [AWS blog post](https://aws.amazon.com/blogs/machine-learning/alexatm-20b-is-now-available-in-amazon-sagemaker-jumpstart/). The model can be accessed using the following steps:\n\n1. [Create](https://aws.amazon.com/premiumsupport/knowledge-center/create-and-activate-aws-account/) an AWS account if needed.\n1. In your AWS account, search for `SageMaker` in the search bar and click on it.\n1. Once in the SageMaker experience, create a [domain](https://docs.aws.amazon.com/sagemaker/latest/dg/gs-studio-onboard.html) and a studio user if none yet exist. All of the default settings can be used.\n1. In the control panel, click `Launch app` next to the user you wish to use. Launch a studio instance.\n1. Once in the studio, there will be a launcher showing JumpStart as one of the tiles. Click `Go to SageMaker Jumpstart`. Alternatively, JumpStart can be accessed by 3-pointed orange symbol on the far left of the studio.\n1. Once in JumpStart, click the `Notebooks` button.\n1. Browse or search for our example notebook entitled `In-context learning with AlexaTM 20B`.\n1. There will be a button at the top to copy the read-only version into your studio.\n1. Ensure that your kernel has started, and run the notebook.\n\nNote: You can also find our example notebook [here](https://github.com/aws/amazon-sagemaker-examples/blob/main/introduction_to_amazon_algorithms/jumpstart_alexatm20b/Amazon_Jumpstart_AlexaTM_20B.ipynb)\n\n### Load the Model and Run Inference\n\n```python\nfrom alexa_teacher_models import AlexaTMTokenizerFast\ntokenizer = AlexaTMTokenizerFast.from_pretrained('/path/to/AlexaTM-20B-pr/')\n\n\n# Load the model\nfrom alexa_teacher_models import AlexaTMSeq2SeqForConditionalGeneration\nmodel = AlexaTMSeq2SeqForConditionalGeneration.from_pretrained('/path/to/AlexaTM-20B-pr/')\n```\n\nYou can also use the `AutoTokenizer` and `AutoModelForSeq2SeqLM` as you would in any other HuggingFace Transformer\nprogram by importing `alexa_teacher_models`:\n\n```python\nimport alexa_teacher_models\n...\ntokenizer = AutoTokenizer.from_pretrained('/path/to/AlexaTM-20B-pr/')\nmodel = AutoModelForSeq2SeqLM.from_pretrained('/path/to/AlexaTM-20B-pr/')\n\n```\n\nLoad the model on 4 gpus:\n\n```python\nmodel.bfloat16()\nmodel.parallelize(4)\n```\n\nRun the model in CLM mode:\n```python\n# qa\ntest = \"\"\"[CLM] Question: Who is the vocalist of coldplay? Answer:\"\"\"\nprint('Input:', test)\nencoded = tokenizer(test, return_tensors=\"pt\").to('cuda:0')\ngenerated_tokens = model.generate(input_ids=encoded['input_ids'],\n                                  max_length=32,\n                                  num_beams=1,\n                                  num_return_sequences=1,\n                                  early_stopping=True)\ntokenizer.batch_decode(generated_tokens, skip_special_tokens=True)[0]\n```\n\nRun the model in denoising mode:\n```python\n# denoising\ntest = \"we went to which is the capital of France\"\nprint('Input:', test)\nencoded = tokenizer(test, return_tensors=\"pt\").to('cuda:0')\ngenerated_tokens = model.generate(input_ids=encoded['input_ids'],\n                                  max_length=32,\n                                  num_beams=5,\n                                  num_return_sequences=5,\n                                  early_stopping=True)\ntokenizer.batch_decode(generated_tokens, skip_special_tokens=True)\n```\n\n## Running the repl example\n\nA sample Read Execute Print Loop (REPL) program is provided in the samples.  It can be used to interact with\nany AlexaTM model, and has a flexible set of command line arguments, including support for sampling and using multiple turns of history as context\n\n```\n$ pip install alexa_teacher_models[repl]\n$ python -m alexa_teacher_models.scripts.repl --model /path/to/AlexaTM-20B-pr/ --max_length 64\n$ python -m alexa_teacher_models.scripts.repl --model /path/to/AlexaTM-20B-pr/ --max_length 64 --do_sample --max_history 3 --join_string \" </s> \"\n\n```\n\n## Fine-tuning with DeepSpeed on a single P4\n\n*Note* We strongly recommend training on multiple instances.  For information on how to do this, see the section below\n\nTo run on a single P4 (8 GPUs), you will need to use CPU offload.  A deepspeed config is provided in the `scripts/deepspeed` directory.\nAssuming you have a training and validation JSONL formatted file, a run would look like this:\n```\n$ pip install alexa_teacher_models[ft]\n$ deepspeed --num_gpus 8 --module alexa_teacher_models.scripts.finetune --per_device_train_batch_size $BS \\\n    --deepspeed deepspeed/zero3-offload.json \\\n    --model_name_or_path /home/ubuntu/AlexaTM/ --max_length 512 --bf16 --output_dir output \\\n    --max_target_length 64 --do_train --learning_rate 1e-7 \\\n    --train_file train.json --validation_file valid.json \\\n    --num_train_epochs 1 --save_steps 1000\n\n\n```\n\n## Fine-tuning with DeepSpeed on multiple machines\n\nThere is a [detailed tutorial](docs/EFA.md) demonstrating how to fine-tune 20B across multiple machines in EC2 using [Elastic Fabric Adapter (EFA)](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/efa.html).\n\n## Citation\nIf you use AlexaTM 20B, please use the following BibTeX entry.\n\n```\n@article{soltan2022alexatm,\n  title={AlexaTM 20B: Few-Shot Learning Using a Large-Scale Multilingual Seq2seq Model},\n  author={Saleh Soltan, Shankar Ananthakrishnan, Jack FitzGerald, Rahul Gupta, Wael Hamza, Haidar Khan, Charith Peris, Stephen Rawls, Andy Rosenbaum, Anna Rumshisky, Chandana Satya Prakash, Mukund Sridhar, Fabian Triefenbach, Apurv Verma, Gokhan Tur, Prem Natarajan},\n  year={2022}\n}\n```\n\n\n## Security\n\nSee [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.\n\n## License\nThe code in this package is subject to [License](LICENSE). However, \nthe model weights are subject to [Model License](MODEL_LICENSE.md).\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/alexa/alexa-teacher-models",
+            "keywords": "deep-learning,nlp,pytorch,llm",
+            "license": "Apache 2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "alexa-teacher-models",
+            "package_url": "https://pypi.org/project/alexa-teacher-models/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/alexa-teacher-models/",
+            "project_urls": {
+                "Homepage": "https://github.com/alexa/alexa-teacher-models"
+            },
+            "release_url": "https://pypi.org/project/alexa-teacher-models/1.0.1/",
+            "requires_dist": [
+                "numpy",
+                "transformers",
+                "sentencepiece (>=0.1.95)",
+                "torch (<2.0,>=1.7)",
+                "protobuf (<3.21.0)",
+                "datasets ; extra == 'ft'",
+                "evaluate ; extra == 'ft'",
+                "deepspeed ; extra == 'ft'",
+                "accelerate ; extra == 'ft'",
+                "sacrebleu ; extra == 'ft'",
+                "tensorboard ; extra == 'ft'",
+                "prompt-toolkit ; extra == 'repl'",
+                "nltk ; extra == 'sum'",
+                "rouge-score (>=0.1.2) ; extra == 'sum'",
+                "pytest ; extra == 'test'"
+            ],
+            "requires_python": "",
+            "summary": "Alexa Teacher Models",
+            "version": "1.0.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17633849,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "b43ad9717dd07e1b0993076561dd4a18f8c31fbc4cd9268231ec03d9ec39c747",
+                    "md5": "9baf02b9ec113dd5a4499bdf2692a334",
+                    "sha256": "78a2f9bad296ccc00fac9086709b6ca5900a1035d5e53642a146016ccd36126c"
+                },
+                "downloads": -1,
+                "filename": "alexa_teacher_models-1.0.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "9baf02b9ec113dd5a4499bdf2692a334",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 52193,
+                "upload_time": "2023-04-09T01:56:53",
+                "upload_time_iso_8601": "2023-04-09T01:56:53.575829Z",
+                "url": "https://files.pythonhosted.org/packages/b4/3a/d9717dd07e1b0993076561dd4a18f8c31fbc4cd9268231ec03d9ec39c747/alexa_teacher_models-1.0.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "97b674c0126fb5b2e153476f557d0842cac9ff08aa7f3c4f5a4a02bcb74fefff",
+                    "md5": "60bc6b873dcbc7105d87f13793d1a8c7",
+                    "sha256": "dea1f5fb6b3c8178ec9e2adaab785dd98e7804ad1eab2f041222a57f7e7530d6"
+                },
+                "downloads": -1,
+                "filename": "alexa_teacher_models-1.0.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "60bc6b873dcbc7105d87f13793d1a8c7",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 46517,
+                "upload_time": "2023-04-09T01:56:55",
+                "upload_time_iso_8601": "2023-04-09T01:56:55.302612Z",
+                "url": "https://files.pythonhosted.org/packages/97/b6/74c0126fb5b2e153476f557d0842cac9ff08aa7f3c4f5a4a02bcb74fefff/alexa_teacher_models-1.0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
