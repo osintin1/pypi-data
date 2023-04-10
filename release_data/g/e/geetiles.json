@@ -33,7 +33,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17388809,
+        "last_serial": 17638802,
         "urls": [
             {
                 "comment_text": "",
@@ -93,7 +93,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17388809,
+        "last_serial": 17638802,
         "urls": [
             {
                 "comment_text": "",
@@ -125,7 +125,6 @@
             "author_email": "raul.ramos@udea.edu.co",
             "bugtrack_url": null,
             "classifiers": [],
-            "description": "# geetiles\n\n## download Google Earth Engine datasets to tiles as geotiff arrays\n\nUses the [Google Earth Engine High Volume Endpoint](https://developers.google.com/earth-engine/cloud/highvolume) which, according to the documentation:\n\n> This service is designed to support a much larger number of simultaneous requests per user, but provides less caching, so it's best for small queries that don't involve any sort of aggregation (like fetching tiles from pre-built images).\n\ninstall with\n\n    pip install geetiles\n\n\n### 1. create grid on a given area of interest as wkt\n\n\n    geet grid --aoi_wkt_file luxembourg.wkt  --chip_size_meters 1000 --aoi_name lux --dest_dir .\n\nyou can find the file `luxembourg.wkt` under `data`. Usually you would have to provide your own with your area of interest, with coordinates expressed in WSG84 degrees lon/lat.\n\nthis generates file `./lux_partitions_aschips_14c55eb7d417f.geojson`. Use a tool such as [QGIS](https://qgis.org/) to view it.\n\n<center><img src='imgs/luxgrid.png' width=800></center>\n\n\n### 2. download tiles\n\n    geet download --tiles_file lux_partitions_aschips_14c55eb7d417f.geojson  --gee_image_pycode sentinel2-rgb-median-2020 --pixels_lonlat [100,100] --skip_if_exists\n\n\nthis fills the folder `lux_partitions_aschips_14c55eb7d417f/sentinel2-rgb-median-2020` with RGB geotiff images of size 100x100 pixels.\n\nIf using `sentinel2-rgb-median-2020` as `gee_image_pycode`, which is an alias to [Sentinel-2 MSI Level 2-A](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR) GEE dataset, taking the median of the cloudless chips over the year 2020.\n\n<center><img src='imgs/sentinel2.png' width=800></center>\n\nIf using `esa-world-cover` as `gee_image_pycode`, which is an alias to [ESA WorldCover 10m v100](https://developers.google.com/earth-engine/datasets/catalog/ESA_WorldCover_v100) GEE dataset.\n\n<center><img src='imgs/landcover.png' width=800></center>\n\n\n## Other usages\n\n### Other ways to create the set of tiles (shapes) \n\n- As random partitions with at most 5km size length (figure below left).\n\n\n      geet random --aoi_wkt_file luxembourg.wkt  --max_rectangle_size_meters 20000 --aoi_name lux --dest_dir .\n\n\n- Using the reference administrative divisions at [EU Eurostat](https://ec.europa.eu/eurostat/web/gisco/geodata/reference-data/administrative-units-statistical-units/countries) (figure below right)\n\n      geet select --orig_shapefile COMM_RG_01M_2016_4326.zip --aoi_wkt_file luxembourg.wkt --tiles_name communes --aoi_name lux --dest_dir .\n\n<center><img src='imgs/luxembourg-communes-random5k.png' width=600></center>\n\n\n### Using your own code to define the GEE source image object.\n\n    geet download --tiles_file lux_partitions_aschips_14c55eb7d417f.geojson  --gee_image_pycode crops.py --dataset_name crop --pixels_lonlat [100,100] --skip_if_exists --skip_confirm --n_processes 20\n\nassuming the file `crops.py` contains the following code\n\n        import ee\n\n        def get_ee_image():\n            return ee.Image('USGS/GFSAD1000_V1')\\\n                     .select('landcover')\\\n                     .visualize(min=0.0, max=5.0,\n                                palette = ['black', 'orange', 'brown', \n                                           '02a50f', 'green', 'yellow'])\n\n        def get_dataset_name():\n            return 'crops'\n\n\nThe `crops.py` will be saved under the destination folder for reference. The destination folder is created alongside the `tiles-file`.\n\n### Split geometries in train, test, val using geographic bands\n\nWith a certain angle\n\n    geet split --tiles_file lux_partitions_aschips_14c55eb7d417f.geojson --nbands 8 --train_pct .5 --test_pct 0.3 --val_pct 0.2  --angle 0.78\n\nKeeping chips within the same coarser geometry in the same split. In this case, the train/test/val proportions may vary from the ones specified as chips will be distributed across the coarser geometries. First we must intersect the geometries\n\n    geet intersect --tiles_file lux_partitions_aschips_14c55eb7d417f.geojson --foreign_tiles_file lux_partitions_communes_1a471c686e053.geojson\n\nand then, do the split\n\n    geet split --tiles_file lux_partitions_aschips_14c55eb7d417f.geojson --nbands 8 --train_pct .5 --test_pct 0.3 --val_pct 0.2  --angle 0.785 --foreign_tiles_name communes\n\nhere is how it would result.\n<center>\n<img src='imgs/luxembourg-splits.png' width=600>\n</center>\n\n### Computing label proportions\n\nWith respect to a dataset downloaded with segmentation labels.\n\n    geet lp.compute --tiles_file lux_partitions_aschips_14c55eb7d417f.geojson --dataset_name esa-world-cover\n\nWe can also add the label proportions of the coarser tile in which each chip is embedded. First, we need to download the labels for each coarser tile from GEE.\n\n    geet download --tiles_file lux_partitions_communes_1a471c686e053.geojson  --gee_image_pycode esa-world-cover  --meters_per_pixel 20  --skip_if_exists \n\nthen, compute the label proportions at this coarser tiles:\n\n    geet lp.compute --tiles_file lux_partitions_communes_1a471c686e053.geojson --dataset_name esa-world-cover\n\nand then compute the label proportions from the coarser tiles.\n\n    geet lp.from_foreign --tiles_file lux_partitions_aschips_14c55eb7d417f.geojson --foreign_tiles_file lux_partitions_communes_1a471c686e053.geojson --dataset_name esa-world-cover\n\nThe resulting proportions are added in the corresponding `tiles_file`\n\n<img src='imgs/dataframe.png' width=800>\n\n\n### Creating a dataset to share it\n\nThis will create a zip file, with a pickle per chip containing a dictionary with the chip image, label and proportions.\n\n    geet zip.dataset --tiles_file lux_partitions_aschips_14c55eb7d417f.geojson --foreign_tiles_file lux_partitions_communes_1a471c686e053.geojson --images_dataset_name sentinel2-rgb-median-2020 --labels_dataset_name esa-world-cover --readme_file README.txt  --label_map [10,20,30,40,50,60,70,80,90,95,100]\n\n### Some notes\n\n- the hash codes in the name files are computed using the participating geometries. This ensures that changing geometries do not override each other(such as for random partitions, or a wkt with slightly different coordinates).\n- the splits are saved both as a column in the corresponding `tiles_file` (which is a `geojson`) and in a separte `csv` file. This is to enable fast loading from `csv` (as loading from `geojson` might take a while, especially for large dataset).\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -154,7 +153,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17388809,
+        "last_serial": 17638802,
         "urls": [
             {
                 "comment_text": "",
@@ -174,6 +173,67 @@
                 "upload_time": "2023-03-21T21:38:31",
                 "upload_time_iso_8601": "2023-03-21T21:38:31.163368Z",
                 "url": "https://files.pythonhosted.org/packages/cd/ed/74de33812e36ffec086f513734b43c95e60329b636276f53da80062cc031/geetiles-0.1.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.4": {
+        "info": {
+            "author": "raul ramos",
+            "author_email": "raul.ramos@udea.edu.co",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "# geetiles\n\n## download Google Earth Engine datasets to tiles as geotiff arrays\n\nUses the [Google Earth Engine High Volume Endpoint](https://developers.google.com/earth-engine/cloud/highvolume) which, according to the documentation:\n\n> This service is designed to support a much larger number of simultaneous requests per user, but provides less caching, so it's best for small queries that don't involve any sort of aggregation (like fetching tiles from pre-built images).\n\ninstall with\n\n    pip install geetiles\n\n\n### 1. create grid on a given area of interest as wkt\n\n\n    geet grid --aoi_wkt_file luxembourg.wkt  --chip_size_meters 1000 --aoi_name lux --dest_dir .\n\nyou can find the file `luxembourg.wkt` under `data`. Usually you would have to provide your own with your area of interest, with coordinates expressed in WSG84 degrees lon/lat.\n\nthis generates file `./lux_partitions_aschips_14c55eb7d417f.geojson`. Use a tool such as [QGIS](https://qgis.org/) to view it.\n\n<center><img src='imgs/luxgrid.png' width=800></center>\n\n\n### 2. download tiles\n\n    geet download --tiles_file lux_partitions_aschips_14c55eb7d417f.geojson  --dataset_def sentinel2-rgb-median-2020 --pixels_lonlat [100,100] --skip_if_exists\n\n\nthis fills the folder `lux_partitions_aschips_14c55eb7d417f/sentinel2-rgb-median-2020` with RGB geotiff images of size 100x100 pixels.\n\nIf using `sentinel2-rgb-median-2020` as `dataset_def`, which is an alias to [Sentinel-2 MSI Level 2-A](https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR) GEE dataset, taking the median of the cloudless chips over the year 2020.\n\n<center><img src='imgs/sentinel2.png' width=800></center>\n\nIf using `esa-world-cover` as `dataset_def`, which is an alias to [ESA WorldCover 10m v100](https://developers.google.com/earth-engine/datasets/catalog/ESA_WorldCover_v100) GEE dataset.\n\n<center><img src='imgs/landcover.png' width=800></center>\n\n\n## Other usages\n\n### Other ways to create the set of tiles (shapes) \n\n- As random partitions with at most 5km size length (figure below left).\n\n\n      geet random --aoi_wkt_file luxembourg.wkt  --max_rectangle_size_meters 20000 --aoi_name lux --dest_dir .\n\n\n- Using the reference administrative divisions at [EU Eurostat](https://ec.europa.eu/eurostat/web/gisco/geodata/reference-data/administrative-units-statistical-units/countries) (figure below right)\n\n      geet select --orig_shapefile COMM_RG_01M_2016_4326.zip --aoi_wkt_file luxembourg.wkt --tiles_name communes --aoi_name lux --dest_dir .\n\n<center><img src='imgs/luxembourg-communes-random5k.png' width=600></center>\n\n\n### Using your own code to define the GEE source image object.\n\n    geet download --tiles_file lux_partitions_aschips_14c55eb7d417f.geojson  --dataset_def crops.py --pixels_lonlat [100,100] --skip_if_exists --skip_confirm --n_processes 20\n\nwhere `crops.py` contains a python `class DatasetDefinition` following the structure of the predefined ones under `defs`.  The files `crops.py` will be saved under the destination folder for reference. The destination folder is created alongside the `tiles_file`.\n\n### Split geometries in train, test, val using geographic bands\n\nWith a certain angle\n\n    geet split --tiles_file lux_partitions_aschips_14c55eb7d417f.geojson --nbands 8 --train_pct .5 --test_pct 0.3 --val_pct 0.2  --angle 0.78\n\nKeeping chips within the same coarser geometry in the same split. In this case, the train/test/val proportions may vary from the ones specified as chips will be distributed across the coarser geometries. First we must intersect the geometries\n\n    geet intersect --tiles_file lux_partitions_aschips_14c55eb7d417f.geojson --foreign_tiles_file lux_partitions_communes_1a471c686e053.geojson\n\nand then, do the split\n\n    geet split --tiles_file lux_partitions_aschips_14c55eb7d417f.geojson --nbands 8 --train_pct .5 --test_pct 0.3 --val_pct 0.2  --angle 0.785 --foreign_tiles_name communes\n\nhere is how it would result.\n<center>\n<img src='imgs/luxembourg-splits.png' width=600>\n</center>\n\n### Computing label proportions\n\nWith respect to a dataset downloaded with segmentation labels.\n\n    geet lp.compute --tiles_file lux_partitions_aschips_14c55eb7d417f.geojson --dataset_name esa-world-cover\n\nWe can also add the label proportions of the coarser tile in which each chip is embedded. First, we need to download the labels for each coarser tile from GEE.\n\n    geet download --tiles_file lux_partitions_communes_1a471c686e053.geojson  --dataset_def esa-world-cover  --meters_per_pixel 20  --skip_if_exists \n\nthen, compute the label proportions at this coarser tiles:\n\n    geet lp.compute --tiles_file lux_partitions_communes_1a471c686e053.geojson --dataset_name esa-world-cover\n\nand then compute the label proportions from the coarser tiles.\n\n    geet lp.from_foreign --tiles_file lux_partitions_aschips_14c55eb7d417f.geojson --foreign_tiles_file lux_partitions_communes_1a471c686e053.geojson --dataset_name esa-world-cover\n\nThe resulting proportions are added in the corresponding `tiles_file`\n\n<img src='imgs/dataframe.png' width=800>\n\n\n### Creating a dataset to share it\n\nThis will create a zip file, with a pickle per chip containing a dictionary with the chip image, label and proportions.\n\n    geet zip.dataset --tiles_file lux_partitions_aschips_14c55eb7d417f.geojson --foreign_tiles_file lux_partitions_communes_1a471c686e053.geojson --images_dataset_def sentinel2-rgb-median-2020 --labels_dataset_def esa-world-cover --readme_file README.txt\n\n### Some notes\n\n- the hash codes in the name files are computed using the participating geometries. This ensures that changing geometries do not override each other(such as for random partitions, or a wkt with slightly different coordinates).\n- the splits are saved both as a column in the corresponding `tiles_file` (which is a `geojson`) and in a separte `csv` file. This is to enable fast loading from `csv` (as loading from `geojson` might take a while, especially for large dataset).\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/rramosp/geetiles",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "geetiles",
+            "package_url": "https://pypi.org/project/geetiles/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/geetiles/",
+            "project_urls": {
+                "Homepage": "https://github.com/rramosp/geetiles"
+            },
+            "release_url": "https://pypi.org/project/geetiles/0.1.4/",
+            "requires_dist": null,
+            "requires_python": "",
+            "summary": "download Google Earth Engine datasets to tiles as geotiff arrays",
+            "version": "0.1.4",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17638802,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6265c03bbe4dc74ed544334e2b88b029f143e6a5d3788f43e1db0cf4081c07d0",
+                    "md5": "1d73911fe693517f76fc590a316c855f",
+                    "sha256": "06f5f9497d4b44578a7a32babd8f48818883ec668a642ff735a1f871a5db6006"
+                },
+                "downloads": -1,
+                "filename": "geetiles-0.1.4.tar.gz",
+                "has_sig": false,
+                "md5_digest": "1d73911fe693517f76fc590a316c855f",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 8696665,
+                "upload_time": "2023-04-09T18:48:33",
+                "upload_time_iso_8601": "2023-04-09T18:48:33.645473Z",
+                "url": "https://files.pythonhosted.org/packages/62/65/c03bbe4dc74ed544334e2b88b029f143e6a5d3788f43e1db0cf4081c07d0/geetiles-0.1.4.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
