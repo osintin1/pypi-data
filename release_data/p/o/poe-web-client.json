@@ -41,7 +41,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17633305,
+        "last_serial": 17645594,
         "urls": [
             {
                 "comment_text": "",
@@ -98,7 +98,6 @@
                 "Operating System :: OS Independent",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "# Python Poe API\n\n[![PyPi Version](https://img.shields.io/pypi/v/poe-api.svg)](https://pypi.org/project/poe-api/)\n\nThis is a reverse engineered API wrapper for Quora's Poe, which allows you free access to OpenAI's ChatGPT and GPT-4, as well as Antropic's Claude.\n\n## Table of Contents:\n- [Features](#features)\n- [Installation](#installation)\n- [Documentation](#documentation)\n  * [Finding Your Token](#finding-your-token)\n  * [Using the Client](#using-the-client)\n    + [Downloading the Available Bots](#downloading-the-available-bots)\n    + [Sending Messages](#sending-messages)\n    + [Clearing the Conversation Context](#clearing-the-conversation-context)\n    + [Downloading Conversation History](#downloading-conversation-history)\n    + [Deleting Messages](#deleting-messages)\n    + [Purging a Conversation](#purging-a-conversation)\n  * [Misc](#misc)\n    + [Changing the Logging Level](#changing-the-logging-level)\n    + [Setting a Custom User-Agent](#setting-a-custom-user-agent)\n- [Copyright](#copyright)\n  * [Copyright Notice](#copyright-notice)\n\n*Table of contents generated with [markdown-toc](http://ecotrust-canada.github.io/markdown-toc).*\n\n## Features:\n - Log in with token\n - Proxy requests + websocket\n - Download bot list\n - Send messages\n - Stream bot responses\n - Clear conversation context\n - Download conversation history\n - Delete messages\n - Purge an entire conversation\n\n## Installation:\nYou can install this library by running the following command:\n```\npip3 install poe-api\n```\n\n## Documentation:\nExamples can be found in the `/examples` directory. To run these examples, pass in your token as a command-line argument.\n```\npython3 examples/temporary_message.py \"TOKEN_HERE\"\n```\n\n### Finding Your Token:\nLog into [Poe](https://poe.com) on any web browser, then open your browser's developer tools (also known as \"inspect\") and look for the value of the `p-b` cookie in the following menus:\n - Chromium: Devtools > Application > Cookies > poe.com\n - Firefox: Devtools > Storage > Cookies\n - Safari: Devtools > Storage > Cookies\n\n### Using the Client:\nTo use this library, simply import `poe` and create a `poe.Client` instance. The Client class accepts the following arguments:\n - `token` - The token to use. \n - `proxy = None` - The proxy to use, in the format `protocol://host:port`. The socks5/socks4 protocol is reccommended.\n\nRegular Example:\n```python\nimport poe\nclient = poe.Client(\"TOKEN_HERE\")\n```\n\nProxied Example:\n```python\nimport poe\nclient = poe.Client(\"TOKEN_HERE\", proxy=\"socks5://178.62.100.151:59166\")\n```\n\nNote that the following examples assume `client` is the name of your `poe.Client` instance. If the token is invalid, a RuntimeError will be raised.\n\n#### Downloading the Available Bots:\nThe client downloads all of the available bots upon initialization and stores them within `client.bots`. A dictionary that maps bot codenames to their display names can be found at `client.bot_names`. If you want to refresh these values, you can call `client.get_bots`.\n\n```python\nprint(client.bot_names)\n#{'capybara': 'Sage', 'beaver': 'GPT-4', 'a2_2': 'Claude+', 'a2': 'Claude', 'chinchilla': 'ChatGPT', 'nutria': 'Dragonfly'}\n```\n\nNote that, on free accounts, Claude+ (a2_2) has a limit of 3 messages per day and GPT-4 (beaver) has a limit of 1 message per day. For all the other chatbots, there doesn't seem to be any rate limit. \n\n#### Sending Messages:\nYou can use the `client.send_message` function to send a message to a chatbot, which accepts the following arguments:\n - `chatbot` - The codename of the chatbot. (example: `capybara`)\n - `message` - The message to send to the chatbot.\n - `with_chat_break = False` - Whether the conversation context should be cleared.\n - `timeout = 20` - The max number of seconds in between recieved chunks until a `RuntimeError` is raised. \n\nThe function is a generator which returns the most recent version of the generated message whenever it is updated.\n\nStreamed Example:\n```python\nmessage = \"Summarize the GNU GPL v3\"\nfor chunk in client.send_message(\"capybara\", message):\n  print(chunk[\"text_new\"], end=\"\", flush=True)\n```\n\nNon-Streamed Example:\n```python\nmessage = \"Summarize the GNU GPL v3\"\nfor chunk in client.send_message(\"capybara\", message):\n  pass\nprint(chunk[\"text\"])\n```\n\nYou can also send multiple messages in parallel using `threading` and recieve their responses seperately, as demonstrated in `/examples/parallel_messages.py`. Note that if you send messages too fast, the server will give an error, but the request will eventually succeed.\n\n#### Clearing the Conversation Context:\nIf you want to clear the the context of a conversation without sending a message, you can use `client.send_chat_break`. The only argument is the codename of the bot whose context will be cleared.\n\n```python\nclient.send_chat_break(\"capybara\")\n```\nThe function returns the message which represents the chat break.\n\n#### Downloading Conversation History:\nTo download past messages in a conversation, use the `client.get_message_history` function, which accepts the following arguments:\n - `chatbot` - The codename of the chatbot.\n - `count = 25` - The number of messages to download.\n - `cursor = None` - The message ID to start at instead of the latest one.\n\nThe returned messages are ordered from oldest to newest. \n\n```python\nmessage_history = client.get_message_history(\"capybara\", count=10)\nprint(json.dumps(message_history, indent=2))\n\"\"\"\n[\n  {\n    \"node\": {\n      \"id\": \"TWVzc2FnZToxMDEwNzYyODU=\",\n      \"messageId\": 101076285,\n      \"creationTime\": 1679298157718888,\n      \"text\": \"\",\n      \"author\": \"chat_break\",\n      \"linkifiedText\": \"\",\n      \"state\": \"complete\",\n      \"suggestedReplies\": [],\n      \"vote\": null,\n      \"voteReason\": null,\n      \"__typename\": \"Message\"\n    },\n    \"cursor\": \"101076285\",\n    \"id\": \"TWVzc2FnZUVkZ2U6MTAxMDc2Mjg1OjEwMTA3NjI4NQ==\"\n  },\n  ...\n]\n\"\"\"\n```\n\n#### Deleting Messages:\nTo delete messages, use the `client.delete_message` function, which accepts a single argument. You can pass a single message ID into it to delete a single message, or you can pass a list of message IDs to delete multiple messages at once.\n\n```python\n#delete a single message\nclient.delete_message(96105719)\n\n#delete multiple messages at once\nclient.delete_message([96105719, 96097108, 96097078, 96084421, 96084402])\n```\n\n#### Purging a Conversation:\nTo purge an entire conversation, or just the last few messages, you can use the `client.purge_conversation` function. This function accepts the following arguments:\n - `chatbot` - The codename of the chatbot.\n - `count = -1` - The number of messages to be deleted, starting from the latest one. The default behavior is to delete every single message.\n\n```python\n#purge just the last 10 messages\nclient.purge_conversation(\"capybara\", count=10)\n\n#purge the entire conversation\nclient.purge_conversation(\"capybara\")\n```\n\n### Misc:\n#### Changing the Logging Level:\nIf you want to show debug messages, simply call `poe.logger.setLevel`.\n\n```python\nimport poe\nimport logging\npoe.logger.setLevel(logging.INFO)\n```\n\n#### Setting a Custom User-Agent:\nIf you want to change the user-agent that is being spoofed, set `poe.user_agent` after importing the library. \n\n```python\nimport poe\npoe.user_agent = \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36\"\n```\n\n## Copyright: \nThis program is licensed under the [GNU GPL v3](https://www.gnu.org/licenses/gpl-3.0.txt). All code, with the exception of the GraphQL queries, has been written by me, [ading2210](https://github.com/ading2210).\n\nMost of the GraphQL queries are taken from [muharamdani/poe](https://github.com/muharamdani/poe), which is licenced under the ISC License. \n\n### Copyright Notice:\n```\nading2210/poe-api: a reverse engineered Python API wrapepr for Quora's Poe\nCopyright (C) 2023 ading2210\n\nThis program is free software: you can redistribute it and/or modify\nit under the terms of the GNU General Public License as published by\nthe Free Software Foundation, either version 3 of the License, or\n(at your option) any later version.\n\nThis program is distributed in the hope that it will be useful,\nbut WITHOUT ANY WARRANTY; without even the implied warranty of\nMERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\nGNU General Public License for more details.\n\nYou should have received a copy of the GNU General Public License\nalong with this program.  If not, see <https://www.gnu.org/licenses/>.\n```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -131,7 +130,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17633305,
+        "last_serial": 17645594,
         "urls": [
             {
                 "comment_text": "",
@@ -172,6 +171,92 @@
                 "upload_time": "2023-04-09T00:21:46",
                 "upload_time_iso_8601": "2023-04-09T00:21:46.326893Z",
                 "url": "https://files.pythonhosted.org/packages/a3/9c/40b6084d048871e9faf01da82084120274e7dcb2d5c7441414c91ed802b1/poe-web-client-0.0.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.3": {
+        "info": {
+            "author": "libaiabcd",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: GNU General Public License (GPL)",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# Python Poe API\n\n[![PyPi Version](https://img.shields.io/pypi/v/poe-api.svg)](https://pypi.org/project/poe-api/)\n\nThis is a reverse engineered API wrapper for Quora's Poe, which allows you free access to OpenAI's ChatGPT and GPT-4, as well as Antropic's Claude.\n\n## Table of Contents:\n- [Features](#features)\n- [Installation](#installation)\n- [Documentation](#documentation)\n  * [Finding Your Token](#finding-your-token)\n  * [Using the Client](#using-the-client)\n    + [Downloading the Available Bots](#downloading-the-available-bots)\n    + [Sending Messages](#sending-messages)\n    + [Clearing the Conversation Context](#clearing-the-conversation-context)\n    + [Downloading Conversation History](#downloading-conversation-history)\n    + [Deleting Messages](#deleting-messages)\n    + [Purging a Conversation](#purging-a-conversation)\n  * [Misc](#misc)\n    + [Changing the Logging Level](#changing-the-logging-level)\n    + [Setting a Custom User-Agent](#setting-a-custom-user-agent)\n- [Copyright](#copyright)\n  * [Copyright Notice](#copyright-notice)\n\n*Table of contents generated with [markdown-toc](http://ecotrust-canada.github.io/markdown-toc).*\n\n## Features:\n - Log in with token\n - Proxy requests + websocket\n - Download bot list\n - Send messages\n - Stream bot responses\n - Clear conversation context\n - Download conversation history\n - Delete messages\n - Purge an entire conversation\n\n## Installation:\nYou can install this library by running the following command:\n```\npip3 install poe-api\n```\n\n## Documentation:\nExamples can be found in the `/examples` directory. To run these examples, pass in your token as a command-line argument.\n```\npython3 examples/temporary_message.py \"TOKEN_HERE\"\n```\n\n### Finding Your Token:\nLog into [Poe](https://poe.com) on any web browser, then open your browser's developer tools (also known as \"inspect\") and look for the value of the `p-b` cookie in the following menus:\n - Chromium: Devtools > Application > Cookies > poe.com\n - Firefox: Devtools > Storage > Cookies\n - Safari: Devtools > Storage > Cookies\n\n### Using the Client:\nTo use this library, simply import `poe` and create a `poe.Client` instance. The Client class accepts the following arguments:\n - `token` - The token to use. \n - `proxy = None` - The proxy to use, in the format `protocol://host:port`. The socks5/socks4 protocol is reccommended.\n\nRegular Example:\n```python\nimport poe\nclient = poe.Client(\"TOKEN_HERE\")\n```\n\nProxied Example:\n```python\nimport poe\nclient = poe.Client(\"TOKEN_HERE\", proxy=\"socks5://178.62.100.151:59166\")\n```\n\nNote that the following examples assume `client` is the name of your `poe.Client` instance. If the token is invalid, a RuntimeError will be raised.\n\n#### Downloading the Available Bots:\nThe client downloads all of the available bots upon initialization and stores them within `client.bots`. A dictionary that maps bot codenames to their display names can be found at `client.bot_names`. If you want to refresh these values, you can call `client.get_bots`.\n\n```python\nprint(client.bot_names)\n#{'capybara': 'Sage', 'beaver': 'GPT-4', 'a2_2': 'Claude+', 'a2': 'Claude', 'chinchilla': 'ChatGPT', 'nutria': 'Dragonfly'}\n```\n\nNote that, on free accounts, Claude+ (a2_2) has a limit of 3 messages per day and GPT-4 (beaver) has a limit of 1 message per day. For all the other chatbots, there doesn't seem to be any rate limit. \n\n#### Sending Messages:\nYou can use the `client.send_message` function to send a message to a chatbot, which accepts the following arguments:\n - `chatbot` - The codename of the chatbot. (example: `capybara`)\n - `message` - The message to send to the chatbot.\n - `with_chat_break = False` - Whether the conversation context should be cleared.\n - `timeout = 20` - The max number of seconds in between recieved chunks until a `RuntimeError` is raised. \n\nThe function is a generator which returns the most recent version of the generated message whenever it is updated.\n\nStreamed Example:\n```python\nmessage = \"Summarize the GNU GPL v3\"\nfor chunk in client.send_message(\"capybara\", message):\n  print(chunk[\"text_new\"], end=\"\", flush=True)\n```\n\nNon-Streamed Example:\n```python\nmessage = \"Summarize the GNU GPL v3\"\nfor chunk in client.send_message(\"capybara\", message):\n  pass\nprint(chunk[\"text\"])\n```\n\nYou can also send multiple messages in parallel using `threading` and recieve their responses seperately, as demonstrated in `/examples/parallel_messages.py`. Note that if you send messages too fast, the server will give an error, but the request will eventually succeed.\n\n#### Clearing the Conversation Context:\nIf you want to clear the the context of a conversation without sending a message, you can use `client.send_chat_break`. The only argument is the codename of the bot whose context will be cleared.\n\n```python\nclient.send_chat_break(\"capybara\")\n```\nThe function returns the message which represents the chat break.\n\n#### Downloading Conversation History:\nTo download past messages in a conversation, use the `client.get_message_history` function, which accepts the following arguments:\n - `chatbot` - The codename of the chatbot.\n - `count = 25` - The number of messages to download.\n - `cursor = None` - The message ID to start at instead of the latest one.\n\nThe returned messages are ordered from oldest to newest. \n\n```python\nmessage_history = client.get_message_history(\"capybara\", count=10)\nprint(json.dumps(message_history, indent=2))\n\"\"\"\n[\n  {\n    \"node\": {\n      \"id\": \"TWVzc2FnZToxMDEwNzYyODU=\",\n      \"messageId\": 101076285,\n      \"creationTime\": 1679298157718888,\n      \"text\": \"\",\n      \"author\": \"chat_break\",\n      \"linkifiedText\": \"\",\n      \"state\": \"complete\",\n      \"suggestedReplies\": [],\n      \"vote\": null,\n      \"voteReason\": null,\n      \"__typename\": \"Message\"\n    },\n    \"cursor\": \"101076285\",\n    \"id\": \"TWVzc2FnZUVkZ2U6MTAxMDc2Mjg1OjEwMTA3NjI4NQ==\"\n  },\n  ...\n]\n\"\"\"\n```\n\n#### Deleting Messages:\nTo delete messages, use the `client.delete_message` function, which accepts a single argument. You can pass a single message ID into it to delete a single message, or you can pass a list of message IDs to delete multiple messages at once.\n\n```python\n#delete a single message\nclient.delete_message(96105719)\n\n#delete multiple messages at once\nclient.delete_message([96105719, 96097108, 96097078, 96084421, 96084402])\n```\n\n#### Purging a Conversation:\nTo purge an entire conversation, or just the last few messages, you can use the `client.purge_conversation` function. This function accepts the following arguments:\n - `chatbot` - The codename of the chatbot.\n - `count = -1` - The number of messages to be deleted, starting from the latest one. The default behavior is to delete every single message.\n\n```python\n#purge just the last 10 messages\nclient.purge_conversation(\"capybara\", count=10)\n\n#purge the entire conversation\nclient.purge_conversation(\"capybara\")\n```\n\n### Misc:\n#### Changing the Logging Level:\nIf you want to show debug messages, simply call `poe.logger.setLevel`.\n\n```python\nimport poe\nimport logging\npoe.logger.setLevel(logging.INFO)\n```\n\n#### Setting a Custom User-Agent:\nIf you want to change the user-agent that is being spoofed, set `poe.user_agent` after importing the library. \n\n```python\nimport poe\npoe.user_agent = \"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36\"\n```\n\n## Copyright: \nThis program is licensed under the [GNU GPL v3](https://www.gnu.org/licenses/gpl-3.0.txt). All code, with the exception of the GraphQL queries, has been written by me, [ading2210](https://github.com/ading2210).\n\nMost of the GraphQL queries are taken from [muharamdani/poe](https://github.com/muharamdani/poe), which is licenced under the ISC License. \n\n### Copyright Notice:\n```\nading2210/poe-api: a reverse engineered Python API wrapepr for Quora's Poe\nCopyright (C) 2023 ading2210\n\nThis program is free software: you can redistribute it and/or modify\nit under the terms of the GNU General Public License as published by\nthe Free Software Foundation, either version 3 of the License, or\n(at your option) any later version.\n\nThis program is distributed in the hope that it will be useful,\nbut WITHOUT ANY WARRANTY; without even the implied warranty of\nMERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the\nGNU General Public License for more details.\n\nYou should have received a copy of the GNU General Public License\nalong with this program.  If not, see <https://www.gnu.org/licenses/>.\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/libaiabcd/poe-api",
+            "keywords": "",
+            "license": "GPLv3",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "poe-web-client",
+            "package_url": "https://pypi.org/project/poe-web-client/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/poe-web-client/",
+            "project_urls": {
+                "Homepage": "https://github.com/libaiabcd/poe-api"
+            },
+            "release_url": "https://pypi.org/project/poe-web-client/0.0.3/",
+            "requires_dist": null,
+            "requires_python": ">=3.7",
+            "summary": "A reverse engineered API wrapper for Quora's Poe,fork from https://github.com/ading2210/poe-api",
+            "version": "0.0.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17645594,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "022c96ec04b21ad1ac8f6d5c7432564766db9327181588ecf8e2d725d803a92e",
+                    "md5": "c5cc28136c664cf8c124fbc3aef2bce2",
+                    "sha256": "91cc9454915dc799a61d97780e54d58e0c16fa88d7db3badc6aace5c019f7bb0"
+                },
+                "downloads": -1,
+                "filename": "poe_web_client-0.0.3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "c5cc28136c664cf8c124fbc3aef2bce2",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 33087,
+                "upload_time": "2023-04-10T12:16:57",
+                "upload_time_iso_8601": "2023-04-10T12:16:57.178878Z",
+                "url": "https://files.pythonhosted.org/packages/02/2c/96ec04b21ad1ac8f6d5c7432564766db9327181588ecf8e2d725d803a92e/poe_web_client-0.0.3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "02d6dc661103b125d9abb538555d8318c77d4ac4e0593ea5902fb6a084d07060",
+                    "md5": "b312ebe0a6635dc3cecda95d09ba5e54",
+                    "sha256": "cf0edb44222f4936f4646fba723f340de7f9f382d7d2163d16a1f85f0273befa"
+                },
+                "downloads": -1,
+                "filename": "poe-web-client-0.0.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "b312ebe0a6635dc3cecda95d09ba5e54",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 28636,
+                "upload_time": "2023-04-10T12:16:14",
+                "upload_time_iso_8601": "2023-04-10T12:16:14.890272Z",
+                "url": "https://files.pythonhosted.org/packages/02/d6/dc661103b125d9abb538555d8318c77d4ac4e0593ea5902fb6a084d07060/poe-web-client-0.0.3.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

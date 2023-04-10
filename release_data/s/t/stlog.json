@@ -39,7 +39,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17635206,
+        "last_serial": 17645821,
         "urls": [
             {
                 "comment_text": "",
@@ -100,7 +100,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "\n<!-- WARNING: generated from README.md.j2, do not modify this file manually but modify README.md.j2 instead\n     and execute 'poetry run poe readme' to regenerate this README.md file -->\n\n# stlog\n\n[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/fabien-marty/stlog/lint.yaml)](https://github.com/fabien-marty/stlog/actions/workflows/lint.yaml)\n[![Codecov](https://img.shields.io/codecov/c/github/fabien-marty/stlog)](https://app.codecov.io/github/fabien-marty/stlog)\n[![pypi badge](https://img.shields.io/pypi/v/stlog?color=brightgreen)](https://pypi.org/project/stlog/)\n\n[Full documentation](https://fabien-marty.github.io/stlog/)\n\n<!--intro-start-->\n\n## What is it?\n\n**ST**andard **ST**ructured **LOG** (`stlog`) is Python 3.7+ [structured logging](#structured) library:\n\n- built on [standard python logging](https://docs.python.org/3/library/logging.html) and [contextvars](https://docs.python.org/3/library/contextvars.html)\n- very easy to configure with \"good/opinionated\" default values\n- which produces great output **for both humans and machines**\n- which believes in [Twelve-Factor App](https://12factor.net/) principles about config and logs\n- **dependency free** (but can use fancy stuff (colors, augmented traceback...) from [the rich library](https://github.com/Textualize/rich) *(if installed)*)\n\n## Features\n\n- **standard, standard, standard**: all stlog objects are built on [standard python logging](https://docs.python.org/3/library/logging.html) and are compatible with:\n    - other existing handlers, formatters...\n    - libraries which are using a standard logger *(and `stlog` can automatically reinject the global context in log records produced by these libraries)*\n- easy shorcuts to configure your logging\n- provides nice outputs **for humans AND for machines** *(you can produce both at the same time)*\n- structured with 4 levels of context you can choose or combine:\n    - a global one set by environment variables *(read at process start)*\n    - a kind of global one (thanks to [contextvars](https://docs.python.org/3/library/contextvars.html))\n    - a context linked to the logger object itself (defined during its building)\n    - a context linked to the log message itself\n- a lot of configuration you can do with environment variables (in the spirit of [Twelve-Factor App](https://12factor.net/) principles)\n\n## Non-Features\n\n- *\"A twelve-factor app never concerns itself with routing or storage of its output stream.\"*\n    - we are going to make an exception on this for log files *(see roadmap)*\n    - but we don't want to introduce complex/network outputs like syslog, elasticsearch, loki...\n- standard, standard, standard: we do not want to move away from [standard python logging](https://docs.python.org/3/library/logging.html) compatibility \n\n## <a name=\"structured\"></a> What is *structured logging*?\n\n> Structured logging is a technique used in software development to produce log messages that are more easily parsed and analyzed by machines. \n> Unlike traditional logging, which typically consists of free-form text messages, structured logging uses a well-defined format that includes\n> named fields with specific data types.\n> \n> The benefits of structured logging are many. By using a standard format, it becomes easier to automate the processing and analysis of logs.\n> This can help with tasks like troubleshooting issues, identifying patterns, and monitoring system performance. It can also make it easier\n> to integrate logs with other systems, such as monitoring and alerting tools.\n> \n> Some common formats for structured logging include JSON, XML, and key-value pairs. In each case, the format includes a set of fields that provide information about the log message, such as the severity level, timestamp, source of the message, and any relevant metadata.\n> \n> Structured logging is becoming increasingly popular as more developers recognize its benefits. Many logging frameworks and libraries now include support for structured logging, making it easier for developers to adopt the technique in their own projects.\n>\n> (thanks to ChatGPT)\n\n<!--intro-end-->\n\n## Quickstart\n\n<!--quickstart-start-->\n\n### Installation\n\n```\npip install stlog\n```\n\n### Basic usage\n\n```python\nfrom stlog import getLogger, setup\n\n# Set the logging default configuration (human output on stderr)\nsetup()\n\n# Get a logger\nlogger = getLogger(__name__)\nlogger.info(\"It works\", foo=\"bar\", x=123)\nlogger.critical(\"Houston, we have a problem!\")\n \n```\n\nOutput (without `rich` library installed):\n\n```\n2023-03-29T14:48:37Z __main__ [   INFO   ] It works {foo=bar x=123}\n2023-03-29T14:48:37Z __main__ [ CRITICAL ] Houston, we have a problem!\n \n```\n\nOutput (with `rich` library installed):\n\n![rich output](docs/python/qs1.svg)\n \n\n### Usage with context\n\n```python\nfrom stlog import LogContext, getLogger, setup\n\n# Set the logging default configuration (human output on stderr)\nsetup()\n\n# ...\n\n# Set the (kind of) global execution context\n# (thread, worker, async friendly: one context by execution)\n# (for example in a wsgi/asgi middleware)\n# Note: ExecutionContext is a static class, so a kind of global singleton\nLogContext.reset_context()\nLogContext.add(request_id=\"4c2383f5\")\nLogContext.add(client_id=456, http_method=\"GET\")\n\n# ... in another file/class/...\n\n# Get a logger\nlogger = getLogger(__name__)\nlogger.info(\"It works\", foo=\"bar\", x=123)\nlogger.critical(\"Houston, we have a problem!\")\n \n```\n\nOutput (without `rich` library installed):\n\n```\n2023-03-29T14:48:37Z __main__ [   INFO   ] It works {client_id=456 foo=bar http_method=GET request_id=4c2383f5 x=123}\n2023-03-29T14:48:37Z __main__ [ CRITICAL ] Houston, we have a problem! {client_id=456 http_method=GET request_id=4c2383f5}\n \n```\n\nOutput (with `rich` library installed):\n\n![rich output](docs/python/qs2.svg)\n \n\nWhat about if you want to get a more parsing friendly output (for example in JSON on `stdout`) while keeping the human output on `stderr` (without any context)?\n\n```python\nimport sys\nfrom stlog import LogContext, getLogger, setup\nfrom stlog.output import StreamOutput\nfrom stlog.formatter import HumanFormatter, JsonFormatter\n\nsetup(\n    outputs=[\n        StreamOutput(\n            stream=sys.stderr,\n            formatter=HumanFormatter(exclude_extras_keys_fnmatchs=[\"*\"]),\n        ),\n        StreamOutput(stream=sys.stdout, formatter=JsonFormatter(indent=4)),\n    ]\n)\n\n# See previous example for details\nLogContext.reset_context()\nLogContext.add(request_id=\"4c2383f5\")\nLogContext.add(client_id=456, http_method=\"GET\")\nlogger = getLogger(__name__)\nlogger.info(\"It works\", foo=\"bar\", x=123)\nlogger.critical(\"Houston, we have a problem!\")\n \n```\n\nHuman output (on `stderr`):\n\n```\n2023-03-29T14:48:37Z __main__ [   INFO   ] It works\n2023-03-29T14:48:37Z __main__ [ CRITICAL ] Houston, we have a problem!\n \n```\n\nJSON ouput (on `stdout`) for machines:\n\n```json\n{\n    \"client_id\": 456,\n    \"foo\": \"bar\",\n    \"http_method\": \"GET\",\n    \"logger\": {\n        \"name\": \"__main__\"\n    },\n    \"message\": \"It works\",\n    \"request_id\": \"4c2383f5\",\n    \"source\": {\n        \"funcName\": \"<module>\",\n        \"lineno\": 21,\n        \"module\": \"qs3\",\n        \"path\": \"/path/filename.py\",\n        \"process\": 6789,\n        \"processName\": \"MainProcess\",\n        \"thread\": 12345,\n        \"threadName\": \"MainThread\"\n    },\n    \"status\": \"info\",\n    \"timestamp\": \"2023-03-29T14:48:37Z\",\n    \"x\": 123\n}\n{\n    \"client_id\": 456,\n    \"http_method\": \"GET\",\n    \"logger\": {\n        \"name\": \"__main__\"\n    },\n    \"message\": \"Houston, we have a problem!\",\n    \"request_id\": \"4c2383f5\",\n    \"source\": {\n        \"funcName\": \"<module>\",\n        \"lineno\": 22,\n        \"module\": \"qs3\",\n        \"path\": \"/path/filename.py\",\n        \"process\": 6789,\n        \"processName\": \"MainProcess\",\n        \"thread\": 12345,\n        \"threadName\": \"MainThread\"\n    },\n    \"status\": \"critical\",\n    \"timestamp\": \"2023-03-29T14:48:37Z\"\n}\n \n```\n\n<!--quickstart-end-->\n\n## Roadmap\n\n- [ ] add `file` outputs\n- [ ] add a full `logfmt` formatter\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -127,7 +126,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17635206,
+        "last_serial": 17645821,
         "urls": [
             {
                 "comment_text": "",
@@ -168,6 +167,94 @@
                 "upload_time": "2023-04-09T08:01:01",
                 "upload_time_iso_8601": "2023-04-09T08:01:01.941658Z",
                 "url": "https://files.pythonhosted.org/packages/1b/4f/cd045c81ba462219f034ee716b509a8e5548c9fe331da37bf71efcb2ae43/stlog-0.0.5.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.7": {
+        "info": {
+            "author": "Fabien MARTY",
+            "author_email": "fabien.marty@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "\n<!-- WARNING: generated from README.md.j2, do not modify this file manually but modify README.md.j2 instead\n     and execute 'poetry run poe readme' to regenerate this README.md file -->\n\n# stlog\n\n[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/fabien-marty/stlog/lint.yaml)](https://github.com/fabien-marty/stlog/actions/workflows/lint.yaml)\n[![Codecov](https://img.shields.io/codecov/c/github/fabien-marty/stlog)](https://app.codecov.io/github/fabien-marty/stlog)\n[![pypi badge](https://img.shields.io/pypi/v/stlog?color=brightgreen)](https://pypi.org/project/stlog/)\n\n[Full documentation](https://fabien-marty.github.io/stlog/)\n\n<!--intro-start-->\n\n## What is it?\n\n**ST**andard **ST**ructured **LOG** (`stlog`) is Python 3.7+ [structured logging](#structured) library:\n\n- built on [standard python logging](https://docs.python.org/3/library/logging.html) and [contextvars](https://docs.python.org/3/library/contextvars.html)\n- very easy to configure with \"good/opinionated\" default values\n- which produces great output **for both humans and machines**\n- which believes in [Twelve-Factor App](https://12factor.net/) principles about config and logs\n- **dependency free** (but can use fancy stuff (colors, augmented traceback...) from [the rich library](https://github.com/Textualize/rich) *(if installed)*)\n\n## Features\n\n- **standard, standard, standard**: all stlog objects are built on [standard python logging](https://docs.python.org/3/library/logging.html) and are compatible with:\n    - other existing handlers, formatters...\n    - libraries which are using a standard logger *(and `stlog` can automatically reinject the global context in log records produced by these libraries)*\n- easy shorcuts to configure your logging\n- provides nice outputs **for humans AND for machines** *(you can produce both at the same time)*\n- structured with 4 levels of context you can choose or combine:\n    - a global one set by environment variables *(read at process start)*\n    - a kind of global one (thanks to [contextvars](https://docs.python.org/3/library/contextvars.html))\n    - a context linked to the logger object itself (defined during its building)\n    - a context linked to the log message itself\n- a lot of configuration you can do with environment variables (in the spirit of [Twelve-Factor App](https://12factor.net/) principles)\n\n## Non-Features\n\n- *\"A twelve-factor app never concerns itself with routing or storage of its output stream.\"*\n    - we are going to make an exception on this for log files *(see roadmap)*\n    - but we don't want to introduce complex/network outputs like syslog, elasticsearch, loki...\n- standard, standard, standard: we do not want to move away from [standard python logging](https://docs.python.org/3/library/logging.html) compatibility \n\n## <a name=\"structured\"></a> What is *structured logging*?\n\n> Structured logging is a technique used in software development to produce log messages that are more easily parsed and analyzed by machines. \n> Unlike traditional logging, which typically consists of free-form text messages, structured logging uses a well-defined format that includes\n> named fields with specific data types.\n> \n> The benefits of structured logging are many. By using a standard format, it becomes easier to automate the processing and analysis of logs.\n> This can help with tasks like troubleshooting issues, identifying patterns, and monitoring system performance. It can also make it easier\n> to integrate logs with other systems, such as monitoring and alerting tools.\n> \n> Some common formats for structured logging include JSON, XML, and key-value pairs. In each case, the format includes a set of fields that provide information about the log message, such as the severity level, timestamp, source of the message, and any relevant metadata.\n> \n> Structured logging is becoming increasingly popular as more developers recognize its benefits. Many logging frameworks and libraries now include support for structured logging, making it easier for developers to adopt the technique in their own projects.\n>\n> (thanks to ChatGPT)\n\n<!--intro-end-->\n\n## Quickstart\n\n<!--quickstart-start-->\n\n### Installation\n\n```\npip install stlog\n```\n\n### Basic usage\n\n```python\nfrom stlog import getLogger, setup\n\n# Set the logging default configuration (human output on stderr)\nsetup()\n\n# Get a logger\nlogger = getLogger(__name__)\nlogger.info(\"It works\", foo=\"bar\", x=123)\nlogger.critical(\"Houston, we have a problem!\")\n \n```\n\nOutput (without `rich` library installed):\n\n```\n2023-03-29T14:48:37Z __main__ [   INFO   ] It works {foo=bar x=123}\n2023-03-29T14:48:37Z __main__ [ CRITICAL ] Houston, we have a problem!\n \n```\n\nOutput (with `rich` library installed):\n\n![rich output](docs/python/qs1.svg)\n \n\n### Usage with context\n\n```python\nfrom stlog import LogContext, getLogger, setup\n\n# Set the logging default configuration (human output on stderr)\nsetup()\n\n# ...\n\n# Set the (kind of) global execution context\n# (thread, worker, async friendly: one context by execution)\n# (for example in a wsgi/asgi middleware)\n# Note: ExecutionContext is a static class, so a kind of global singleton\nLogContext.reset_context()\nLogContext.add(request_id=\"4c2383f5\")\nLogContext.add(client_id=456, http_method=\"GET\")\n\n# ... in another file/class/...\n\n# Get a logger\nlogger = getLogger(__name__)\nlogger.info(\"It works\", foo=\"bar\", x=123)\nlogger.critical(\"Houston, we have a problem!\")\n \n```\n\nOutput (without `rich` library installed):\n\n```\n2023-03-29T14:48:37Z __main__ [   INFO   ] It works {client_id=456 foo=bar http_method=GET request_id=4c2383f5 x=123}\n2023-03-29T14:48:37Z __main__ [ CRITICAL ] Houston, we have a problem! {client_id=456 http_method=GET request_id=4c2383f5}\n \n```\n\nOutput (with `rich` library installed):\n\n![rich output](docs/python/qs2.svg)\n \n\nWhat about if you want to get a more parsing friendly output (for example in JSON on `stdout`) while keeping the human output on `stderr` (without any context)?\n\n```python\nimport sys\nfrom stlog import LogContext, getLogger, setup\nfrom stlog.output import StreamOutput\nfrom stlog.formatter import HumanFormatter, JsonFormatter\n\nsetup(\n    outputs=[\n        StreamOutput(\n            stream=sys.stderr,\n            formatter=HumanFormatter(exclude_extras_keys_fnmatchs=[\"*\"]),\n        ),\n        StreamOutput(stream=sys.stdout, formatter=JsonFormatter(indent=4)),\n    ]\n)\n\n# See previous example for details\nLogContext.reset_context()\nLogContext.add(request_id=\"4c2383f5\")\nLogContext.add(client_id=456, http_method=\"GET\")\nlogger = getLogger(__name__)\nlogger.info(\"It works\", foo=\"bar\", x=123)\nlogger.critical(\"Houston, we have a problem!\")\n \n```\n\nHuman output (on `stderr`):\n\n```\n2023-03-29T14:48:37Z __main__ [   INFO   ] It works\n2023-03-29T14:48:37Z __main__ [ CRITICAL ] Houston, we have a problem!\n \n```\n\nJSON ouput (on `stdout`) for machines:\n\n```json\n{\n    \"client_id\": 456,\n    \"foo\": \"bar\",\n    \"http_method\": \"GET\",\n    \"logger\": {\n        \"name\": \"__main__\"\n    },\n    \"message\": \"It works\",\n    \"request_id\": \"4c2383f5\",\n    \"source\": {\n        \"funcName\": \"<module>\",\n        \"lineno\": 21,\n        \"module\": \"qs3\",\n        \"path\": \"/path/filename.py\",\n        \"process\": 6789,\n        \"processName\": \"MainProcess\",\n        \"thread\": 12345,\n        \"threadName\": \"MainThread\"\n    },\n    \"status\": \"info\",\n    \"timestamp\": \"2023-03-29T14:48:37Z\",\n    \"x\": 123\n}\n{\n    \"client_id\": 456,\n    \"http_method\": \"GET\",\n    \"logger\": {\n        \"name\": \"__main__\"\n    },\n    \"message\": \"Houston, we have a problem!\",\n    \"request_id\": \"4c2383f5\",\n    \"source\": {\n        \"funcName\": \"<module>\",\n        \"lineno\": 22,\n        \"module\": \"qs3\",\n        \"path\": \"/path/filename.py\",\n        \"process\": 6789,\n        \"processName\": \"MainProcess\",\n        \"thread\": 12345,\n        \"threadName\": \"MainThread\"\n    },\n    \"status\": \"critical\",\n    \"timestamp\": \"2023-03-29T14:48:37Z\"\n}\n \n```\n\n<!--quickstart-end-->\n\n## Roadmap\n\n- [ ] add `file` outputs\n- [ ] add a full `logfmt` formatter\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "stlog",
+            "package_url": "https://pypi.org/project/stlog/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/stlog/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/stlog/0.0.7/",
+            "requires_dist": null,
+            "requires_python": ">=3.7,<3.12",
+            "summary": "",
+            "version": "0.0.7",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17645821,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5f0bb32fed29a4fae1090aa5c8f3a3a9b403a189d023f6fc0b472bd6b8245f5f",
+                    "md5": "d43ae6e0b116072da644d1b0012ed8a3",
+                    "sha256": "c9cbd0efb2917c8020939f38c32ad21a458f23b5fce5a21bcfccc4270d4dd39a"
+                },
+                "downloads": -1,
+                "filename": "stlog-0.0.7-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "d43ae6e0b116072da644d1b0012ed8a3",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7,<3.12",
+                "size": 18192,
+                "upload_time": "2023-04-10T12:45:55",
+                "upload_time_iso_8601": "2023-04-10T12:45:55.975901Z",
+                "url": "https://files.pythonhosted.org/packages/5f/0b/b32fed29a4fae1090aa5c8f3a3a9b403a189d023f6fc0b472bd6b8245f5f/stlog-0.0.7-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5f7f4399c182f421624d395f15cf97efe710ab80658b45fa924e61739676676d",
+                    "md5": "3e35877c7a284379db7545143f533ea1",
+                    "sha256": "a68d16cce7f96b5b01bced64cd03f44a6e3cb7eb81e88ef988204e5455887209"
+                },
+                "downloads": -1,
+                "filename": "stlog-0.0.7.tar.gz",
+                "has_sig": false,
+                "md5_digest": "3e35877c7a284379db7545143f533ea1",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7,<3.12",
+                "size": 17323,
+                "upload_time": "2023-04-10T12:45:57",
+                "upload_time_iso_8601": "2023-04-10T12:45:57.224706Z",
+                "url": "https://files.pythonhosted.org/packages/5f/7f/4399c182f421624d395f15cf97efe710ab80658b45fa924e61739676676d/stlog-0.0.7.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
