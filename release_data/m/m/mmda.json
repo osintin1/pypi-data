@@ -76,7 +76,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17292386,
+        "last_serial": 17649127,
         "urls": [
             {
                 "comment_text": "",
@@ -203,7 +203,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17292386,
+        "last_serial": 17649127,
         "urls": [
             {
                 "comment_text": "",
@@ -256,7 +256,6 @@
             "author_email": "Allen Institute for Artificial Intelligence <contact@allenai.org>",
             "bugtrack_url": null,
             "classifiers": [],
-            "description": "# MMDA - multimodal document analysis\n\nThis is work in progress... \n\n## Setup\n\n```bash\nconda create -n mmda python=3.8\npip install -e '.[dev,<extras_require section from setup.py>]'\n```\n\nFor most users, we recommend using recipes:\n```python\npip install -e '.[dev,recipes]'\n```\n\n## Unit testing\nNote that pytest is running coverage, which checks the unit test coverage of the code.\nThe percent coverage can be found in setup.cfg file.\n```bash\npytest\n```\nfor latest failed test\n```bash\npytest --lf --no-cov -n0\n```\nfor specific test name of class name\n```bash\npytest -k 'TestFigureCaptionPredictor' --no-cov -n0\n```\n\n## Quick start\n\n\n#### 1. Create a Document for the first time from a PDF\n\nIn this example, we use the `CoreRecipe` to convert a PDF into a bunch of text and images.\n```python\nfrom mmda.types import Document\nfrom mmda.recipes import CoreRecipe\n\nrecipe = CoreRecipe()\ndoc: Document = recipe.from_path(pdfpath='...pdf')\n```\n\n#### 2. Understanding the output: the `Document` class\n\nWhat is a `Document`? At minimum, it is some text, saved under the `.symbols` field, which is just a `<str>`.  For example:\n\n```python\ndoc.symbols\n> \"Language Models as Knowledge Bases?\\nFabio Petroni1 Tim Rockt...\"\n```\n\nBut the usefulness of this library really is when you have multiple different ways of segmenting `.symbols`. For example, segmenting the paper into Pages, and then each page into Rows: \n\n```python\nfor page in doc.pages:\n    print(f'\\n=== PAGE: {page.id} ===\\n\\n')\n    for row in page.rows:\n        print(row.symbols)\n        \n> ...\n> === PAGE: 5 ===\n> ['tence x, s\u2032 will be linked to s and o\u2032 to o. In']\n> ['practice, this means RE can return the correct so-']\n> ['lution o if any relation instance of the right type']\n> ['was extracted from x, regardless of whether it has']\n> ...\n```\n\nshows two nice aspects of this library:\n\n* `Document` provides iterables for different segmentations of `symbols`.  Options include things like `pages, tokens, rows, sents, paragraphs, sections, ...`.  Not every Parser will provide every segmentation, though.  For example, `SymbolScraperParser` only provides `pages, tokens, rows`.  More on how to obtain other segmentations later.\n\n* Each one of these segments (in our library, we call them `SpanGroup` objects) is aware of (and can access) other segment types. For example, you can call `page.rows` to get all Rows that intersect a particular Page.  Or you can call `sent.tokens` to get all Tokens that intersect a particular Sentence.  Or you can call `sent.rows` to get the Row(s) that intersect a particular Sentence.  These indexes are built *dynamically* when the `Document` is created and each time a new `SpanGroup` type is loaded.  In the extreme, one can do:\n\n```python\nfor page in doc.pages:\n    for paragraph in page.paragraphs:\n        for sent in paragraph.sents:\n            for row in sent.rows: \n                ...\n```\n\nas long as those fields are available in the Document. You can check which fields are available in a Document via:\n\n```python\ndoc.fields\n> ['pages', 'tokens', 'rows']\n```\n\n#### 3. Understanding intersection of SpanGroups\n\nNote that `SpanGroup` don't necessarily perfectly nest each other. For example, what happens if:\n\n```python\nfor sent in doc.sents:\n    for row in sent.rows:\n        print([token.symbols for token in row.tokens])\n```\n\nTokens that are *outside* each sentence can still be printed. This is because when we jump from a sentence to its rows, we are looking for *all* rows that have *any* overlap with the sentence. Rows can extend beyond sentence boundaries, and as such, can contain tokens outside that sentence.\n\nHere's another example:\n```python\nfor page in doc.pages:\n    print([sent.symbols for sent in page.sents])\n```\n\nSentences can cross page boundaries. As such, adjacent pages may end up printing the same sentence.\n\nBut\n```python\nfor page in doc.pages:\n    print([row.symbols for row in page.rows])\n    print([token.symbols for token in page.tokens])\n``` \nrows and tokens adhere strictly to page boundaries, and thus will not repeat when printed across pages.\n\nA key aspect of using this library is understanding how these different fields are defined & anticipating how they might interact with each other. We try to make decisions that are intuitive, but we do ask users to experiment with fields to build up familiarity.\n\n\n\n\n#### 4. What's in a `SpanGroup`?\n\nEach `SpanGroup` object stores information about its contents and position:\n\n* `.spans: List[Span]`, A `Span` is a pointer into `Document.symbols` (that is, `Span(start=0, end=5)` corresponds to `symbols[0:5]`) and a single `Box` representing its position & rectangular region on the page.\n\n* `.box_group: BoxGroup`, A `BoxGroup` object stores `.boxes: List[Box]`.  \n\n* `.metadata: Metadata`, A free form dictionary-like object to store extra metadata about that `SpanGroup`. These are usually empty. \n\n\n\n#### 5. How can I manually create my own `Document`?\n\nIf you look at what is happening in `CoreRecipe`, it's basically stitching together 3 types of tools: `Parsers`, `Rasterizers` and `Predictors`.\n\n* `Parsers` take a PDF as input and return a `Document` compared of `.symbols` and other fields. The example one we use is a wrapper around [PDFPlumber](https://github.com/jsvine/pdfplumber) - MIT License utility.\n\n* `Rasterizers` take a PDF as input and return an `Image` per page that is added to `Document.images`. The example one we use is [PDF2Image](https://github.com/Belval/pdf2image) - MIT License. \n\n* `Predictors` take a `Document` and apply some operation to compute a new set of `SpanGroup` objects that we can insert into our `Document`. These are all built in-house and can be either simple heuristics or full machine-learning models.\n\n\nIf we look at how `CoreRecipe` is implemented, what's happening in `.from_path()` is:\n\n```\n    def from_path(self, pdfpath: str) -> Document:\n        logger.info(\"Parsing document...\")\n        doc = self.parser.parse(input_pdf_path=pdfpath)\n\n        logger.info(\"Rasterizing document...\")\n        images = self.rasterizer.rasterize(input_pdf_path=pdfpath, dpi=72)\n        doc.annotate_images(images=images)\n\n        logger.info(\"Predicting words...\")\n        words = self.word_predictor.predict(document=doc)\n        doc.annotate(words=words)\n\n        logger.info(\"Predicting blocks...\")\n        blocks = self.effdet_publaynet_predictor.predict(document=doc)\n        equations = self.effdet_mfd_predictor.predict(document=doc)\n        doc.annotate(blocks=blocks + equations)\n\n        logger.info(\"Predicting vila...\")\n        vila_span_groups = self.vila_predictor.predict(document=doc)\n        doc.annotate(vila_span_groups=vila_span_groups)\n\n        return doc\n```\n\nYou can see how the `Document` is first created using the `Parser`, then `Images` are added to the `Document` by using the `Rasterizer` and `.annotate_images()` method. Then we layer on multiple `Predicors` worth of predictions, each added to the `Document` using `.annotate()`.\n\n#### 6. How can I save my `Document`?\n\n```python\nimport json\nwith open('filename.json', 'w') as f_out:\n    json.dump(doc.to_json(with_images=True), f_out, indent=4)\n```\n\nwill produce something akin to:\n```python\n{\n    \"symbols\": \"Language Models as Knowledge Bases?\\nFabio Petroni1 Tim Rockt...\",\n    \"images\": \"...\",\n    \"rows\": [...],\n    \"tokens\": [...],\n    \"words\": [...],\n    \"blocks\": [...],\n    \"vila_span_groups\": [...]\n}\n```\n\nNote that `Images` are serialized to `base64` if you include `with_images` flag. Otherwise, it's left out of JSON serialization by default.\n\n#### 7. How can I load my `Document`?\n\nThese can be used to reconstruct a `Document` again via:\n\n```python\nwith open('filename.json') as f_in:\n    doc_dict = json.load(f_in)\n    doc = Document.from_json(doc_dict)\n```\n\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -342,7 +341,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17292386,
+        "last_serial": 17649127,
         "urls": [
             {
                 "comment_text": "",
@@ -383,6 +382,145 @@
                 "upload_time": "2023-03-14T19:19:08",
                 "upload_time_iso_8601": "2023-03-14T19:19:08.537702Z",
                 "url": "https://files.pythonhosted.org/packages/bf/69/ece03542b626139eec72ad1495ed243d6a89d900df28d17da85df919a115/mmda-0.3.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.3.6": {
+        "info": {
+            "author": "",
+            "author_email": "Allen Institute for Artificial Intelligence <contact@allenai.org>",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "# MMDA - multimodal document analysis\n\nThis is work in progress... \n\n## Setup\n\n```bash\nconda create -n mmda python=3.8\npip install -e '.[dev,<extras_require section from setup.py>]'\n```\n\nFor most users, we recommend using recipes:\n```python\npip install -e '.[dev,recipes]'\n```\n\n## Unit testing\nNote that pytest is running coverage, which checks the unit test coverage of the code.\nThe percent coverage can be found in setup.cfg file.\n```bash\npytest\n```\nfor latest failed test\n```bash\npytest --lf --no-cov -n0\n```\nfor specific test name of class name\n```bash\npytest -k 'TestFigureCaptionPredictor' --no-cov -n0\n```\n\n## Quick start\n\n\n#### 1. Create a Document for the first time from a PDF\n\nIn this example, we use the `CoreRecipe` to convert a PDF into a bunch of text and images.\n```python\nfrom mmda.types import Document\nfrom mmda.recipes import CoreRecipe\n\nrecipe = CoreRecipe()\ndoc: Document = recipe.from_path(pdfpath='...pdf')\n```\n\n#### 2. Understanding the output: the `Document` class\n\nWhat is a `Document`? At minimum, it is some text, saved under the `.symbols` field, which is just a `<str>`.  For example:\n\n```python\ndoc.symbols\n> \"Language Models as Knowledge Bases?\\nFabio Petroni1 Tim Rockt...\"\n```\n\nBut the usefulness of this library really is when you have multiple different ways of segmenting `.symbols`. For example, segmenting the paper into Pages, and then each page into Rows: \n\n```python\nfor page in doc.pages:\n    print(f'\\n=== PAGE: {page.id} ===\\n\\n')\n    for row in page.rows:\n        print(row.symbols)\n        \n> ...\n> === PAGE: 5 ===\n> ['tence x, s\u2032 will be linked to s and o\u2032 to o. In']\n> ['practice, this means RE can return the correct so-']\n> ['lution o if any relation instance of the right type']\n> ['was extracted from x, regardless of whether it has']\n> ...\n```\n\nshows two nice aspects of this library:\n\n* `Document` provides iterables for different segmentations of `symbols`.  Options include things like `pages, tokens, rows, sents, paragraphs, sections, ...`.  Not every Parser will provide every segmentation, though.  For example, `SymbolScraperParser` only provides `pages, tokens, rows`.  More on how to obtain other segmentations later.\n\n* Each one of these segments (in our library, we call them `SpanGroup` objects) is aware of (and can access) other segment types. For example, you can call `page.rows` to get all Rows that intersect a particular Page.  Or you can call `sent.tokens` to get all Tokens that intersect a particular Sentence.  Or you can call `sent.rows` to get the Row(s) that intersect a particular Sentence.  These indexes are built *dynamically* when the `Document` is created and each time a new `SpanGroup` type is loaded.  In the extreme, one can do:\n\n```python\nfor page in doc.pages:\n    for paragraph in page.paragraphs:\n        for sent in paragraph.sents:\n            for row in sent.rows: \n                ...\n```\n\nas long as those fields are available in the Document. You can check which fields are available in a Document via:\n\n```python\ndoc.fields\n> ['pages', 'tokens', 'rows']\n```\n\n#### 3. Understanding intersection of SpanGroups\n\nNote that `SpanGroup` don't necessarily perfectly nest each other. For example, what happens if:\n\n```python\nfor sent in doc.sents:\n    for row in sent.rows:\n        print([token.symbols for token in row.tokens])\n```\n\nTokens that are *outside* each sentence can still be printed. This is because when we jump from a sentence to its rows, we are looking for *all* rows that have *any* overlap with the sentence. Rows can extend beyond sentence boundaries, and as such, can contain tokens outside that sentence.\n\nHere's another example:\n```python\nfor page in doc.pages:\n    print([sent.symbols for sent in page.sents])\n```\n\nSentences can cross page boundaries. As such, adjacent pages may end up printing the same sentence.\n\nBut\n```python\nfor page in doc.pages:\n    print([row.symbols for row in page.rows])\n    print([token.symbols for token in page.tokens])\n``` \nrows and tokens adhere strictly to page boundaries, and thus will not repeat when printed across pages.\n\nA key aspect of using this library is understanding how these different fields are defined & anticipating how they might interact with each other. We try to make decisions that are intuitive, but we do ask users to experiment with fields to build up familiarity.\n\n\n\n\n#### 4. What's in a `SpanGroup`?\n\nEach `SpanGroup` object stores information about its contents and position:\n\n* `.spans: List[Span]`, A `Span` is a pointer into `Document.symbols` (that is, `Span(start=0, end=5)` corresponds to `symbols[0:5]`) and a single `Box` representing its position & rectangular region on the page.\n\n* `.box_group: BoxGroup`, A `BoxGroup` object stores `.boxes: List[Box]`.  \n\n* `.metadata: Metadata`, A free form dictionary-like object to store extra metadata about that `SpanGroup`. These are usually empty. \n\n\n\n#### 5. How can I manually create my own `Document`?\n\nIf you look at what is happening in `CoreRecipe`, it's basically stitching together 3 types of tools: `Parsers`, `Rasterizers` and `Predictors`.\n\n* `Parsers` take a PDF as input and return a `Document` compared of `.symbols` and other fields. The example one we use is a wrapper around [PDFPlumber](https://github.com/jsvine/pdfplumber) - MIT License utility.\n\n* `Rasterizers` take a PDF as input and return an `Image` per page that is added to `Document.images`. The example one we use is [PDF2Image](https://github.com/Belval/pdf2image) - MIT License. \n\n* `Predictors` take a `Document` and apply some operation to compute a new set of `SpanGroup` objects that we can insert into our `Document`. These are all built in-house and can be either simple heuristics or full machine-learning models.\n\n\nIf we look at how `CoreRecipe` is implemented, what's happening in `.from_path()` is:\n\n```\n    def from_path(self, pdfpath: str) -> Document:\n        logger.info(\"Parsing document...\")\n        doc = self.parser.parse(input_pdf_path=pdfpath)\n\n        logger.info(\"Rasterizing document...\")\n        images = self.rasterizer.rasterize(input_pdf_path=pdfpath, dpi=72)\n        doc.annotate_images(images=images)\n\n        logger.info(\"Predicting words...\")\n        words = self.word_predictor.predict(document=doc)\n        doc.annotate(words=words)\n\n        logger.info(\"Predicting blocks...\")\n        blocks = self.effdet_publaynet_predictor.predict(document=doc)\n        equations = self.effdet_mfd_predictor.predict(document=doc)\n        doc.annotate(blocks=blocks + equations)\n\n        logger.info(\"Predicting vila...\")\n        vila_span_groups = self.vila_predictor.predict(document=doc)\n        doc.annotate(vila_span_groups=vila_span_groups)\n\n        return doc\n```\n\nYou can see how the `Document` is first created using the `Parser`, then `Images` are added to the `Document` by using the `Rasterizer` and `.annotate_images()` method. Then we layer on multiple `Predicors` worth of predictions, each added to the `Document` using `.annotate()`.\n\n#### 6. How can I save my `Document`?\n\n```python\nimport json\nwith open('filename.json', 'w') as f_out:\n    json.dump(doc.to_json(with_images=True), f_out, indent=4)\n```\n\nwill produce something akin to:\n```python\n{\n    \"symbols\": \"Language Models as Knowledge Bases?\\nFabio Petroni1 Tim Rockt...\",\n    \"images\": \"...\",\n    \"rows\": [...],\n    \"tokens\": [...],\n    \"words\": [...],\n    \"blocks\": [...],\n    \"vila_span_groups\": [...]\n}\n```\n\nNote that `Images` are serialized to `base64` if you include `with_images` flag. Otherwise, it's left out of JSON serialization by default.\n\n#### 7. How can I load my `Document`?\n\nThese can be used to reconstruct a `Document` again via:\n\n```python\nwith open('filename.json') as f_in:\n    doc_dict = json.load(f_in)\n    doc = Document.from_json(doc_dict)\n```\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "Apache-2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "mmda",
+            "package_url": "https://pypi.org/project/mmda/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/mmda/",
+            "project_urls": {
+                "Bug Tracker": "https://www.github.com/allenai/mmda/issues",
+                "Homepage": "https://www.github.com/allenai/mmda",
+                "Repository": "https://www.github.com/allenai/mmda"
+            },
+            "release_url": "https://pypi.org/project/mmda/0.3.6/",
+            "requires_dist": [
+                "tqdm",
+                "pdf2image",
+                "pdfplumber (==0.7.4)",
+                "requests",
+                "pandas",
+                "pydantic",
+                "ncls (==0.0.66)",
+                "necessary (>=0.3.2)",
+                "layoutparser ; extra == 'bibentry_detection_predictor'",
+                "torch (==1.8.0+cu111) ; extra == 'bibentry_detection_predictor'",
+                "torchvision (==0.9.0+cu111) ; extra == 'bibentry_detection_predictor'",
+                "transformers ; extra == 'bibentry_predictor'",
+                "unidecode ; extra == 'bibentry_predictor'",
+                "torch ; extra == 'bibentry_predictor'",
+                "optimum[onnxruntime] ; extra == 'bibentry_predictor'",
+                "transformers ; extra == 'bibentry_predictor_gpu'",
+                "unidecode ; extra == 'bibentry_predictor_gpu'",
+                "torch ; extra == 'bibentry_predictor_gpu'",
+                "optimum[onnxruntime-gpu] ; extra == 'bibentry_predictor_gpu'",
+                "numpy ; extra == 'citation_links'",
+                "thefuzz[speedup] ; extra == 'citation_links'",
+                "scikit-learn ; extra == 'citation_links'",
+                "xgboost ; extra == 'citation_links'",
+                "pytest ; extra == 'dev'",
+                "pytest-xdist ; extra == 'dev'",
+                "pytest-cov ; extra == 'dev'",
+                "scipy ; extra == 'figure_table_predictors'",
+                "grobid-client-python (==0.0.5) ; extra == 'grobid_augment_existing_document_parser'",
+                "tokenizers ; extra == 'heuristic_predictors'",
+                "torch ; extra == 'hf_predictors'",
+                "transformers ; extra == 'hf_predictors'",
+                "smashed (==0.1.10) ; extra == 'hf_predictors'",
+                "layoutparser ; extra == 'lp_predictors'",
+                "torch ; extra == 'lp_predictors'",
+                "torchvision ; extra == 'lp_predictors'",
+                "effdet ; extra == 'lp_predictors'",
+                "transformers[torch] ; extra == 'mention_predictor'",
+                "optimum[onnxruntime] ; extra == 'mention_predictor'",
+                "transformers[torch] ; extra == 'mention_predictor_gpu'",
+                "optimum[onnxruntime-gpu] ; extra == 'mention_predictor_gpu'",
+                "pysbd ; extra == 'pysbd_predictors'",
+                "layoutparser ; extra == 'recipes'",
+                "transformers ; extra == 'recipes'",
+                "torch ; extra == 'recipes'",
+                "torchvision ; extra == 'recipes'",
+                "effdet ; extra == 'recipes'",
+                "vila (<0.6,>=0.5) ; extra == 'recipes'",
+                "smashed (==0.1.10) ; extra == 'recipes'",
+                "numpy ; extra == 'section_nesting'",
+                "scipy ; extra == 'section_nesting'",
+                "xgboost ; extra == 'section_nesting'",
+                "spacy ; extra == 'spacy_predictors'",
+                "vila (<0.6,>=0.5) ; extra == 'vila_predictors'",
+                "transformers ; extra == 'vila_predictors'"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "MMDA - multimodal document analysis",
+            "version": "0.3.6",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17649127,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "760e20f213a804b36ef3bf511199d3feea28aa6929f72f92dc52f897afd1d643",
+                    "md5": "961e64fa7911ff654fba70f731306dff",
+                    "sha256": "06e10f1179673077a0e5aeeaf235b6fc258f2a2e596ff8253747066cf2ddd52b"
+                },
+                "downloads": -1,
+                "filename": "mmda-0.3.6-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "961e64fa7911ff654fba70f731306dff",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 5927245,
+                "upload_time": "2023-04-10T18:29:15",
+                "upload_time_iso_8601": "2023-04-10T18:29:15.465303Z",
+                "url": "https://files.pythonhosted.org/packages/76/0e/20f213a804b36ef3bf511199d3feea28aa6929f72f92dc52f897afd1d643/mmda-0.3.6-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5a3d09f9bdb8a54162ae834972d74cc5e92603769a57d69abf78caeee0e4eebf",
+                    "md5": "144dc43af12b5bda19786573bb129ec4",
+                    "sha256": "0c65eedaad1f3053a3adc98ec837bc1740a37dae29325de7279b641cb54fcb63"
+                },
+                "downloads": -1,
+                "filename": "mmda-0.3.6.tar.gz",
+                "has_sig": false,
+                "md5_digest": "144dc43af12b5bda19786573bb129ec4",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 5891825,
+                "upload_time": "2023-04-10T18:29:17",
+                "upload_time_iso_8601": "2023-04-10T18:29:17.726253Z",
+                "url": "https://files.pythonhosted.org/packages/5a/3d/09f9bdb8a54162ae834972d74cc5e92603769a57d69abf78caeee0e4eebf/mmda-0.3.6.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
