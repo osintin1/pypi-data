@@ -1,0 +1,97 @@
+{
+    "0.1.0": {
+        "info": {
+            "author": "Joshua Oreman",
+            "author_email": "oremanj@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: Apache Software License",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: MacOS :: MacOS X",
+                "Operating System :: Microsoft :: Windows",
+                "Operating System :: POSIX :: Linux",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: Implementation :: CPython",
+                "Programming Language :: Python :: Implementation :: PyPy"
+            ],
+            "description": "stackscope: unusually detailed Python stack introspection\n=========================================================\n\n.. image:: https://img.shields.io/pypi/v/stackscope.svg\n   :target: https://pypi.org/project/stackscope\n   :alt: Latest PyPI version\n\n.. image:: https://img.shields.io/badge/docs-read%20now-blue.svg\n   :target: https://stackscope.readthedocs.io/en/latest/?badge=latest\n   :alt: Documentation status\n\n.. image:: https://codecov.io/gh/oremanj/stackscope/branch/master/graph/badge.svg\n   :target: https://codecov.io/gh/oremanj/stackscope\n   :alt: Test coverage\n\n.. image:: https://img.shields.io/badge/code%20style-black-000000.svg\n   :target: https://github.com/ambv/black\n   :alt: Code style: black\n\n.. image:: http://www.mypy-lang.org/static/mypy_badge.svg\n   :target: http://www.mypy-lang.org/\n   :alt: Checked with mypy\n\n``stackscope`` is a library that helps you tell what your running\nPython program is doing and how it got there. It can provide detailed\nstack traces, similar to what you get in an exception traceback, but\nwithout needing to throw an exception first. Compared to standard\nlibrary facilities such as ``traceback.extract_stack()``, it is far\nmore versatile. It supports async tasks, generators, threads, and\ngreenlets; provides information about active context managers in each\nstack frame; and includes a customization interface that library\nauthors can use to teach it to improve the stack extraction logic for\ncode that touches their library. (As an example of the latter, the\nstack of an async task blocked in a ``run_in_thread()`` function could\nbe made to cover the code that's running in the thread as well.)\n\n``stackscope`` is loosely affiliated with the `Trio\n<https://trio.readthedocs.io/>`__ async framework, and shares Trio's\nobsessive focus on usability and correctness. The context manager\nanalysis is especially helpful with Trio since you can use it to\nunderstand where the nurseries are. You don't have to use ``stackscope``\nwith Trio, though; it requires only the Python standard library, 3.7\nor later, and the `ExceptionGroup backport <https://pypi.org/project/exceptiongroup/>`__\non versions below 3.11.\n\n``stackscope`` is mostly intended as a building block for other\ndebugging and introspection tools. You can use it directly, but\nthere's only rudimentary support for end-user-facing niceties such as\npretty-printed output. On the other hand, the core logic is (believed\nto be) robust and flexible, exposing customization points that\nthird-party libraries can use to help ``stackscope`` make better\ntracebacks for their code.  ``stackscope`` ships out of the box with such\n\"glue\" for `Trio <https://trio.readthedocs.io/en/stable/>`__, `greenback\n<https://greenback.readthedocs.io/en/latest/>`__, and some of their\nlower-level dependencies.\n\n``stackscope`` requires Python 3.7 or later. It is fully\ntype-annotated and is tested with CPython (every minor version through\n3.12-dev) and PyPy, on Linux, Windows, and macOS. It will probably\nwork on other operating systems.  Basic features will work on other\nPython implementations, but the context manager decoding will be less\nintelligent, and won't work at all without a usable\n``gc.get_referents()``.\n\nQuickstart\n----------\n\nCall ``stackscope.extract()`` to obtain a ``stackscope.Stack``\ndescribing the stack of a coroutine object, generator iterator (sync\nor async), greenlet, or thread. If you want to extract part of the\nstack that led to the ``extract()`` call, then either pass a\n``stackscope.StackSlice`` or use the convenience aliases\n``stackscope.extract_since()`` and ``stackscope.extract_until()``.\n\nOnce you have a ``Stack``, you can:\n\n* Format it for human consumption: ``str()`` obtains a tree view as\n  shown in the example below, or use ``stack.format()`` to customize\n  it or ``stack.format_flat()`` to get an alternate format that\n  resembles a standard Python traceback.\n\n* Iterate over it (or equivalently, its ``frames`` attribute) to\n  obtain a series of ``stackscope.Frame``\\s for programmatic\n  inspection.  Each frame represents one function call. In addition to\n  the interpreter-level frame object, it lets you access information\n  about the active context managers in that function.\n\n* Look at its ``leaf`` attribute to see what's left once you\n  peel away all the frames. For example, this might be some atomic\n  awaitable such as an ``asyncio.Future``. It will be ``None`` if the\n  frames tell the whole story.\n\n* Use its ``as_stdlib_summary()`` method to get a standard library\n  ``traceback.StackSummary`` object (with some loss of information),\n  which can be pickled or passed to non-``stackscope``\\-aware tools.\n\nSee the documentation for more details.\n\nExample\n-------\n\nThis code uses a number of context managers::\n\n    from contextlib import contextmanager, ExitStack\n\n    @contextmanager\n    def null_context():\n        yield\n\n    def some_cb(*a, **kw):\n        pass\n\n    @contextmanager\n    def inner_context():\n        stack = ExitStack()\n        with stack:\n            stack.enter_context(null_context())\n            stack.callback(some_cb, 10, \"hi\", answer=42)\n            yield \"inner\"\n\n    @contextmanager\n    def outer_context():\n        with inner_context() as inner:\n            yield \"outer\"\n\n    def example():\n        with outer_context():\n            yield\n\n    def call_example():\n        yield from example()\n\n    gen = call_example()\n    next(gen)\n\nYou can use ``stackscope`` to inspect the state of the partially-consumed generator\n*gen*, showing the tree structure of all of those context managers::\n\n    $ python3 -i example.py\n    >>> import stackscope\n    >>> stack = stackscope.extract(gen)\n    >>> print(stack)\n    stackscope.Stack (most recent call last):\n    \u2560 call_example in __main__ at [...]/stackscope/example.py:28\n    \u2551 \u2514 yield from example()\n    \u2560 example in __main__ at [...]/stackscope/example.py:25\n    \u2551 \u251c with outer_context():  # _: _GeneratorContextManager (line 24)\n    \u2551 \u2502 \u2560 outer_context in __main__ at [...]/stackscope/example.py:21\n    \u2551 \u2502 \u2551 \u251c with inner_context() as inner:  # inner: _GeneratorContextManager (line 20)\n    \u2551 \u2502 \u2551 \u2502 \u2560 inner_context in __main__ at [...]/stackscope/example.py:16\n    \u2551 \u2502 \u2551 \u2502 \u2551 \u251c with stack:  # stack: ExitStack (line 13)\n    \u2551 \u2502 \u2551 \u2502 \u2551 \u251c\u2500\u2500 stack.enter_context(null_context(...))  # stack[0]: _GeneratorContextManager\n    \u2551 \u2502 \u2551 \u2502 \u2551 \u2502   \u2560 null_context in __main__ at [...]/stackscope/example.py:5\n    \u2551 \u2502 \u2551 \u2502 \u2551 \u2502   \u2551 \u2514 yield\n    \u2551 \u2502 \u2551 \u2502 \u2551 \u251c\u2500\u2500 stack.callback(__main__.some_cb, 10, 'hi', answer=42)  # stack[1]: function\n    \u2551 \u2502 \u2551 \u2502 \u2551 \u2514 yield \"inner\"\n    \u2551 \u2502 \u2551 \u2514 yield \"outer\"\n    \u2551 \u2514 yield\n\nThat full tree structure is exposed for programmatic inspection as well::\n\n    >>> print(stack.frames[1].contexts[0].inner_stack.frames[0].contexts[0])\n    inner_context(...)  # inner: _GeneratorContextManager (line 20)\n    \u2560 inner_context in __main__ at /Users/oremanj/dev/stackscope/example.py:16\n    \u2551 \u251c with stack:  # stack: ExitStack (line 13)\n    \u2551 \u251c\u2500\u2500 stack.enter_context(null_context(...))  # stack[0]: _GeneratorContextManager\n    \u2551 \u2502   \u2560 null_context in __main__ at /Users/oremanj/dev/stackscope/example.py:5\n    \u2551 \u2502   \u2551 \u2514 yield\n    \u2551 \u251c\u2500\u2500 stack.callback(__main__.some_cb, 10, 'hi', answer=42)  # stack[1]: function\n    \u2551 \u2514 yield \"inner\"\n\nOf course, if you just want a \"normal\" stack trace without the added information,\nyou can get that too::\n\n    >>> print(\"\".join(stack.format_flat()))\n    stackscope.Stack (most recent call last):\n      File \"/Users/oremanj/dev/stackscope/example.py\", line 28, in call_example\n        yield from example()\n      File \"/Users/oremanj/dev/stackscope/example.py\", line 25, in example\n        yield\n\nDevelopment status\n------------------\n\nWhile ``stackscope`` is a young project that deals with some obscure Python internals,\nit is written quite defensively including 99%+ test coverage and type hints.\nThe author is using it (cautiously) in production and thinks you might want to as well.\n\nLicense\n-------\n\n``stackscope`` is licensed under your choice of the MIT or Apache 2.0\nlicense. See `LICENSE <https://github.com/oremanj/stackscope/blob/master/LICENSE>`__\nfor details.\n\n\n",
+            "description_content_type": "",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/oremanj/stackscope",
+            "keywords": "async,debugging,trio,asyncio",
+            "license": "MIT -or- Apache License 2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "stackscope",
+            "package_url": "https://pypi.org/project/stackscope/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/stackscope/",
+            "project_urls": {
+                "Homepage": "https://github.com/oremanj/stackscope"
+            },
+            "release_url": "https://pypi.org/project/stackscope/0.1.0/",
+            "requires_dist": [
+                "exceptiongroup (>=1.0.0) ; python_version < \"3.11\""
+            ],
+            "requires_python": ">=3.7",
+            "summary": "Unusually detailed Python stack introspection",
+            "version": "0.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17687404,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "9a0a496e3517aa0ac1cad862a641c9e551f886c9e3b1c08eb10d9cf612a78727",
+                    "md5": "27fb571369e0a9caa22830cdce8d15f2",
+                    "sha256": "ae78475dda2805a06926b2e68a33435937e123fa8eb84aceefc4ab739d274481"
+                },
+                "downloads": -1,
+                "filename": "stackscope-0.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "27fb571369e0a9caa22830cdce8d15f2",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 72379,
+                "upload_time": "2023-04-13T05:54:42",
+                "upload_time_iso_8601": "2023-04-13T05:54:42.563598Z",
+                "url": "https://files.pythonhosted.org/packages/9a/0a/496e3517aa0ac1cad862a641c9e551f886c9e3b1c08eb10d9cf612a78727/stackscope-0.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "cac4c8f5886cf5ad238eb8192f6ab6bd25d8b1963c986cb9fdf7c771fe6ae7b0",
+                    "md5": "d94345b11bb8281a287fef01882811d5",
+                    "sha256": "35551163c9c3d67b474f67b97d120ea61ce5344af6b76639aa13dd28dd4060d4"
+                },
+                "downloads": -1,
+                "filename": "stackscope-0.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "d94345b11bb8281a287fef01882811d5",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 80348,
+                "upload_time": "2023-04-13T05:54:44",
+                "upload_time_iso_8601": "2023-04-13T05:54:44.577985Z",
+                "url": "https://files.pythonhosted.org/packages/ca/c4/c8f5886cf5ad238eb8192f6ab6bd25d8b1963c986cb9fdf7c771fe6ae7b0/stackscope-0.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
