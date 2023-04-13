@@ -1,0 +1,102 @@
+{
+    "0.1": {
+        "info": {
+            "author": "",
+            "author_email": "Martin Holtschneider <code@martin-holtschneider.de>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Software Development :: Build Tools"
+            ],
+            "description": "# Google People API Wrapper\n\nThis python package provides a wrapper around the Google People API which allows you to programmatically access and\nmanage persons and groups in Google contacts.\n\n## Usage\n\n### Preconditions\n\nOf course, you need to have a Google account to access and manage its contacts.\n\nYou will also need to set up a Google Cloud project and enable the People API. Please follow the instructions in the\ndocumentation: https://developers.google.com/people/v1/getting-started.\n\nYou need to have Python >=3.9 installed. Pip can be used to install the package:\n\n```shell\npip install gpeopleapiwrapper\n```\n\n### Authentication\n\nAccessing the Google People API requires authentication using OAuth 2.0 and a manual consent to access the contacts\nof your Google account.\n\nFor the authentication you need to obtain an OAuth client ID from the Google Cloud console:\n\n1. Go to the Google Cloud console and select your project.\n2. Open the \"APIs & Services\" menu and select \"Credentials\".\n3. Click on the \"Create credentials\" button and select \"OAuth client ID\".\n4. Choose \"Desktop app\" as the application type and enter a name for your OAuth client ID.\n5. Click \"Create\" and you will be presented with a client ID and client secret.\n6. Download the client secret as a JSON file and save it in your project directory.\n\nThe credentials file is used to initialize the Google People API Wrapper client:\n\n```python\nimport json\nfrom gpeopleapiwrapper import client as gp_client\n\nwith open(\"${client secret json file}\", \"r\") as json_file:\n    api_client_secret = json.load(json_file)\n\npc_client = gp_client.Client(api_client_secret)\n```\n\nOn initialization, the client will open a browser window and ask you to log in to your Google account. As long as\nyour app is not verified by Google, you will have to manually consent to access your contacts and additionally confirm\nthat you \"know the developer that invited you\".\n\nFor further details on the authentication process, please refer to Google's documentation:\nhttps://developers.google.com/workspace/guides/auth-overview\n\n#### Refreshing the authentication\n\nBy default, the client runs through the same manual authentication flow each time it is initialised. You can get rid\nof this manual process by storing the obtained credentials. This way, the client will be able to refresh the\nauthentication automatically.\n\nTo store the credentials, you need to pass a persistent implementation of a `CredentialsStore` on initialisation of\nthe client:\n\n```python\nimport json\n\nfrom gpeopleapiwrapper import auth as gp_auth\nfrom gpeopleapiwrapper import client as gp_client\n\nwith open(\"${client secret json file}\", \"r\") as json_file:\n    api_client_secret = json.load(json_file)\n\npc_client = gp_client.Client(\n    api_client_secret=api_client_secret,\n    credentials_store=gp_auth.PickleFileCredentialsStore(\"${credentials pickle file}\"))\n```\n\nThe auth module provides a simple implementation of a credentials store using pickle files. You can also have your own \ncredentials store by implementing the `CredentialsStore` interface.\n\n### Retrieving contacts\n\nOnce you have authenticated, you can use the client to retrieve contacts from your selected Google account:\n\n```python\nimport json\nfrom gpeopleapiwrapper import client as gp_client\n\nwith open(\"${client secret json file}\", \"r\") as json_file:\n    credentials = json.load(json_file)\npc_client = gp_client.Client(credentials)\n\nall_contacts = pc_client.get_all_persons([gp_client.PersonField.names, gp_client.PersonField.email_addresses])\n```\n\nThe `get_all_persons` method returns a list of `PersonWrapper` objects. The `PersonWrapper` provides accessors to the\nmany fields of the person model from the Google People API. Each `PersonWrapper` object only contains the requested\nfields of the contact. In the above example we requested the `names` and `email_addresses` only.\n\nFor a detailed explanation of the `field_mask` parameter, the available fields, and the underlying model of a `Person`,\nplease refer to the documentation of the Google People API:\n\n* see https://developers.google.com/people/api/rest/v1/people/get#query-parameters for available fields\n* see https://developers.google.com/people/api/rest/v1/people#Person for the underlying model\n\nPlease note that this libray remains incomplete, i.e. not all fields of the person model are supported yet.\n\n### Creating contacts\n\nTo create a new contact you can use the `create_person` method:\n\n```python\nimport json\nfrom gpeopleapiwrapper import client as gp_client\n\nwith open(\"${client secret json file}\", \"r\") as json_file:\n    credentials = json.load(json_file)\npc_client = gp_client.Client(credentials)\n\ncreated_contact = pc_client.create_person(\"Peter Tester\", [gp_client.PersonField.names])\n```\n\nThe `create_person` method returns a `PersonWrapper` object representing the newly created contact containing the\nrequested fields according to the given field mask.\n\nLimiting the capabilities of the API itself this library creates new contacts with the unstructured name as the only\nparameter. Populating the other fields of the contact requires subsequent updates of the contact.\n\n### Updating contacts\n\nTo update an existing contact you first need to retrieve or create one. You can modify the `PersonWrapper` object\nby the provided accessors and then update the contact using the `update_person` method:\n\n```python\nimport json\nfrom gpeopleapiwrapper import client as gp_client\n\nwith open(\"${client secret json file}\", \"r\") as json_file:\n    credentials = json.load(json_file)\npc_client = gp_client.Client(credentials)\n\ncreated_contact = pc_client.create_person(\"Peter Tester\", [gp_client.PersonField.email_addresses])\ncreated_contact.email_addresses.append_email_address(\"Home\", \"peter.tester@gmail.com\")\nupdated_contact = pc_client.update_person(created_contact, [gp_client.PersonField.names])\n```\n\nPlease be aware that the library only allows you to update the fields you requested from the api by specifying a\nfield_mask.\n\n### Managing contact groups\n\nThe library allows you to conveniently add and remove contacts from contact groups with the help of the\n`add_member_to_group` and `remove_member_from_group` methods:\n\n```python\nimport json\nfrom gpeopleapiwrapper import client as gp_client\n\nwith open(\"${client secret json file}\", \"r\") as json_file:\n    credentials = json.load(json_file)\npc_client = gp_client.Client(credentials)\n\ncreated_contact = pc_client.create_person(\"Peter Tester\", [gp_client.PersonField.email_addresses])\npc_client.add_member_to_group(\"test\", created_contact)\npc_client.remove_member_from_group(\"test\", created_contact)\n```\n\n## Contribution\n\nFirst of all: If you find any issues or would like to contribute to the project, do not hesitate to create a new issue\nor a pull request on the GitHub repository.\n\n### Project Setup for Development\n\nThere are multiple ways to set up the project for development and the following steps are just one of them.\n\n1. initialize python virtual environment, i.e. change to project directory and create virtual environment\n   ```shell\n   python -m venv .venv\n   ```\n2. activate the virtual environment\n   ```shell\n   source .venv/bin/activate\n   ```\n3. install project dependencies\n   ```shell\n   pip install .\n   ```\n4. install test dependencies\n   ```shell\n   pip install \".[test,publish]\"\n   ```\n\n### Running Code Checks and Tests\n\n1. We use the `unittest` module for testing:\n   ```shell\n   python -m unittest\n   ```\n\n2. Sometimes we check the coverage of the unittests:\n   ```shell\n   coverage run -m unittest\n   coverage html --include=\"gpeopleapiwrapper/*\"\n   ```\n\n3. We use `pylama` for code checks:\n   ```shell\n   pylama --max-line-length 120 gpeopleapiwrapper\n   ```\n\n### Publishing\n\n1. We use `build` to create the distribution packages:\n   ```shell\n   python -m build .\n   ```\n\n2. We use `twine` to upload the distribution packages to PyPI:\n   ```shell\n     python -m twine upload --repository pypi dist/*\n   ```\n\n## Remarks\n\nThis library is not affiliated with Google in any way. It is not an official library nor has any \nendorsement of Google. It is just a personal project.\n\nThis library is overengineered. As a side effect, it allowed me to try out generics and mixins.\n\nThis library might violate common python conventions. I am not a python expert or even a professional developer. I am \nopen to suggestions and improvements.\n\nThis library is not complete. It only implements the features I needed for my personal use case.\n\n### Backlog\n\n* implement remaining fields of the person model\n* improve error handling\n* implement remaining methods of the API, e.g. deletion, search, batch requests etc.\n* implement syncing after paged retrieval\n\n### Release notes\n\nTBD.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "gpeopleapiwrapper",
+            "package_url": "https://pypi.org/project/gpeopleapiwrapper/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/gpeopleapiwrapper/",
+            "project_urls": {
+                "Homepage": "https://github.com/holtschn/gpeopleapiwrapper"
+            },
+            "release_url": "https://pypi.org/project/gpeopleapiwrapper/0.1/",
+            "requires_dist": [
+                "google-api-python-client (>=2.84.0)",
+                "google-auth-oauthlib (>=0.1.0)",
+                "ratelimit (>=2.2.1)",
+                "build (>=0.10.0) ; extra == 'publish'",
+                "twine (>=4.0.2) ; extra == 'publish'",
+                "coverage (>=7.2.3) ; extra == 'test'",
+                "pylama (>=8.4.0) ; extra == 'test'"
+            ],
+            "requires_python": ">=3.9",
+            "summary": "A wrapper around the Google People API",
+            "version": "0.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17682837,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "4086370c807ce92a9d8a547d5001fb2e9caec6c33176ae6be3b520dae197aa43",
+                    "md5": "d4fd9540d491bd910f1ce113e6a0ea7a",
+                    "sha256": "a59f0d53ceafa1005bd569466191d005c4efc06821e8617e27c8fbc040aac67a"
+                },
+                "downloads": -1,
+                "filename": "gpeopleapiwrapper-0.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "d4fd9540d491bd910f1ce113e6a0ea7a",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9",
+                "size": 18095,
+                "upload_time": "2023-04-12T22:56:08",
+                "upload_time_iso_8601": "2023-04-12T22:56:08.357876Z",
+                "url": "https://files.pythonhosted.org/packages/40/86/370c807ce92a9d8a547d5001fb2e9caec6c33176ae6be3b520dae197aa43/gpeopleapiwrapper-0.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "1e2df22ed90ec577fe910fd25d36733a81be5ca282774242f6d3e007a9e8ec49",
+                    "md5": "96ae15185e14d86e09abf0464b00626b",
+                    "sha256": "a028970ac7881f51e974ff30fe0f4154f7b8324906b3632786ce7929819c0605"
+                },
+                "downloads": -1,
+                "filename": "gpeopleapiwrapper-0.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "96ae15185e14d86e09abf0464b00626b",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9",
+                "size": 21866,
+                "upload_time": "2023-04-12T22:56:10",
+                "upload_time_iso_8601": "2023-04-12T22:56:10.266858Z",
+                "url": "https://files.pythonhosted.org/packages/1e/2d/f22ed90ec577fe910fd25d36733a81be5ca282774242f6d3e007a9e8ec49/gpeopleapiwrapper-0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
