@@ -1,0 +1,96 @@
+{
+    "0.1.1": {
+        "info": {
+            "author": "",
+            "author_email": "Sergey Monakhov <monahovserg@gmail.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Intended Audience :: Education",
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# acadia\r\n\r\n## An audio alternative of   conventional diagrms for blind and visually impaired people\r\n\r\nAcadia  stands for accessible audio diagrams,  the  tool designed to assist blind and visually impaired people to get access to representation of numeric data.\r\n### Introduction\r\n\r\nWhen dealing with really big amounts of numbers, it is common practice to use some kind of plot or diagram. \r\nIndeed, with those graphic objects one   can  study numeric data in a very natural way, clearly and efficiently making vivid impressions of different entities through their shapes almost instantaneously.\r\nIt is more than  convenient in most cases So an approach to data representation  is considered  to be strictly  visual without any alternative.\r\nGiven that, there is the problem for those who happen to be blind or visually impaired.\r\n\r\nOf course, with  assistive technologies like screenreading program or Braile display those users can get access to the data itself, but   in case of   hundreds and thousands of numbers they are of little help.\r\nA solution that would provide blind people with alternative of visual representation of numeric data is needed.\r\n\r\nObviously, if it cannot be visual, it has to be either tactile or aural.\r\nAn aural approach looks like more preferable, because it probably can be implemented without any additional hardware.\r\n\r\n### Concept formulation\r\n\r\nLet us take a classic example  of two-dimensional linear diagram.\r\nAll we need  is  to provide audio alternative for  its    contour defined  by vertical and  horizontal coordinates.\r\nFor that purpose we can try to use frequency of a signal  and its position within the stereo basis.\r\nBut the nature of aural perception   is immanently temporal, whereas the nature of visual perception  is spacial.\r\nAnd the problem is that the third dimension, time itself, cannot be fully excluded like the third dimension in case of conventional charting.\r\nWe have to try to reduce it as much as possible if our goal is to emulate graphic  representation, which perception is almost instantaneous.\r\n\r\n***Note:**  We can theoretically have  even the fourth dimension,  expressed through sound pressure, so the audio representation of numeric data  can potentially give us  quite unusual  and promicing opportunities even beyond the context of accessibility.*\r\n\r\nFor the present our goal is to create   something like \"audio snapshot\", assuming  that several  seconds would be quite enough to create a mental image of the  data representation.\r\n\r\n### Subject area exploration\r\n\r\nThere is a project called [the Accessible Graphs Project ](https://accessiblegraphs.org/english_guides/learnMore-en.html?lang=en),\r\nthat exploits more or less the same idea. You can install a client with pip and then upload your data to a web application.\r\nOnce it is done, a representation   opens in a default browser. \r\nIt is accessible  not only with audio interface, but also with screenreader and Braile display.\r\nThough the main concept  seems to be   realized, there are some features that in our humble opinion decrease its practical meaning:\r\n\r\n- the number of values that can be represented is limited to  29 items\r\n- presence of an Internet connection  is vital\r\n- valid data types  are only list and dict\r\n- inability to integrate into third-party applications\r\n- the only supported OS is Windows\r\n\r\nAlso, however the \"read entire graph\" button is mentioned,   it is absent and you have a single option to move through the representation manually, entry by entry.\r\nThe latter could be a good extra feature, but only when combined with an ability  to provide an instant impression. \r\nOnce again, that ability is the very thing that makes visual plots so handy.\r\nNow we should take those drawbacks into  account and try to create a tool which \r\n- does not have any inherent limitations in terms of amount of data being processed\r\n- does not need an Internet connection to work properly\r\n- supports numpy arrays\r\n- can be  embedded into a Jupyter notebook\r\n- is OS-independent\r\n\r\nAnd finally,   we  need to  make our  audio diagram as quick as a glance.\r\n\r\n### Data processing\r\n\r\nOk,  so far so good, to get a result we just need to realize a number of  steps. The pipeline could look like this:\r\n\r\n- get the values  for both dimensions, x and y\r\n- scale them to fit the range of audible frequencies and width of stereo basis (let us take the range between 220 and 7040 Hz and -45 and 45 degrees)\r\n- synthesize mono signal  (for example sine wave with 44100 samples per second and duration of 10 or 50 milliseconds) for each value y\r\nmultiply mono signal by amplitude determined   by value x in order  to produce a stereo signal\r\n- build a collection of those signals\r\n- send it to sound device\r\n\r\n### Solution structure\r\n\r\nIt was decided to implement the solution in an object-oriented manner and establish several classes encapsulating  logic for \r\n-  production of single stereo signal (class Tone)\r\n- scaling  coordinates(class Space)\r\n- transformation the coordinates into collection of stereo signals(class Shape),  the key entity of the solution\r\n- highly specialized \"bar chart\" construction  (class Histogram, a derivative of Shape)\r\n\r\nThere  are  also   several public methods defined in  Shape class:\r\n- ```to_device()``` to send values to sound device using sounddevice module.\r\n- ```to_wav()``` - to create a wav-file from values using  soundfile module.\r\n- ```switch(mode)``` - to switch the mode of the shape between fast and slow\r\n- ```add(x, y)``` - to add an embedded object of the same type\r\n\r\nThe SAMPLERATE constant contains standard sampling rate value  44100 Hz.\r\n\r\n### Shape logic\r\nOnce we evoke Shape's constructor, it creates and configures an instance  ready to produce the values. The process itself starts only when the 'values' property is called.\r\nIf there are embedded Shapes, the values are accessed recursively and there is no difference if they are  or not and what the depth is.\r\n\r\nInside Tone class the values are also being manufactured only when they are needed and what we have is  a very   lightweighted object  which  contains only  its configuration.\r\n\r\nThe most important logic is encapsulated inside  private methods ```__tone()``` and ```__pan()```:\r\n```\r\n# synthesis   of sine wave with given parameters\r\n\r\nt = np.linspace(0, self.duration, int(SAMPLERATE * self.duration), False)\r\nreturn np.sin(2 * np.pi * self.frequency * t)\r\n```\r\n\r\n```\r\n# its panning\r\nleft = (\r\n    np.sqrt(2)\r\n    / 2.0\r\n    * (np.cos(self.deviation) - np.sin(self.deviation))\r\n    * values\r\n)\r\nright = (\r\n    np.sqrt(2)\r\n    / 2.0\r\n    * (np.cos(self.deviation) + np.sin(self.deviation))\r\n    * values\r\n)\r\nreturn np.vstack((left, right))\r\n```\r\n\r\n### Usage\r\n\r\nOk, assume we already have values x and y for  plotting, the first thing that we do  is calling   Shape's constructor taking  x and y as arguments.\r\nAlso it has  an optional parameter \"mode\", which determins the length of each segment of our plot and consequently it final \"appearance\". \r\nThere are two valid   options: 'fast' (10 milliseconds) and 'slow' (50 milliseconds). Default is 'fast'.\r\nThen we can add one or whatever number is needed sets of coordinates so we have several shapes through a single object.\r\nNext and finally we can   send our shape ```to_device()``` or ```to_wav()```, ```switch()``` the mode or change its parameters and then repeat once again or, in case of Jupyter notebook, just call ```Audio()```  function with the values.\r\n\r\n### Examples\r\n#### Jupyter or not\r\n\r\nWhen in context of Jupyter notebook, it is strongly recommended to use \r\n```IPython.display.Audio()``` function instead of calling ```to_device()``` method. \r\nThat function places  in the notebook play/pause control right below the cell, so you can launch the sound any time you like without necessity of repeated cell execution. \r\nIt takes two arguments - values of Shape object and sampling rate (44100).\r\n\r\n```\r\nfrom IPython.display import Audio\r\nsr = 1000\r\nf = 7\r\nx = np.arange(1000)\r\ny = np.sin(2 * np.pi * f * x / sr)\r\nsinusoid  = Shape(x, y)\r\nAudio(sinusoid.values, rate=44100)\r\n\r\n#or replace just the last line  like this: \r\n\r\nsinusoid.to_device()\r\n```\r\n#### Histogram\r\nTo create a histogram, you can  use the  Shape object with proper x and y, yet there is an option   to use an instance  of the dedicated class Histogram.\r\nIt inherits all the methods and attributes from Shape, but its constructor  takes  a distribution as an argument (and a variaty of optional keyword arguments as well).\r\n\r\n```\r\nfrom scipy.stats import norm\r\nnormal_distribution = norm.rvs(size=10000)\r\nhistogram = Histogram(normal_distribution,\r\n    bins=100,\r\n    density=False,\r\n    smooth=False,\r\n    window_size=3,\r\n    mode='fast'\r\n)\r\n# or, with the same result\r\nhistogram = Histogram(normal_distribution)\r\n# and either\r\nAudio(histogram.values, rate=44100)\r\n# or just\r\nhistogram.to_device()\r\n```\r\n\r\n### Conclusion\r\nFinally, we have a     library that is designed  to provide  an audio representation of numeric data of various kinds without graphic component.\r\nIts main features:\r\n- a simple intuitive interface\r\n- the Shape object generates values, that can be \r\n    - played via sound device\r\n    - sent to Audio() function when   in Jupyter notebook\r\n    - saved into a wav-file\r\n- an amount of data processed  is limited only to the characteristics of hardware and resulting time capacity\r\n- OS-independence\r\n- scalable structure\r\n\r\nIt can be applied as a kind of assistive technology in education, for   teaching  topics regarding trigonometry, mathematical statistics, probability theory and so on to blind students,  within  the framework   of academic and applied studies   in  data science, data analysis, economics, sociology and  anywhere else   where it is necessary  to represent big amounts of numbers, as a substitute of conventional diagrams.\r\n\r\nWe sincerely hope that the tool would  be helpful for blind and visually impaired people around the world and  the project  has a bright future.\r\nWe are going to continue to do our best to make it better and there are already some further steps in the pipeline (of course, the four-dimensional diagram is  the most intriguing)\r\nWe are always open to  any form of collaboration and kindly appreciate any suggestions of possible improvement, help  and feedback.\r\n\r\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "Accessibility,Accessible,Assistive,Blind,Visually impaired,Low vision,Screenreader",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "acadia",
+            "package_url": "https://pypi.org/project/acadia/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/acadia/",
+            "project_urls": {
+                "homepage": "https://github.com/monaxov/acadia",
+                "repository": "https://github.com/monaxov/acadia.git"
+            },
+            "release_url": "https://pypi.org/project/acadia/0.1.1/",
+            "requires_dist": [
+                "numpy",
+                "sounddevice",
+                "soundfile"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "A tool to create accessible audio diagrams",
+            "version": "0.1.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17710572,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "70922cfb1ebc9d298af4728bdccc073080270eb5ddecbc78aaab80ffab791de1",
+                    "md5": "b73378690a1dba6eeadeb871d1480595",
+                    "sha256": "73b4916ce33a7b81402d0cbab4757cf0808472a29450d2f9c8e85b501f562da8"
+                },
+                "downloads": -1,
+                "filename": "acadia-0.1.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "b73378690a1dba6eeadeb871d1480595",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 11374,
+                "upload_time": "2023-04-14T17:18:35",
+                "upload_time_iso_8601": "2023-04-14T17:18:35.885614Z",
+                "url": "https://files.pythonhosted.org/packages/70/92/2cfb1ebc9d298af4728bdccc073080270eb5ddecbc78aaab80ffab791de1/acadia-0.1.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e59237f165083e34f9af83bf3bb8658c308674bd44e78dbf9225ce35d82a5ce5",
+                    "md5": "c4145dc017c3c9a624ae5e50fa74c8db",
+                    "sha256": "1e2efcd7b8a642692bef7e6f25060dad89616f0b8975897dfd91ca82826717f2"
+                },
+                "downloads": -1,
+                "filename": "acadia-0.1.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "c4145dc017c3c9a624ae5e50fa74c8db",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 13925,
+                "upload_time": "2023-04-14T17:18:38",
+                "upload_time_iso_8601": "2023-04-14T17:18:38.199498Z",
+                "url": "https://files.pythonhosted.org/packages/e5/92/37f165083e34f9af83bf3bb8658c308674bd44e78dbf9225ce35d82a5ce5/acadia-0.1.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

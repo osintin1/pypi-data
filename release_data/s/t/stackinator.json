@@ -43,7 +43,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16873987,
+        "last_serial": 17712468,
         "urls": [
             {
                 "comment_text": "",
@@ -107,7 +107,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "# Stackinator\n\nA tool for building a scientific software stack from a recipe for vClusters on CSCS' Alps infrastructure.\n\n## Bootstrapping\nUse the `bootstrap.sh` script to install the necessary dependencies. \nThe dependencies are going to be installed under the `external` directory on the root directory of the project.\n\n## Basic usage\n\nThe tool generates the make files and spack configurations that build the spack environments that are packaged together in the spack stack.\nIt can be thought of as equivalent to calling `cmake` or `configure`, before running make to run the configured build.\n\n```bash\n# configure the build\n./bin/stack-config -b$BUILD_PATH -r$RECIPE_PATH\n\n# build the spack stack\ncd $BUILD_PATH\nenv --ignore-environment PATH=/usr/bin:/bin:`pwd`/spack/bin make modules store.squashfs -j64\n\n# mount the stack\nsquashfs-run store.squashfs bash\n```\n* `-b, --build`: the path where the build stage\n* `-r, --recipe`: the path with the recipe yaml files that describe the environment.\n* `-d, --debug`: print detailed python error messages.\n\n## Recipes\n\nA recipe is the input provided to the tool. A recipe is comprised of the following yaml files in a directory:\n\n* `config.yaml`: common configuration for the stack.\n* `compilers.yaml`: the compilers provided by the stack.\n* `environments.yaml`: environments that contain all the software packages.\n* `modules.yaml`: _optional_ module generation rules\n    * follows the spec for (spack mirror configuration)[https://spack.readthedocs.io/en/latest/mirrors.html]\n* `packages.yaml`: _optional_ package rules.\n    * follows the spec for (spack package configuration)[https://spack.readthedocs.io/en/latest/build_settings.html]\n\n### config\n\n```yaml\nname: nvgpu-basic\nstore: /user-environment\nsystem: hohgant\nspack:\n    repo: https://github.com/spack/spack.git\n    commit: 6408b51\nmodules: True\n```\n\n* `name`: a plain text name for the environment\n* `store`: the location where the environment will be mounted.\n* `system`: the name of the vCluster on which the stack will be deployed.\n    * one of `balfrin` or `hohgant`.\n    * cluster-specific details such as the version and location of libfabric are used when configuring and building the stack.\n* `spack`: which spack repository to use for installation.\n* `mirrors`: _optional_ configure use of build caches, see [build cache documentation](docs/build-cache.md).\n* `modules`: _optional_ enable/diasble module file generation (default `True`).\n\n### compilers\n\nTake an  example configuration:\n```yaml\nbootstrap:\n  spec: gcc@11\ngcc:\n  specs:\n  - gcc@11\nllvm:\n  requires: gcc@11\n  specs:\n  - nvhpc@21.7\n  - llvm@14\n```\n\nThe compilers are built in multiple stages:\n\n1. *bootstrap*: A bootstrap gcc compiler is built using the system compiler (currently gcc 4.7.5).\n    * `gcc:specs`: single spec of the form `gcc@version`.\n    * The selected version should have full support for the target architecture in order to build optimised gcc toolchains in step 2.\n2. *gcc*: The bootstrap compiler is then used to build the gcc version(s) provided by the stack.\n    * `gcc:specs`: A list of _at least one_ of the specs of the form `gcc@version`.\n3. *llvm*: (optional) The nvhpc and/or llvm toolchains are build using one of the gcc toolchains installed in step 2.\n    * `llvm:specs`: a list of specs of the form `nvhpc@version` or `llvm@version`.\n    * `llvm:requires`: the version of gcc from step 2 that is used to build the llvm compilers.\n\nThe first two steps are required, so that the simplest stack will provide at least one version of gcc compiled for the target architecture.\n\n> **Note**\n>\n> Don't provide full specs, because the tool will insert \"opinionated\" specs for the target node type, for example:\n> * `nvhpc@21.7` generates `nvhpc@21.7 ~mpi~blas~lapack`\n> * `llvm@14` generates `llvm@14 +clang targets=x86 ~gold ^ninja@kitware`\n> * `gcc@11` generates `gcc@11 build_type=Release +profiled +strip`\n\n### environments\n\nThe software packages are configured as disjoint environments, each built with the same compiler, and configured with a single implementation of MPI.\n\n#### example: a cpu-only gnu toolchain with MPI\n\n```\n# environments.yaml\ngcc-host:\n  compiler:\n      - toolchain: gcc\n        spec: gcc@11.3\n  unify: true\n  specs:\n  - hdf5 +mpi\n  - fftw +mpi\n  mpi:\n    spec: cray-mpich\n    gpu: false\n```\n\nAn environment labelled `gcc-host` is built using `gcc@11.3` from the `gcc` compiler toolchain (**note** the compiler spec must mach a compiler from the toolchain that was installed via the `compilers.yaml` file).\nThe tool will generate a `spack.yaml` specification:\n\n```yaml\n# spack.yaml\nspack:\n  include:\n  - compilers.yaml\n  - config.yaml\n  view: false\n  concretizer:\n    unify: True\n  specs:\n  - fftw +mpi\n  - hdf5 +mpi\n  - cray-mpich\n  packages:\n    all:\n      compiler: [gcc@11.3]\n    mpi:\n      require: cray-mpich\n```\n\n> **Note**\n>\n> The `cray-mpich` spec is added to the list of package specs automatically.\n> By setting `environments.ENV.mpi` all packages in the environment `ENV` that use the virtual dependency `+mpi` will use the same `cray-mpich` implementation.\n\n#### example: a gnu toolchain with MPI and NVIDIA GPU support\n\n```yaml\n# environments.yaml\ngcc-nvgpu:\n  compiler:\n      - toolchain: gcc\n        spec: gcc@11.3\n  unify: true\n  specs:\n  - cuda@11.8\n  - fftw +mpi\n  - hdf5 +mpi\n  mpi:\n    spec: cray-mpich\n    gpu: cuda\n```\n\nThe `environments:gcc-nvgpu:gpu` to `cuda` will build the `cray-mpich` with support for GPU-direct.\n\n```yaml\n# spack.yaml\nspack:\n  include:\n  - compilers.yaml\n  - config.yaml\n  view: false\n  concretizer:\n    unify: True\n  specs:\n  - cuda@11.8\n  - fftw +mpi\n  - hdf5 +mpi\n  - cray-mpich +cuda\n  packages:\n    all:\n      compiler: [gcc@11.3]\n    mpi:\n      require: cray-mpich\n```\n\n#### example: a nvhpc toolchain with MPI\n\nTo build a toolchain with NVIDIA HPC SDK, we provide two compiler toolchains:\n- The `llvm:nvhpc` compiler;\n- A version of gcc from the `gcc` toolchain, in order to build dependencies (like CMake) that can't be built with nvhpc. If a second compiler is not provided, Spack will fall back to the system gcc 4.7.5, and not generate zen2/zen3 optimized code as a result.\n\n```yaml\n# environments.yaml\nprgenv-nvidia:\n  compiler:\n      - toolchain: llvm\n        spec: nvhpc\n      - toolchain: gcc\n        spec: gcc@11.3\n  unify: true\n  specs:\n  - cuda@11.8\n  - fftw%nvhpc +mpi\n  - hdf5%nvhpc +mpi\n  mpi:\n    spec: cray-mpich\n    gpu: cuda\n```\n\nThe following `spack.yaml` is generated:\n\n```yaml\n# spack.yaml\nspack:\n  include:\n  - compilers.yaml\n  - config.yaml\n  view: false\n  concretizer:\n    unify: True\n  specs:\n  - cuda@11.8\n  - fftw%nvhpc +mpi\n  - hdf5%nvhpc +mpi\n  - cray-mpich +cuda\n  packages:\n    all:\n      compiler: [nvhpc, gcc@11.3]\n    mpi:\n      require: cray-mpich\n```\n\n#### example: a gnu toolchain that provides some common tools\n\n```yaml\n# environments.yaml\ntools:\n  compiler:\n      toolchain: gcc\n      spec: gcc@11.3\n  unify: true\n  specs:\n  - cmake\n  - python@3.10\n  - tmux\n  - reframe\n  mpi: false\n  gpu: false\n```\n\n```yaml\n# spack.yaml\nspack:\n  include:\n  - compilers.yaml\n  - config.yaml\n  view: false\n  concretizer:\n    unify: True\n  specs:\n  - cmake\n  - python@3.10\n  - tmux\n  - reframe\n  packages:\n    all:\n      compiler: [gcc@11.3]\n```\n\n### modules\n\nModules are generated for the installed compilers and packages by spack. The default module generation rules set by the version of spack specified in `config.yaml` will be used if no `modules.yaml` file is provided.\n\nTo set rules for module generation, provide a `module.yaml` file as per the [spack documentation](https://spack.readthedocs.io/en/latest/module_file_support.html).\n\nTo disable module generation, set the field `config:modules:False` in `config.yaml`.\n\n### packages\n\nA spack `packages.yaml` file is provided by the tool for each target cluster. This file sets system dependencies, such as libfabric and slurm, which are expected to be provided by the cluster and not built by Spack. A recipe can provide a `packages.yaml` file, which is merged with the cluster-specific `packages.yaml`.\n\nFor example, to enforce every compiler and environment built use the versions of perl and git installed on the system, add a file like the following (with appropriate version numbers and prefixes, of course):\n\n```yaml\n# packages.yaml\npackages:\n  perl:\n    buildable: false\n    externals:\n    - spec: perl@5.36.0\n      prefix: /usr\n  git:\n    buildable: false\n    externals:\n    - spec: git@2.39.1\n      prefix: /usr\n```\n\n\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -140,7 +139,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16873987,
+        "last_serial": 17712468,
         "urls": [
             {
                 "comment_text": "",
@@ -181,6 +180,103 @@
                 "upload_time": "2023-02-15T16:34:30",
                 "upload_time_iso_8601": "2023-02-15T16:34:30.720419Z",
                 "url": "https://files.pythonhosted.org/packages/5e/de/602fa36d7016992470cc4723dbf39c777cf088a3b7ef09c34a5ea94caa89/Stackinator-1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.1.dev0": {
+        "info": {
+            "author": "Swiss National Supercomputing Center (CSCS/ETH Zurich)",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 5 - Production/Stable",
+                "Environment :: Console",
+                "License :: OSI Approved :: BSD License",
+                "Operating System :: POSIX :: Linux",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.6",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# Stackinator\n\nA tool for building a scientific software stack from a recipe for vClusters on CSCS' Alps infrastructure.\n\n## Bootstrapping\nUse the `bootstrap.sh` script to install the necessary dependencies. \nThe dependencies are going to be installed under the `external` directory on the root directory of the project.\n\n## Basic usage\n\nThe tool generates the make files and spack configurations that build the spack environments that are packaged together in the spack stack.\nIt can be thought of as equivalent to calling `cmake` or `configure`, before running make to run the configured build.\n\n```bash\n# configure the build\n./bin/stack-config -b$BUILD_PATH -r$RECIPE_PATH\n\n# build the spack stack\ncd $BUILD_PATH\nenv --ignore-environment PATH=/usr/bin:/bin:`pwd`/spack/bin make modules store.squashfs -j64\n\n# mount the stack\nsquashfs-run store.squashfs bash\n```\n* `-b, --build`: the path where the build stage\n* `-r, --recipe`: the path with the recipe yaml files that describe the environment.\n* `-d, --debug`: print detailed python error messages.\n\n## Recipes\n\nA recipe is the input provided to the tool. A recipe is comprised of the following yaml files in a directory:\n\n* `config.yaml`: common configuration for the stack.\n* `compilers.yaml`: the compilers provided by the stack.\n* `environments.yaml`: environments that contain all the software packages.\n* `modules.yaml`: _optional_ module generation rules\n    * follows the spec for (spack mirror configuration)[https://spack.readthedocs.io/en/latest/mirrors.html]\n* `packages.yaml`: _optional_ package rules.\n    * follows the spec for (spack package configuration)[https://spack.readthedocs.io/en/latest/build_settings.html]\n\n### config\n\n```yaml\nname: nvgpu-basic\nstore: /user-environment\nsystem: hohgant\nspack:\n    repo: https://github.com/spack/spack.git\n    commit: 6408b51\nmodules: True\n```\n\n* `name`: a plain text name for the environment\n* `store`: the location where the environment will be mounted.\n* `system`: the name of the vCluster on which the stack will be deployed.\n    * one of `balfrin` or `hohgant`.\n    * cluster-specific details such as the version and location of libfabric are used when configuring and building the stack.\n* `spack`: which spack repository to use for installation.\n* `mirrors`: _optional_ configure use of build caches, see [build cache documentation](docs/build-cache.md).\n* `modules`: _optional_ enable/diasble module file generation (default `True`).\n\n### compilers\n\nTake an  example configuration:\n```yaml\nbootstrap:\n  spec: gcc@11\ngcc:\n  specs:\n  - gcc@11\nllvm:\n  requires: gcc@11\n  specs:\n  - nvhpc@21.7\n  - llvm@14\n```\n\nThe compilers are built in multiple stages:\n\n1. *bootstrap*: A bootstrap gcc compiler is built using the system compiler (currently gcc 4.7.5).\n    * `gcc:specs`: single spec of the form `gcc@version`.\n    * The selected version should have full support for the target architecture in order to build optimised gcc toolchains in step 2.\n2. *gcc*: The bootstrap compiler is then used to build the gcc version(s) provided by the stack.\n    * `gcc:specs`: A list of _at least one_ of the specs of the form `gcc@version`.\n3. *llvm*: (optional) The nvhpc and/or llvm toolchains are build using one of the gcc toolchains installed in step 2.\n    * `llvm:specs`: a list of specs of the form `nvhpc@version` or `llvm@version`.\n    * `llvm:requires`: the version of gcc from step 2 that is used to build the llvm compilers.\n\nThe first two steps are required, so that the simplest stack will provide at least one version of gcc compiled for the target architecture.\n\n> **Note**\n>\n> Don't provide full specs, because the tool will insert \"opinionated\" specs for the target node type, for example:\n> * `nvhpc@21.7` generates `nvhpc@21.7 ~mpi~blas~lapack`\n> * `llvm@14` generates `llvm@14 +clang targets=x86 ~gold ^ninja@kitware`\n> * `gcc@11` generates `gcc@11 build_type=Release +profiled +strip`\n\n### environments\n\nThe software packages are configured as disjoint environments, each built with the same compiler, and configured with a single implementation of MPI.\n\n#### example: a cpu-only gnu toolchain with MPI\n\n```\n# environments.yaml\ngcc-host:\n  compiler:\n      - toolchain: gcc\n        spec: gcc@11.3\n  unify: true\n  specs:\n  - hdf5 +mpi\n  - fftw +mpi\n  mpi:\n    spec: cray-mpich\n    gpu: false\n```\n\nAn environment labelled `gcc-host` is built using `gcc@11.3` from the `gcc` compiler toolchain (**note** the compiler spec must mach a compiler from the toolchain that was installed via the `compilers.yaml` file).\nThe tool will generate a `spack.yaml` specification:\n\n```yaml\n# spack.yaml\nspack:\n  include:\n  - compilers.yaml\n  - config.yaml\n  view: false\n  concretizer:\n    unify: True\n  specs:\n  - fftw +mpi\n  - hdf5 +mpi\n  - cray-mpich\n  packages:\n    all:\n      compiler: [gcc@11.3]\n    mpi:\n      require: cray-mpich\n```\n\n> **Note**\n>\n> The `cray-mpich` spec is added to the list of package specs automatically.\n> By setting `environments.ENV.mpi` all packages in the environment `ENV` that use the virtual dependency `+mpi` will use the same `cray-mpich` implementation.\n\n#### example: a gnu toolchain with MPI and NVIDIA GPU support\n\n```yaml\n# environments.yaml\ngcc-nvgpu:\n  compiler:\n      - toolchain: gcc\n        spec: gcc@11.3\n  unify: true\n  specs:\n  - cuda@11.8\n  - fftw +mpi\n  - hdf5 +mpi\n  mpi:\n    spec: cray-mpich\n    gpu: cuda\n```\n\nThe `environments:gcc-nvgpu:gpu` to `cuda` will build the `cray-mpich` with support for GPU-direct.\n\n```yaml\n# spack.yaml\nspack:\n  include:\n  - compilers.yaml\n  - config.yaml\n  view: false\n  concretizer:\n    unify: True\n  specs:\n  - cuda@11.8\n  - fftw +mpi\n  - hdf5 +mpi\n  - cray-mpich +cuda\n  packages:\n    all:\n      compiler: [gcc@11.3]\n    mpi:\n      require: cray-mpich\n```\n\n#### example: a nvhpc toolchain with MPI\n\nTo build a toolchain with NVIDIA HPC SDK, we provide two compiler toolchains:\n- The `llvm:nvhpc` compiler;\n- A version of gcc from the `gcc` toolchain, in order to build dependencies (like CMake) that can't be built with nvhpc. If a second compiler is not provided, Spack will fall back to the system gcc 4.7.5, and not generate zen2/zen3 optimized code as a result.\n\n```yaml\n# environments.yaml\nprgenv-nvidia:\n  compiler:\n      - toolchain: llvm\n        spec: nvhpc\n      - toolchain: gcc\n        spec: gcc@11.3\n  unify: true\n  specs:\n  - cuda@11.8\n  - fftw%nvhpc +mpi\n  - hdf5%nvhpc +mpi\n  mpi:\n    spec: cray-mpich\n    gpu: cuda\n```\n\nThe following `spack.yaml` is generated:\n\n```yaml\n# spack.yaml\nspack:\n  include:\n  - compilers.yaml\n  - config.yaml\n  view: false\n  concretizer:\n    unify: True\n  specs:\n  - cuda@11.8\n  - fftw%nvhpc +mpi\n  - hdf5%nvhpc +mpi\n  - cray-mpich +cuda\n  packages:\n    all:\n      compiler: [nvhpc, gcc@11.3]\n    mpi:\n      require: cray-mpich\n```\n\n#### example: a gnu toolchain that provides some common tools\n\n```yaml\n# environments.yaml\ntools:\n  compiler:\n      toolchain: gcc\n      spec: gcc@11.3\n  unify: true\n  specs:\n  - cmake\n  - python@3.10\n  - tmux\n  - reframe\n  mpi: false\n  gpu: false\n```\n\n```yaml\n# spack.yaml\nspack:\n  include:\n  - compilers.yaml\n  - config.yaml\n  view: false\n  concretizer:\n    unify: True\n  specs:\n  - cmake\n  - python@3.10\n  - tmux\n  - reframe\n  packages:\n    all:\n      compiler: [gcc@11.3]\n```\n\n### repo\n\nNew Spack packages or custom versions of a package can be added to the `alps` repo. If a `repo/` folder is provided, `stackinator` will copy all the Spack packages in `repo/packages/` into the `alps` repo (the same repo providing `cray-mpich`). If the user provides a `repo.yaml` file in the `repo/` folder, the file will be ignored (and a warning is emitted).\n\n### modules\n\nModules are generated for the installed compilers and packages by spack. The default module generation rules set by the version of spack specified in `config.yaml` will be used if no `modules.yaml` file is provided.\n\nTo set rules for module generation, provide a `module.yaml` file as per the [spack documentation](https://spack.readthedocs.io/en/latest/module_file_support.html).\n\nTo disable module generation, set the field `config:modules:False` in `config.yaml`.\n\n### packages\n\nA spack `packages.yaml` file is provided by the tool for each target cluster. This file sets system dependencies, such as libfabric and slurm, which are expected to be provided by the cluster and not built by Spack. A recipe can provide a `packages.yaml` file, which is merged with the cluster-specific `packages.yaml`.\n\nFor example, to enforce every compiler and environment built use the versions of perl and git installed on the system, add a file like the following (with appropriate version numbers and prefixes, of course):\n\n```yaml\n# packages.yaml\npackages:\n  perl:\n    buildable: false\n    externals:\n    - spec: perl@5.36.0\n      prefix: /usr\n  git:\n    buildable: false\n    externals:\n    - spec: git@2.39.1\n      prefix: /usr\n```\n\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/eth-cscs/stackinator",
+            "keywords": "",
+            "license": "BSD 3-Clause",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "Stackinator",
+            "package_url": "https://pypi.org/project/Stackinator/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/Stackinator/",
+            "project_urls": {
+                "Homepage": "https://github.com/eth-cscs/stackinator"
+            },
+            "release_url": "https://pypi.org/project/Stackinator/1.1.dev0/",
+            "requires_dist": [
+                "Jinja2",
+                "jsonschema",
+                "PyYAML"
+            ],
+            "requires_python": ">=3.6",
+            "summary": "Stackinator is a tool for building a scientific software stack from a recipe for vClusters on CSCS' Alps infrastructure",
+            "version": "1.1.dev0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17712468,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c4a3b03745f3d31a6baa9ca5d1f17f9cc4f99479ae20504219fc9d26db566bb4",
+                    "md5": "068f02bb24b8d130fee0fb47b5644fa5",
+                    "sha256": "8989d5368f00622d3c6cb60a5f600312e92267d6de3f66f289c2f8fc8d0817df"
+                },
+                "downloads": -1,
+                "filename": "Stackinator-1.1.dev0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "068f02bb24b8d130fee0fb47b5644fa5",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.6",
+                "size": 27081,
+                "upload_time": "2023-04-14T20:14:39",
+                "upload_time_iso_8601": "2023-04-14T20:14:39.148407Z",
+                "url": "https://files.pythonhosted.org/packages/c4/a3/b03745f3d31a6baa9ca5d1f17f9cc4f99479ae20504219fc9d26db566bb4/Stackinator-1.1.dev0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "4d2ef7635dabe6b583af9bd2b10ed327ab11e7a9d7ee1acf02a195278e967426",
+                    "md5": "694317b6cd58cb100664b997e02716bb",
+                    "sha256": "9262ab2bcef2d66ece09489b6b0d1982e5326cba99030aa2610329516fa55a51"
+                },
+                "downloads": -1,
+                "filename": "Stackinator-1.1.dev0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "694317b6cd58cb100664b997e02716bb",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.6",
+                "size": 20122,
+                "upload_time": "2023-04-14T20:14:40",
+                "upload_time_iso_8601": "2023-04-14T20:14:40.716797Z",
+                "url": "https://files.pythonhosted.org/packages/4d/2e/f7635dabe6b583af9bd2b10ed327ab11e7a9d7ee1acf02a195278e967426/Stackinator-1.1.dev0.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
