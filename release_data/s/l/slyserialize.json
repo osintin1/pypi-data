@@ -1,0 +1,96 @@
+{
+    "0.0.1": {
+        "info": {
+            "author": "Dunkyl \ud83d\udd23\ud83d\udd23",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "# ![sly logo](https://raw.githubusercontent.com/dunkyl/SlyMeta/main/sly%20logo.svg) Sly Serialize for Python\r\n\r\nConvert JSON-like data structures into nice Python objects.\r\n\r\nKey features:\r\n\r\n- Common, built-in types like `set`, `tuple` and `Enum`\r\n- Generic dataclasses and nested generics\r\n- Type aliases\r\n- Union types\r\n- Recursive types and delayed annotations\r\n- Custom deserialization\r\n- Asynchronous custom deserialization\r\n- Zero dependencies\r\n\r\nIn just one line:\r\n```py\r\nassert myThing == from_json(MyClass[int], to_json(myThing))\r\n```\r\n\r\n## Install\r\n\r\n```shell\r\npip install slyserialize\r\n```\r\n\r\n## Basic usage\r\n\r\nCall `convert_from_json` with a target type, with generic arguments, and some json data, such as returned from `json.loads`. Generic arguments are optional, but if you don't provide them, you'll get a `TypeError` if the target type requires them to be concrete. See the final line in the following example:\r\n\r\n```py\r\nfrom typing import Generic, TypeVar, TypeAlias\r\nfrom dataclasses import dataclass\r\nfrom SlySerialize import convert_from_json\r\n\r\nListOfIntegers: TypeAlias = list[int]\r\nT = TypeVar(\"T\")\r\n\r\n@dataclass\r\nclass MyClass(Generic[T]):\r\n    aliased: ListOfIntegers\r\n    generic: T\r\n    builtin: tuple[float, list[str]]\r\n    union: dict[str, T] | None\r\n    delayed: 'MyClass[T] | None'\r\n\r\nmy_obj = MyClass[int]([1, 2, 3], 42, (3.1, [\"a\"]), None, None)\r\n\r\n# dataclasses.asdict(my_obj)\r\nserialized = {\r\n    \"aliased\": [1, 2, 3],   \"generic\": 42,\r\n    \"union\":   None,        \"delayed\": None,\r\n    \"builtin\": [3.1, [\"a\"]],\r\n}\r\n\r\nassert my_obj == convert_from_json(MyClass[int], serialized)\r\n```\r\n\r\n## Should I use this?\r\n\r\nThe goal of this library is to handle deserialization cases for strongly typed dataclass and custom types, and to do so with as little code as possible.\r\n\r\nIf you only want fast and customizable *serialization*, but maybe not deserialization, you should use a library like [orjson](https://pypi.org/project/orjson/).\r\n\r\nIf you are using JSON-like types already, without generics or some other specific feature, there are also other libraries that will deserialize faster.\r\n\r\nThe serialization format for JSON in this library also prefers succinctness at the cost of certain edge cases related to overlapping type representations. See the [Default Representations](#default-representations) section for more details.\r\n\r\n## Notes\r\n\r\nType variables or mutually recursive types must be declared in the global scope if used in a delayed annotation.\r\n\r\n`SlySerialize.JsonType` is an alias for the return type of `json.loads` (Python standard library), it represents the native JSON types.\r\n\r\nIf the type is not supported, or if the representation was different than what was expected, a `TypeError` will be raised.\r\n\r\n`dataclasses.asdict` only supports serializing dataclasses, `JsonType`, `tuple`, and lists, tuples, or dicts of these. There will not be an error, but, the return type is *not* `JsonType`. Other types will be passed through unaffected. If you want to serialize a dataclass with a member that is not one of these types, you may want to implement your own serialization.\r\n\r\n## Default Representations\r\n\r\nThe following types are supported by default:\r\n\r\n- `NoneType`, `bool`, `int`, `float`, and `str` as themselves\r\n- `list` and `dict` as arrays and maps, with or without their generic arguments\r\n    - `dict` is only supported if the key type is `str`\r\n    - The default value type used with no arguments is `JsonType`\r\n- `tuple` and `set` as an array\r\n- Dataclasses as maps\r\n- Enum types of `str` or `int` as their value\r\n- Union types as whichever case the value would otherwise be represented as\r\n- Generic types are substituted for their concrete type. If the type is not available, a `ValueError` is raised.\r\n- The covariant versions of `list` and `map`, `collections.abc.Sequence` and `collections.abc.Mapping`, are also supported.\r\n    - Consequently, `JsonType` is a valid type to deserialize to. If you want to do nothing to a member during deserialization, use `JsonType` as the type.\r\n\r\nNot all types are guaranteed to round-trip. For a simple example, `list` and `set` are both serialized as a JSON array, so if there is a union `list | set`, and an empty value, then the first case, `list`, will be selected during deserialization. Other examples would include `dict` and classes, or classes that have the same member names.\r\n\r\n## Serialization\r\n\r\nImplementations for serialization is provided. Some type loaders that are needed for deserialization do not have a corresponding serializer, such as `TypeVar` and `TypeAlias`, since  it would be unusual for an instance value to be these types.\r\n\r\n```py\r\n# ...\r\nfrom SlySerialize import to_json\r\n\r\nassert serialized == to_json(my_obj)\r\n\r\n```\r\n\r\nIn most cases, `to_json` should be the inverse of `from_json`.\r\n\r\n## Custom Converters\r\n\r\nCustom converters can be created for any type. Subclass `Loader` or `Unloader`, or `Converter` for both. These have a generic argument for the domain type that they serialize to or from. For JSON, this is `JsonType`. Some of the loaders implemented by this library do not require a specific domain, so they may be combined with custom loaders for other domain types.\r\n\r\nLoaders must implement the following two methods:\r\n\r\n```py\r\n    def can_load(self, cls: type) -> bool: ...\r\n\r\n    def des(self, ctx: DesCtx[Domain], value: Domain, cls: type[MyType]) -> MyType: ...\r\n```\r\n\r\nAnd unloaders must implement:\r\n\r\n```py\r\n    def can_unload(self, cls: type) -> bool: ...\r\n\r\n    def ser(self, ctx: SerCtx[Domain], obj: MyType) -> Domain: ...\r\n```\r\n\r\nWhere `DesCtx` and `SerCtx` are used to recursively call the top level converter being used.\r\n\r\nIn most cases can_unload can be implemented in terms of can_load.\r\n\r\nThe converters implemented by this library are available in `SlySerialize.COMMON_CONVERTERS`, which is a `ConverterCollection` that implements `Converter[JsonType]`.\r\n\r\nTo use a custom converter, pass any `Converter`  to `from_json` or `to_json`:\r\n\r\n```py\r\n# ...\r\n\r\ncustom_converter = COMMON_CONVERTERS.with_(MyConverter())\r\n\r\nthing = from_json(MyClass[int], serialized, custom_converter)\r\n```\r\n\r\nIt is not strictly necessary to use a `ConverterCollection`.\r\n\r\n## Async Loaders\r\n\r\nAsync loaders are supported. They must implement the following methods:\r\n\r\n```py\r\n    def can_load(self, cls: type) -> bool: ...\r\n\r\n    async def des(self, ctx: DesCtx[Domain], value: Domain, cls: type[MyType]) -> MyType: ...\r\n```\r\n\r\nWhen a loader is async or part of a `ConverterCollection`, then `from_json_async` must be used instead of `from_json` or an error will be raised. There is no async version of `to_json` nor any async version of `Unloader`. It is OK to pass a `ConverterCollection` with async loaders to `to_json`, since it will only access converters that implement `Loader`.\r\n\r\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT License  Copyright (c) 2023 [fullname]  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.  THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. ",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "SlySerialize",
+            "package_url": "https://pypi.org/project/SlySerialize/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/SlySerialize/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/dunkyl/SlySerialize/issues",
+                "Documentation": "https://docs.dunkyl.net/SlySerialize",
+                "Homepage": "https://github.com/dunkyl/SlySerialize",
+                "Repository": "https://github.com/dunkyl/SlySerialize"
+            },
+            "release_url": "https://pypi.org/project/SlySerialize/0.0.1/",
+            "requires_dist": [
+                "pytest ; extra == 'dev'",
+                "pytest-asyncio ; extra == 'dev'",
+                "sphinx ; extra == 'dev'",
+                "myst-parser ; extra == 'dev'",
+                "furo ; extra == 'dev'",
+                "sphinxcontrib-trio ; extra == 'dev'",
+                "sphinx-copybutton ; extra == 'dev'",
+                "sphinxext-opengraph ; extra == 'dev'"
+            ],
+            "requires_python": ">=3.10",
+            "summary": "Convert JSON-like data structures into nice Python objects.",
+            "version": "0.0.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17716238,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d8ee2d3b2d0ba8a9e49bf7df163db6592e06f0732bb911b255425ee336f85d8e",
+                    "md5": "a7fc03ec2085cca946ff99c98d701a02",
+                    "sha256": "0e0f9204bad7307b1875b0af6101078728c2e8c27bc40d30c6a48ca5800907e3"
+                },
+                "downloads": -1,
+                "filename": "SlySerialize-0.0.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "a7fc03ec2085cca946ff99c98d701a02",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.10",
+                "size": 11404,
+                "upload_time": "2023-04-15T03:40:52",
+                "upload_time_iso_8601": "2023-04-15T03:40:52.355637Z",
+                "url": "https://files.pythonhosted.org/packages/d8/ee/2d3b2d0ba8a9e49bf7df163db6592e06f0732bb911b255425ee336f85d8e/SlySerialize-0.0.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f857fc25739afddc1af8a3ba2dfcc9c3a416cab4868da9ec2a31444aa449a87c",
+                    "md5": "ab347dac2c0ed4fe3fd5acb8ce31b2ed",
+                    "sha256": "037551c1b65fd0c3d22a7bc6a1b7dd050e637113be2d247df0100a11c3fd67a1"
+                },
+                "downloads": -1,
+                "filename": "SlySerialize-0.0.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "ab347dac2c0ed4fe3fd5acb8ce31b2ed",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.10",
+                "size": 15559,
+                "upload_time": "2023-04-15T03:40:54",
+                "upload_time_iso_8601": "2023-04-15T03:40:54.728268Z",
+                "url": "https://files.pythonhosted.org/packages/f8/57/fc25739afddc1af8a3ba2dfcc9c3a416cab4868da9ec2a31444aa449a87c/SlySerialize-0.0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
