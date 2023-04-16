@@ -52,7 +52,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17280255,
+        "last_serial": 17721543,
         "urls": [
             {
                 "comment_text": "",
@@ -152,7 +152,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17280255,
+        "last_serial": 17721543,
         "urls": [
             {
                 "comment_text": "",
@@ -252,7 +252,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17280255,
+        "last_serial": 17721543,
         "urls": [
             {
                 "comment_text": "",
@@ -319,7 +319,6 @@
                 "Topic :: Software Development :: Build Tools",
                 "Topic :: System :: Archiving :: Packaging"
             ],
-            "description": "# Axle-Runtime - Python Wheel enhancement library\n\n[![Gitter](https://img.shields.io/gitter/room/karellen/Lobby?logo=gitter)](https://app.gitter.im/#/room/#karellen_Lobby:gitter.im)\n[![Build Status](https://img.shields.io/github/actions/workflow/status/karellen/wheel-axle-runtime/build.yml?branch=master)](https://github.com/karellen/wheel-axle-runtime/actions/workflows/build.yml)\n[![Coverage Status](https://img.shields.io/coveralls/github/karellen/wheel-axle-runtime/master?logo=coveralls)](https://coveralls.io/r/karellen/wheel-axle-runtime?branch=master)\n\n[![PyBuilder Version](https://img.shields.io/pypi/v/wheel-axle-runtime?logo=pypi)](https://pypi.org/project/wheel-axle-runtime/)\n[![PyBuilder Python Versions](https://img.shields.io/pypi/pyversions/wheel-axle-runtime?logo=pypi)](https://pypi.org/project/wheel-axle-runtime/)\n[![PyBuilder Downloads Per Day](https://img.shields.io/pypi/dd/wheel-axle-runtime?logo=pypi)](https://pypi.org/project/wheel-axle-runtime/)\n[![PyBuilder Downloads Per Week](https://img.shields.io/pypi/dw/wheel-axle-runtime?logo=pypi)](https://pypi.org/project/wheel-axle-runtime/)\n[![PyBuilder Downloads Per Month](https://img.shields.io/pypi/dm/wheel-axle-runtime?logo=pypi)](https://pypi.org/project/wheel-axle-runtime/)\n\n# This is a companion project to [Wheel Axle/bdist_axle](https://github.com/karellen/wheel-axle)\n\n## Problem\n\n1. Python wheels do not support symlinks.\n2. PIP installation procedure is not locally extensible and does not allow adding post-install hooks.\n\n## Solution\n\n**WARNING: THIS IS EXPERIMENTAL BETA SOFTWARE. THERE ARE NO WARRANTIES OF ANY KIND. USE AT YOUR OWN RISK. ADDITIONAL\nINCLUDED DISCLAIMERS ALSO APPLY.**\n\nWheel Axle Runtime library utilizes a little-known trick used in `site.py`'s `.pth` files that allows executing\narbitrary code while the site packages are being added. Thus, specially-crafted wheels can silently execute installed\ncode on Python interpreter startup, facilitating the \"post-install hook\" functionality.\n\n### Python Invariants\n\nThe core functionality relies on the following Python behaviors:\n\n* `site.py` [processes .pth files](https://github.com/python/cpython/blob/8b1b27f1939cc4060531d198fdb09242f247ca7c/Lib/site.py#L171)\n* `site.py` [executes .pth import lines](https://github.com/python/cpython/blob/8b1b27f1939cc4060531d198fdb09242f247ca7c/Lib/site.py#L186)\n* `.pth` file's line is executed with a local\n  variable [`fullname` denoting the `.pth` file path](https://github.com/python/cpython/blob/8b1b27f1939cc4060531d198fdb09242f247ca7c/Lib/site.py#L170)\n\nThese invariants have not changed for *18 years*.\n\n### Implementation\n\nOnce the distribution-specific `.pth` is executed by the Python interpreter, the Wheel Axle Runtime behaves as follows:\n\n1. The library checks whether a file `.dist-info/axle.done` exists. If it does it is the indication that the\n   post-install hook has executed successfully and nothing more is to be done, terminating all further processing.\n2. A process-wide *inter-thread* lock is acquired.\n3. An OS-wide *inter-process file* lock is acquired on a file `.dist-info/axle.lck`.\n4. Once the locks are acquired the `.dist-info/axle.done` existence is rechecked (double-checked locking optimization).\n5. Now that in-process and inter-process race conditions are excluded the post-install work can begin.\n6. Registered `installers` are run in sequence. Installers *should be* idempotent. The following installers are\n   currently implemented:\n    1. *Symlinks installer* processes `.dist-info/symlinks.txt`, if any.\n        1. Based on the location of the `.pth` file being executed the current installation `schema` and its paths are\n           determined. Currently, installation into a virtual environment or user location is supported and tested.\n        2. For each symlink the target path is resolved and `realpath` is used to determine the final target path.\n        3. If the symlink path and symlink target path are within one of the permitted schema locations the symlink is\n           created. Otherwise, an exception is raised and the processing is aborted.\n        4. After all symlinks are created, the `.dist-info/RECORD` file is updated to reflect the created symlinks.\n    2. *Axle installer* finalizes the installation. This installer is always executed last.\n        1. The `.dist-info/RECORD` is updated with `.dist-info/axle.done` file record.\n        2. `.dist-info/axle.done` is created.\n        3. `<distribution name and version>.pth` is then removed. If the file cannot be removed it is left in place.\n           This can happen on Windows, since the `.pth` file in question is likely opened for exclusive reading on\n           Windows.\n7. Any failure anywhere in the above process will result in an abort, an error message, and a retry the next time\n   the `.pth` will be activated.\n\n### Security\n\nThere are several security requirements and implications of having post-install hooks implemented this way.\n\n1. The installation requires write permissions to the distribution. This will be a problem if the package is installed\n   as `root` in locations such as `/usr` or `/usr/local`, or is otherwise not write-permitted, unless the post-install\n   hook is also ran with the sufficient privileges. This is generally acceptable as the primary use is considered to be\n   installation into virtual envs and user locations. That said, simply running `python -c pass` or any other python\n   invocation that does activate `site.py` under the required privileges will finalize post-install procedures.\n2. There is *an attempt* to ensure that that axle wheels symlinks and targets don't extend beyond the allowed `schema`\n   locations. *Those attempts are **superficial** and **have not been formally verified**.* For example, it may be\n   possible to escape the path validation/confinement by:\n    * hacking symlink creation order\n    * hacking symlink directory targets\n    * exploiting OS-specific `realpath` implementation idiosyncrasies (i.e. `strict` vs not, and what is considered\n      strict)\n\n### TODOs\n\n* Support schema detection for `home` and `prefix` installations.\n* Validate and verify Windows support.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -353,7 +352,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17280255,
+        "last_serial": 17721543,
         "urls": [
             {
                 "comment_text": "",
@@ -394,6 +393,207 @@
                 "upload_time": "2023-03-14T01:33:18",
                 "upload_time_iso_8601": "2023-03-14T01:33:18.398964Z",
                 "url": "https://files.pythonhosted.org/packages/93/09/21e4df51439464f0a6951179573a82d036f289e94e5d615914ea3662da72/wheel-axle-runtime-0.0.4.dev20230314013250.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.4.dev20230415195042": {
+        "info": {
+            "author": "Karellen, Inc.",
+            "author_email": "supervisor@karellen.co",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: Apache Software License",
+                "Operating System :: MacOS :: MacOS X",
+                "Operating System :: POSIX",
+                "Operating System :: POSIX :: Linux",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Software Development :: Build Tools",
+                "Topic :: System :: Archiving :: Packaging"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/karellen/wheel-axle-runtime",
+            "keywords": "wheel packaging setuptools bdist_wheel symlink postinstall",
+            "license": "Apache License, Version 2.0",
+            "maintainer": "Arcadiy Ivanov",
+            "maintainer_email": "arcadiy@karellen.co",
+            "name": "wheel-axle-runtime",
+            "package_url": "https://pypi.org/project/wheel-axle-runtime/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/wheel-axle-runtime/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/karellen/wheel-axle-runtime/issues",
+                "Documentation": "https://github.com/karellen/wheel-axle-runtime/",
+                "Homepage": "https://github.com/karellen/wheel-axle-runtime",
+                "Source Code": "https://github.com/karellen/wheel-axle-runtime/"
+            },
+            "release_url": "https://pypi.org/project/wheel-axle-runtime/0.0.4.dev20230415195042/",
+            "requires_dist": [
+                "filelock"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "Axle Runtime is the runtime part of the Python Wheel enhancement library",
+            "version": "0.0.4.dev20230415195042",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17721543,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "90e14ba11a56ea807c46c1f1a5dad49ab0dd88e52f41cf45069aa0089e3b9882",
+                    "md5": "acbb9ec84c4072e147954c801ff97b44",
+                    "sha256": "b32ce282ab3fc09b39379461be0f83d9a7b1be98565584be02a040c8681705ab"
+                },
+                "downloads": -1,
+                "filename": "wheel_axle_runtime-0.0.4.dev20230415195042-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "acbb9ec84c4072e147954c801ff97b44",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 12514,
+                "upload_time": "2023-04-15T19:51:12",
+                "upload_time_iso_8601": "2023-04-15T19:51:12.250114Z",
+                "url": "https://files.pythonhosted.org/packages/90/e1/4ba11a56ea807c46c1f1a5dad49ab0dd88e52f41cf45069aa0089e3b9882/wheel_axle_runtime-0.0.4.dev20230415195042-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "76efe2d106fa4165616554f9f013085774dcf88e346705bcd3134d1bdcb1e361",
+                    "md5": "698473d9adbc558d99971f0fb65675ef",
+                    "sha256": "27d7ff10d838c45e6e8597b71b8b26ee00c5eb06e707e0084128f893fad3fefd"
+                },
+                "downloads": -1,
+                "filename": "wheel-axle-runtime-0.0.4.dev20230415195042.tar.gz",
+                "has_sig": false,
+                "md5_digest": "698473d9adbc558d99971f0fb65675ef",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 15471,
+                "upload_time": "2023-04-15T19:51:13",
+                "upload_time_iso_8601": "2023-04-15T19:51:13.632149Z",
+                "url": "https://files.pythonhosted.org/packages/76/ef/e2d106fa4165616554f9f013085774dcf88e346705bcd3134d1bdcb1e361/wheel-axle-runtime-0.0.4.dev20230415195042.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.4.dev20230415195356": {
+        "info": {
+            "author": "Karellen, Inc.",
+            "author_email": "supervisor@karellen.co",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: Apache Software License",
+                "Operating System :: MacOS :: MacOS X",
+                "Operating System :: POSIX",
+                "Operating System :: POSIX :: Linux",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Software Development :: Build Tools",
+                "Topic :: System :: Archiving :: Packaging"
+            ],
+            "description": "# Axle-Runtime - Python Wheel enhancement library\n\n[![Gitter](https://img.shields.io/gitter/room/karellen/Lobby?logo=gitter)](https://app.gitter.im/#/room/#karellen_Lobby:gitter.im)\n[![Build Status](https://img.shields.io/github/actions/workflow/status/karellen/wheel-axle-runtime/build.yml?branch=master)](https://github.com/karellen/wheel-axle-runtime/actions/workflows/build.yml)\n[![Coverage Status](https://img.shields.io/coveralls/github/karellen/wheel-axle-runtime/master?logo=coveralls)](https://coveralls.io/r/karellen/wheel-axle-runtime?branch=master)\n\n[![Wheel Axle Runtime Version](https://img.shields.io/pypi/v/wheel-axle-runtime?logo=pypi)](https://pypi.org/project/wheel-axle-runtime/)\n[![Wheel Axle Runtime Python Versions](https://img.shields.io/pypi/pyversions/wheel-axle-runtime?logo=pypi)](https://pypi.org/project/wheel-axle-runtime/)\n\n[![Wheel Axle Runtime Downloads Per Day](https://img.shields.io/pypi/dd/wheel-axle-runtime?logo=pypi)](https://pypistats.org/packages/wheel-axle-runtime)\n[![Wheel Axle Runtime Downloads Per Week](https://img.shields.io/pypi/dw/wheel-axle-runtime?logo=pypi)](https://pypistats.org/packages/wheel-axle-runtime)\n[![Wheel Axle Runtime Downloads Per Month](https://img.shields.io/pypi/dm/wheel-axle-runtime?logo=pypi)](https://pypistats.org/packages/wheel-axle-runtime)\n\n# This is a companion project to [Wheel Axle/bdist_axle](https://github.com/karellen/wheel-axle)\n\n## Problem\n\n1. Python wheels do not support symlinks.\n2. PIP installation procedure is not locally extensible and does not allow adding post-install hooks.\n\n## Solution\n\n**WARNING: THIS IS EXPERIMENTAL BETA SOFTWARE. THERE ARE NO WARRANTIES OF ANY KIND. USE AT YOUR OWN RISK. ADDITIONAL\nINCLUDED DISCLAIMERS ALSO APPLY.**\n\nWheel Axle Runtime library utilizes a little-known trick used in `site.py`'s `.pth` files that allows executing\narbitrary code while the site packages are being added. Thus, specially-crafted wheels can silently execute installed\ncode on Python interpreter startup, facilitating the \"post-install hook\" functionality.\n\n### Python Invariants\n\nThe core functionality relies on the following Python behaviors:\n\n* `site.py` [processes .pth files](https://github.com/python/cpython/blob/8b1b27f1939cc4060531d198fdb09242f247ca7c/Lib/site.py#L171)\n* `site.py` [executes .pth import lines](https://github.com/python/cpython/blob/8b1b27f1939cc4060531d198fdb09242f247ca7c/Lib/site.py#L186)\n* `.pth` file's line is executed with a local\n  variable [`fullname` denoting the `.pth` file path](https://github.com/python/cpython/blob/8b1b27f1939cc4060531d198fdb09242f247ca7c/Lib/site.py#L170)\n\nThese invariants have not changed for *18 years*.\n\n### Implementation\n\nOnce the distribution-specific `.pth` is executed by the Python interpreter, the Wheel Axle Runtime behaves as follows:\n\n1. The library checks whether a file `.dist-info/axle.done` exists. If it does it is the indication that the\n   post-install hook has executed successfully and nothing more is to be done, terminating all further processing.\n2. A process-wide *inter-thread* lock is acquired.\n3. An OS-wide *inter-process file* lock is acquired on a file `.dist-info/axle.lck`.\n4. Once the locks are acquired the `.dist-info/axle.done` existence is rechecked (double-checked locking optimization).\n5. Now that in-process and inter-process race conditions are excluded the post-install work can begin.\n6. Registered `installers` are run in sequence. Installers *should be* idempotent. The following installers are\n   currently implemented:\n    1. *Symlinks installer* processes `.dist-info/symlinks.txt`, if any.\n        1. Based on the location of the `.pth` file being executed the current installation `schema` and its paths are\n           determined. Currently, installation into a virtual environment or user location is supported and tested.\n        2. For each symlink the target path is resolved and `realpath` is used to determine the final target path.\n        3. If the symlink path and symlink target path are within one of the permitted schema locations the symlink is\n           created. Otherwise, an exception is raised and the processing is aborted.\n        4. After all symlinks are created, the `.dist-info/RECORD` file is updated to reflect the created symlinks.\n    2. *Axle installer* finalizes the installation. This installer is always executed last.\n        1. The `.dist-info/RECORD` is updated with `.dist-info/axle.done` file record.\n        2. `.dist-info/axle.done` is created.\n        3. `<distribution name and version>.pth` is then removed. If the file cannot be removed it is left in place.\n           This can happen on Windows, since the `.pth` file in question is likely opened for exclusive reading on\n           Windows.\n7. Any failure anywhere in the above process will result in an abort, an error message, and a retry the next time\n   the `.pth` will be activated.\n\n### Security\n\nThere are several security requirements and implications of having post-install hooks implemented this way.\n\n1. The installation requires write permissions to the distribution. This will be a problem if the package is installed\n   as `root` in locations such as `/usr` or `/usr/local`, or is otherwise not write-permitted, unless the post-install\n   hook is also ran with the sufficient privileges. This is generally acceptable as the primary use is considered to be\n   installation into virtual envs and user locations. That said, simply running `python -c pass` or any other python\n   invocation that does activate `site.py` under the required privileges will finalize post-install procedures.\n2. There is *an attempt* to ensure that that axle wheels symlinks and targets don't extend beyond the allowed `schema`\n   locations. *Those attempts are **superficial** and **have not been formally verified**.* For example, it may be\n   possible to escape the path validation/confinement by:\n    * hacking symlink creation order\n    * hacking symlink directory targets\n    * exploiting OS-specific `realpath` implementation idiosyncrasies (i.e. `strict` vs not, and what is considered\n      strict)\n\n### TODOs\n\n* Support schema detection for `home` and `prefix` installations.\n* Validate and verify Windows support.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/karellen/wheel-axle-runtime",
+            "keywords": "wheel packaging setuptools bdist_wheel symlink postinstall",
+            "license": "Apache License, Version 2.0",
+            "maintainer": "Arcadiy Ivanov",
+            "maintainer_email": "arcadiy@karellen.co",
+            "name": "wheel-axle-runtime",
+            "package_url": "https://pypi.org/project/wheel-axle-runtime/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/wheel-axle-runtime/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/karellen/wheel-axle-runtime/issues",
+                "Documentation": "https://github.com/karellen/wheel-axle-runtime/",
+                "Homepage": "https://github.com/karellen/wheel-axle-runtime",
+                "Source Code": "https://github.com/karellen/wheel-axle-runtime/"
+            },
+            "release_url": "https://pypi.org/project/wheel-axle-runtime/0.0.4.dev20230415195356/",
+            "requires_dist": [
+                "filelock"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "Axle Runtime is the runtime part of the Python Wheel enhancement library",
+            "version": "0.0.4.dev20230415195356",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17721543,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6d256de92604863949e36c4c4f13a10f34b18f14791f88859f5f5f83fb23d991",
+                    "md5": "3873d088d8f1dc23f6f309afc513c75b",
+                    "sha256": "f80643ea90e0e16685604c5a5d493415b47572a612a03b902a22970500bb353f"
+                },
+                "downloads": -1,
+                "filename": "wheel_axle_runtime-0.0.4.dev20230415195356-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "3873d088d8f1dc23f6f309afc513c75b",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 12514,
+                "upload_time": "2023-04-15T19:54:26",
+                "upload_time_iso_8601": "2023-04-15T19:54:26.090437Z",
+                "url": "https://files.pythonhosted.org/packages/6d/25/6de92604863949e36c4c4f13a10f34b18f14791f88859f5f5f83fb23d991/wheel_axle_runtime-0.0.4.dev20230415195356-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "80cbd1f8ac45eebd3b5ba53b391041965a4d5871d4c6bfe475f16de9388c6c92",
+                    "md5": "7866256408bd0025c5b259038f59fc3b",
+                    "sha256": "d305de6df47cfcec7970d12096ca7663a7d96b7b64096bc5bd2059e8131f02d9"
+                },
+                "downloads": -1,
+                "filename": "wheel-axle-runtime-0.0.4.dev20230415195356.tar.gz",
+                "has_sig": false,
+                "md5_digest": "7866256408bd0025c5b259038f59fc3b",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 15457,
+                "upload_time": "2023-04-15T19:54:27",
+                "upload_time_iso_8601": "2023-04-15T19:54:27.713973Z",
+                "url": "https://files.pythonhosted.org/packages/80/cb/d1f8ac45eebd3b5ba53b391041965a4d5871d4c6bfe475f16de9388c6c92/wheel-axle-runtime-0.0.4.dev20230415195356.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
