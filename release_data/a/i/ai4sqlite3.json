@@ -1,0 +1,98 @@
+{
+    "0.1.0": {
+        "info": {
+            "author": "",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License"
+            ],
+            "description": "# ai4sqlite3\n**Natural language query assistant for [SQLite databases](https://www.sqlite.org/index.html)**\n\nUsing a local SQLite3 database file, the command-line interface asks for your query intentions, uses OpenAI's ChatGPT API to formulate SQL fulfilling them, and then runs the SQL on your database. Bring your own [OpenAI API key](https://www.howtogeek.com/885918/how-to-get-an-openai-api-key/) ($ / free trial).\n\nThe tool sends your database *schema* and written query intentions to OpenAI. But NOT the result sets nor any other database *content*. The database is opened in read-only mode so that the AI cannot damage it.\n\n### Quick start\n\n<pre>\n$ <b>export OPENAPI_API_KEY=xxx</b>\n$ <b>pip3 install ai4sqlite3</b>\n$ <b>wget https://github.com/lerocha/chinook-database/raw/master/ChinookDatabase/DataSources/Chinook_Sqlite.sqlite</b>\n$ <b>ai4sqlite3 Chinook_Sqlite.sqlite --yes</b>\nAnalyzing schema of Chinook_Sqlite.sqlite in 4.9s \n\nThis database models a digital music store. It includes tables for artists, albums,\ntracks, genres, media types, invoices, customers, employees, playlists, and playlist\ntracks. The tables are linked through foreign keys to form relationships, such as an\nartist being associated with an album, an invoice being linked to a customer, and a\nplaylist being composed of multiple tracks. The database is designed to enable the store\nto manage and track music sales, customer information, and employee records, as well as\norganizing and categorizing the available music.\n\nPlease state the nature of the desired database query.\n> <b>top five customer countries by 2011 revenue (round to cents)</b>\n\nGenerating SQL in 2.8s \n\nSELECT c.Country, ROUND(SUM(i.Total), 2) AS 'Revenue 2011'\nFROM Customer c\nJOIN Invoice i ON c.CustomerId = i.CustomerId\nWHERE strftime('%Y', i.InvoiceDate) = '2011'\nGROUP BY c.Country\nORDER BY SUM(i.Total) DESC\nLIMIT 5;\n\nExecuting query in 0.1s \n+---------+--------------+\n| Country | Revenue 2011 |\n+---------+--------------+\n|   USA   |    103.01    |\n|  Canada |    55.44     |\n| Germany |    48.57     |\n|  France |    42.61     |\n| Ireland |    32.75     |\n+---------+--------------+\n\nNext query?\n> <b>percentage of all revenue from sales to North American customers</b>\n\nGenerating SQL in 3.3s \n\nSELECT \n    ROUND(SUM(i.Total) / (SELECT SUM(Total) FROM Invoice)*100, 2) AS \"North American Revenue Percentage\"\nFROM \n    Invoice i\n    INNER JOIN Customer c ON i.CustomerId = c.CustomerId\nWHERE \n    c.Country = 'USA' OR c.Country = 'Canada';\n\nExecuting query in 0.1s \n+-----------------------------------+\n| North American Revenue Percentage |\n+-----------------------------------+\n|               35.52               |\n+-----------------------------------+\n\nNext query?\n>\n</pre>\n\n### Advice\n\n* We reset the AI memory between `Next query?` prompts, so you can't implicitly refer back to prior queries.\n* But you can use the up arrow key to recall a prior input to edit or add to.\n* If SQLite rejects the AI's SQL, then we automatically request corrections (up to `--revisions` attempts).\n* You can (usually) get general questions aswered with something like: *about the schema, what does each invoice line item refer to?*\n* You might enjoy exploring your [Firefox](https://www.foxtonforensics.com/browser-history-examiner/firefox-history-location) or [Chrome](https://www.foxtonforensics.com/browser-history-examiner/chrome-history-location) browser history database (you might need to copy the file if your browser has it open).\n\n### Challenging examples\n\nHere are a few examples where gpt-3.5-turbo usually generates erroneous answers (but we show cherry-picked ones).\n\n<pre>\n> <b>Considering sales to USA customers, find the top-grossing artist in each state.</b>\n\nGenerating SQL in 13.4s \n\nWITH \n    -- Select only the sales to USA customers and\n    -- join the necessary tables.\n    usa_sales AS (\n        SELECT il.*, c.State\n        FROM InvoiceLine il\n        INNER JOIN Invoice i ON il.InvoiceId=i.InvoiceId\n        INNER JOIN Customer c ON i.CustomerId=c.CustomerId\n        WHERE c.Country='USA'\n    ),\n \n    -- Calculate the total sale in dollars for each artist.\n    artist_total_sales AS (\n        SELECT ar.Name, SUM(usa_sales.UnitPrice*usa_sales.Quantity) AS total_sales\n        FROM usa_sales\n        INNER JOIN Track t ON usa_sales.TrackId=t.TrackId\n        INNER JOIN Album al ON t.AlbumId=al.AlbumId\n        INNER JOIN Artist ar ON al.ArtistId=ar.ArtistId\n        GROUP BY ar.ArtistId\n    ),\n \n    -- Rank the artists by total sale in each state.\n    -- If two or more artists share the top sale in a state,\n    -- rank them alphabetically by artist name.\n    ranked_artists AS (\n        SELECT ar.Name, usa_sales.State,\n               SUM(usa_sales.UnitPrice*usa_sales.Quantity) AS state_sales,\n               RANK() OVER (\n                    PARTITION BY usa_sales.State \n                    ORDER BY SUM(usa_sales.UnitPrice*usa_sales.Quantity) DESC, ar.Name\n               ) AS rank_num\n        FROM usa_sales\n        INNER JOIN Track t ON usa_sales.TrackId=t.TrackId\n        INNER JOIN Album al ON t.AlbumId=al.AlbumId\n        INNER JOIN Artist ar ON al.ArtistId=ar.ArtistId\n        GROUP BY ar.ArtistId, usa_sales.State\n    )\n \n-- Select only the top-ranked artist in each state.\nSELECT State, Name AS Top_Grossing_Artist\nFROM ranked_artists\nWHERE rank_num=1\nORDER BY State;\n\nExecuting query in 0.1s \n+-------+--------------------------------+\n| State |      Top_Grossing_Artist       |\n+-------+--------------------------------+\n|   AZ  |          Iron Maiden           |\n|   CA  |          Iron Maiden           |\n|   FL  |           Metallica            |\n|   IL  |           The Office           |\n|   MA  |       Milton Nascimento        |\n|   NV  |          Cidade Negra          |\n|   NY  |          Deep Purple           |\n|   TX  |              Lost              |\n|   UT  | Battlestar Galactica (Classic) |\n|   WA  |           Metallica            |\n|   WI  |           The Office           |\n+-------+--------------------------------+\n\nNext query?\n> <b>Col 1: employee name. Col 2: subordinate employee name. Subordinates include transitive as well as direct reports.</b>\n\nGenerating SQL in 5.6s \n\nWITH RECURSIVE cte_subordinates AS (\n  SELECT e1.FirstName || ' ' || e1.LastName AS EmployeeName, \n         e2.FirstName || ' ' || e2.LastName AS SubordinateName\n  FROM Employee e1\n  INNER JOIN Employee e2 ON e2.ReportsTo = e1.EmployeeId\n  UNION\n  SELECT cte.EmployeeName, e.FirstName || ' ' || e.LastName AS SubordinateName\n  FROM cte_subordinates cte\n  INNER JOIN Employee e ON e.ReportsTo = (\n    SELECT EmployeeId FROM Employee WHERE FirstName || ' ' || LastName = cte.SubordinateName\n  )\n)\nSELECT * FROM cte_subordinates ORDER BY EmployeeName, SubordinateName LIMIT 25;\n\nExecuting query in 0.1s \n+------------------+------------------+\n|   EmployeeName   | SubordinateName  |\n+------------------+------------------+\n|   Andrew Adams   |   Jane Peacock   |\n|   Andrew Adams   |  Laura Callahan  |\n|   Andrew Adams   |  Margaret Park   |\n|   Andrew Adams   | Michael Mitchell |\n|   Andrew Adams   |  Nancy Edwards   |\n|   Andrew Adams   |   Robert King    |\n|   Andrew Adams   |  Steve Johnson   |\n| Michael Mitchell |  Laura Callahan  |\n| Michael Mitchell |   Robert King    |\n|  Nancy Edwards   |   Jane Peacock   |\n|  Nancy Edwards   |  Margaret Park   |\n|  Nancy Edwards   |  Steve Johnson   |\n+------------------+------------------+\n</pre>\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "ai4sqlite3",
+            "package_url": "https://pypi.org/project/ai4sqlite3/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/ai4sqlite3/",
+            "project_urls": {
+                "repository": "https://github.com/mlin/ai4sqlite3.git"
+            },
+            "release_url": "https://pypi.org/project/ai4sqlite3/0.1.0/",
+            "requires_dist": [
+                "openai",
+                "alive-progress",
+                "getch",
+                "prettytable",
+                "prompt-toolkit",
+                "setuptools ; extra == 'dev'",
+                "build ; extra == 'dev'",
+                "twine ; extra == 'dev'",
+                "pre-commit ; extra == 'dev'",
+                "black ; extra == 'dev'",
+                "ruff ; extra == 'dev'"
+            ],
+            "requires_python": "~=3.8",
+            "summary": "LLM query assistant for SQLite3 databases",
+            "version": "0.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17723405,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "930518ff578d27d4f2fff360cf1cfe35ef1fe00bce4663f4fd2e920860225a37",
+                    "md5": "fe17d7a4bf0abf18a18c20371ba66118",
+                    "sha256": "d10464477c3ff888204135b9655167aac5f196f2e5cb49afc881c70d2371ab36"
+                },
+                "downloads": -1,
+                "filename": "ai4sqlite3-0.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "fe17d7a4bf0abf18a18c20371ba66118",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": "~=3.8",
+                "size": 9741,
+                "upload_time": "2023-04-16T03:11:28",
+                "upload_time_iso_8601": "2023-04-16T03:11:28.192167Z",
+                "url": "https://files.pythonhosted.org/packages/93/05/18ff578d27d4f2fff360cf1cfe35ef1fe00bce4663f4fd2e920860225a37/ai4sqlite3-0.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "beee6e170eecb01e94cb7b48d58247d195fcb4d9d1bf0995725ddd0a7bd24863",
+                    "md5": "d35900df55994456c654007a1d8a2547",
+                    "sha256": "dbba0535700ef224eeb35dfe1f9f02bc5012c466e71ca35a5620e87fa8916332"
+                },
+                "downloads": -1,
+                "filename": "ai4sqlite3-0.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "d35900df55994456c654007a1d8a2547",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": "~=3.8",
+                "size": 10514,
+                "upload_time": "2023-04-16T03:11:29",
+                "upload_time_iso_8601": "2023-04-16T03:11:29.768406Z",
+                "url": "https://files.pythonhosted.org/packages/be/ee/6e170eecb01e94cb7b48d58247d195fcb4d9d1bf0995725ddd0a7bd24863/ai4sqlite3-0.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
