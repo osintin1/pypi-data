@@ -1,0 +1,91 @@
+{
+    "1.0.2": {
+        "info": {
+            "author": "Johan Kristiansson",
+            "author_email": "johan.kristiansson@ri.se",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# Introduction\nThis repo contains [Colonies](https://github.com/colonyos/colonies) Python SDK, making it possible to implement Colonies Executors in Python. \n\n# Installation \nNote that the SDK has only be tested on Linux and MacOS. \n\n```bash\npip3 install pycolonies\n```\n\nThe library assumes *libcryptolib.so* is installed in */usr/local/lib*. However, it is also possible to set the path to the cryptolib.so using an environmental variable.\n```bash\nexport CRYPTOLIB=\".../colonies/lib/cryptolib.so\"\n```\n\nTo install the Colonies cryptolib, type:\n```bash\ngit clone git@github.com:colonyos/colonies.git\ncd colonies\nsudo make install\n```\n\n## Starting a Colonies server\nYou need to have access to a Colonies server. On Linux, run the commands below to start a server. See the [Colonies release page](https://github.com/colonyos/colonies/releases) for Windows and Mac binaries.\n\n```console\ngit clone https://github.com/colonyos/colonies\ncd colonies\nsource devenv\n./bin/colonies dev\n\n...\nINFO[0001] Successfully started Colonies development server\nINFO[0001] Press ctrl+c to exit\n```\n\n## Calling a function \nTo execute a function, a function specification must be submitted to the Colonies server. Colonies will then wrap the function specification in a process and assign the process to an Executor.\n\nBelow is an example of function specification.\n```json\n{\n    \"conditions\": {\n        \"executortype\": \"echo_executor\"\n    },\n    \"func\": \"echo\",\n    \"args\": [\n        \"helloworld\"\n    ],\n    \"priority\": 0,\n    \"maxexectime\": 10,\n    \"maxretries\": 3,\n    \"maxwaittime\": 100,\n\n}\n```\n\nA function specification can be submitted using the Colonies CLI.\n```console\ncolonies function submit --spec echo_func_spec.json\n\nINFO[0000] Process submitted                             ProcessID=ea398af346db85f45b118bb77ecda9ae25f4700dcafcccb4ba3e4d40eba5205a\n```\n\nOr using the Python SDK.\n```python\nfunc_spec = create_func_spec(func=sum_nums, \n                             args=[\"helloworld\"], \n                             colonyid=colonyid, \n                             executortype=\"echo_executor\",\n                             priority=0,\n                             maxexectime=10,\n                             maxretries=3,\n                             maxwaittime=100)\n\nprocess = colonies.submit(func_spec, executor_prvkey)\n```\nSee [echo.py](https://github.com/colonyos/pycolonies/blob/main/examples/echo.py) for a full example. \n\nNow it possible to look up the process using the Colonies CLI.\n```console\ncolonies process get -p ea398af346db85f45b118bb77ecda9ae25f4700dcafcccb4ba3e4d40eba5205a \n\nProcess:\n+--------------------+------------------------------------------------------------------+\n| ID                 | ea398af346db85f45b118bb77ecda9ae25f4700dcafcccb4ba3e4d40eba5205a |\n| IsAssigned         | False                                                            |\n| AssignedExecutorID | None                                                             |\n| State              | Waiting                                                          |\n| Priority           | 0                                                                |\n| SubmissionTime     | 2023-03-12 21:06:55                                              |\n| StartTime          | 0001-01-01 01:12:12                                              |\n| EndTime            | 0001-01-01 01:12:12                                              |\n| WaitDeadline       | 0001-01-01 01:12:12                                              |\n| ExecDeadline       | 0001-01-01 01:12:12                                              |\n| WaitingTime        | 29.587933822s                                                    |\n| ProcessingTime     | 0s                                                               |\n| Retries            | 0                                                                |\n| Errors             |                                                                  |\n| Output             |                                                                  |\n+--------------------+------------------------------------------------------------------+\n\nFunctionSpec:\n+-------------+-------------+\n| Func        | echo        |\n| Args        | helloworld  |\n| MaxWaitTime | -1          |\n| MaxExecTime | -1          |\n| MaxRetries  | 0           |\n| Priority    | 0           |\n+-------------+-------------+\n\nConditions:\n+--------------+------------------------------------------------------------------+\n| ColonyID     | 4787a5071856a4acf702b2ffcea422e3237a679c681314113d86139461290cf4 |\n| ExecutorIDs  | None                                                             |\n| ExecutorType | echo_executor                                                    |\n| Dependencies |                                                                  |\n+--------------+------------------------------------------------------------------+\n\nAttributes:\nNo attributes found\n```\n\nThe command below shows all waiting processes. Note that the process is just enqueued since we don't yet have an Executor of the type *echo_executor*. \n```console\ncolonies process psw\nINFO[0000] Starting a Colonies client                    Insecure=true ServerHost=localhost ServerPort=50080\n+------------------------------------------------------------------+------+------------+---------------------+---------------+\n|                                ID                                | FUNC |    ARGS    |   SUBMISSION TIME   | EXECUTOR TYPE |\n+------------------------------------------------------------------+------+------------+---------------------+---------------+\n| 4787a5071856a4acf702b2ffcea422e3237a679c681314113d86139461290cf4 | echo | helloworld | 2023-03-12 21:09:09 | echo_executor |\n+------------------------------------------------------------------+------+------------+---------------------+---------------+\n```\n\n```console\npython3 examples/echo.py\n```\n\n## Implementing an Executor in Python\nExecutors are responsible for executing processes. They connect to the Colonies server and get process assignments. To be able to submit function specifications or get process assignments, an Executor must be a member of a Colony. Only the Colony owner has the authority to add an Executor to a Colony. In order to interact with the Colonies server and other Executors, Executors must authenticate and prove their membership. This security mechanism is implemented through the utilization of public key encryption.\n\nSince we have access to the Colony private key (see devenv file), we can implement a self-registering Executor. \n```python\ncolonies = Colonies(\"localhost\", 50080)\ncrypto = Crypto()\ncolonyid = \"4787a5071856a4acf702b2ffcea422e3237a679c681314113d86139461290cf4\"\ncolony_prvkey=\"ba949fa134981372d6da62b6a56f336ab4d843b22c02a4257dcf7d0d73097514\"\nexecutor_prvkey = crypto.prvkey()\nexecutorid = crypto.id(executor_prvkey)\n\nexecutor = {\n    \"executorname\": \"echo_executor\",\n    \"executorid\": executorid,\n    \"colonyid\": colonyid,\n    \"executortype\": \"echo_executor\"\n}\n\ncolonies.add_executor(executor, colony_prvkey)\ncolonies.approve_executor(executorid, colony_prvkey)\n```\n\nWe also need to register the `echo` function, telling the Colonies server that this executor is capable of executing a function called `echo`. \n\n```python\ncolonies.add_function(executorid, \n                      colonyid, \n                      \"echo\",  \n                      [\"arg\"], \n                      \"Python function that returns its input as output\", \n                      executor_prvkey)\n```\n\nThe next step is to connect the Colonies server and get process assignments. Note that the Colonies server never establish connections to the Executors, but rather it the responsibility of the Executors to connects to the Colonies server. In this way, Executors may run behind firewalls without problems. The `assign` function below will block for 10 seconds if there are no suitable process to assign.\n\n```python\nprocess = colonies.assign(colonyid, 10, executor_prvkey)\nif process[\"spec\"][\"funcname\"] == \"echo\":\n    assigned_args = process[\"spec\"][\"args\"]\n    colonies.close(process[\"processid\"], [arg], executor_prvkey)\n```\n\nThe *close* method sets the output (same the args in this case) and the process state to *successful*. Only the Executor assigned to a process may alter process information stored on the Colonies server. By setting the *maxexectime* attribute on the function spec, it is possible to specify how long an executor may run a process before it is released back the waiting queue at the Colonies server. This is a very useful feature to implement robust processing pipelines.\n\nSee [echo_executor.py](https://github.com/colonyos/pycolonies/blob/main/examples/echo_executor.py) for a full example. Type the command below to start the *echo Executor*. \n\n```console\npython3 examples/echo_executor.py\n```\n\n# Workflows\nColonies supports creation of computational DAGs (Directed Acyclic Graphs). This makes it possible to create dependencies between several functions, i.e. control the order which functions are called and pass values between function calls, even if they run on different Executors. Since Executors may reside *anywhere* on the Internet, we can create workflows that are executed across platforms and infrastructures, **creating compute continuums**. \n\nThe example below calculates `sum_nums(gen_nums())`. The `gen_nums()` function simply return a tuple containing 1 and 2. The `sum_nums()*` function takes two arguments and calculates the sum of them.\n\n```python\ndef gen_nums(ctx={}):\n    return 1, 2 \n\ndef sum_nums(n1, n2, ctx={}):\n    return n1 + n2 \n\nwf = Workflow(colonyid)\nfunc_spec = create_func_spec(func=gen_nums, \n                             args=[], \n                             colonyid=colonyid, \n                             executortype=\"python_executor\")\nwf.add(func_spec, nodename=\"gen_nums\", dependencies=[])\n\nfunc_spec = create_func_spec(func=sum_nums, \n                             args=[], \n                             colonyid=colonyid, \n                             executortype=\"python_executor\")\nwf.add(func_spec, nodename=\"sum_nums\", dependencies=[\"gen_nums\"])\n\nprocessgraph = colonies.submit(wf, executor_prvkey)\n```\n\n## Dynamic processgraphs\n It also possible to dynamically modify a processgraph while it is still active, e.g. a function may submit more function specifications to a workflow while executing. This makes it possible to implement patterns like [MapReduce](https://en.wikipedia.org/wiki/MapReduce).\n\nThe `map()` function below dynamically adds 5 `gen_nums()` functions to the processgraph.\n\n```python\ndef map(ctx={}):\n    code = \"\"\"def gen_nums(ctx={}):\n                return 1, 2\"\"\" \n\n    processgraphid = ctx[\"process\"][\"processgraphid\"]\n    map_processid = ctx[\"process\"][\"processid\"]\n    executor_prvkey = ctx[\"executor_prvkey\"]\n\n    processgraph = colonies.get_processgraph(processgraphid, executor_prvkey)\n    print(processgraph)\n    reduce_process = colonies.find_process(\"reduce\", processgraph[\"processids\"], executor_prvkey)\n    reduce_processid = reduce_process[\"processid\"]\n\n    insert = True\n    for i in range(5):\n        func_spec = create_func_spec(func=\"gen_nums\", \n                                     args=[], \n                                     colonyid=ctx[\"colonyid\"], \n                                     executortype=\"python_executor\",\n                                     priority=200,\n                                     maxexectime=100,\n                                     maxretries=3,\n                                     maxwaittime=100,\n                                     code=code)\n\n\n        colonies.add_child(processgraphid, map_processid, reduce_processid, func_spec, \"gen_nums_\" + str(i), insert, executor_prvkey)\n        insert = False\n```\n\nThe `reduce()` function takes arbitrary integer arguments and returns the sum of them. \n\n```python\ndef reduce(*nums, ctx={}):\n    total = 0\n    for n in nums:\n        total += n\n    return total \n```\n\nWe can now create a workflow to calculate: `reduce(gen_nums(), gen_nums(), gen_nums(), gen_nums(), gen_nums())`. The result should be (1+2)*5=15.\n\n```python\nwf = Workflow(colonyid)\nfunc_spec = create_func_spec(func=map, \n                             args=[], \n                             colonyid=colonyid, \n                             executortype=\"python_executor\")\nwf.add(func_spec, nodename=\"map\", dependencies=[])\n\nfunc_spec = create_func_spec(func=reduce, \n                             args=[], \n                             colonyid=colonyid, \n                             executortype=\"python_executor\")\nwf.add(func_spec, nodename=\"reduce\", dependencies=[\"map\"])\n\nprocessgraph = colonies.submit(wf, executor_prvkey)\n```\n\n![MapReduce example](docs/images/mapreduce.png)\n\n# Monadic workflows\nThe workflow code can be significantly simplified by expressing it as a monad. A good introduction to monads can be found [here](https://brian-candler.medium.com/function-composition-with-bind-4f6e3fdc0e7). The example below is not a complete monad, but illustrated how the Colonies *plumbing* can be removed and create elegant functional expressions. The `>>` operator is usually call the `bind` functions and makes it possible to chain function calls.   \n\n```python\ndef gen_data(ctx={}):\n    return 1, 2 \n\ndef process_data(*nums, ctx={}):\n    total = 0\n    for n in nums:\n        total += n\n    return total \n\ngen_data = Function(gen_data, colonyid, executortype=\"python_executor\")\nprocess_data = Function(process_data, colonyid, executortype=\"python_executor\")\necho = Function(\"echo\", colonyid, executortype=\"echo_executor\")\n\nm = ColoniesMonad(\"localhost\", 50080, colonyid, executor_prvkey)\nresult = (m >> gen_data >> process_data >> echo).unwrap()\nprint(result)  # prints 3 \n```\n\nSee [colonies_monad.py](https://github.com/colonyos/pycolonies/blob/main/examples/colonies_monad.py) and [monad_example2.py](https://github.com/colonyos/pycolonies/blob/main/examples/monad_example2.py) for a full example.\n\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/colonyos/pycolonies",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "pycolonies",
+            "package_url": "https://pypi.org/project/pycolonies/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/pycolonies/",
+            "project_urls": {
+                "Homepage": "https://github.com/colonyos/pycolonies"
+            },
+            "release_url": "https://pypi.org/project/pycolonies/1.0.2/",
+            "requires_dist": [
+                "requests (>=2.27.1)",
+                "websocket-client (>=1.3.1)"
+            ],
+            "requires_python": "",
+            "summary": "Colonies Python SDK",
+            "version": "1.0.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17729017,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c31cdb6a36faab0d9675866cc4a33fd2caad236c8691dde7479bca5f6fe8baad",
+                    "md5": "5724e8fa24e96a47aa902049c9980b6d",
+                    "sha256": "4b03ad3c151ec6243e9e29ea406a35150a7b5a30371fe8e3af4feedb87b80df7"
+                },
+                "downloads": -1,
+                "filename": "pycolonies-1.0.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "5724e8fa24e96a47aa902049c9980b6d",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 8707,
+                "upload_time": "2023-04-16T17:34:52",
+                "upload_time_iso_8601": "2023-04-16T17:34:52.374094Z",
+                "url": "https://files.pythonhosted.org/packages/c3/1c/db6a36faab0d9675866cc4a33fd2caad236c8691dde7479bca5f6fe8baad/pycolonies-1.0.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "572cad1926f34e8c54dc8bb6d865511590ec1acb57644523000de4e661e8fa06",
+                    "md5": "cead7e122f762c43b1ea673f81595f71",
+                    "sha256": "0b0b2227ae1ad33ebee2e392e93e0e4238a33c7d55d5da93c1811ea62a07ebed"
+                },
+                "downloads": -1,
+                "filename": "pycolonies-1.0.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "cead7e122f762c43b1ea673f81595f71",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 9434,
+                "upload_time": "2023-04-16T17:34:54",
+                "upload_time_iso_8601": "2023-04-16T17:34:54.629818Z",
+                "url": "https://files.pythonhosted.org/packages/57/2c/ad1926f34e8c54dc8bb6d865511590ec1acb57644523000de4e661e8fa06/pycolonies-1.0.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

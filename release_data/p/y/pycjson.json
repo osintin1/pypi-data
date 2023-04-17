@@ -1,0 +1,95 @@
+{
+    "1.0.0": {
+        "info": {
+            "author": "awolverp",
+            "author_email": "awolverp@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Programming Language :: Python :: Implementation :: CPython"
+            ],
+            "description": "# pycjson\nA rich-feature and fast JSON parser library for Python.\n\n**What is the different from others JSON parsers:**\n- Supports python classes - converts JSON to Python types and vice versa (**BIG DIFFERENT**)\n- Fast and powerful - using [ujson](https://github.com/ultrajson/ultrajson) (fastest JSON parser library)\n\n**requirements:**\n- [ujson](https://github.com/ultrajson/ultrajson)\n\n**content**:\n- [Installing](#installing)\n- [How to use it](#usage)\n- [How to use `JTag`](#jtag)\n- [How to use `JNested`](#jnested)\n- [How to use `JList`](#jlist)\n- [Strict loads - loads lists](#strict-loads)\n- [License](#license)\n\n## Installing\nYou can install it by **PIP**:\n```bash\npip3 install pycjson\n```\n\nif you want to check installation, can try it:\n```python\n>>> import pycjson\n>>> pycjson.__version__\n'v...'\n```\n\n## Usage\nWe have two function for loading and dumping a JSON, `loads` and `dumps`, like all JSON parsers in Python; but have a big different that **you can specify which type you want to loads in** and **you can convert a python class to JSON**. see examples:\n\n**for `loads`**:\n```python\nimport pycjson\n\ndata = '{\"id\":1, \"name\":\"awolverp\"}'\nprint(pycjson.loads(data, dict))\n# {\"id\":1, \"name\":\"awolverp\"}\n```\n\nAnd you can create a type for it:\n```python\nclass User:\n    id: int\n    name: str\n\nobj = pycjson.loads(data, User)\nprint(obj.id, obj.name)\n# 1, \"awolverp\"\n```\n\n> Note: the `loads` function is type sensitive.\n\n**for `dumps`**:\n```python\nimport pycjson\n\nprint(pycjson.dumps({\"id\": 1, \"name\": \"awolverp\"}))\n# '{\"id\":1,\"name\":\"awolverp\"}'\n```\n\nAnd you can use a type:\n```python\nclass User:\n    id: int\n    name: str\n\n    def __init__(self, id, name):\n        self.id = id\n        self.name = name\n\nprint(pycjson.dumps(User(1, \"awolverp\")))\n# '{\"id\":1,\"name\":\"awolverp\"}'\n```\n\n> Note: the `dumps` function does not pay attention to types like `loads`.\n\n> Note: you should specify `annontations` (we called `fields` in this library) in your types.\n\n### JTag\n**pycjson** allows you to specify some information about your fields to make for you work easy.\nYou can use `JTag`, `JNested`, and `JList` for it.\n\nWith `JTag` class you can:\n- set name for a field in JSON data (`name` parameter).\n- set default value (`_default` parameter).\n- tell **pycjson** to ignore it (`ignore` parameter).\n- or you can tell **pycjson** to doesn't dump it when it isn't specify (`omitempty` parameter).\n\nSee example:\n```python\nclass User:\n    id: pycjson.JTag[int] # or pycjson.JTag(int); not different!\n    name: pycjson.JTag(str, _default=\"nothing\")\n    unique_name: pycjson.JTag(str, name=\"username\", omitempty=True)\n    uuid: pycjson.JTag(ignore=True)\n\n    def __init__(self, id, name, unique_name, uuid):\n        self.id = id\n        self.name = name\n        self.unique_name = unique_name\n        self.uuid = uuid\n\nobj = pycjson.loads('{\"id\":1, \"username\":\"awolverp\", \"uuid\":\"UUID\"}', User)\nprint(obj.id, obj.name, obj.unique_name) # uuid is undefined because pycjson ignored it and not set any value for it\n# 1 \"nothing\" \"awolverp\"\n\ndata = pycjson.dumps(User(1, \"Ali\", \"awolverp\", \"UUID\"))\nprint(data)\n# '{\"id\":1,\"name\":\"Ali\",\"username\":\"awolverp\"}'\n\ndata = pycjson.dumps(User(1, \"Ali\", pycjson.NotSpecified, \"UUID\"))\nprint(data)\n# '{\"id\":1,\"name\":\"Ali\"}'\n```\n\n**What is pycjson.NotSpecified?** When for a field `omitempty` is True and you don't want to dump it into JSON, set `pycjson.NotSpecified` as value for it, like this example.\n\n### JNested\n`JNested` class is like `JTag`, but it used for *nested classes* and cannot be ignored.\n\nSee example:\n```python\nclass Image:\n    url: str\n\n    def __init__(self, url):\n        self.url = url\n\nclass User:\n    id: int\n    image: pycjson.JNested(Image)\n\n    def __init__(self, id, image):\n        self.id = id\n        self.image = image\n\nobj = pycjson.loads('{\"id\": 1, \"image\": {\"url\": \"URL\"}}', User)\nprint(obj.id, obj.image.url)\n# 1 \"URL\"\n\nobj = pycjson.loads('{\"id\": 2, \"image\": null}', User)\nprint(obj.id, obj.image)\n# 2 None\n\nobj = pycjson.loads('{\"id\": 3}', User)\nprint(obj.id, obj.image)\n# 3 None\n\ndata = pycjson.dumps(User(1, Image(\"URL\")))\nprint(data)\n# '{\"id\":1,\"image\": {\"url\": \"URL\"}}'\n```\n\n### JList\n`JList` class is like `JNested`, but it works like lists and you can use it in [strict loads'](#strict-loads).\n\nSee example:\n```python\nclass Image:\n    url: str\n\n    def __init__(self, url):\n        self.url = url\n\n    def __repr__(self):\n        return f\"Image({self.url})\"\n\nclass DataSet:\n    ids: pycjson.JList(int, name=\"id\")\n    images: pycjson.JList(Image, name=\"image\")\n\n    def __init__(self, ids, images):\n        self.ids = ids\n        self.images = images\n\nobj = pycjson.loads('{\"id\": [1, 2, 3, 4], \"image\": [{\"url\": \"URL\"}]}', DataSet)\nprint(obj.ids, obj.images)\n# [1, 2, 3, 4] [Image(URL)]\n\nobj = pycjson.loads('{\"id\": 2, \"image\": {\"url\": \"URL\"}}', DataSet)\n# TypeError: cannot loads int into value of type (list of) ints\n```\n\n#### Strict loads\nthe `loads` function has `strict` parameter. default is `False`.\n\nif the JSON data type is list, it returns list of `_type`. see the example to understand:\n\n```python\npycjson.loads('[1, 2, 3]', int)\n# [1, 2, 3]\npycjson.loads('[1, 2, 3]', pycjson.JList[int], strict=True)\n# [1, 2, 3]\npycjson.loads('[1, 2, 3]', int, strict=True)\n# TypeError: cannot loads list into value of type int (strict enabled)\n\npycjson.loads('[1, \"a\", 3.2]', list, strict=True)\n# [1, \"a\", 3.2]\npycjson.loads('[1, \"a\", 3.2]', pycjson.JList[int], strict=True)\n# TypeError: cannot loads str into value of type int\n```\n\n## License\nLicense: **MIT License**\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "https://github.com/awolverp/pycjson",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/awolverp/pycjson",
+            "keywords": "",
+            "license": "MIT License",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "pycjson",
+            "package_url": "https://pypi.org/project/pycjson/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/pycjson/",
+            "project_urls": {
+                "Download": "https://github.com/awolverp/pycjson",
+                "Homepage": "https://github.com/awolverp/pycjson"
+            },
+            "release_url": "https://pypi.org/project/pycjson/1.0.0/",
+            "requires_dist": null,
+            "requires_python": "",
+            "summary": "A rich-feature JSON parser library for Python.",
+            "version": "1.0.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17729312,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "57a5bb8c0d714ec4289dea4a1576174337c95a9657eff7087ff10d6b873512bd",
+                    "md5": "f9ddc2351533c16fbc4767e0f1a0e224",
+                    "sha256": "443b718ae31a9fbed226b1bce8bf5870ce1847bebb4c108fcc056ff7df601368"
+                },
+                "downloads": -1,
+                "filename": "pycjson-1.0.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "f9ddc2351533c16fbc4767e0f1a0e224",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 6452,
+                "upload_time": "2023-04-16T18:21:32",
+                "upload_time_iso_8601": "2023-04-16T18:21:32.767350Z",
+                "url": "https://files.pythonhosted.org/packages/57/a5/bb8c0d714ec4289dea4a1576174337c95a9657eff7087ff10d6b873512bd/pycjson-1.0.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "fd5ee4b2a15449c754fb457ecc0e63566a6a9b29f3c094bbc741742c622c2063",
+                    "md5": "644e4439884ac7a4cab746dfa0958545",
+                    "sha256": "33481a0bb50ebae30c9011c3c8d8f81ab27da8ed3e4e1a11410756d12412e3e4"
+                },
+                "downloads": -1,
+                "filename": "pycjson-1.0.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "644e4439884ac7a4cab746dfa0958545",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 6221,
+                "upload_time": "2023-04-16T18:21:36",
+                "upload_time_iso_8601": "2023-04-16T18:21:36.072470Z",
+                "url": "https://files.pythonhosted.org/packages/fd/5e/e4b2a15449c754fb457ecc0e63566a6a9b29f3c094bbc741742c622c2063/pycjson-1.0.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
