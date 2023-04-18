@@ -43,7 +43,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17746013,
+        "last_serial": 17748501,
         "urls": [
             {
                 "comment_text": "",
@@ -84,7 +84,6 @@
                 "Programming Language :: Python :: 3.6",
                 "Topic :: Software Development :: Build Tools"
             ],
-            "description": "# SQAPI\n\n`sqapi` is a python package that simplifies interactions with the \n[SQUIDLE+ API](https://squidle.org/api/help?template=api_help_page.html).\nIt can be used to integrate automated labelling from machine learning algorithms and plenty other cool things.\n\n### Installation\nTo install the `sqapi` module, you can use `pip`\n```shell\npip install sqapi \n```\n\n### Why & how\nThe `sqapi` module helps to build the `HTTP` requests that are sent to the `API`. These are \n`GET`, `POST`, `PATCH` or `DELETE` requests. Setting `verbosity=2` on the `sqapi` module will print the `HTTP` \nrequests that are being made.\n\n`sqapi` takes care of authentication, and simplifies the creation of API queries. \nFor example:\n\n```python\nfrom sqapi.api import SQAPI\n\nsqapi = SQAPI(host=<HOST>,api_key=<API_KEY>, verbosity=2)  # instantiate the sqapi module\nr=sqapi.get(<ENDPOINT>)              # define a get request using a specific endpoint\nr.filter(<NAME>,<OPERATORE>,<VALUE>) # define a filter to compare a property with a value using an operator\ndata = r.execute().json()            # perform the request & return result as JSON dict (don't set template)\n```\n\nInstantiating `sqapi` without an API key argument will prompt for a user login, i.e.:\n```python\nsqapi = SQAPI(host=<HOST>, verbosity=2)  # instantiate the sqapi module\n```\n\nYou can also use it to apply templates to the data that comes out of the API:\n```python\nr.template(<TEMPLATE>)               # format the output of the request using an inbuilt HTML template\nhtml = r.execute().text              # perform the request & return result as text (eg: for html)\n```\n\n> **IMPORTANT:** in order to proceed, you will need a user account on [SQUIDLE+](https://squidle.org). You will also \n> need to activate your API key.\n\n## Examples\n### Random annotation BOT\nThis is an example of an automated labelling bot that selects random class labels to assign to points.\nIt provides terrible suggestions, however it provides a simple boiler-plate example of how to integrate a\nMachine Learning algorithm for label suggestions.\n\nSet up the environment and a mini project\n```shell\nmkdir sqbot_demo && cd sqbot_demo   # make a directory\nvirtualenv -p python3 env           # create a virtual environment\nsource env/bin/activate             # activate it\npip install sqapi  # install sqapi\n```\n\n#### 1. Create a bot class\nIn your project directory, create a file named `run_bot.py`:\n\n```python\n# run_bot.py\nimport random\nfrom sqapi.annotate import Annotator\nfrom sqapi.request import query_filter as qf\nfrom sqapi.helpers import cli_init, create_parser\nfrom sqapi.media import SQMediaObject\n\n\nclass RandoBOT(Annotator):\n    def __init__(self, user_group_id: int, **annotator_args):\n        \"\"\"\n        Demo classifier that creates random class allocations and probabilities\n        :param user_group_id: the ID of the user_group that you wish to classify\n        \"\"\"\n        super().__init__(**annotator_args)  # calls base class with all required inputs\n        self.user_group_id = user_group_id  # example of an extra parameter added to the init\n        self.possible_codes = [\"ECK\", \"ASC\", \"SUB\"]\n\n    def classify_point(self, mediaobj: SQMediaObject, x, y, t):\n        \"\"\"Overridden method: predict label for x-y point\"\"\"\n        # image_data = mediaobj.data()            # cv2 image object containing media data\n        # media_path = mediaobj.url               # path to media item\n        classifier_code = random.sample(self.possible_codes, 1)[0]  # get a random code\n        prob = round(random.random(), 2)  # generate a random probability\n        # TODO: use the image_data, x and y point position to generate a real label and prob\n        return classifier_code, prob\n\n\nif __name__ == '__main__':\n    # Get the cli arguments from the Class __init__ function signatures\n    parser = create_parser(RandoBOT)  # convenient method to build a parser from the bot class\n    \n    # Add an extra argument to the parser to get an annotation_set id to classify\n    parser.add_argument('--annotation_set_id', help=\"Process annotation_set with specific ID\", type=int)\n    \n    # Instantiate the bot class\n    args = parser.parse_args()\n    bot = RandoBOT(**vars(args))\n    \n    # Initialise the request for the list of annotation_sets that you want classified\n    # only consider annotation_sets that do not already have suggestions from this user\n    r = bot.sqapi.get(\"/api/annotation_set\")\n    r.filter_not(qf(\"children\", \"any\", val=qf(\"user_id\", \"eq\", bot.sqapi.current_user.get(\"id\"))))\n\n    # filter annotation_sets within a nominated user_group \n    # as specified by the extra parameter added to RandoBot.__init__\n    r.filter(name=\"id\", op=\"in\", val=args.annotation_set_id)\n\n    bot.start(r)\n```\n\nThe `create_parser` method is a convenience tool that allows you to build a command line parser from the  \nsignature of the `__init__` methods for the RandoBot class and all inherited base classes (eg: Annotator).\n\nThis allows you to pass arguments from the command line, and to use help on how to use it:\n```shell\npython run_bot.py --help\n```\n\nIt will show you all the required parameters from the base class `Annotator` as well as any extra arguments added to the \n`__init__` method of the `RandoBot` class. Parameter descriptions come from the comment block.\n\n#### 2. Create a Label Mapper File\nBefore you run it, you also need to create a label map file to pass into the `--label_map_file` argument. \nThis maps the outputs from your classifier to real class labels in the system.\n\nIn your project directory, create a file named `rando_bot_label_map.json` \nwith the following content:\n```json\n{\n  \"ECK\": [{\"or\":[{\"name\":\"vocab_elements\",\"op\":\"any\",\"val\":{\"name\":\"key\",\"op\":\"eq\",\"val\":\"214344\"}},{\"name\":\"vocab_elements\",\"op\":\"any\",\"val\":{\"name\":\"key\",\"op\":\"eq\",\"val\":\"54079009\"}}]}],\n  \"ASC\": [{\"or\":[{\"name\":\"vocab_elements\",\"op\":\"any\",\"val\":{\"name\":\"key\",\"op\":\"eq\",\"val\":\"1839\"}},{\"name\":\"vocab_elements\",\"op\":\"any\",\"val\":{\"name\":\"key\",\"op\":\"eq\",\"val\":\"35000000\"}}]}],\n  \"SUB\": [{\"name\":\"vocab_elements\",\"op\":\"any\",\"val\":{\"name\":\"key\",\"op\":\"eq\",\"val\":\"82001000\"}}]\n}\n```\n\n#### 3. Run your bot\nNow you're ready to run your classifier RandoBot, by simply executing this from the command line:\n```shell\npython run_bot.py --label_map_file rando_bot_label_map.json --annotation_set_id=55 --poll_delay 5 --email_results\n```\n\nThis will get the list of annotation_sets contained in the user_group with the id of `55`\nand attempt to provide automated suggestions on the labels it contains using random class allocations and probabilities. \nIt will continue this indefinitely in a loop every 5s ( as defined by the `--poll_delay` parameter) until canceled. \nIt will send an email to the owner of every annotation_set that it completes.\n\nNow all that's left is for you to make the labels and probabilities real, and bob's your uncle,\nyou've made an automated classifier.\n\nThe [examples](examples) directory has some examples that you can use and/or adapt for \nyour purposes. Specifically with regard to classifiers:\n\n1. **[demo_randobot.py](examples/bots/demo_randobot.py)**: same as example above, but with additional command line \n   arguments for filtering annotation_sets\n2. **[keras_cnn_bot.py](examples/bots/keras_cnn_bot.py)**: a real classifier that uses a tensor_flow/keras model for \n   classifying points in images. The class received a number of additional parameters that can all be passed in as \n   command line arguments. Run `python keras_cnn_bot.py --help` for more information. This shows an example of how to \n   include additional model-specific arguments along with other parameters, as well as how to process the images and \n   for a real classifier.\n\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "https://bitbucket.org/ariell/pysq/get/bede6badfc1ea09cd45b3ae3d4bc3551daa0b3e0.tar.gz",
@@ -114,7 +113,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17746013,
+        "last_serial": 17748501,
         "urls": [
             {
                 "comment_text": "",
@@ -134,6 +133,79 @@
                 "upload_time": "2023-04-18T00:19:14",
                 "upload_time_iso_8601": "2023-04-18T00:19:14.569439Z",
                 "url": "https://files.pythonhosted.org/packages/fd/2c/e0822632f8db8186cfc3c6298c36450c2b6dbac0d388123489ee59afbe5b/sqapi-0.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.3": {
+        "info": {
+            "author": "Greybits Engineering",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.4",
+                "Programming Language :: Python :: 3.5",
+                "Programming Language :: Python :: 3.6",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Software Development :: Build Tools"
+            ],
+            "description": "# SQAPI\n\n`sqapi` is a python package that simplifies interactions with the \n[SQUIDLE+ API](https://squidle.org/api/help?template=api_help_page.html).\nIt can be used to integrate automated labelling from machine learning algorithms and plenty other cool things.\n\n### Installation\nTo install the `sqapi` module, you can use `pip`\n```shell\npip install sqapi \n```\n\n### What is this?\nThe `sqapi` module helps to build the `HTTP` requests that are sent to the [SQUIDLE+](squidle.org) `API`. These are \n`GET`, `POST`, `PATCH` or `DELETE` requests. Setting `verbosity=2` on the `sqapi` module will print the `HTTP` \nrequests that are being made.\n\n`sqapi` takes care of authentication, and simplifies the creation of API queries. \nFor example:\n\n```python\nfrom sqapi.api import SQAPI\n\nsqapi = SQAPI(host=<HOST>,api_key=<API_KEY>, verbosity=2)  # instantiate the sqapi module\nr=sqapi.get(<ENDPOINT>)              # define a get request using a specific endpoint\nr.filter(<NAME>,<OPERATORE>,<VALUE>) # define a filter to compare a property with a value using an operator\ndata = r.execute().json()            # perform the request & return result as JSON dict (don't set template)\n```\n\nFor more information about structuring queries, check out the [Making API queries](https://squidle.org/api/help?template=api_help_page.html#api_query)\nsection of the SQ+ API documentation page.\n\nInstantiating `sqapi` without an API key argument will prompt for a user login, i.e.:\n```python\nsqapi = SQAPI(host=<HOST>, verbosity=2)  # instantiate the sqapi module\n```\n\nYou can also use it to apply built-in templates to the data that comes out of the API:\n```python\nr.template(<TEMPLATE>)               # format the output of the request using an inbuilt HTML template\nhtml = r.execute().text              # perform the request & return result as text (eg: for html)\n```\n\n> **IMPORTANT:** in order to proceed, you will need a user account on [SQUIDLE+](https://squidle.org). You will also \n> need to activate your API key.\n\n## Examples\n### Random annotation BOT\nThis is an example of an automated labelling bot that selects random class labels to assign to points.\nIt provides terrible suggestions, however it provides a simple boiler-plate example of how to integrate a\nMachine Learning algorithm for label suggestions.\n\nSet up the environment and a mini project\n```shell\nmkdir sqbot_demo && cd sqbot_demo   # make a directory\nvirtualenv -p python3 env           # create a virtual environment\nsource env/bin/activate             # activate it\npip install sqapi  # install sqapi\n```\n\n#### 1. Create a bot class\nIn this example, we'll create an automated classifier that suggests random label suggestions for an annotation_set. \nIt uses the `Annotator` class from the `sqapi.annotate` module, which does most of the heavy-lifting. The implementation\nof the classifier is relatively straight forward.\nIn your project directory, create a file named `run_bot.py`:\n\n```python\n# run_bot.py\nimport random\nfrom sqapi.annotate import Annotator\nfrom sqapi.request import query_filter as qf\nfrom sqapi.helpers import cli_init, create_parser\nfrom sqapi.media import SQMediaObject\n\n\nclass RandoBOT(Annotator):\n    def __init__(self, user_group_id: int, **annotator_args):\n        \"\"\"\n        Demo classifier that creates random class allocations and probabilities\n        :param user_group_id: the ID of the user_group that you wish to classify\n        \"\"\"\n        super().__init__(**annotator_args)  # calls base class with all required inputs\n        self.user_group_id = user_group_id  # example of an extra parameter added to the init\n        self.possible_codes = [\"ECK\", \"ASC\", \"SUB\"]\n\n    def classify_point(self, mediaobj: SQMediaObject, x, y, t):\n        \"\"\"Overridden method: predict label for x-y point\"\"\"\n        # image_data = mediaobj.data()            # cv2 image object containing media data\n        # media_path = mediaobj.url               # path to media item\n        classifier_code = random.sample(self.possible_codes, 1)[0]  # get a random code\n        prob = round(random.random(), 2)  # generate a random probability\n        # TODO: use the image_data, x and y point position to generate a real label and prob\n        return classifier_code, prob\n\n\nif __name__ == '__main__':\n    # Get the cli arguments from the Class __init__ function signatures\n    parser = create_parser(RandoBOT)  # convenient method to build a parser from the bot class\n    \n    # Add an extra argument to the parser to get an annotation_set id to classify\n    parser.add_argument('--annotation_set_id', help=\"Process annotation_set with specific ID\", type=int)\n    \n    # Instantiate the bot class\n    args = parser.parse_args()\n    bot = RandoBOT(**vars(args))\n    \n    # Initialise the request for the annotation_set that you want classified\n    # update the ID to the ID you want\n    r = bot.sqapi.get(\"/api/annotation_set\").filter(name=\"id\", op=\"in\", val=args.annotation_set_id)\n\n    bot.start(r)\n```\n\nThe `create_parser` method is a convenience tool that allows you to build a command line parser from the  \nsignature of the `__init__` methods for the RandoBot class and all inherited base classes (eg: Annotator).\n\nThis allows you to pass arguments from the command line, and helps to show how to use it:\n```shell\n# from the command line, run:\npython run_bot.py --help\n```\n\nIt will show you all the required parameters from the base class `Annotator` as well as any extra arguments added to the \n`__init__` method of the `RandoBot` class. Parameter descriptions come from the comment block.\n\n#### 2. Create a Label Mapper File\nBefore you run it, you also need to create a label map file to pass into the `--label_map_file` argument. \nThis maps the outputs from your classifier to real class labels in the system.\n\nIn your project directory, create a file named `rando_bot_label_map.json` \nwith the following content:\n```json\n{\n  \"ECK\": [{\"or\":[{\"name\":\"vocab_elements\",\"op\":\"any\",\"val\":{\"name\":\"key\",\"op\":\"eq\",\"val\":\"214344\"}},{\"name\":\"vocab_elements\",\"op\":\"any\",\"val\":{\"name\":\"key\",\"op\":\"eq\",\"val\":\"54079009\"}}]}],\n  \"ASC\": [{\"or\":[{\"name\":\"vocab_elements\",\"op\":\"any\",\"val\":{\"name\":\"key\",\"op\":\"eq\",\"val\":\"1839\"}},{\"name\":\"vocab_elements\",\"op\":\"any\",\"val\":{\"name\":\"key\",\"op\":\"eq\",\"val\":\"35000000\"}}]}],\n  \"SUB\": [{\"name\":\"vocab_elements\",\"op\":\"any\",\"val\":{\"name\":\"key\",\"op\":\"eq\",\"val\":\"82001000\"}}]\n}\n```\n\n#### 3. Run your bot\nNow you're ready to run your classifier `RandoBot`, by simply executing this from the command line:\n```shell\npython run_bot.py --label_map_file rando_bot_label_map.json --annotation_set_id=55 --poll_delay -1 --email_results\n```\n\nThis will run the classifier once on the annotation_set with an `ID=55`\nand attempt to provide automated suggestions on the labels it contains using random class allocations and probabilities. \nIt will run once (as defined by the `--poll_delay=-1` parameter) and it will send an email to the owner the\nannotation_set once complete.\n\nNow all that's left is for you to make the labels and probabilities real, and bob's your uncle,\nyou've made an automated classifier.\n\nThe [examples](https://bitbucket.org/ariell/pysq/src/master/examples/) directory has some examples that you can use and/or adapt for \nyour purposes. Specifically with regard to classifiers:\n\n1. **[demo_randobot.py](https://bitbucket.org/ariell/pysq/src/master/examples/bots/demo_randobot.py)**: same as example above, but with additional command line \n   arguments for filtering annotation_sets and to keep running as a service.\n2. **[keras_cnn_bot.py](https://bitbucket.org/ariell/pysq/src/master/examples/bots/keras_cnn_bot.py)**: a real classifier that uses a tensor_flow/keras model for \n   classifying points in images. The class received a number of additional parameters that can all be passed in as \n   command line arguments. Run `python keras_cnn_bot.py --help` for more information. This shows an example of how to \n   include additional model-specific arguments along with other parameters, as well as how to process the images and \n   for a real classifier.\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "https://bitbucket.org/ariell/pysq/get/bede6badfc1ea09cd45b3ae3d4bc3551daa0b3e0.tar.gz",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://bitbucket.org/ariell/pysq",
+            "keywords": "SQUIDLE+,API,SQ,Machine Learning",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "sqapi",
+            "package_url": "https://pypi.org/project/sqapi/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/sqapi/",
+            "project_urls": {
+                "Download": "https://bitbucket.org/ariell/pysq/get/bede6badfc1ea09cd45b3ae3d4bc3551daa0b3e0.tar.gz",
+                "Homepage": "https://bitbucket.org/ariell/pysq"
+            },
+            "release_url": "https://pypi.org/project/sqapi/0.3/",
+            "requires_dist": null,
+            "requires_python": "",
+            "summary": "A python package that simplifies interactions with the SQUIDLE+ API. It can be used to integrate automated labelling from machine learning algorithms and plenty other cool things.",
+            "version": "0.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17748501,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "4e55f3bd996dd9e4b92e9de184a47a1ed74fb4a0ddd055ae660ef1b36ac2d783",
+                    "md5": "146d044d69924a93c0df086692012403",
+                    "sha256": "66ba081a725d23cd9f620e803eb4a5d758c939ebc02b41802ae7d698e612cdfe"
+                },
+                "downloads": -1,
+                "filename": "sqapi-0.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "146d044d69924a93c0df086692012403",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 17156,
+                "upload_time": "2023-04-18T02:02:01",
+                "upload_time_iso_8601": "2023-04-18T02:02:01.629431Z",
+                "url": "https://files.pythonhosted.org/packages/4e/55/f3bd996dd9e4b92e9de184a47a1ed74fb4a0ddd055ae660ef1b36ac2d783/sqapi-0.3.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
