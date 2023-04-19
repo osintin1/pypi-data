@@ -1,0 +1,87 @@
+{
+    "0.1.0": {
+        "info": {
+            "author": "",
+            "author_email": "Erik Mannerfelt <33550973+erikmannerfelt@users.noreply.github.com>",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "# variete \u2014 Making lazily evaluated raster operations simple \nThe [GDAL](https://gdal.org) library leverages functionality that is used in most (if not all) modern geospatial software.\nMost operations in GDAL are eager, i.e. they are run sequentially and produce an output directly.\nThe GDAL Virtual Format (VRT) allows for lazy evaluation of operations, meaning only what is requested is actually calculated, instead of the whole raster at once.\nFormulating advanced VRTs, however, are difficult and therefore limits the usage of the format.\nEnter the niche of `variete`, VRTs made simple; with `variete`, VRTs are used as the backend and allow lazy evalation of rasters in a \"Pythonic\" interface.\n\n### Why lazy evaluation is a good idea\nLazy evaluation means delaying calculations up until the moment they are needed, and not before.\nThis can lead to ambiguity, but when done right, provides tools for getting a better overview of the process, lower memory management, and generally higher flexibility in the end.\nImagine working on a 20-step process (like warping or adding rasters).\nEager evaluation; the opposite of lazy evaluation, would mean loading the initial raster, performing an operation, running the next operation, etc.\nWith simplistic eager evaluation, this may require 20 files either on disk or in memory.\nIf the rasters are large, they may need to be saved occasionally, or upon every operation to not run out of memory (OOM).\nEven worse, if the raster is too large to fit in memory, it may have to be chunked and operations need to be run on all chunks independently.\nThere are many good approaches for chunked eager evaluation, but it often still leads to high code complexity and many large intermediate files.\nWith proper lazy evaluation, no intermediate files (other than ones that the user may request) will be created, and complexity can be kept at a minimum as chunking and parallelization is handled by the backend instead.\n\n\n**See other sources that highlight the power of VRTs**\n\n- [The VRT driver specification in GDAL](https://gdal.org/drivers/raster/vrt.html)\n- [Guide to Virtual Raster's](https://arcg.is/0HqOeu)\n\n\n### About the name\n*Vari\u00e9t\u00e9* in French means *variety*, *type* or *genre*.\nMore importantly, `variete` sounds like a very poor pronounciation of V-R-T, which led to the origin of the name of the package.\nIt is thus a \"variety of GDALs approach to lazy evaluation\"!\nAs for pronounciation of the package name, it is like spoken Latin; every language and individual speaker probably has their own version.\n\n\n## Features\n`variete` provides a simple interface to generate on-the-fly instructions for:\n\n- Warping between coordinate systems.\n- Cropping / resampling rasters.\n- Generating mosaics.\n- Performing arithmetic on or between rasters.\n- Loading the result as a numpy array, or saving it as a GDAL-friendly stack of VRTs.\n\nSince VRT is the main driver of `variete`, lazy outputs can be read by **any** GDAL-powered software.\n\n### What `variete` **cannot** do\nSome caveats inherent to VRTs, or inherent to lazy file-based evaluation in general, cannot be circumvented.\nFor example:\n\n  - Arithmetic on virtual rasters only works with constants and other virtual rasters. It cannot be done with in-memory datasets such as numpy arrays. In this case, either the array needs to be saved on disk, or the virtual raster needs to be explicitly loaded into memory.  \n  - Nodata handling in the VRT framework is rudimentary; when subtracting two virtual rasters with nodata values, nodata is ignored. Therefore, `variete.load()` defaults to assigning all nodata values to `np.nan`, which circumvents.\n\n## Examples\n\n### Elevation change rate\nGenerating elevation change rates between two DEMs requires three lines of code in `variete` (excluding imports and plotting):\n```python\nimport variete\nimport matplotlib.pyplot as plt\n\ndem_2000 = variete.load(\"dem_2000.tif\")\ndem_2020 = variete.load(\"dem_2020.tif\")\n\ndhdt = (dem_2020 - dem_2000) / (2020 - 2000)\n\nplt.plot(dhdt.read(1), cmap=\"RdBu\", vmin=-2, vmax=2)\nplt.show()\n\ndhdt.write(\"dhdt_2000-2020.tif\")\n``` \n\nResampling between the DEMs (in case their spatial extents differ) is done on the fly using bilinear interpolation to the DEM on the left hand side (`dem_2020`).\nThe exact parameters can be customized if needed.\n\nNote that the pixel values of the `dhdt` variable are not calculated until `dhdt.read(1)` is called; before, it simply represents the \"recipe\" on how to generate the pixels.\n\n### Sampling a warped raster\nImagine the scenario where a few points need to be sampled from a raster, but the raster is in a different coordinate system.\nThis can technically be handled by first transforming the points to the raster CRS and then sampling, but with `variete`, it is much easier!\n`variete` can warp between coordinate systems with just one (lazy) call, and then the warped raster can be sampled directly.\n\n```python\nimport variete\nimport pandas as pd\n\n# This raster may be in a different coordinate system, like a geographic WGS84.\n# the .warp call reprojects the raster to a more suitable coordinate system in this case.\n# Note that no processing has yet been performed\nraster = variete.load(\"raster.tif\").warp(crs=\"WGS 84 / UTM Zone 33N\")\npoints = pd.read_csv(\"points.csv\")\n\n# When sample is called, only the blocks of the raster that is needed for reprojection is loaded, then reprojected, then sampled from.\npoints[\"raster_value\"] = raster.sample(points[\"easting\"], points[\"northing\"])\n```\n\n## Installation\n`variete` only depends on [rasterio](https://github.com/rasterio/rasterio) and its sub-dependencies.\nIf `rasterio` is installed, `variete` can be installed with one of the following:\n\n```bash\npip install git+https://github.com/erikmannerfelt/variete.git\n```\n### Requirements\n\n- `gdal`\n- `numpy`\n- `rasterio`\n\n\n## Comparison to other packages\n### geoutils\nThe API is heavily inspired from [geoutils](https://github.com/GlacioHack/geoutils), largely because the projects share core developers.\n`geoutils` can be seen as the eager equivalent of `variete` in its current state (Apr. 2023) as all operations are performed in-memory.\nThe packages complement each other; `geoutils` features higher flexibility with the types of supported in-memory operations, while `variete` excels at memory efficiency on large files.\n\n### xarray / rioxarray / dask\n[xarray](https://github.com/pydata/xarray) is excellent at lazy evaluation due to its [dask](https://github.com/dask/dask) backend, and [rioxarray](https://github.com/corteva/rioxarray) allows for simple lazy loading of georeferenced rasters.\nThis family of packages is far ahead in terms of flexibility and multi-node scheduling.\nIts API can however be daunting, and its functionality rather shines complex use-cases.\n`variete` fills the gap between the eager simplicity of `geoutils` and the lazy complexity of `xarray`.\n\n### rasterio\nMost modern geospatial packages use [rasterio](https://github.com/rasterio/rasterio) for geospatial raster operations.\nIts goal is to make GDAL functionality easier to use, and it adds many useful tools and error messages along the way.\nIndeed, `rasterio` even has a [VRT module](https://rasterio.readthedocs.io/en/latest/api/rasterio.vrt.html) which can handle the (very limited) construction of simple VRTs.\nCode complexity is however often a recurring problem with `rasterio`, as even just one operation (like reprojecting, reading or writing) can easily be 5--10 lines of code.\nMost of the functionality is also eager, meaning OOM issues and large intermediate files are almost granted.\n`variete` uses the safety net that `rasterio` provides for disk-based operations (reading/writing/sampling), while retaining the simplicity that is inspired by `geoutils`.\nMost of the properties of a `variete.VRaster` are identical to a `rio.DatasetReader` class (like `transform`, `crs`, `shape`), so switching between the two packages should be trivial, and many use-cases require using both.\n\n## Contributing\nWe are happy for contributions to added functionality or bugfixes for `variete` that follow the main principles of the package!\nSpecial emphasis is put on:\n\n- Increased GDAL VRT interoperability\n- Ease of use\n- Bugfixes, testing and documentation improvements\n\nFor new features that fall outside of the \"`variete` as a VRT wrapper\" scope, further discussion is needed.\nNew functionality may better fit the scope of the related packages [geoutils](https://github.com/GlacioHack/geoutils) or [xdem](https://github.com/GlacioHack/xdem). \n\n## Roadmap\n1. Aim for full VRT compatibility. Currently, only a subset of the VRT functionality is supported.\n2. Implement graph optimization. Many subsequent steps may possible to simplify to fewer steps, leading to fewer VRTs being active at a time. This will probably increase performance, and will make saving VRT stacks less of a file-explosion.\n3. Work toward maximum test and documentation coverage to make sure the core functionality is watertight.\n4. Improve inter-operability with `geoutils` and `xdem`. `variete.VRaster`s should be easy to convert to in-memory `geoutils.Raster`s, and vice versa.\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "lazy,gdal,rasterio,raster,virtual,geospatial,spatial,operation,dem",
+            "license": "BSD 3-Clause License  Copyright (c) 2023, variete contributors All rights reserved.  Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:  1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.  2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.  3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. ",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "variete",
+            "package_url": "https://pypi.org/project/variete/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/variete/",
+            "project_urls": {
+                "repository": "https://github.com/erikmannerfelt/variete"
+            },
+            "release_url": "https://pypi.org/project/variete/0.1.0/",
+            "requires_dist": [
+                "rasterio",
+                "gdal (>=3.2)"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "Making lazily evaluated raster operations simple.",
+            "version": "0.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17759616,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d718206cb9fe1bc6903aa12a9c733c53d74f7bfc7b72db7ba3db9af42b6d0679",
+                    "md5": "1d4285f29334b794f2ec577ee15d3023",
+                    "sha256": "e17df740eeb9cea77709142854aa069e244092e27013d665d17d4412181a2e54"
+                },
+                "downloads": -1,
+                "filename": "variete-0.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "1d4285f29334b794f2ec577ee15d3023",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 24699,
+                "upload_time": "2023-04-18T17:58:25",
+                "upload_time_iso_8601": "2023-04-18T17:58:25.311383Z",
+                "url": "https://files.pythonhosted.org/packages/d7/18/206cb9fe1bc6903aa12a9c733c53d74f7bfc7b72db7ba3db9af42b6d0679/variete-0.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a4f4d28a2bca85be5aebd06ee2a81ab30846a57a1f00561e6617fe1910a0d8ab",
+                    "md5": "fd05b964e782b59ab0938e64f9c6f934",
+                    "sha256": "f30051e8e614cf91071096bd3db2e86b9f2e0a00cdacda437435dede0c5e8593"
+                },
+                "downloads": -1,
+                "filename": "variete-0.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "fd05b964e782b59ab0938e64f9c6f934",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 31861,
+                "upload_time": "2023-04-18T17:59:17",
+                "upload_time_iso_8601": "2023-04-18T17:59:17.603266Z",
+                "url": "https://files.pythonhosted.org/packages/a4/f4/d28a2bca85be5aebd06ee2a81ab30846a57a1f00561e6617fe1910a0d8ab/variete-0.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
