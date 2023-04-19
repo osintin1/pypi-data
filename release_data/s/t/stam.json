@@ -36,7 +36,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17550549,
+        "last_serial": 17770347,
         "urls": [
             {
                 "comment_text": "",
@@ -99,7 +99,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17550549,
+        "last_serial": 17770347,
         "urls": [
             {
                 "comment_text": "",
@@ -341,7 +341,6 @@
             "author_email": "Maarten van Gompel <proycon@anaproy.nl>",
             "bugtrack_url": null,
             "classifiers": [],
-            "description": "[![Project Status: WIP \u2013 Initial development is in progress, but there has not yet been a stable, usable release suitable for the public.](https://www.repostatus.org/badges/latest/wip.svg)](https://www.repostatus.org/#wip)\n\n# STAM Python binding\n\n[STAM](https:/github.com/annotation/stam) is a data model for stand-off text annotation and described in detail [here](https://github.com/annotation/stam). This is a python library (to be more specific; a python binding written in Rust) to work with the model.\n\nThis library offers a higher-level interface than the underlying Rust library. Implementation is currently in a preliminary stage. We aim to implement the full model and most extensions.\n\n## Installation\n\n``$ pip install stam``\n\n## Usage\n\nImport the library\n\n```rust\nimport stam\n```\n\nLoading a STAM JSON file containing an annotation store:\n\n```python\nstore = stam.AnnotationStore(file=\"example.stam.json\")\n```\n\nThe annotation store is your workspace, it holds all resources, annotation sets\n(i.e. keys and annotation data) and of course the actual annotations. It is a\nmemory-based store and you can put as much as you like into it (as long as it fits\nin memory:).\n\nRetrieving anything by ID:\n\n```python\nannotation = store.annotation(\"my-annotation\")\nresource = store.resource(\"my-resource\")\nannotationset = store.annotationset(\"my-annotationset\")\nkey = annotationset.key(\"my-key\")\ndata = annotationset.annotationdata(\"my-data\")\n```\n\nIterating through all annotations in the store, and outputting a simple tab separated format:\n\n```python\nfor annotation in store.annotations():\n    # get the text to which this annotation refers (if any)\n    try:\n        text = str(annotation)\n    except stam.StamError:\n        text = \"n/a\"\n    for data in annotation:\n        print(\"\\t\".join(( annotation.id, data.key().id, str(data.value()), text)))\n```\n\n\nAdding a resource:\n\n```python\nresource = store.add_resource(filename=\"my-text.txt\")\n```\n\nCreate a store and annotations from scratch:\n\n```python\nfrom stam import AnnotationStore, Selector, AnnotationDataBuilder\n\nstore = AnnotationStore(id=\"test\")\nresource = store.add_resource(id=\"testres\", text=\"Hello world\")\nstore.annotate(id=\"A1\", \n                target=Selector.textselector(resource, Offset.simple(6,11)),\n                data=[AnnotationDataBuilder(id=\"D1\", key=\"pos\", value=\"noun\", annotationset=\"testdataset\")])\n```\n\nIn the above example, the `AnnotationDataSet` , `DataKey` and `AnnotationData`\nare created on-the-fly. You can also create them explicitly, as shown in the\nnext snippet, resulting in the exact same store:\n\n\n```python\nstore = AnnotationStore(id=\"test\")\nresource = store.add_resource(id=\"testres\", text=\"Hello world\")\nannotationset = store.add_annotationset(id=\"testdataset\")\nannotationset.add_key(\"pos\")\ndata = annotationset.add_data(\"pos\",\"noun\",\"D1\")\nstore.annotate(id=\"A1\", \n    target=Selector.textselector(resource, Offset.simple(6,11)),\n    data=[AnnotationDataBuilder.link(data)])\n```\n\nHere we use `AnnotationDataBuilder.link()` to link to the existing annotation.\nProviding the full `AnnotationDataBuilder` as in the earlier example would have\nalso worked fine, with the same end result, but would be less performant. The\nimplementation will ensure any already existing `AnnotationData` will be reused if\npossible, as not duplicating data is one of the core characteristics of the\nSTAM model.\n\nYou can serialize the entire annotation store (including all sets and annotations) to a STAM JSON file:\n\n```python\nstore.to_file(\"example.stam.json\")\n```\n\n## Differences between the rust library and python library and performance considerations\n\nAlthough this Python binding builds on the Rust library, the API it exposes\ndiffers in certain aspects to make it more pythonic and easier to work with.\nThis results in a higher-level API that hides some of the lower-level details\nthat are present in the Rust library. This approach does come at the cost of causing\nsome additional runtime overhead. \n\nIn this Python binding, most classes of the model (`Annotation`,\n`AnnotationData`, `DataKey`, etc..) are references to the annotation store\n(self-containing also a reference to the store itself). None of them can be\ninstantiated directly, but always via an `add_*()` or `annotate()` method which\nwill add them and return the reference. \n\nThese instances play a bigger role in the Python API than their equivalents in\nthe Rust API (which distinguishes owned data, borrowed data aka references, and\nso-called handles). In the Rust API, methods for search are mostly implemented on the main\n`AnnotationStore` or `AnnotationDataSet`, reflecting the underlying ownership model more strictly.\nIn the Python API, they are implemented on the types themselves. Here's a comparison of some common methods:\n\n| Python API                       | Rust API                                            |\n|--------------------------------  | --------------------------------------------------- |\n| `Annotation.annotations()`       | `AnnotationStore::annotations_by_annotation()`      |\n| `Annotation.resources()`         | `AnnotationStore::resources_by_annotation()`        |\n| `Annotation.textselections()`    | `AnnotationStore::textselections_by_annotation()`   |\n| `Annotation.text()`              | `AnnotationStore::text_by_annotation()`             |\n| `TextResource.annotations()`     | `AnnotationStore::annotations_by_resource()`        |\n| `TextSelection.annotations()`    | `AnnotationStore::annotations_by_textselection()`   |\n| `DataKey.data()`                 | `AnnotationDataSet::data_by_key()`                  |\n| `DataKey.annotationset()`        | n/a                                                 |\n| `AnnotationData.annotationset()` | n/a                                                 |\n\nThe Rust methods will return iterators, references or handles whenever they\ncan, moreover it will do so safely. The Python API is often forced to make a\nlocal copy. For iterators it sometimes decides to let the entire underlying Rust\niterator run its course and then return the result as a whole as a tuple, rather than\nreturn a Python generator. Here you gain some speed at the cost of some memory.\n\nProbably needless to say, but using Rust directly will always be more\nperformant than using this Python binding. However, using this Python binding\nshould still be way more performant than if the whole thing were implemented in\nnative Python. The trick is in letting the binding work for you as much as\npossible, use higher-level methods whenever they are available rather than\nimplementing your logic in Python.\n\n## Acknowledgements\n\nThis work is conducted at the [KNAW Humanities Cluster](https://huc.knaw.nl/)'s [Digital Infrastructure department](https://di.huc.knaw.nl/), and funded by the [CLARIAH](https://clariah.nl) project (CLARIAH-PLUS, NWO grant 184.034.023) as part of the FAIR Annotations track.\n\n\n",
             "description_content_type": "text/markdown; charset=UTF-8; variant=GFM",
             "docs_url": null,
             "download_url": "",
@@ -373,7 +372,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17550549,
+        "last_serial": 17770347,
         "urls": [
             {
                 "comment_text": "",
@@ -582,6 +581,259 @@
                 "upload_time": "2023-04-02T20:35:54",
                 "upload_time_iso_8601": "2023-04-02T20:35:54.863464Z",
                 "url": "https://files.pythonhosted.org/packages/a2/9f/a5ff8b4b23089b345904b1b8a5992a03cd08995856a37e116dbb1a2b6342/stam-0.0.4-cp39-cp39-musllinux_1_1_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.0": {
+        "info": {
+            "author": "Maarten van Gompel <proycon@anaproy.nl>",
+            "author_email": "Maarten van Gompel <proycon@anaproy.nl>",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "<p align=\"center\">\n    <img src=\"https://github.com/annotation/stam/raw/master/logo.png\" alt=\"stam logo\" width=\"320\" />\n</p>\n\n[![Docs](https://readthedocs.org/projects/stam-python/badge/?version=latest&style=flat)](https://stam-python.readthedocs.io)\n[![PyPI](https://img.shields.io/pypi/v/stam.svg)](https://pypi.org/project/stam/)\n[![PyPI](https://img.shields.io/pypi/dm/stam.svg)](https://pypi.org/project/stam/)\n[![GitHub build](https://github.com/annotation/stam-rust/actions/workflows/stam.yml/badge.svg?branch=master)](https://github.com/annotation/stam-rust/actions/)\n[![GitHub release](https://img.shields.io/github/release/annotation/stam-rust.svg)](https://GitHub.com/annotation/stam-rust/releases/)\n[![Project Status: Active \u2013 The project has reached a stable, usable state and is being actively developed.](https://www.repostatus.org/badges/latest/active.svg)](https://www.repostatus.org/#active)\n\n# STAM Python binding\n\n[STAM](https://github.com/annotation/stam) is a data model for stand-off text annotation and described in detail [here](https://github.com/annotation/stam). This is a python library (to be more specific; a python binding written in Rust) to work with the model.\n\nThis library offers a higher-level interface than the underlying Rust library. Implementation is currently in a preliminary stage. We aim to implement the full model and most extensions.\n\n## Installation\n\n``$ pip install stam``\n\nOr if you feel adventurous and have the necessary build-time dependencies installed (Rust), you can try the latest development release from Github:\n\n``$ pip install git+https://github.com/annotation/stam-python``\n\n## Documentation\n\n* [STAM Specification](https://github.com/annotation/stam) - the STAM specification itself\n* [API Reference](https://stam-python.readthedocs.io)\n* [STAM Tutorial: Standoff Text Annotation for Pythonistas](tutorial.ipynb) - An extensive tutorial showing how to work with this Python library, in the form of a Jupyter Notebook. **Recommended!**\n\n## Usage \n\nImport the library\n\n```python\nimport stam\n```\n\nLoading a STAM JSON (or CSV) file containing an annotation store:\n\n```python\nstore = stam.AnnotationStore(file=\"example.stam.json\")\n```\n\n\nThe annotation store is your workspace, it holds all resources, annotation sets\n(i.e. keys and annotation data) and of course the actual annotations. It is a\nmemory-based store and you can put as much as you like into it (as long as it fits\nin memory).\n\nYou can optionally pass configuration parameters upon loading a store, as follows:\n\n```python\nstore = stam.AnnotationStore(file=\"example.stam.json\", config={\"debug\": True})\n```\n\nOnce loaded, you can retrieving anything by its public ID:\n\n```python\nannotation = store.annotation(\"my-annotation\")\nresource = store.resource(\"my-resource\")\nannotationset = store.annotationset(\"my-annotationset\")\nkey = annotationset.key(\"my-key\")\ndata = annotationset.annotationdata(\"my-data\")\n```\n\nYou can also iterating through all annotations in the store, and outputting a simple tab separated format:\n\n```python\nfor annotation in store.annotations():\n    # get the text to which this annotation refers (if any)\n    try:\n        text = str(annotation)\n    except stam.StamError:\n        text = \"n/a\"\n    for data in annotation:\n        print(\"\\t\".join(( annotation.id(), data.key().id(), str(data.value()), text)))\n```\n\n\nAdding a resource:\n\n```python\nresource = store.add_resource(filename=\"my-text.txt\")\n```\n\nCreate a store and annotations from scratch:\n\n```python\nfrom stam import AnnotationStore, Selector, AnnotationDataBuilder\n\nstore = AnnotationStore(id=\"test\")\nresource = store.add_resource(id=\"testres\", text=\"Hello world\")\nstore.annotate(id=\"A1\", \n                target=Selector.textselector(resource, Offset.simple(6,11)),\n                data={ \"id\": \"D1\", \"key\": \"pos\", \"value\": \"noun\", \"set\": \"testdataset\"})\n```\n\nIn the above example, the `AnnotationDataSet` , `DataKey` and `AnnotationData`\nare created on-the-fly. You can also create them explicitly within the set first, as shown in the\nnext snippet, resulting in the exact same store:\n\n\n```python\nstore = AnnotationStore(id=\"test\")\nresource = store.add_resource(id=\"testres\", text=\"Hello world\")\nannotationset = store.add_annotationset(id=\"testdataset\")\nannotationset.add_key(\"pos\")\ndata = annotationset.add_data(\"pos\",\"noun\",\"D1\")\nstore.annotate(id=\"A1\", \n    target=Selector.textselector(resource, Offset.simple(6,11)),\n    data=data)\n```\n\nProviding the full data dictionary as in the earlier example would have\nalso worked fine, with the same end result, but would be less performant than passing an `AnnotationData` instance directly.\nThe implementation will always ensure any already existing `AnnotationData` will be reused if\npossible, as not duplicating data is one of the core characteristics of the\nSTAM model.\n\nYou can serialize the entire annotation store (including all sets and annotations) to a STAM JSON file:\n\n```python\nstore.set_filename(\"example.stam.json\")\nstore.save()\n```\n\nFor more documentation, please read: [STAM Tutorial: Standoff Text Annotation for Pythonistas](tutorial.ipynb).\n\n## Differences between the rust library and python library and performance considerations\n\nAlthough this Python binding builds on the Rust library, the API it exposes\ndiffers in certain aspects to make it more pythonic and easier to work with.\nThis results in a higher-level API that hides some of the lower-level details\nthat are present in the Rust library. This approach does come at the cost of causing\nsome additional runtime overhead. \n\nThe Rust methods will often return iterators, references or handles whenever they\ncan, moreover it will do so safely. The Python API is often forced to make a\nlocal copy. For iterators we often decide to let the entire underlying Rust\niterator run its course and then return the result as a whole as a tuple, rather than\nreturn a Python generator. Here you gain some speed at the cost of some memory.\n\nProbably needless to say, but using Rust directly will always be more\nperformant than using this Python binding. However, using this Python binding\nshould still be way more performant than if the whole thing were implemented in\nnative Python. The trick is in letting the binding work for you as much as\npossible, use higher-level methods whenever they are available rather than\nimplementing your logic in Python.\n\n## Acknowledgements\n\nThis work is conducted at the [KNAW Humanities Cluster](https://huc.knaw.nl/)'s [Digital Infrastructure department](https://di.huc.knaw.nl/), and funded by the [CLARIAH](https://clariah.nl) project (CLARIAH-PLUS, NWO grant 184.034.023) as part of the FAIR Annotations track.\n\n",
+            "description_content_type": "text/markdown; charset=UTF-8; variant=GFM",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/annotation/stam",
+            "keywords": "text-processing,annotation,linguistics,standoff,nlp",
+            "license": "GPL-3.0-only",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "stam",
+            "package_url": "https://pypi.org/project/stam/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/stam/",
+            "project_urls": {
+                "Homepage": "https://github.com/annotation/stam",
+                "Source Code": "https://github.com/annotation/stam-python"
+            },
+            "release_url": "https://pypi.org/project/stam/0.1.0/",
+            "requires_dist": [
+                "pytest; extra == 'test'"
+            ],
+            "requires_python": "",
+            "summary": "STAM is a library for dealing with standoff annotations on text",
+            "version": "0.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17770347,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "91e2d939c5c537de794613b36e730ad05ce73cb0c45a407ffce47e79d4b8c6b1",
+                    "md5": "7fc7e717baa142b4fd4210f3aa3dc581",
+                    "sha256": "d6d954cddd64a50d272804a7d6ddf521295d9894f85f27212da603c8cfa172c0"
+                },
+                "downloads": -1,
+                "filename": "stam-0.1.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "7fc7e717baa142b4fd4210f3aa3dc581",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": null,
+                "size": 2464889,
+                "upload_time": "2023-04-19T11:46:26",
+                "upload_time_iso_8601": "2023-04-19T11:46:26.487221Z",
+                "url": "https://files.pythonhosted.org/packages/91/e2/d939c5c537de794613b36e730ad05ce73cb0c45a407ffce47e79d4b8c6b1/stam-0.1.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "76db298f095fbef19c02c58d74851eb43ed41018392e04bfe14b92b04fcd37a3",
+                    "md5": "e8cd0e25e065805cca5447ffcc0c6241",
+                    "sha256": "dc00e23d4c7726b96d1e793919dd82c2b74e73ce835448fdba84dddcf4c5e039"
+                },
+                "downloads": -1,
+                "filename": "stam-0.1.0-cp310-cp310-musllinux_1_1_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "e8cd0e25e065805cca5447ffcc0c6241",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": null,
+                "size": 2581276,
+                "upload_time": "2023-04-19T11:46:42",
+                "upload_time_iso_8601": "2023-04-19T11:46:42.976386Z",
+                "url": "https://files.pythonhosted.org/packages/76/db/298f095fbef19c02c58d74851eb43ed41018392e04bfe14b92b04fcd37a3/stam-0.1.0-cp310-cp310-musllinux_1_1_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "1a16e749aaf7e9d857e465609a2d0c95fa7b50dfb33f1918fd000589626daba4",
+                    "md5": "3ec34487f1a65c273795627c58a0af09",
+                    "sha256": "00393b83de08883dd9fa49375947f6ac7835b107f0367c525cc65f891830a19b"
+                },
+                "downloads": -1,
+                "filename": "stam-0.1.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "3ec34487f1a65c273795627c58a0af09",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": null,
+                "size": 2464886,
+                "upload_time": "2023-04-19T11:46:29",
+                "upload_time_iso_8601": "2023-04-19T11:46:29.051647Z",
+                "url": "https://files.pythonhosted.org/packages/1a/16/e749aaf7e9d857e465609a2d0c95fa7b50dfb33f1918fd000589626daba4/stam-0.1.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "7217c232eab47fd06b3f0bd6cfbbd619bebe9408d8a8a9f3e8bb7436fd3e13d1",
+                    "md5": "069311668c420d36190ee2c39c1cc5fb",
+                    "sha256": "bb1c2be6c0993276bb08577e65cb9fde7d23a9117a2ca5309678e85c47017b72"
+                },
+                "downloads": -1,
+                "filename": "stam-0.1.0-cp311-cp311-musllinux_1_1_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "069311668c420d36190ee2c39c1cc5fb",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": null,
+                "size": 2581274,
+                "upload_time": "2023-04-19T11:46:44",
+                "upload_time_iso_8601": "2023-04-19T11:46:44.436339Z",
+                "url": "https://files.pythonhosted.org/packages/72/17/c232eab47fd06b3f0bd6cfbbd619bebe9408d8a8a9f3e8bb7436fd3e13d1/stam-0.1.0-cp311-cp311-musllinux_1_1_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3c82d64a73f6c5e5e0648f51f1819d20f3ef52bdc29667c233f1aa8ae0edc900",
+                    "md5": "87a516b6237b2d7ca266c04fa3851647",
+                    "sha256": "a5e797de7997b68b14d6af6d64b438c20a8c2f78dcaadc124014ee50afbb8d71"
+                },
+                "downloads": -1,
+                "filename": "stam-0.1.0-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "87a516b6237b2d7ca266c04fa3851647",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": null,
+                "size": 2465058,
+                "upload_time": "2023-04-19T11:46:31",
+                "upload_time_iso_8601": "2023-04-19T11:46:31.144349Z",
+                "url": "https://files.pythonhosted.org/packages/3c/82/d64a73f6c5e5e0648f51f1819d20f3ef52bdc29667c233f1aa8ae0edc900/stam-0.1.0-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "0188d2cc0988b799566fe561b166a89fc35bd2f2c94e46fe1ae14e7e446bbbe8",
+                    "md5": "aa4ebdafa7dc828f274aa2b0dfb2f49e",
+                    "sha256": "c9850eb6218682a4d497c2c519e63d92ab5cb2e4b8ab7f237ae28a2eb8df33fe"
+                },
+                "downloads": -1,
+                "filename": "stam-0.1.0-cp37-cp37m-musllinux_1_1_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "aa4ebdafa7dc828f274aa2b0dfb2f49e",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": null,
+                "size": 2581368,
+                "upload_time": "2023-04-19T11:46:47",
+                "upload_time_iso_8601": "2023-04-19T11:46:47.073090Z",
+                "url": "https://files.pythonhosted.org/packages/01/88/d2cc0988b799566fe561b166a89fc35bd2f2c94e46fe1ae14e7e446bbbe8/stam-0.1.0-cp37-cp37m-musllinux_1_1_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d6961528f969862da8ccb36feaad9a36bf903d15b0472bd3f76fe2d5bdf2db71",
+                    "md5": "c7cf12299c361cab96cd7ca0c2efa3f9",
+                    "sha256": "13e14558cfc3a44db34e91bda0c66a4316ca3e47f39731576c4c3ce3be248561"
+                },
+                "downloads": -1,
+                "filename": "stam-0.1.0-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "c7cf12299c361cab96cd7ca0c2efa3f9",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": null,
+                "size": 2464644,
+                "upload_time": "2023-04-19T11:46:33",
+                "upload_time_iso_8601": "2023-04-19T11:46:33.462737Z",
+                "url": "https://files.pythonhosted.org/packages/d6/96/1528f969862da8ccb36feaad9a36bf903d15b0472bd3f76fe2d5bdf2db71/stam-0.1.0-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "db832472e397f8be32c07d55827c86cc9ac9b2856ac308c0c9b8647a85d154c3",
+                    "md5": "0e9453af960fab18653b82d3b5e13f77",
+                    "sha256": "98a48181ebc1ba9f785b7e2dcc804fef7872c8f362be417cfd09ef61a7c228b7"
+                },
+                "downloads": -1,
+                "filename": "stam-0.1.0-cp38-cp38-musllinux_1_1_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "0e9453af960fab18653b82d3b5e13f77",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": null,
+                "size": 2581007,
+                "upload_time": "2023-04-19T11:46:49",
+                "upload_time_iso_8601": "2023-04-19T11:46:49.733825Z",
+                "url": "https://files.pythonhosted.org/packages/db/83/2472e397f8be32c07d55827c86cc9ac9b2856ac308c0c9b8647a85d154c3/stam-0.1.0-cp38-cp38-musllinux_1_1_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c7be95394ed5a1727584f059fe79885bf13f25c1187d33c2c28dd0f88c21840b",
+                    "md5": "97c2f0a6daef404f4da43589e5d1da27",
+                    "sha256": "a7a7477b092154676583307b5d1a393ea3773c6dcf85e20d4ca58e6ebb89246d"
+                },
+                "downloads": -1,
+                "filename": "stam-0.1.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "97c2f0a6daef404f4da43589e5d1da27",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": null,
+                "size": 2464761,
+                "upload_time": "2023-04-19T11:46:35",
+                "upload_time_iso_8601": "2023-04-19T11:46:35.908483Z",
+                "url": "https://files.pythonhosted.org/packages/c7/be/95394ed5a1727584f059fe79885bf13f25c1187d33c2c28dd0f88c21840b/stam-0.1.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ac3e885c32c0f0548c03b0c01a4ed066707b3326a3474b30fc3626996fa66d47",
+                    "md5": "2c132481409560c31491d0cd54848267",
+                    "sha256": "e72ef193cb8f9a27b957f50715603afcf1e55d96a51c36b01e07dcda0acab9b7"
+                },
+                "downloads": -1,
+                "filename": "stam-0.1.0-cp39-cp39-musllinux_1_1_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "2c132481409560c31491d0cd54848267",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": null,
+                "size": 2581183,
+                "upload_time": "2023-04-19T11:46:52",
+                "upload_time_iso_8601": "2023-04-19T11:46:52.749392Z",
+                "url": "https://files.pythonhosted.org/packages/ac/3e/885c32c0f0548c03b0c01a4ed066707b3326a3474b30fc3626996fa66d47/stam-0.1.0-cp39-cp39-musllinux_1_1_x86_64.whl",
                 "yanked": false,
                 "yanked_reason": null
             }
