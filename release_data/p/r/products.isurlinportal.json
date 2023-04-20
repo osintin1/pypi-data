@@ -47,7 +47,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17289800,
+        "last_serial": 17777079,
         "urls": [
             {
                 "comment_text": "",
@@ -172,7 +172,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17289800,
+        "last_serial": 17777079,
         "urls": [
             {
                 "comment_text": "",
@@ -298,7 +298,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17289800,
+        "last_serial": 17777079,
         "urls": [
             {
                 "comment_text": "",
@@ -424,7 +424,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17289800,
+        "last_serial": 17777079,
         "urls": [
             {
                 "comment_text": "",
@@ -520,7 +520,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17289800,
+        "last_serial": 17777079,
         "urls": [
             {
                 "comment_text": "",
@@ -583,7 +583,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "isURLInPortal patch for Plone\n=============================\n\nThis patches the ``isURLInPortal`` method in Plone.\nThe method is in ``Products.CMFPlone/URLTool.py`` in the ``URLTool`` class.\nBasic use in a page template is::\n\n  <a\n    tal:define=\"url request/came_from\"\n    tal:attributes=\"href url\"\n    tal:condition=\"python:context.portal_url.isURLInPortal(url)\">\n      This link is only shown when it is somewhere in the Plone portal.\n  </a>\n\n\nWhat does isURLInPortal do?\n---------------------------\n\nThe ``isURLInPortal`` method in Plone is used in several places.\nIt checks if a url is (probably) within the current Plone Site.\nIf so, then this url is safe to redirect to, or is safe to show on a page.\n\nFor example, if your site is ``http://demo.plone.org``, then these urls are in the site:\n\n- Full url: ``http://demo.plone.org/some-folder/some-page``\n- Relative url: ``some-folder/some-page``, ``/somewhere/else``, ``../in/parent``\n\nAnd these are not in the site:\n\n- ``example.org``\n- ``otherdomain.plone.org``\n\nThe code does *not* check if something is actually found at the url.\nIt only checks if the url would be within the site.\n\nIf this method fails to do its job, then an attacker could do a successful hack.\nAn attack can look like this:\n\n- An attacker sends you an email with a specially crafted link.\n  Or the attacker posts this link on a popular site that you visit.\n- The link is to a Plone Site that you know and trust, so you click it.\n- You see the expected Plone Site.  Maybe you login, but this may not be needed.\n\nAnd then one of the following things happens:\n\n- Open redirection: Somewhere on the page is a link to a malicious site.\n  In a fishing attack, this site may look like the Plone Site you expect.\n- Open redirection: You are *automatically* redirected to a malicious site.\n- Reflected XSS (Cross Site Scripting):\n  Malicious javascript is loaded that grabs private information from the page and sends it to the attacker.\n  Or it is used to create content in your name, with more malicious code, or with spam.\n- Stored XSS: If you are logged in as Editor in Plone, malicious javascript is stored, which is loaded by other visitors.\n\nLet's not list the sort of urls that might have tricked this method in the past:\nthere is no need to give hackers and script kiddies more ideas.\n\n\nHotfixes\n--------\n\nDuring the years, there have been various security hotfixes that patch this method.\nUsually this is because someone has alerted the `Plone Security Team <mailto:security@plone.org>`_ to a possible hack.\nIf we see that there is indeed a security problem, then we have to decide whether to publish a hotfix or not.\n\nIt may feel like overkill to create a hotfix for this and alert the entire Plone community, advising them to patch all their sites.\nA lot of them may not be vulnerable.\nFor example:\n\n- Modern browsers have protection against some of this, especially reflected XSS.\n  We have had reports that we could not initially reproduce because of this.\n- Some attacks are only for authenticated users.\n  The frontend web server may have been setup to redirect the login form to a server that is only available internally.\n- Some attacks are only for sites that have open registration, where everyone can make an account.\n  This is probably not the case for most Plone sites.\n- There may be a firewall in place that protects against these attacks.\n  The vulnerable request may not even reach Plone.\n\nAn extra problem: multiple hotfixes patch the same method.\nIf you have Plone 4.3.0, and you have installed all hotfixes, then you have eleven of them.\nSeveral of these patch this method.\nIf you load the oldest hotfix first, then it should work okay.\nThe other way around may even also work, although it is not recommended.\n\nBut we don't test the hotfixes in combination with *all* other hotfixes.\nWe sometimes test with a few though, and in some cases a new hotfix explicitly tries to load an older hotfix first.\n\nAnd it has a (probably small) impact on performance:\nmost hotfixed versions of this method do their specific check, and then call the original method.\nSo it may look like this:\n\n- A call is made to ``isURLInPortal``.\n- This method is patched by ``PloneHotfix20200121``, so it executes its own code, and then calls the original method.\n- This method is patched by ``PloneHotfix20171128``, so it executes its own code, and then calls the original method.\n- This finally is the code in ``CMFPlone``.\n- The three versions have overlap, leading to the same code being executed two or three times.\n\n\nIdea: separate package\n----------------------\n\nThe idea now is: let's put this method into a separate package.\nThis package would work as hotfix for all current Plone versions, or at least 4.3 and higher.\nNewer releases of CMFPlone would depend on this package, so it is automatically included.\nThe new package would be the canonical place of the method.\nWe would remove the method from newer CMFPlone releases.\n\nIf a new vulnerability is then detected, we would fix it and release a new version of this package.\nFixing your site would then be:\n\n- Edit the version number of the new package in the versions section of your buildout.\n- Stop the site.\n- Run buildout.\n- Start the site.\n\nWe could still announce it as a hotfix if we want.\n\nSince all hotfixes are in the ``Products`` namespace, we put this package in the same namespace.\nCode in this namespace is automatically loaded by Plone/Zope.\nAlso, this makes it easier to extract the main directory (``isurlinportal``) of this package and put it in an old-style ``products`` folder.\nThen you can just restart Plone without having to run buildout.\nThis is mainly an issue for older Plone sites that have not been maintained well.\n\n\nVersion numbers\n---------------\n\nYou should always use the latest version of this package that is compatible with your Plone version.\n\n- Major/breaking release, X.0.0:\n  Likely a new vulnerability was patched.\n  Please update as soon as possible.\n  But this may drop support for an older Plone or Python version, so read the changelog.\n  If you have an older Plone, check if there is an older update.\n- Minor/feature release: x.Y.0:\n  A new vulnerability was patched.\n  Please update as soon as possible.\n- Micro/bugfix release: x.y.Z:\n  A bug was fixed, but no new vulnerability was patched.\n  Update at a time of your choosing, or if you experience problems.\n\nVersion 1.x is compatible with Plone 4.3, 5.0, 5.1, 5.2, 6.0.\nVersion 2.x is compatible with Plone 6.\n\n\nReporting vulnerabilities or bugs\n---------------------------------\n\nIf you suspect you have found a vulnerability, please contact the `Plone Security Team <mailto:security@plone.org>`_ by email.\nIf you prefer a more secure way, we can also arrange that via email.\n\nIf you see a non-security bug, you can open an issue, or create a pull request.\nWhen in doubt, please email us.\n\nChangelog\n=========\n\n\n.. You should *NOT* be adding new change log entries to this file.\n   You should create a file in the news directory instead.\n   For helpful instructions, please see:\n   https://github.com/plone/plone.releaser/blob/master/ADD-A-NEWS-ITEM.rst\n\n.. towncrier release notes start\n\n2.0.0 (2023-03-14)\n------------------\n\nBreaking changes:\n\n\n- Drop compatibility with Plone 5.2 and lower.\n  [maurits] (#60)\n\n\n1.2.1 (2021-08-10)\n------------------\n\nBug fixes:\n\n\n- Return False when a url is not like a string, for example None.\n  Note: this is not a security fix.\n  [maurits] (#8)\n\n\n1.2.0 (2021-07-31)\n------------------\n\nNew features:\n\n\n- Treat urls like ``https:example.org`` without slashes as outside the portal.\n  Some browsers would redirect to example.org, some would redirect to a non-existing local page.\n  We never want this, because this is likely a hack attempt.\n  This vulnerability was discovered and reported by Yuji Tounai of Mitsui Bussan Secure Directions, Inc.\n  See `security advisory 1 <https://github.com/plone/Products.isurlinportal/security/advisories/GHSA-q3m9-9fj2-mfwr>`_.\n  [maurits] (#1)\n\n\n1.1.1 (2020-09-07)\n------------------\n\nBug fixes:\n\n\n- Add testing for Python 3.6 + 3.8; add Python 3.8 trove classifier.\n  [tschorr] (#3)\n\n\n1.1.0 (2020-08-16)\n------------------\n\nNew features:\n\n\n- Harden against tricky whitespace in urls.\n  [maurits] (#1)\n\n\n1.0.0 (2020-07-21)\n------------------\n\n- Initial release.\n  Code is the same as current Plone 4.3.19, 5.1.6, 5.2.1, with the January 2020 hotfix applied, plus compatibility fixes.\n  [maurits]\n",
             "description_content_type": "",
             "docs_url": null,
             "download_url": "",
@@ -614,7 +613,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17289800,
+        "last_serial": 17777079,
         "urls": [
             {
                 "comment_text": "",
@@ -655,6 +654,102 @@
                 "upload_time": "2023-03-14T16:05:55",
                 "upload_time_iso_8601": "2023-03-14T16:05:55.749515Z",
                 "url": "https://files.pythonhosted.org/packages/08/33/b2fb2f588f5091c76feac0d3b4dccd497ff1ad1145be44b5e93a2a7af981/Products.isurlinportal-2.0.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "2.0.1": {
+        "info": {
+            "author": "Plone Security Team",
+            "author_email": "security@plone.org",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 5 - Production/Stable",
+                "Framework :: Plone",
+                "Framework :: Plone :: 6.0",
+                "License :: OSI Approved :: GNU General Public License (GPL)",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "isURLInPortal patch for Plone\n=============================\n\nThis patches the ``isURLInPortal`` method in Plone.\nThe method is in ``Products.CMFPlone/URLTool.py`` in the ``URLTool`` class.\nBasic use in a page template is::\n\n  <a\n    tal:define=\"url request/came_from\"\n    tal:attributes=\"href url\"\n    tal:condition=\"python:context.portal_url.isURLInPortal(url)\">\n      This link is only shown when it is somewhere in the Plone portal.\n  </a>\n\n\nWhat does isURLInPortal do?\n---------------------------\n\nThe ``isURLInPortal`` method in Plone is used in several places.\nIt checks if a url is (probably) within the current Plone Site.\nIf so, then this url is safe to redirect to, or is safe to show on a page.\n\nFor example, if your site is ``http://demo.plone.org``, then these urls are in the site:\n\n- Full url: ``http://demo.plone.org/some-folder/some-page``\n- Relative url: ``some-folder/some-page``, ``/somewhere/else``, ``../in/parent``\n\nAnd these are not in the site:\n\n- ``example.org``\n- ``otherdomain.plone.org``\n\nThe code does *not* check if something is actually found at the url.\nIt only checks if the url would be within the site.\n\nIf this method fails to do its job, then an attacker could do a successful hack.\nAn attack can look like this:\n\n- An attacker sends you an email with a specially crafted link.\n  Or the attacker posts this link on a popular site that you visit.\n- The link is to a Plone Site that you know and trust, so you click it.\n- You see the expected Plone Site.  Maybe you login, but this may not be needed.\n\nAnd then one of the following things happens:\n\n- Open redirection: Somewhere on the page is a link to a malicious site.\n  In a fishing attack, this site may look like the Plone Site you expect.\n- Open redirection: You are *automatically* redirected to a malicious site.\n- Reflected XSS (Cross Site Scripting):\n  Malicious javascript is loaded that grabs private information from the page and sends it to the attacker.\n  Or it is used to create content in your name, with more malicious code, or with spam.\n- Stored XSS: If you are logged in as Editor in Plone, malicious javascript is stored, which is loaded by other visitors.\n\nLet's not list the sort of urls that might have tricked this method in the past:\nthere is no need to give hackers and script kiddies more ideas.\n\n\nHotfixes\n--------\n\nDuring the years, there have been various security hotfixes that patch this method.\nUsually this is because someone has alerted the `Plone Security Team <mailto:security@plone.org>`_ to a possible hack.\nIf we see that there is indeed a security problem, then we have to decide whether to publish a hotfix or not.\n\nIt may feel like overkill to create a hotfix for this and alert the entire Plone community, advising them to patch all their sites.\nA lot of them may not be vulnerable.\nFor example:\n\n- Modern browsers have protection against some of this, especially reflected XSS.\n  We have had reports that we could not initially reproduce because of this.\n- Some attacks are only for authenticated users.\n  The frontend web server may have been setup to redirect the login form to a server that is only available internally.\n- Some attacks are only for sites that have open registration, where everyone can make an account.\n  This is probably not the case for most Plone sites.\n- There may be a firewall in place that protects against these attacks.\n  The vulnerable request may not even reach Plone.\n\nAn extra problem: multiple hotfixes patch the same method.\nIf you have Plone 4.3.0, and you have installed all hotfixes, then you have eleven of them.\nSeveral of these patch this method.\nIf you load the oldest hotfix first, then it should work okay.\nThe other way around may even also work, although it is not recommended.\n\nBut we don't test the hotfixes in combination with *all* other hotfixes.\nWe sometimes test with a few though, and in some cases a new hotfix explicitly tries to load an older hotfix first.\n\nAnd it has a (probably small) impact on performance:\nmost hotfixed versions of this method do their specific check, and then call the original method.\nSo it may look like this:\n\n- A call is made to ``isURLInPortal``.\n- This method is patched by ``PloneHotfix20200121``, so it executes its own code, and then calls the original method.\n- This method is patched by ``PloneHotfix20171128``, so it executes its own code, and then calls the original method.\n- This finally is the code in ``CMFPlone``.\n- The three versions have overlap, leading to the same code being executed two or three times.\n\n\nIdea: separate package\n----------------------\n\nThe idea now is: let's put this method into a separate package.\nThis package would work as hotfix for all current Plone versions, or at least 4.3 and higher.\nNewer releases of CMFPlone would depend on this package, so it is automatically included.\nThe new package would be the canonical place of the method.\nWe would remove the method from newer CMFPlone releases.\n\nIf a new vulnerability is then detected, we would fix it and release a new version of this package.\nFixing your site would then be:\n\n- Edit the version number of the new package in the versions section of your buildout.\n- Stop the site.\n- Run buildout.\n- Start the site.\n\nWe could still announce it as a hotfix if we want.\n\nSince all hotfixes are in the ``Products`` namespace, we put this package in the same namespace.\nCode in this namespace is automatically loaded by Plone/Zope.\nAlso, this makes it easier to extract the main directory (``isurlinportal``) of this package and put it in an old-style ``products`` folder.\nThen you can just restart Plone without having to run buildout.\nThis is mainly an issue for older Plone sites that have not been maintained well.\n\n\nVersion numbers\n---------------\n\nYou should always use the latest version of this package that is compatible with your Plone version.\n\n- Major/breaking release, X.0.0:\n  Likely a new vulnerability was patched.\n  Please update as soon as possible.\n  But this may drop support for an older Plone or Python version, so read the changelog.\n  If you have an older Plone, check if there is an older update.\n- Minor/feature release: x.Y.0:\n  A new vulnerability was patched.\n  Please update as soon as possible.\n- Micro/bugfix release: x.y.Z:\n  A bug was fixed, but no new vulnerability was patched.\n  Update at a time of your choosing, or if you experience problems.\n\nVersion 1.x is compatible with Plone 4.3, 5.0, 5.1, 5.2, 6.0.\nVersion 2.x is compatible with Plone 6.\n\n\nReporting vulnerabilities or bugs\n---------------------------------\n\nIf you suspect you have found a vulnerability, please contact the `Plone Security Team <mailto:security@plone.org>`_ by email.\nIf you prefer a more secure way, we can also arrange that via email.\n\nIf you see a non-security bug, you can open an issue, or create a pull request.\nWhen in doubt, please email us.\n\nChangelog\n=========\n\n\n.. You should *NOT* be adding new change log entries to this file.\n   You should create a file in the news directory instead.\n   For helpful instructions, please see:\n   https://github.com/plone/plone.releaser/blob/master/ADD-A-NEWS-ITEM.rst\n\n.. towncrier release notes start\n\n2.0.1 (2023-04-19)\n------------------\n\nInternal:\n\n\n- Update configuration files.\n  [plone devs] (3333c742)\n\n\n2.0.0 (2023-03-14)\n------------------\n\nBreaking changes:\n\n\n- Drop compatibility with Plone 5.2 and lower.\n  [maurits] (#60)\n\n\n1.2.1 (2021-08-10)\n------------------\n\nBug fixes:\n\n\n- Return False when a url is not like a string, for example None.\n  Note: this is not a security fix.\n  [maurits] (#8)\n\n\n1.2.0 (2021-07-31)\n------------------\n\nNew features:\n\n\n- Treat urls like ``https:example.org`` without slashes as outside the portal.\n  Some browsers would redirect to example.org, some would redirect to a non-existing local page.\n  We never want this, because this is likely a hack attempt.\n  This vulnerability was discovered and reported by Yuji Tounai of Mitsui Bussan Secure Directions, Inc.\n  See `security advisory 1 <https://github.com/plone/Products.isurlinportal/security/advisories/GHSA-q3m9-9fj2-mfwr>`_.\n  [maurits] (#1)\n\n\n1.1.1 (2020-09-07)\n------------------\n\nBug fixes:\n\n\n- Add testing for Python 3.6 + 3.8; add Python 3.8 trove classifier.\n  [tschorr] (#3)\n\n\n1.1.0 (2020-08-16)\n------------------\n\nNew features:\n\n\n- Harden against tricky whitespace in urls.\n  [maurits] (#1)\n\n\n1.0.0 (2020-07-21)\n------------------\n\n- Initial release.\n  Code is the same as current Plone 4.3.19, 5.1.6, 5.2.1, with the January 2020 hotfix applied, plus compatibility fixes.\n  [maurits]\n",
+            "description_content_type": "",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.org/plone/Products.isurlinportal",
+            "keywords": "plone security hotfix patch",
+            "license": "GPL",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "Products.isurlinportal",
+            "package_url": "https://pypi.org/project/Products.isurlinportal/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/Products.isurlinportal/",
+            "project_urls": {
+                "Homepage": "https://github.org/plone/Products.isurlinportal"
+            },
+            "release_url": "https://pypi.org/project/Products.isurlinportal/2.0.1/",
+            "requires_dist": [
+                "setuptools",
+                "plone.base",
+                "Products.CMFPlone ; extra == 'test'"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "Replacement for isURLInPortal method in Plone",
+            "version": "2.0.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17777079,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "da34f289dc83e6be03390a15e010e86106c71843798364881ba439d2158816c8",
+                    "md5": "fc0eb5fc26bef55a11ef2d08b214fe1d",
+                    "sha256": "cbf66de5e5ddd4a17c42cff6cfe08649e4bb0245300f68d983cc838c0f3b494f"
+                },
+                "downloads": -1,
+                "filename": "Products.isurlinportal-2.0.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "fc0eb5fc26bef55a11ef2d08b214fe1d",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 10544,
+                "upload_time": "2023-04-19T21:04:16",
+                "upload_time_iso_8601": "2023-04-19T21:04:16.076924Z",
+                "url": "https://files.pythonhosted.org/packages/da/34/f289dc83e6be03390a15e010e86106c71843798364881ba439d2158816c8/Products.isurlinportal-2.0.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "16746757b9dafa53960bb2fdfd86e9a2f6855fec5ac012a5785e530356b9bafc",
+                    "md5": "01a2027899b5747103c739a5c1a2455e",
+                    "sha256": "ec954cf6dde22292e8102797edc12e99ca697f111bcd1145e31cf4589de71a62"
+                },
+                "downloads": -1,
+                "filename": "Products.isurlinportal-2.0.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "01a2027899b5747103c739a5c1a2455e",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 14657,
+                "upload_time": "2023-04-19T21:04:18",
+                "upload_time_iso_8601": "2023-04-19T21:04:18.455343Z",
+                "url": "https://files.pythonhosted.org/packages/16/74/6757b9dafa53960bb2fdfd86e9a2f6855fec5ac012a5785e530356b9bafc/Products.isurlinportal-2.0.1.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
