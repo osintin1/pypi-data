@@ -42,7 +42,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17781021,
+        "last_serial": 17795015,
         "urls": [
             {
                 "comment_text": "",
@@ -132,7 +132,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17781021,
+        "last_serial": 17795015,
         "urls": [
             {
                 "comment_text": "",
@@ -190,7 +190,6 @@
                 "Programming Language :: Python :: 3.10",
                 "Programming Language :: Python :: 3.11"
             ],
-            "description": "<p align=\"center\">\n  <a href=\"https://github.com/Kicksaw-Consulting/trailwatch-python-sdk/actions/workflows/test.yml?query=event%3Apush+branch%3Amain\" target=\"_blank\">\n      <img src=\"https://github.com/Kicksaw-Consulting/trailwatch-python-sdk/actions/workflows/test.yml/badge.svg?branch=main&event=push\" alt=\"Test\">\n  </a>\n  <a href=\"https://pypi.org/project/trailwatch\" target=\"_blank\">\n      <img src=\"https://badge.fury.io/py/trailwatch.svg\" alt=\"PyPI Package\">\n  </a>\n</p>\n\n- [Installation](#installation)\n- [Using TrailWatch](#using-trailwatch)\n  - [Decorator](#decorator)\n  - [Context Manager](#context-manager)\n- [Connectors](#connectors)\n  - [AWS Connector](#aws-connector)\n  - [Salesforce Connector](#salesforce-connector)\n- [Control Execution Status](#control-execution-status)\n  - [Partial Success](#partial-success)\n  - [Timeout](#timeout)\n- [Send a File](#send-a-file)\n- [Using With Other Decorators](#using-with-other-decorators)\n\n# Installation\n\nInstall the SDK (supports AWS server):\n\n```shell\npip install trailwatch\n```\n\nInstall with Salesforce connector support:\n\n```shell\npip install trailwatch[salesforce]\n```\n\n# Using TrailWatch\n\n## Decorator\n\nThis is the recommended way to use TrailWatch. Decorator will automatically\nassign job name and description based on the function name and docstring.\n\n```python\nfrom trailwatch import configure, watch\nfrom trailwatch.connectors.aws import AwsConnectorFactory\n\nconfigure(\n    project=\"My project name\",\n    project_description=\"My project description\",\n    environment=\"production\",\n    connectors=[\n        AWSConnectorFactory(\n            url=\"https://<random>.execute-api.us-west-2.amazonaws.com\",\n            api_key=\"my_key\",\n        )\n    ],\n    loggers=[\"__main__\", \"integration\"],\n)\n\n\n@watch()\ndef handler(event, context):\n  # Do your thing\n  return\n```\n\n## Context Manager\n\nDecorator uses this context manager internally. You can use the context manager\ndirectly if you need more control over the execution or if you want to report a portion\nof the execution (code block) as a separate job.\n\n```python\nfrom trailwatch import configure, TrailwatchContext\nfrom trailwatch.connectors.aws import AwsConnectorFactory\n\nconfigure(\n    project=\"My project name\",\n    project_description=\"My project description\",\n    environment=\"production\",\n    connectors=[\n        AWSConnectorFactory(\n            url=\"https://<random>.execute-api.us-west-2.amazonaws.com\",\n            api_key=\"my_key\",\n        )\n    ],\n    loggers=[\"__main__\", \"integration\"],\n)\n\n\ndef handler(event, context):\n    # Other code\n    with TrailwatchContext(\n        job=\"My Job\",\n        job_description=\"My job description\",\n    ) as execution:\n        # Do your thing\n        return\n    # Other code\n```\n\n# Connectors\n\nTwailWatch SDK works by attaching connectors to the execution context. Connectors\nare responsible for tracking execution flow and for creating a record in their\nrespective systems. Connectors should be configured using the `configure` function\nby provividing a list of connector factories in the `connectors` argument.\n\n## AWS Connector\n\nAWS connector is used to send execution information to AWS TrailWatch service deployed\nin client's AWS account. To use AWS connector, you will need to deploy the TrailWatch\nservice first and then obtain URL and API key from the service.\n\n```python\nfrom trailwatch.connectors.aws import AwsConnectorFactory\n\nconfigure(\n    # Other configuration parameters\n    connectors=[\n        AWSConnectorFactory(\n            url=\"url\",\n            api_key=\"key\",\n        )\n    ],\n)\n```\n\n## Salesforce Connector\n\nSalesforce connector is used to send execution information to Kicksaw Integration App\ndeployed to client's Salesforce org. To use Salesforce connector, you will need to\ndeploy the Kicksaw Integration App first and then obtain credentials required to sign\nin to the Salesforce org.\n\n```python\nfrom trailwatch.connectors.salesforce import SalesforceConnectorFactory\n\nconfigure(\n    # Other configuration parameters\n    connectors=[\n        SalesforceConnectorFactory(\n            username=\"username\",\n            password=\"password\",\n            security_token=\"token\",\n            domain=\"domain\",\n        )\n    ],\n)\n```\n\n# Control Execution Status\n\n## Partial Success\n\nRaise a `PartialSuccess` exception to indicate that the execution was partially\nsuccessful. This exception is handled by TrailWatch to set execution status to `partial`\nand will not be propagated to the caller.\n\n```python\nfrom trailwatch.exceptions import PartialSuccessError\n\n\n@watch()\ndef handler(event, context):\n    # Do your thing\n    # You find out that only a subset of the work was successful\n    # Log information about the failure normally using the logger\n    raise PartialSuccessError\n```\n\n## Timeout\n\nYou can set timeout on a function to force it to stop after a certain amount of time.\nThis will raise `TimeoutError` and set the execution status to `timeout`.\n\n> :warning: When using timeout inside AWS Lambda or Azure Function you will need to\n> set the TrailWatch timeout to a value lower than the timeout you set on the cloud\n> function. Otherwise, function can timeout before TrailWatch has a chance to set the\n> status.\n\n```python\n@watch(timeout=10)\ndef handler(event, context):\n    # Do something that takes more than 10 seconds\n    ...\n```\n\nOr using the context manager:\n\n```python\ndef handler(event, context):\n    with TrailwatchContext(\n        job=\"My Job\",\n        job_description=\"My job description\",\n        timeout=10,\n    ) as execution:\n        # Do something that takes more than 10 seconds\n        ...\n```\n\n# Send a File\n\nSome connectors support attaching (sending) files to be associated with the execution.\nTo send a file, use the `send_file` method on the `TrailwatchContext` object.\nThree methods are available to send a file:\n\n- `send_file` - send a file from the local filesystem\n- `send_fileobj` - send a file-like object (stream or open file object)\n- `send_file_content` - send a file content as a string or bytes\n\n```python\ndef handler(event, context):\n    with TrailwatchContext(\n        job=\"My Job\",\n        job_description=\"My job description\",\n    ) as execution:\n        execution.send_file(\"my_file.txt\", \"/path/to/my_file.txt\")\n        execution.send_fileobj(\"my_file.txt\", open(\"my_file.txt\", \"rb\"))\n        execution.send_file_content(\"my_file.txt\", \"Hello from file!\")\n```\n\nWhen using the decorator, you will need to add an extra argument\n`trailwatch_execution_context` to the function you are decorating\nto receive the `TrailwatchContext` object.\n\n```python\nfrom trailwatch import TrailwatchContext\n\n@watch()\ndef handler(event, context, trailwatch_execution_context: TrailwatchContext):\n    trailwatch_execution_context.send_file(\"my_file.txt\", \"/path/to/my_file.txt\")\n```\n\nConnectors supporting sending files:\n\n- AWS Connector\n\n# Using With Other Decorators\n\nWhen using TrailWatch with other decorators, make sure that TrailWatch decorator\nis the innermost decorator. This is because TrailWatch decorator may inject\nthe context argument into the function and other decorators (like FastAPI) can\nget confused by this argument.\n\n```python\nfrom fastapi import FastAPI, Path\nfrom pydantic import BaseModel\n\napp = FastAPI()\n\n\nclass Model(BaseModel):\n    name: str\n\n\n@app.post(\"/my_endpoint/{resource_id}\")\n@watch()\ndef my_endpoint(\n    trailwatch_execution_context: TrailwatchContext\n    model: Model,\n    resource_id: str = Path(..., title=\"The ID of the resource to get\"),\n):\n    # Do your thing\n    return\n```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -223,7 +222,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17781021,
+        "last_serial": 17795015,
         "urls": [
             {
                 "comment_text": "",
@@ -264,6 +263,187 @@
                 "upload_time": "2023-04-20T01:53:07",
                 "upload_time_iso_8601": "2023-04-20T01:53:07.967873Z",
                 "url": "https://files.pythonhosted.org/packages/3e/25/d33001cfd173c44810f3334ab68415e742737336b32b96aad7a840292659/trailwatch-0.3.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.3.1": {
+        "info": {
+            "author": "George Bocharov",
+            "author_email": "george@kicksaw.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: Apache Software License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://www.kicksaw.com/",
+            "keywords": "",
+            "license": "Apache-2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "trailwatch",
+            "package_url": "https://pypi.org/project/trailwatch/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/trailwatch/",
+            "project_urls": {
+                "Homepage": "https://www.kicksaw.com/",
+                "Repository": "https://github.com/Kicksaw-Consulting/trailwatch-python-sdk"
+            },
+            "release_url": "https://pypi.org/project/trailwatch/0.3.1/",
+            "requires_dist": [
+                "requests (>=2.28.2,<3.0.0)",
+                "simple-salesforce (>=1.12.3,<2.0.0) ; extra == \"salesforce\""
+            ],
+            "requires_python": ">=3.10,<4.0",
+            "summary": "Python SDK for TrailWatch by Kicksaw",
+            "version": "0.3.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17795015,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "8c8c9bcb2bc02f503f9fd5b08c8864d172e3949b4dc281e84f0584f8050921e8",
+                    "md5": "41815ce6ce9d0fcd2bfd087f1f5e56cf",
+                    "sha256": "a2fc0cd91f1fc1674e48fff682235fa5fce9a7fc625c9f829b9f8d73f142e9e8"
+                },
+                "downloads": -1,
+                "filename": "trailwatch-0.3.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "41815ce6ce9d0fcd2bfd087f1f5e56cf",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.10,<4.0",
+                "size": 19630,
+                "upload_time": "2023-04-20T15:40:44",
+                "upload_time_iso_8601": "2023-04-20T15:40:44.323800Z",
+                "url": "https://files.pythonhosted.org/packages/8c/8c/9bcb2bc02f503f9fd5b08c8864d172e3949b4dc281e84f0584f8050921e8/trailwatch-0.3.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c0ede343821c19deccb55a3fe475de3ff2fa5797d1f796af470540b118d17b3b",
+                    "md5": "bdf55e3e9b6b529d8d39b830a4aee530",
+                    "sha256": "c568ed682e1b06c71eb937d4855f4bb4ec46a6c364b32ff48d5aa9618e638b52"
+                },
+                "downloads": -1,
+                "filename": "trailwatch-0.3.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "bdf55e3e9b6b529d8d39b830a4aee530",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.10,<4.0",
+                "size": 17752,
+                "upload_time": "2023-04-20T15:40:46",
+                "upload_time_iso_8601": "2023-04-20T15:40:46.167466Z",
+                "url": "https://files.pythonhosted.org/packages/c0/ed/e343821c19deccb55a3fe475de3ff2fa5797d1f796af470540b118d17b3b/trailwatch-0.3.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.3.2": {
+        "info": {
+            "author": "George Bocharov",
+            "author_email": "george@kicksaw.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: Apache Software License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11"
+            ],
+            "description": "<p align=\"center\">\n  <a href=\"https://github.com/Kicksaw-Consulting/trailwatch-python-sdk/actions/workflows/test.yml?query=event%3Apush+branch%3Amain\" target=\"_blank\">\n      <img src=\"https://github.com/Kicksaw-Consulting/trailwatch-python-sdk/actions/workflows/test.yml/badge.svg?branch=main&event=push\" alt=\"Test\">\n  </a>\n  <a href=\"https://pypi.org/project/trailwatch\" target=\"_blank\">\n      <img src=\"https://badge.fury.io/py/trailwatch.svg\" alt=\"PyPI Package\">\n  </a>\n</p>\n\n- [Installation](#installation)\n- [Using TrailWatch](#using-trailwatch)\n  - [Decorator](#decorator)\n  - [Context Manager](#context-manager)\n- [Connectors](#connectors)\n  - [AWS Connector](#aws-connector)\n  - [Salesforce Connector](#salesforce-connector)\n- [Control Execution Status](#control-execution-status)\n  - [Partial Success](#partial-success)\n  - [Timeout](#timeout)\n- [Send a File](#send-a-file)\n- [Using With Other Decorators](#using-with-other-decorators)\n\n# Installation\n\nInstall the SDK (supports AWS server):\n\n```shell\npip install trailwatch\n```\n\nInstall with Salesforce connector support:\n\n```shell\npip install trailwatch[salesforce]\n```\n\n# Using TrailWatch\n\n## Decorator\n\nThis is the recommended way to use TrailWatch. Decorator will automatically\nassign job name and description based on the function name and docstring.\n\n```python\nfrom trailwatch import configure, watch\nfrom trailwatch.connectors.aws import AwsConnectorFactory\n\nconfigure(\n    project=\"My project name\",\n    project_description=\"My project description\",\n    environment=\"production\",\n    connectors=[\n        AWSConnectorFactory(\n            url=\"https://<random>.execute-api.us-west-2.amazonaws.com\",\n            api_key=\"my_key\",\n        )\n    ],\n    loggers=[\"__main__\", \"integration\"],\n)\n\n\n@watch()\ndef handler(event, context):\n  # Do your thing\n  return\n```\n\n## Context Manager\n\nDecorator uses this context manager internally. You can use the context manager\ndirectly if you need more control over the execution or if you want to report a portion\nof the execution (code block) as a separate job.\n\n```python\nfrom trailwatch import configure, TrailwatchContext\nfrom trailwatch.connectors.aws import AwsConnectorFactory\n\nconfigure(\n    project=\"My project name\",\n    project_description=\"My project description\",\n    environment=\"production\",\n    connectors=[\n        AWSConnectorFactory(\n            url=\"https://<random>.execute-api.us-west-2.amazonaws.com\",\n            api_key=\"my_key\",\n        )\n    ],\n    loggers=[\"__main__\", \"integration\"],\n)\n\n\ndef handler(event, context):\n    # Other code\n    with TrailwatchContext(\n        job=\"My Job\",\n        job_description=\"My job description\",\n    ) as execution:\n        # Do your thing\n        return\n    # Other code\n```\n\n# Connectors\n\nTwailWatch SDK works by attaching connectors to the execution context. Connectors\nare responsible for tracking execution flow and for creating a record in their\nrespective systems. Connectors should be configured using the `configure` function\nby provividing a list of connector factories in the `connectors` argument.\n\n## AWS Connector\n\nAWS connector is used to send execution information to AWS TrailWatch service deployed\nin client's AWS account. To use AWS connector, you will need to deploy the TrailWatch\nservice first and then obtain URL and API key from the service.\n\n```python\nfrom trailwatch.connectors.aws import AwsConnectorFactory\n\nconfigure(\n    # Other configuration parameters\n    connectors=[\n        AWSConnectorFactory(\n            url=\"url\",\n            api_key=\"key\",\n        )\n    ],\n)\n```\n\n## Salesforce Connector\n\nSalesforce connector is used to send execution information to Kicksaw Integration App\ndeployed to client's Salesforce org. To use Salesforce connector, you will need to\ndeploy the Kicksaw Integration App first and then obtain credentials required to sign\nin to the Salesforce org.\n\n```python\nfrom trailwatch.connectors.salesforce import SalesforceConnectorFactory\n\nconfigure(\n    # Other configuration parameters\n    connectors=[\n        SalesforceConnectorFactory(\n            username=\"username\",\n            password=\"password\",\n            security_token=\"token\",\n            domain=\"domain\",\n        )\n    ],\n)\n```\n\n# Control Execution Status\n\n## Partial Success\n\nRaise a `PartialSuccess` exception to indicate that the execution was partially\nsuccessful. This exception is handled by TrailWatch to set execution status to `partial`\nand will not be propagated to the caller.\n\n```python\nfrom trailwatch.exceptions import PartialSuccessError\n\n\n@watch()\ndef handler(event, context):\n    # Do your thing\n    # You find out that only a subset of the work was successful\n    # Log information about the failure normally using the logger\n    raise PartialSuccessError\n```\n\n## Timeout\n\nYou can set timeout on a function to force it to stop after a certain amount of time.\nThis will raise `TimeoutError` and set the execution status to `timeout`.\n\n> :warning: When using timeout inside AWS Lambda or Azure Function you will need to\n> set the TrailWatch timeout to a value lower than the timeout you set on the cloud\n> function. Otherwise, function can timeout before TrailWatch has a chance to set the\n> status.\n\n```python\n@watch(timeout=10)\ndef handler(event, context):\n    # Do something that takes more than 10 seconds\n    ...\n```\n\nOr using the context manager:\n\n```python\ndef handler(event, context):\n    with TrailwatchContext(\n        job=\"My Job\",\n        job_description=\"My job description\",\n        timeout=10,\n    ) as execution:\n        # Do something that takes more than 10 seconds\n        ...\n```\n\n# Send a File\n\nSome connectors support attaching (sending) files to be associated with the execution.\nTo send a file, use the `send_file` method on the `TrailwatchContext` object.\nThree methods are available to send a file:\n\n- `send_file` - send a file from the local filesystem\n- `send_fileobj` - send a file-like object (stream or open file object)\n- `send_file_content` - send a file content as a string or bytes\n\n```python\ndef handler(event, context):\n    with TrailwatchContext(\n        job=\"My Job\",\n        job_description=\"My job description\",\n    ) as execution:\n        execution.send_file(\"my_file.txt\", \"/path/to/my_file.txt\")\n        execution.send_fileobj(\"my_file.txt\", open(\"my_file.txt\", \"rb\"))\n        execution.send_file_content(\"my_file.txt\", \"Hello from file!\")\n```\n\nWhen using the decorator, you will need to add an extra argument\n`trailwatch_execution_context` to the function you are decorating\nto receive the `TrailwatchContext` object.\n\n```python\nfrom trailwatch import TrailwatchContext\n\n@watch()\ndef handler(event, context, trailwatch_execution_context: TrailwatchContext):\n    trailwatch_execution_context.send_file(\"my_file.txt\", \"/path/to/my_file.txt\")\n```\n\nConnectors supporting sending files:\n\n- AWS Connector\n\n# Using With Other Decorators\n\nWhen using TrailWatch with other decorators, make sure that TrailWatch decorator\nis the innermost decorator. This is because TrailWatch decorator may inject\nthe context argument into the function and other decorators (like FastAPI) can\nget confused by this argument.\n\n```python\nfrom fastapi import FastAPI, Path\nfrom pydantic import BaseModel\n\napp = FastAPI()\n\n\nclass Model(BaseModel):\n    name: str\n\n\n@app.post(\"/my_endpoint/{resource_id}\")\n@watch()\ndef my_endpoint(\n    trailwatch_execution_context: TrailwatchContext\n    model: Model,\n    resource_id: str = Path(..., title=\"The ID of the resource to get\"),\n):\n    # Do your thing\n    return\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://www.kicksaw.com/",
+            "keywords": "",
+            "license": "Apache-2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "trailwatch",
+            "package_url": "https://pypi.org/project/trailwatch/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/trailwatch/",
+            "project_urls": {
+                "Homepage": "https://www.kicksaw.com/",
+                "Repository": "https://github.com/Kicksaw-Consulting/trailwatch-python-sdk"
+            },
+            "release_url": "https://pypi.org/project/trailwatch/0.3.2/",
+            "requires_dist": [
+                "requests (>=2.28.2,<3.0.0)",
+                "simple-salesforce (>=1.12.3,<2.0.0) ; extra == \"salesforce\""
+            ],
+            "requires_python": ">=3.10,<4.0",
+            "summary": "Python SDK for TrailWatch by Kicksaw",
+            "version": "0.3.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17795015,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "507a5161e116183bd99fab97680be551a955b3f8ba9c9f7250118c6e4fd24030",
+                    "md5": "0dbce7ebfd867ff08b5f41c2e5e0f55e",
+                    "sha256": "39d022795c3cb69a5a42501888c89f82a3356880fac254639f966d0557522f68"
+                },
+                "downloads": -1,
+                "filename": "trailwatch-0.3.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "0dbce7ebfd867ff08b5f41c2e5e0f55e",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.10,<4.0",
+                "size": 19720,
+                "upload_time": "2023-04-20T22:42:48",
+                "upload_time_iso_8601": "2023-04-20T22:42:48.573849Z",
+                "url": "https://files.pythonhosted.org/packages/50/7a/5161e116183bd99fab97680be551a955b3f8ba9c9f7250118c6e4fd24030/trailwatch-0.3.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3a42e4a6a2d5623e3d7830d444879db269c1bdb8517739f702bbc926dde9be05",
+                    "md5": "2e4ffb1a065e30fe57331ccc7cf1209b",
+                    "sha256": "23d98a2cda2027698bdabc67a36cd18fe8742b06a292cd725a032ad34418835e"
+                },
+                "downloads": -1,
+                "filename": "trailwatch-0.3.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "2e4ffb1a065e30fe57331ccc7cf1209b",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.10,<4.0",
+                "size": 17854,
+                "upload_time": "2023-04-20T22:42:50",
+                "upload_time_iso_8601": "2023-04-20T22:42:50.782908Z",
+                "url": "https://files.pythonhosted.org/packages/3a/42/e4a6a2d5623e3d7830d444879db269c1bdb8517739f702bbc926dde9be05/trailwatch-0.3.2.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

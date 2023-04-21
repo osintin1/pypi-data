@@ -34,7 +34,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17753751,
+        "last_serial": 17794845,
         "urls": [
             {
                 "comment_text": "",
@@ -122,7 +122,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17753751,
+        "last_serial": 17794845,
         "urls": [
             {
                 "comment_text": "",
@@ -178,7 +178,6 @@
                 "Programming Language :: Python :: 3",
                 "Programming Language :: Python :: 3.11"
             ],
-            "description": "# dbm-database-service\nPackage can be used by in early stages of development to manage MySQL Database by adding and modifying tables and columns.\nThe idea is that once we have .env file created, we can use it's mysqlpool credentials to connect into database.\nWe are able to do it in automatic mode where .env file has to be store in same location where connector will be called,\nor we can use absolute path to a file.\n\n## Installation\n[PyPI](https://pypi.org/project/dbm-database-service/)\n\nUsing pip:\n```bash\n  pip install dbm-database-service\n```\nUsing poetry:\n```bash\n  poetry add dbm-database-service\n```\nUsing pipenv:\n```bash\n  pipenv install dbm-database-service\n```\n\n## TESTS\nTests are automated, that means that you don't need to prepare .env files in desired places. They will be downloaded from\nGoogle Drive - [feel free to inspect them](https://drive.google.com/drive/folders/1Ed1gQlnVKnk7hLUMWTGJ0W4l5b-yZPjs?usp=sharing).\nMySQL container also will be created, so no further set up is needed.\n\n### 1. Make sure your docker is running and port 3306 is empty\n### 2. Clone repository and enter main directory:\n```angular2html\n    git clone https://github.com/DSmolke/DBM_DataBase_Service.git\n    cd DBM_DataBase_Service\n```\n### 3. Run tests using:\n####Poetry:\n```angular2html\n    poetry update\n    poetry shell    \n    cd tests\n    poetry run pytest -vv\n```\n* update protects from decoding errors\n* tests take around 15s because of database and .env files\n\n####Pipenv:\n```angular2html\n    pipenv shell \n    cd tests\n    pipenv run pytest -vv\n```\n\n####Pip:\n```angular2html\n    pip install mysql-connector-python\n    pip install python-dotenv\n    pip install easyvalid-data-validator\n    pip install gdown\n    pip install pytest\n    cd tests\n    pytest -vv\n```\n\n## Basic usage\nHaving existing database server, or mysql container, we want to create new table, add columns to existing table or\ndo any operation on database.\n\n###1. Step - prepare .env file\nPlease download .env file template - > [link](https://drive.google.com/drive/folders/1Ed1gQlnVKnk7hLUMWTGJ0W4l5b-yZPjs?usp=sharing)\n\nEdit file according to your needs.\n```angular2html\nPOOL_NAME=TEST\nPOOL_SIZE=5\nPOOL_RESET_SESSION=True\nHOST=localhost\nDATABASE=test_db\nUSER=user\nPASSWORD=user\nPORT=3306\n```\n\nCopy its absolute path and keep it for later use.\n\n###2. Step - Import all necessary objects\n```angular2html\nfrom dbm_database_service.models.column import Column\nfrom dbm_database_service.models.table import Table\nfrom dbm_database_service.models.datatype import DataType\nfrom dbm_database_service.connectors import MySQLConnectionPoolBuilder\nfrom dbm_database_service.managers import MySQLDatabaseManager\n```\n\n###3. Step - Create new MySQLConnectionPoolBuilder with prepared .env path\n```angular2html\ndbm1 = MySQLConnectionPoolBuilder(r'C:\\Users\\Omen i5\\Desktop\\PROJEKTY\\dbm_database_service\\tests\\.env')\n```\n\n###4. Step - Create new MySQLDatabaseManager using object prepared in previous step\n```angular2html\ndatabase_manager = MySQLDatabaseManager(dbm1.build())\n```\n\n###5. Step - Add new table into database:\n```angular2html\ndatabase_manager.create_table(\n    Table('jeans', [\n        Column('id', datatype=DataType('int')),\n        Column('brand', datatype=DataType('varchar', 255))\n    ]))\n```\n\n###6. Step - Check your database, new table should be waiting for you!\n\n## Objects\n\n### Datatype\nContains valid MySQL datatype name with or without corresponding value\n\n#### Variations examples:\n```angular2html\nint -> DataType('int')\nvarchar(255) -> DataType('varchar', 255)\ndecimal(5, 2) -> DataType('decimal', (5, 2))\n```\n\nFull code:\n```angular2html\n@dataclass\nclass DataType:\n    \"\"\" Objects stores information that creates string representation of valid MySQL datatype\"\"\"\n    name: str\n    corresponding_value: tuple | int = None\n\n    def __post_init__(self) -> None:\n        \"\"\" Checks if name is valid for MySQL syntax and if corresponding value is valid to coexist with name \"\"\"\n        if self.name.upper() not in Settings.valid_mysql_datatypes:\n            raise ValueError('Invalid datatype name')\n        if self.corresponding_value is not None and self.name.upper() not in Settings.mysql_datatypes_with_corresponding_value:\n            raise ValueError(\"Provided datatype shouldn't have corresponding value\")\n\n    def __str__(self) -> str:\n        \"\"\" Will be parsed in other objects. Outcome is valid sql string describing datatype\"\"\"\n        single_value = isinstance(self.corresponding_value, int)\n\n        corresponding_value_str = \"\" if self.corresponding_value is None else \\\n            f\"({self.corresponding_value if single_value else ', '.join([str(v) for v in self.corresponding_value])})\"\n        return f\"{self.name}{corresponding_value_str}\"\n\n```\n\n### Column\nContain informations about MySQL column\n#### Example:\n```angular2html\nColumn('id', datatype=DataType('int'))\n```\nFull list of arguments:\n```angular2html\n    name: str\n    datatype: DataType\n    primary_key: bool = False\n    autoincrement: bool = False\n    unique: bool = False\n    default: Any = None\n    not_null: bool = False\n```\n\nFull code:\n```angular2html\n@dataclass\nclass Column:\n    \"\"\" Needs minimum of name and datatype to parse and can be extended by primary key, autoincrement, unique, default, not_null\"\"\"\n    name: str\n    datatype: DataType\n    primary_key: bool = False\n    autoincrement: bool = False\n    unique: bool = False\n    default: Any = None\n    not_null: bool = False\n\n    def __post_init__(self) -> None:\n        \"\"\" Validates if provided arguments are valid \"\"\"\n        namespaces = self.__dict__\n        constraints = {\n            \"name\": {Constraint.STRING_REGEX: r'^[a-zA-Z_][a-zA-Z0-9_]{1,64}$'},\n            \"primary_key\": {Constraint.IS_TYPE: bool},\n            \"autoincrement\": {Constraint.IS_TYPE: bool},\n            \"unique\": {Constraint.IS_TYPE: bool},\n            \"not_null\": {Constraint.IS_TYPE: bool}\n        }\n        validate_json_data(namespaces, constraints)\n\n    def __str__(self):\n        \"\"\" Will be parsed in other objects. Outcome is valid sql string describing column \"\"\"\n        return f\"{self.name} {self.datatype}\" \\\n               f\"{' primary key' if self.primary_key else ''}\" \\\n               f\"{' autoincrement' if self.autoincrement else ''}\" \\\n               f\"{' unique' if self.unique else ''}\" \\\n               f\"{' not null' if self.not_null else ''}\" \\\n               f\"{f' default {self.default}' if self.default else ''}\"\n```\n\n### Table\nContains information of Table that we are willing to create\n\n#### Example:\n```angular2html\nTable('cats', columns=[\n    Column('id', datatype=DataType('int')),\n    Column('name', datatype=DataType('varchar', 255))\n])\n```\nFull list of arguments:\n```angular2html\n    name: str\n    columns: list[Column]\n    if_not_exist: bool = False\n    temporary: bool = False\n```\nFull code:\n```angular2html\n@dataclass\nclass Table:\n    name: str\n    columns: list[Column]\n    if_not_exist: bool = False\n    temporary: bool = False\n\n    def __str__(self) -> str:\n        \"\"\" Will be parsed in other objects. Outcome is valid SQL Create Table expression \"\"\"\n        return f\"create{' temporary' if self.temporary else ''} table\" \\\n               f\"{' if not exists' if self.if_not_exist else ''}\" \\\n               f\" {self.name}(\" \\\n               f\"{', '.join([str(c) for c in self.columns])});\" \\\n\n\n    def drop_statement(self) -> str:\n        \"\"\" Auxiliary method, that returns expression of sql drop table if exist with name stored in instance \"\"\"\n        return f\"drop table if exists {self.name}\"\n\n    def alter_statement(self) -> str:\n        \"\"\" Auxiliary method, that returns expression of sql alter table with name stored in instance \"\"\"\n        return f\"alter table {self.name}\"\n\n```\n\n## Connectors\nThere are two types of connectors available. get_connection_pool and MySQLConnectionPoolBuilder.\nThey differ in philosophy, but work on the same principle. To load environmental variables needed for db connection\nand return connection pool.\n\n### get_connection_pool\n#### Example:\n```angular2html\n    get_connection_pool() -> function will look for .env file in same location\n    # or\n    get_connection_pool(<ABSOLUTE-PATH>) -> full path of .env file can be provided\n```\n\n### MySQLConnectionPoolBuilder\n#### Example:\n```angular2html\n    # The principle for .env path is same\n    builder = MySQLConnectionPoolBuilder() -> function will look for .env file in same location\n    \n    # you can modify credentials during program flow\n    builder.set_new_port(3307).add_new_password('password')\n\n    # when you are ready, you can build connection pool\n    database_manager = builder.build()\n```\n\n## MySQLDatabaseManager\n\nIt works on connection pool and allows user to create, modify, drop tables as well as \nexecute custom sql for development use\n\n### Methods:\n\n#### _get_cursor_object:\n\nExample:\n```angular2html\n     with self._get_cursor_object() as cur:\n            cur.execute(str(sql))\n            return cur.fetchall()\n```\nContext manager that allows us to work on 'with' statement to avoid problems when errors occur\nduring operations on cursor\n\nFull code:\n```angular2html\n        def _get_cursor_object(self):\n        \"\"\" Custom context manager for db cursor. Uses object's connection pool to establish connection and later on cursor \"\"\"\n        connection_object = self._connection_pool.get_connection()\n        try:\n            if connection_object.is_connected():\n                cursor_object = connection_object.cursor()\n                yield cursor_object\n                connection_object.commit()\n        except Error as e:\n            connection_object.rollback()\n        finally:\n            if connection_object.is_connected():\n                cursor_object.close()\n                connection_object.close()\n```\n\n#### create_table:\n\nExample:\n```angular2html\n    database_manager.create_table(\n    Table('jeans', [\n        Column('id', datatype=DataType('int')),\n        Column('brand', datatype=DataType('varchar', 255))\n    ]))\n```\nCreates new table using Table instance.\n\nFull code:\n```angular2html\n    def create_table(self, table: Table) -> None:\n        \"\"\"\n        Creates table in database using Table instance as a provider of specification of the table\n        :param table: Table instance\n        :return: None\n        \"\"\"\n        if not isinstance(table, Table):\n            raise ValueError(f'Provided argument has to be Table object')\n        with self._get_cursor_object() as cur:\n            cur.execute(str(table))\n```\n\n#### drop_table_if_exists:\n\nExample:\n```angular2html\n    database_manager.drop_table_if_exists('jeans')\n    # or\n    database_manager.drop_table_if_exists(\n        Table('jeans', [\n        Column('id', datatype=DataType('int')),\n        Column('brand', datatype=DataType('varchar', 255))\n    ]))\n```\nUser can use Table object or table name to delete it from database\n\nFull code:\n```angular2html\ndef drop_table_if_exists(self, table: str | Table) -> None:\n    \"\"\"\n    Drops a table if any exists in database. Does not cause error as long as connection is valid\n    :param table: table name or Table instance\n    :return: None\n    \"\"\"\n    with self._get_cursor_object() as cur:\n        if type(table) == str:\n            cur.execute(f\"drop table if exists {table}\")\n        elif isinstance(table, Table):\n            cur.execute(table.drop_statement())\n        else:\n            raise ValueError(f'Provided argument has to be Table object')\n```\n\n#### add_columns:\n\nExample:\n```angular2html\n    database_manager.drop_table_if_exists('jeans')\n    # or\n    database_manager.add_columns([\n        Column('model', datatype=DataType('varchar', 255)),\n        Column('price'', datatype=DataType('decimal', (5,2)))\n    ])\n```\nUser can use Column objects to add new columns into existing table \n\nFull code:\n```angular2html\ndef add_columns(self, table: str | Table, columns: list[Column]) -> None:\n    \"\"\"\n    Ads columns into existing table. Can work on one or more Columns\n    :param table: table name or Table instance\n    :param columns: list of Column instances\n    :return: None\n    \"\"\"\n    if not all([True if isinstance(c, Column) else False for c in columns]):\n        raise ValueError(\"Some values in 'columns' argument are not Column instances\")\n    add_statement = \", \".join([f\"add column {str(c)}\" for c in columns])\n    with self._get_cursor_object() as cur:\n        if type(table) == str:\n            cur.execute(f\"alter {table} {add_statement}\")\n        elif isinstance(table, Table):\n            cur.execute(f\"{table.alter_statement()} {add_statement}\")\n        else:\n            raise ValueError(f'Provided argument has to be Table object')\n```\n\n#### dev_console:\n\nExample:\n```angular2html\n    database_manager.dev_console('use test_tb;')\n```\nMethod allows us to use custom sql statements.\n\nFull code:\n```angular2html\n    def dev_console(self, sql: str) -> None:\n        \"\"\" Utility made for custom development using sql syntax\"\"\"\n        with self._get_cursor_object() as cur:\n            cur.execute(str(sql))\n            return cur.fetchall()\n```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -211,7 +210,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17753751,
+        "last_serial": 17794845,
         "urls": [
             {
                 "comment_text": "",
@@ -252,6 +251,271 @@
                 "upload_time": "2023-04-18T09:43:23",
                 "upload_time_iso_8601": "2023-04-18T09:43:23.605338Z",
                 "url": "https://files.pythonhosted.org/packages/f9/c1/a4533e5bf7b3f6943ae4a9fc64ce9a941c7b2577310afdaeac684d1c8f09/dbm_database_service-0.2.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.2": {
+        "info": {
+            "author": "Smolke",
+            "author_email": "d.smolczynski1@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.11"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "dbm-database-service",
+            "package_url": "https://pypi.org/project/dbm-database-service/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/dbm-database-service/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/dbm-database-service/0.2.2/",
+            "requires_dist": [
+                "mysql-connector-python (>=8.0.32,<9.0.0)",
+                "python-dotenv (>=1.0.0,<2.0.0)",
+                "easyvalid-data-validator (>=0.1.1,<0.2.0)",
+                "gdown (>=4.7.1,<5.0.0)",
+                "pytest (>=7.3.0,<8.0.0)"
+            ],
+            "requires_python": ">=3.11,<4.0",
+            "summary": "",
+            "version": "0.2.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17794845,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "575a297f8a614f17aef2532d038ea9429626f8f2948d4d61e1db3baad3287ed7",
+                    "md5": "89bdb37afdeabd208401f9782180d5f2",
+                    "sha256": "6a54a43025c5a631212ff7949e5d7f599f7d2b4de23029f4a6e7fa2259895717"
+                },
+                "downloads": -1,
+                "filename": "dbm_database_service-0.2.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "89bdb37afdeabd208401f9782180d5f2",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.11,<4.0",
+                "size": 10501,
+                "upload_time": "2023-04-20T19:28:11",
+                "upload_time_iso_8601": "2023-04-20T19:28:11.330888Z",
+                "url": "https://files.pythonhosted.org/packages/57/5a/297f8a614f17aef2532d038ea9429626f8f2948d4d61e1db3baad3287ed7/dbm_database_service-0.2.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "4f8096487e7eaae469a59598c31cf1600db3b60bd4ad229e60ccc3cd72a3614e",
+                    "md5": "e4814f5b5d08b0b77e5938591f79ff51",
+                    "sha256": "918311c484059baa017193604c5691d985ed7da5d04de6482738ab8a608e9824"
+                },
+                "downloads": -1,
+                "filename": "dbm_database_service-0.2.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "e4814f5b5d08b0b77e5938591f79ff51",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.11,<4.0",
+                "size": 7852,
+                "upload_time": "2023-04-20T19:28:12",
+                "upload_time_iso_8601": "2023-04-20T19:28:12.786995Z",
+                "url": "https://files.pythonhosted.org/packages/4f/80/96487e7eaae469a59598c31cf1600db3b60bd4ad229e60ccc3cd72a3614e/dbm_database_service-0.2.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.3": {
+        "info": {
+            "author": "Smolke",
+            "author_email": "d.smolczynski1@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.11"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "dbm-database-service",
+            "package_url": "https://pypi.org/project/dbm-database-service/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/dbm-database-service/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/dbm-database-service/0.2.3/",
+            "requires_dist": [
+                "mysql-connector-python (>=8.0.32,<9.0.0)",
+                "python-dotenv (>=1.0.0,<2.0.0)",
+                "easyvalid-data-validator (>=0.1.1,<0.2.0)",
+                "gdown (>=4.7.1,<5.0.0)",
+                "pytest (>=7.3.0,<8.0.0)"
+            ],
+            "requires_python": ">=3.11,<4.0",
+            "summary": "",
+            "version": "0.2.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17794845,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6f60d08ee7407ae041ae138f0a95af56cf73934f18e24623a5e3fc9e210b1625",
+                    "md5": "ab945646f1a9aa5ae2ac44b143547b6f",
+                    "sha256": "12346fdc07330e74c4305ef393b91a69baf9f2a8961c4280a90dbbd05eea138e"
+                },
+                "downloads": -1,
+                "filename": "dbm_database_service-0.2.3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "ab945646f1a9aa5ae2ac44b143547b6f",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.11,<4.0",
+                "size": 10468,
+                "upload_time": "2023-04-20T19:41:58",
+                "upload_time_iso_8601": "2023-04-20T19:41:58.196065Z",
+                "url": "https://files.pythonhosted.org/packages/6f/60/d08ee7407ae041ae138f0a95af56cf73934f18e24623a5e3fc9e210b1625/dbm_database_service-0.2.3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "11c2ad66083101e05deab66da1bcb8ff91c63a4003005b18007a8a9994e26d84",
+                    "md5": "a8a4a3bcf7d6d0f74f593523ec47a0e2",
+                    "sha256": "fcda411d06ac6011308a7c9efc26208e82e0a598d4e179935a66611fa135b730"
+                },
+                "downloads": -1,
+                "filename": "dbm_database_service-0.2.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "a8a4a3bcf7d6d0f74f593523ec47a0e2",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.11,<4.0",
+                "size": 7811,
+                "upload_time": "2023-04-20T19:41:59",
+                "upload_time_iso_8601": "2023-04-20T19:41:59.809050Z",
+                "url": "https://files.pythonhosted.org/packages/11/c2/ad66083101e05deab66da1bcb8ff91c63a4003005b18007a8a9994e26d84/dbm_database_service-0.2.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.4": {
+        "info": {
+            "author": "Smolke",
+            "author_email": "d.smolczynski1@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.11"
+            ],
+            "description": "# dbm-database-service\nPackage can be used by in early stages of development to manage MySQL Database by adding and modifying tables and columns.\nThe idea is that once we have .env file created, we can use it's mysqlpool credentials to connect into database.\nWe are able to do it in automatic mode where .env file has to be store in same location where connector will be called,\nor we can use absolute path to a file.\n\n## Installation\n[PyPI](https://pypi.org/project/dbm-database-service/)\n\nUsing pip:\n```bash\n  pip install dbm-database-service\n```\nUsing poetry:\n```bash\n  poetry add dbm-database-service\n```\nUsing pipenv:\n```bash\n  pipenv install dbm-database-service\n```\n\n## TESTS\nTests are automated, that means that you don't need to prepare .env files in desired places. They will be downloaded from\nGoogle Drive - [feel free to inspect them](https://drive.google.com/drive/folders/1Ed1gQlnVKnk7hLUMWTGJ0W4l5b-yZPjs?usp=sharing).\nMySQL container also will be created, so no further set up is needed.\n\n### 1. Make sure your docker is running and port 3306 is empty\n### 2. Clone repository and enter main directory:\n```angular2html\n    git clone https://github.com/DSmolke/DBM_DataBase_Service.git\n    cd DBM_DataBase_Service\n```\n### 3. Run tests using:\n####Poetry:\n```angular2html\n    poetry update\n    poetry shell    \n    cd tests\n    poetry run pytest -vv\n```\n* update protects from decoding errors\n* tests take around 15s because of database and .env files\n\n####Pipenv:\n```angular2html\n    pipenv shell \n    cd tests\n    pipenv run pytest -vv\n```\n\n####Pip:\n```angular2html\n    pip install mysql-connector-python\n    pip install python-dotenv\n    pip install easyvalid-data-validator\n    pip install gdown\n    pip install pytest\n    cd tests\n    pytest -vv\n```\n\n## Basic usage\nHaving existing database server, or mysql container, we want to create new table, add columns to existing table or\ndo any operation on database.\n\n###1. Step - prepare .env file\nPlease download .env file template - > [link](https://drive.google.com/drive/folders/1Ed1gQlnVKnk7hLUMWTGJ0W4l5b-yZPjs?usp=sharing)\n\nEdit file according to your needs.\n```angular2html\nPOOL_NAME=TEST\nPOOL_SIZE=5\nPOOL_RESET_SESSION=True\nHOST=localhost\nDATABASE=test_db\nUSER=user\nPASSWORD=user\nPORT=3306\n```\n\nCopy its absolute path and keep it for later use.\n\n###2. Step - Import all necessary objects\n```angular2html\nfrom dbm_database_service.models.column import Column\nfrom dbm_database_service.models.table import Table\nfrom dbm_database_service.models.datatype import DataType\nfrom dbm_database_service.connectors import MySQLConnectionPoolBuilder\nfrom dbm_database_service.managers import MySQLDatabaseManager\n```\n\n###3. Step - Create new MySQLConnectionPoolBuilder with prepared .env path\n```angular2html\ndbm1 = MySQLConnectionPoolBuilder(r'C:\\Users\\Omen i5\\Desktop\\PROJEKTY\\dbm_database_service\\tests\\.env')\n```\n\n###4. Step - Create new MySQLDatabaseManager using object prepared in previous step\n```angular2html\ndatabase_manager = MySQLDatabaseManager(dbm1.build())\n```\n\n###5. Step - Add new table into database:\n```angular2html\ndatabase_manager.create_table(\n    Table('jeans', [\n        Column('id', datatype=DataType('int')),\n        Column('brand', datatype=DataType('varchar', 255))\n    ]))\n```\n\n###6. Step - Check your database, new table should be waiting for you!\n\n## Objects\n\n### Datatype\nContains valid MySQL datatype name with or without corresponding value\n\n#### Variations examples:\n```angular2html\nint -> DataType('int')\nvarchar(255) -> DataType('varchar', 255)\ndecimal(5, 2) -> DataType('decimal', (5, 2))\n```\n\nFull code:\n```angular2html\n@dataclass\nclass DataType:\n    \"\"\" Objects stores information that creates string representation of valid MySQL datatype\"\"\"\n    name: str\n    corresponding_value: tuple | int = None\n\n    def __post_init__(self) -> None:\n        \"\"\" Checks if name is valid for MySQL syntax and if corresponding value is valid to coexist with name \"\"\"\n        if self.name.upper() not in Settings.valid_mysql_datatypes:\n            raise ValueError('Invalid datatype name')\n        if self.corresponding_value is not None and self.name.upper() not in Settings.mysql_datatypes_with_corresponding_value:\n            raise ValueError(\"Provided datatype shouldn't have corresponding value\")\n\n    def __str__(self) -> str:\n        \"\"\" Will be parsed in other objects. Outcome is valid sql string describing datatype\"\"\"\n        single_value = isinstance(self.corresponding_value, int)\n\n        corresponding_value_str = \"\" if self.corresponding_value is None else \\\n            f\"({self.corresponding_value if single_value else ', '.join([str(v) for v in self.corresponding_value])})\"\n        return f\"{self.name}{corresponding_value_str}\"\n\n```\n\n### Column\nContain informations about MySQL column\n#### Example:\n```angular2html\nColumn('id', datatype=DataType('int'))\n```\nFull list of arguments:\n```angular2html\n    name: str\n    datatype: DataType\n    primary_key: bool = False\n    autoincrement: bool = False\n    unique: bool = False\n    default: Any = None\n    not_null: bool = False\n```\n\nFull code:\n```angular2html\n@dataclass\nclass Column:\n    \"\"\" Needs minimum of name and datatype to parse and can be extended by primary key, autoincrement, unique, default, not_null\"\"\"\n    name: str\n    datatype: DataType\n    primary_key: bool = False\n    autoincrement: bool = False\n    unique: bool = False\n    default: Any = None\n    not_null: bool = False\n\n    def __post_init__(self) -> None:\n        \"\"\" Validates if provided arguments are valid \"\"\"\n        namespaces = self.__dict__\n        constraints = {\n            \"name\": {Constraint.STRING_REGEX: r'^[a-zA-Z_][a-zA-Z0-9_]{1,64}$'},\n            \"primary_key\": {Constraint.IS_TYPE: bool},\n            \"autoincrement\": {Constraint.IS_TYPE: bool},\n            \"unique\": {Constraint.IS_TYPE: bool},\n            \"not_null\": {Constraint.IS_TYPE: bool}\n        }\n        validate_json_data(namespaces, constraints)\n\n    def __str__(self):\n        \"\"\" Will be parsed in other objects. Outcome is valid sql string describing column \"\"\"\n        return f\"{self.name} {self.datatype}\" \\\n               f\"{' primary key' if self.primary_key else ''}\" \\\n               f\"{' autoincrement' if self.autoincrement else ''}\" \\\n               f\"{' unique' if self.unique else ''}\" \\\n               f\"{' not null' if self.not_null else ''}\" \\\n               f\"{f' default {self.default}' if self.default else ''}\"\n```\n\n### Table\nContains information of Table that we are willing to create\n\n#### Example:\n```angular2html\nTable('cats', columns=[\n    Column('id', datatype=DataType('int')),\n    Column('name', datatype=DataType('varchar', 255))\n])\n```\nFull list of arguments:\n```angular2html\n    name: str\n    columns: list[Column]\n    if_not_exist: bool = False\n    temporary: bool = False\n```\nFull code:\n```angular2html\n@dataclass\nclass Table:\n    name: str\n    columns: list[Column]\n    if_not_exist: bool = False\n    temporary: bool = False\n\n    def __str__(self) -> str:\n        \"\"\" Will be parsed in other objects. Outcome is valid SQL Create Table expression \"\"\"\n        return f\"create{' temporary' if self.temporary else ''} table\" \\\n               f\"{' if not exists' if self.if_not_exist else ''}\" \\\n               f\" {self.name}(\" \\\n               f\"{', '.join([str(c) for c in self.columns])});\" \\\n\n\n    def drop_statement(self) -> str:\n        \"\"\" Auxiliary method, that returns expression of sql drop table if exist with name stored in instance \"\"\"\n        return f\"drop table if exists {self.name}\"\n\n    def alter_statement(self) -> str:\n        \"\"\" Auxiliary method, that returns expression of sql alter table with name stored in instance \"\"\"\n        return f\"alter table {self.name}\"\n\n```\n\n## Connectors\nThere are two types of connectors available. get_connection_pool and MySQLConnectionPoolBuilder.\nThey differ in philosophy, but work on the same principle. To load environmental variables needed for db connection\nand return connection pool.\n\n### get_connection_pool\n#### Example:\n```angular2html\n    get_connection_pool() -> function will look for .env file in same location\n    # or\n    get_connection_pool(<ABSOLUTE-PATH>) -> full path of .env file can be provided\n```\n\n### MySQLConnectionPoolBuilder\n#### Example:\n```angular2html\n    # The principle for .env path is same\n    builder = MySQLConnectionPoolBuilder() -> function will look for .env file in same location\n    \n    # you can modify credentials during program flow\n    builder.set_new_port(3307).add_new_password('password')\n\n    # when you are ready, you can build connection pool\n    database_manager = builder.build()\n```\n\n## MySQLDatabaseManager\n\nIt works on connection pool and allows user to create, modify, drop tables as well as \nexecute custom sql for development use\n\n### Methods:\n\n#### _get_cursor_object:\n\nExample:\n```angular2html\n     with self._get_cursor_object() as cur:\n            cur.execute(str(sql))\n            return cur.fetchall()\n```\nContext manager that allows us to work on 'with' statement to avoid problems when errors occur\nduring operations on cursor\n\nFull code:\n```angular2html\n        def _get_cursor_object(self):\n        \"\"\" Custom context manager for db cursor. Uses object's connection pool to establish connection and later on cursor \"\"\"\n        connection_object = self._connection_pool.get_connection()\n        try:\n            if connection_object.is_connected():\n                cursor_object = connection_object.cursor()\n                yield cursor_object\n                connection_object.commit()\n        except Error as e:\n            connection_object.rollback()\n        finally:\n            if connection_object.is_connected():\n                cursor_object.close()\n                connection_object.close()\n```\n\n#### create_table:\n\nExample:\n```angular2html\n    database_manager.create_table(\n    Table('jeans', [\n        Column('id', datatype=DataType('int')),\n        Column('brand', datatype=DataType('varchar', 255))\n    ]))\n```\nCreates new table using Table instance.\n\nFull code:\n```angular2html\n    def create_table(self, table: Table) -> None:\n        \"\"\"\n        Creates table in database using Table instance as a provider of specification of the table\n        :param table: Table instance\n        :return: None\n        \"\"\"\n        if not isinstance(table, Table):\n            raise ValueError(f'Provided argument has to be Table object')\n        with self._get_cursor_object() as cur:\n            cur.execute(str(table))\n```\n\n#### drop_table_if_exists:\n\nExample:\n```angular2html\n    database_manager.drop_table_if_exists('jeans')\n    # or\n    database_manager.drop_table_if_exists(\n        Table('jeans', [\n        Column('id', datatype=DataType('int')),\n        Column('brand', datatype=DataType('varchar', 255))\n    ]))\n```\nUser can use Table object or table name to delete it from database\n\nFull code:\n```angular2html\ndef drop_table_if_exists(self, table: str | Table) -> None:\n    \"\"\"\n    Drops a table if any exists in database. Does not cause error as long as connection is valid\n    :param table: table name or Table instance\n    :return: None\n    \"\"\"\n    with self._get_cursor_object() as cur:\n        if type(table) == str:\n            cur.execute(f\"drop table if exists {table}\")\n        elif isinstance(table, Table):\n            cur.execute(table.drop_statement())\n        else:\n            raise ValueError(f'Provided argument has to be Table object')\n```\n\n#### add_columns:\n\nExample:\n```angular2html\n    database_manager.drop_table_if_exists('jeans')\n    # or\n    database_manager.add_columns([\n        Column('model', datatype=DataType('varchar', 255)),\n        Column('price'', datatype=DataType('decimal', (5,2)))\n    ])\n```\nUser can use Column objects to add new columns into existing table \n\nFull code:\n```angular2html\ndef add_columns(self, table: str | Table, columns: list[Column]) -> None:\n    \"\"\"\n    Ads columns into existing table. Can work on one or more Columns\n    :param table: table name or Table instance\n    :param columns: list of Column instances\n    :return: None\n    \"\"\"\n    if not all([True if isinstance(c, Column) else False for c in columns]):\n        raise ValueError(\"Some values in 'columns' argument are not Column instances\")\n    add_statement = \", \".join([f\"add column {str(c)}\" for c in columns])\n    with self._get_cursor_object() as cur:\n        if type(table) == str:\n            cur.execute(f\"alter {table} {add_statement}\")\n        elif isinstance(table, Table):\n            cur.execute(f\"{table.alter_statement()} {add_statement}\")\n        else:\n            raise ValueError(f'Provided argument has to be Table object')\n```\n\n#### dev_console:\n\nExample:\n```angular2html\n    database_manager.dev_console('use test_tb;')\n```\nMethod allows us to use custom sql statements.\n\nFull code:\n```angular2html\n    def dev_console(self, sql: str) -> None:\n        \"\"\" Utility made for custom development using sql syntax\"\"\"\n        with self._get_cursor_object() as cur:\n            cur.execute(str(sql))\n            return cur.fetchall()\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "dbm-database-service",
+            "package_url": "https://pypi.org/project/dbm-database-service/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/dbm-database-service/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/dbm-database-service/0.2.4/",
+            "requires_dist": [
+                "mysql-connector-python (>=8.0.32,<9.0.0)",
+                "python-dotenv (>=1.0.0,<2.0.0)",
+                "easyvalid-data-validator (>=0.1.1,<0.2.0)",
+                "gdown (>=4.7.1,<5.0.0)",
+                "pytest (>=7.3.0,<8.0.0)"
+            ],
+            "requires_python": ">=3.11,<4.0",
+            "summary": "",
+            "version": "0.2.4",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17794845,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "00949eb76e44caebef4f6d5bd9dd5ced95db50c79e0818073df40a490e5c91f3",
+                    "md5": "d12f0a9ef669cc3b1cba679f8af6bd33",
+                    "sha256": "cdbce7f0f3115b4848f159cd572ec31c58aaab8092ee7c73c4f82a51ab1befba"
+                },
+                "downloads": -1,
+                "filename": "dbm_database_service-0.2.4-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "d12f0a9ef669cc3b1cba679f8af6bd33",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.11,<4.0",
+                "size": 10472,
+                "upload_time": "2023-04-20T22:20:58",
+                "upload_time_iso_8601": "2023-04-20T22:20:58.333261Z",
+                "url": "https://files.pythonhosted.org/packages/00/94/9eb76e44caebef4f6d5bd9dd5ced95db50c79e0818073df40a490e5c91f3/dbm_database_service-0.2.4-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "7477635a45e69ee299dc238e188009421dfa0d24c444354da1f1f271c3374b6f",
+                    "md5": "b3ce0d47cc4712df10630b013c94593a",
+                    "sha256": "85aebe5138ad52bb8cf23910669f8320250ec8faf88042220bc1eeaa8f5cbcfc"
+                },
+                "downloads": -1,
+                "filename": "dbm_database_service-0.2.4.tar.gz",
+                "has_sig": false,
+                "md5_digest": "b3ce0d47cc4712df10630b013c94593a",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.11,<4.0",
+                "size": 7841,
+                "upload_time": "2023-04-20T22:21:00",
+                "upload_time_iso_8601": "2023-04-20T22:21:00.115677Z",
+                "url": "https://files.pythonhosted.org/packages/74/77/635a45e69ee299dc238e188009421dfa0d24c444354da1f1f271c3374b6f/dbm_database_service-0.2.4.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
