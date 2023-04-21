@@ -1,0 +1,91 @@
+{
+    "1.0.0": {
+        "info": {
+            "author": "Tom Mohr",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# CleverTable\r\n\r\nLow effort conversion of tabular data into numerical values,\r\nbuilt on top of Pandas and NumPy.\r\n\r\n```bash\r\npip install clevertable\r\n```\r\n\r\n```python\r\nfrom clevertable import NumericalConverter\r\n\r\nnc = NumericalConverter()\r\ndf = nc(\"datasets/survey.xlsx\")  # pandas DataFrame, containing only numerical values\r\narr = df.to_numpy()  # 2D numpy array\r\n```\r\n\r\nNumericalConverter tries to intelligently choose the best conversion method\r\nfor each column.\r\nIf you want to specify the conversion method for a column, you can do so\r\nby passing a dictionary to the `update_profile()` method:\r\n\r\n```python\r\nprofile = {\r\n    \"age\": \"number\",  # already a numerical column, keep as-is\r\n    \"hospitalized\": \"binary\",  # positive and negative values are chosen lexically\r\n    \"education_level\": \"one_hot\",  # one-hot encoding\r\n    \"country\": \"id\",\r\n    \"symptoms\": \"list\",\r\n    # a tuple can be used to pass a dict with additional arguments:\r\n    \"diagnosis\": (\"binary\", dict(positive=\"cancer\", negative=\"benign\")),\r\n}\r\nnc = NumericalConverter()\r\nnc.update_profile(profile)\r\ndf = nc(\"datasets/survey.xlsx\")\r\n```\r\n\r\nYou can also define the conversion method for columns\r\nindividually by indexing the `NumericalConverter` instance:\r\n\r\n```python\r\nnc[\"country\"] = \"id\"\r\nnc[\"diagnosis\"] = \"binary\", dict(positive=\"cancer\", negative=\"benign\")\r\n```\r\n\r\nYou can see the automatically chosen conversion methods for a\r\ngiven column by indexing the `NumericalConverter` instance:\r\n\r\n```python\r\nmethod, args = nc[\"country\"]  # indexing NumericalConverter always returns a 2-tuple\r\nprint(method)  # \"id\"\r\nprint(args)  # {'values': ['France', 'Germany', 'Italy']}\r\n```\r\n\r\nIf no conversion method was defined for a given column,\r\n(which is true for all columns if you don't pass a profile),\r\n`NumericalConverter` chooses the most suitable conversion method\r\nbased on the provided data.\r\nWorst case, `NumericalConverter` cannot find a suitable conversion\r\nmethod, in which case it raises an exception.\r\nYou can disable this exception by passing `ignore_unknown=True`\r\nto the constructor:\r\n```python\r\nnc = NumericalConverter(ignore_unknown=True)\r\n```\r\nHowever, it is safer to explicitly set the conversion\r\nmethod to `\"ignore\"` for all columns you want to ignore.\r\n\r\n## Supported Conversion Methods\r\n\r\n### ignore\r\n\r\nDrops the column.\r\n\r\n```python\r\nprofile = {\r\n    \"registration_timestamp\": \"ignore\",\r\n}\r\n```\r\n\r\nThis is chosen if no appropriate conversion method could be found.\r\n\r\n### number\r\n\r\nConverts a column of numbers into a column of numbers.\r\nIf invalid values are encountered (`NaN`, `inf`, `None`, etc.),\r\na warning is printed and the value is replaced with `np.nan`.\r\nThis can be circumvented by passing a value to the `default` argument:\r\n\r\n```python\r\nprofile = {\r\n    \"temperature\": (\"number\", dict(default=37.0)),\r\n}\r\n```\r\n\r\nYou can also specify \"mean\", \"median\", or \"mode\" as the default value.\r\nThis will choose the default value based on the data in the specified column:\r\n\r\n```python\r\nprofile = {\r\n    \"temperature\": (\"number\", dict(default=\"mean\")),\r\n}\r\n```\r\n\r\n| temperature | temperature |\r\n|-------------|-------------|\r\n| 37.5        | 37.5        |\r\n| 40.0        | 40.0        |\r\n| 38.5        | 38.5        |\r\n|             | 38.75       |\r\n| 39.0        | 39.0        |\r\n\r\n### binary\r\n\r\nFor columns that only contain two possible values.\r\nYou can specify the positive and negative values\r\nvia the `positive` and `negative` arguments:\r\n\r\n```python\r\nprofile = {\r\n    \"hospitalized\": (\"binary\", dict(positive=\"yes\", negative=\"no\")),\r\n}\r\n```\r\n\r\n| hospitalized | hospitalized |\r\n|--------------|--------------|\r\n| yes          | 1            |\r\n| no           | 0            |\r\n| no           | 0            |\r\n| yes          | 1            |\r\n\r\nIf only one value is specified, all other values present in the data\r\nare treated as instances of the other class.\r\n\r\nIt is also possible to specify more than one values for the positive and negative values:\r\n\r\n```python\r\nprofile = {\r\n    \"hospitalized\": (\"binary\", dict(positive={\"yes\", \"true\"}, negative={\"no\", \"false\"})),\r\n}\r\n```\r\n\r\nIf no positive or negative value is specified,\r\na set of strings commonly used to indicate positive / negative values\r\nis tested against the available data.\r\nIf this approach is not successful, the lexically\r\nsmallest value is chosen as the `negative` argument and\r\nthe `positive` argument is left empty,\r\ncausing all other values to be treated as positive.\r\n\r\n### id\r\n\r\nThis is the extension of the `binary` conversion method\r\nto columns with more than two possible values.\r\nThe values are converted into integers starting at 0,\r\nresulting in a single column of integers.\r\n\r\nThe possible values can be specified via the `values` argument:\r\n\r\n```python\r\nprofile = {\r\n    \"country\": (\"id\", dict(values=[\"France\", \"Germany\", \"Italy\"])),\r\n}\r\n```\r\n\r\n| country | country |\r\n|---------|---------|\r\n| France  | 0       |\r\n| Italy   | 2       |\r\n| Germany | 1       |\r\n\r\nTheir index in the list is used as the numerical value,\r\nstarting from 0.\r\nIf no values are specified, the values found in the provided\r\ndata are sorted in lexically ascending order.\r\n\r\n### one_hot\r\n\r\nIf each entry contains one of multiple possible values.\r\nThe possible values can be specified via the `values` argument:\r\n\r\n```python\r\nprofile = {\r\n    \"education_level\": (\"one_hot\", dict(values={\"primary\", \"secondary\", \"tertiary\"})),\r\n}\r\n```\r\n\r\n| education_level | education_level=primary | education_level=secondary | education_level=tertiary |\r\n|-----------------|-------------------------|---------------------------|--------------------------|\r\n| primary         | 1                       | 0                         | 0                        |\r\n| secondary       | 0                       | 1                         | 0                        |\r\n| tertiary        | 0                       | 0                         | 1                        |\r\n\r\nIf no values are specified, the possible values are inferred from the data.\r\n\r\n### list, list_and_or\r\n\r\nConverts lists of values into multiple binary columns.\r\n\r\n```python\r\nprofile = {\r\n    \"symptoms\": \"list_and_or\",\r\n}\r\n```\r\n\r\n| symptoms                  | symptoms=cough | symptoms=fever | symptoms=headache |\r\n|---------------------------|----------------|----------------|-------------------|\r\n| fever, cough and headache | 1              | 1              | 1                 |\r\n| headache or cough         | 1              | 0              | 1                 |\r\n\r\nThe default separator for `list` is a comma,\r\nthe default separators for `list_and_or` are comma, \"and\" and \"or\".\r\nTo specify custom separators, define a list\r\nof strings or regular expressions via the `sep` argument:\r\n\r\n```python\r\nprofile = {\r\n    \"symptoms\": (\"list\", dict(sep=[\r\n        r\"\\s*,\\s*\",  # comma\r\n        r\"\\s?,?\\s+and\\s+\",  # \"and\" with optional comma before\r\n        r\"\\s+or\\s+\",  # \"or\"\r\n    ], strip=[\r\n        r\"\\s+\",\r\n        r\"\\.\",\r\n    ])),  # equivalent to using \"list_and_or\"\r\n}\r\n```\r\n\r\n### map\r\n\r\nThis can be used to specify a custom conversion function.\r\n\r\nThe following example turns a text-column into two columns\r\ncontaining the ascii code of the first and last letter.\r\n\r\n```python\r\nprofile = {\r\n    \"name\": (\"map\", dict(func=lambda x: (ord(x[0]), ord(x[-1])),\r\n                         columns=(\"name_first_letter_ord\", \"name_last_letter_ord\"))),\r\n}\r\n```\r\n\r\n| name  | name_first_letter_ord | name_last_letter_ord |\r\n|-------|-----------------------|----------------------|\r\n| Alice | 97                    | 101                  |\r\n| Bob   | 98                    | 98                   |\r\n\r\n(Remember that by default, all text entries are converted to\r\nlowercase before further processing.)\r\n\r\nIf no columns are specified, the number of columns is inferred\r\ndirectly from the return value of the conversion function:\r\n\r\n```python\r\nprofile = {\r\n    \"name\": (\"map\", dict(func=lambda x: (ord(x[0]), ord(x[-1])))),\r\n}\r\n```\r\n\r\n| name  | name[0] | name[1] |\r\n|-------|---------|---------|\r\n| Alice | 97      | 101     |\r\n| Bob   | 98      | 98      |\r\n\r\nIf the function returns a single value,\r\nthe column name stays the same.\r\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "parser,converter,numerical",
+            "license": "MIT License  Copyright (c) 2023 Tom Mohr  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.  THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. ",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "clevertable",
+            "package_url": "https://pypi.org/project/clevertable/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/clevertable/",
+            "project_urls": {
+                "Homepage": "https://github.com/tom-mohr/clevertable"
+            },
+            "release_url": "https://pypi.org/project/clevertable/1.0.0/",
+            "requires_dist": [
+                "numpy",
+                "pandas"
+            ],
+            "requires_python": ">=3.9",
+            "summary": "Low effort conversion of tabular data into numerical values.",
+            "version": "1.0.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17802964,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "39d033b5d0d3b1a8470c97bc937873467cf2df83a9a3b99bfb0774b26855438e",
+                    "md5": "9307da18005b9f570995b1b1c0fe289e",
+                    "sha256": "cfb811a4094a31897a7186cd732da4d905f5a5ff2bea0dcfacc993c4ee5b840f"
+                },
+                "downloads": -1,
+                "filename": "clevertable-1.0.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "9307da18005b9f570995b1b1c0fe289e",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9",
+                "size": 9505,
+                "upload_time": "2023-04-21T12:32:01",
+                "upload_time_iso_8601": "2023-04-21T12:32:01.084315Z",
+                "url": "https://files.pythonhosted.org/packages/39/d0/33b5d0d3b1a8470c97bc937873467cf2df83a9a3b99bfb0774b26855438e/clevertable-1.0.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3824e6b19b6443b366e6817b5686145343f885e2a0994c71c9ce22de780be06e",
+                    "md5": "b26c2dc606fa5953257271e41fe2154e",
+                    "sha256": "5f97a0d64811d1c24bb81621085c643b697f1dfb3d4199ffc97484cca151ab40"
+                },
+                "downloads": -1,
+                "filename": "clevertable-1.0.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "b26c2dc606fa5953257271e41fe2154e",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9",
+                "size": 11400,
+                "upload_time": "2023-04-21T12:32:04",
+                "upload_time_iso_8601": "2023-04-21T12:32:04.253139Z",
+                "url": "https://files.pythonhosted.org/packages/38/24/e6b19b6443b366e6817b5686145343f885e2a0994c71c9ce22de780be06e/clevertable-1.0.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
