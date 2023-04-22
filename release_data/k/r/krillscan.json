@@ -1,0 +1,98 @@
+{
+    "0.2.8": {
+        "info": {
+            "author": "Sebastian Menze",
+            "author_email": "sebastian.menze@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "\n\n# Krillscan - A python module for automatic  analysis of backscatter data from fishing vessels to implement feedback management of the Antarctic krill fishery\n\n- Automatically processes and analyzees EK60 and EK80 echosounder data \n- stores echograms and NASC tables as NetCDF, HDF or .csv files\n- detects krill swarms and can send near-real-time acoustic registrations via email\n\n![dataflow](dataflow.JPG)\n\n## Installation\n\nKrillscan was written in python 3.9 and can be run from the source code, from inside a docker container or as compiled executable. We added the compiled **krillscan.exe** to the latest distribution in this repository. To download the krillscan module with python try:\n```python\npip install krillscan\n```\n\nYou will also need to install this library manually and store it into your curent working folder\n\nhttps://github.com/CI-CMG/pyEcholab\n\n## Operation\n\n### Automatic processing\n\nHere I describe how to operate krillscan from inside python, instructions for the docker container are found below. After opening a python prompt and installing krillscan, you need to create or download a settings.ini file that tells krillscan where to look for incoming files and where to store processed data and contains processing and data transfer parameters. The file should be a text files following this pattern: \n\n```\n[GENERAL]\nsource_folder = E:\\Endurance\\2022\\raw\ntarget_folder = E:\\Endurance\\2022\\krillscan\nscrutinization_frequency = 200000.0\nvessel_name = Antarctic Endurance\n\n[CALIBRATION]\ngain = None\nsa_correction = None\nbeam_width_alongship = None\nbeam_width_athwartship = None\nangle_offset_alongship = None\nangle_offset_athwartship = None\n\n[PROCESSING]\nsv_SNR_threshold_db = 3\nswarm_sv_threshold_db = -70\ndbdiff_sv_threshold_db = 3\nseafloor_offset_m= 10\nseafloor_sv_threshold_db= -38\nsurface_exclusion_depth_m = 20\nmaximum_depth_m = 250\n\n[EMAIL]\nemail_send = 0\nemail_from = *Enter a mail address here*\nemail_to = *Enter a mail address here*\npw = *Enter IMAP password address here*\nfiles_per_email = 6\nsend_echograms = 1\nechogram_resolution_in_seconds = 1\n```\n\nThis settings.ini file must be located in the same working directory as your python prompt. To send emails set email_send=1 (or True).\n\n To start the processing type:\n\n```python\nimport krillscan as ks\nks.krillscan.ks.start()\n# to stop the processing: \n# ks.krillscan.ks.stop()\n```\nThis starts two threads, one that looks for new data, processes and stores it and another that scans for recently processed data and sends them out via email. This is an ad-hoc solution so far, future versions of krillscan will transfer data directly to a cloud storage. \n\n\n### Output format\n\nKrillscan will store the raw and processed echograms, detection masks and NASC tables in 10-min long snippets, with the filename containing the start date of each snippet:\n\n\n```\nD20140125-T060417_echogram.nc\nD20140125-T060417_mask_dbdiff.h5\nD20140125-T060417_mask_swarm.h5\nD20140125-T060417_nasctable.csv\nD20140125-T060417_nasctable.h5\nD20140125-T060417_rawechogram.nc\n```\n\nHere is an example of the contents of the echogram files, they are stored and read using the xarray module:\n```python\nimport xarray as xr\nfile=\"D20140125-T055416_rawechogram.nc\"\nxr_sv = xr.open_dataarray(file)\nprint(xr_sv)\n```\n```\n<xarray.DataArray (frequency: 2, depth: 1000, time: 427)>\n[854000 values with dtype=float32]\nCoordinates:\n  * time       (time) datetime64[ns] 2014-01-25T05:54:16.770000 ... 2014-01-2...\n  * depth      (depth) float64 0.0 0.5 1.0 1.5 2.0 ... 498.0 498.5 499.0 499.5\n  * frequency  (frequency) float64 3.8e+04 1.2e+05\n```\n\nHere is an example of the contents of the mask files, they are stored and read as pandas DataFrames:\n\n```python\nimport pandas as pd\nfile=\"D20140125-T060417_mask_swarm.h5\"\ndf = pd.read_hdf(file,key='df')\nprint(df)\n```\n```\n2014-01-25 06:04:17.003  False  False  False  False  ...  False  False  False  False\n2014-01-25 06:04:18.405  False  False  False  False  ...  False  False  False  False\n2014-01-25 06:04:19.807  False  False  False  False  ...  False  False  False  False\n2014-01-25 06:04:21.209  False  False  False  False  ...  False  False  False  False\n2014-01-25 06:04:22.611  False  False  False  False  ...  False  False  False  False\n                       ...    ...    ...    ...  ...    ...    ...    ...    ...\n2014-01-25 06:14:09.135  False  False  False  False  ...  False  False  False  False\n2014-01-25 06:14:10.537  False  False  False  False  ...  False  False  False  False\n2014-01-25 06:14:11.949  False  False  False  False  ...  False  False  False  False\n2014-01-25 06:14:13.351  False  False  False  False  ...  False  False  False  False\n2014-01-25 06:14:14.753  False  False  False  False  ...  False  False  False  False\n\n[427 rows x 1000 columns]\n```\nHere is an example of the contents of the NASC tables, they are stored and read as pandas dataframes:\n\n```python\nimport pandas as pd\nfile=\"D20140125-T055416_nasctable.h5\"\ndf = pd.read_hdf(file,key='df')\nprint(df.columns)\nprint(df)\n```\n```\nIndex(['lat', 'lon', 'distance_m', 'bottomdepth_m', 'nasc_swarm',\n       'nasc_dbdiff', 'nasc_manual'],\n      dtype='object')\n                               lat        lon  ...  nasc_dbdiff  nasc_manual\nping_time                                      ...                          \n2014-01-25 05:54:16.770        NaN        NaN  ...    68.604281          0.0\n2014-01-25 05:54:18.172        NaN        NaN  ...   188.157065          0.0\n2014-01-25 05:54:19.574 -60.010743 -48.319883  ...   223.696955          0.0\n2014-01-25 05:54:20.976 -60.010727 -48.320011  ...    89.158265          0.0\n2014-01-25 05:54:22.378 -60.010712 -48.320137  ...     0.000000          0.0\n                           ...        ...  ...          ...          ...\n2014-01-25 06:04:08.591 -60.004068 -48.374217  ...     0.000000          0.0\n2014-01-25 06:04:09.993 -60.004052 -48.374346  ...   704.198641          0.0\n2014-01-25 06:04:11.395 -60.004037 -48.374469  ...   334.853738          0.0\n2014-01-25 06:04:12.797 -60.004021 -48.374597  ...  1719.993121          0.0\n2014-01-25 06:04:14.199 -60.004004 -48.374726  ...     0.000000          0.0\n\n[427 rows x 7 columns]\n```\n\nHere is an example for 1-month of echosunder data from a krill fishing vessel, processed entirely automatic using the swarm detection method.\n\n![timeseries_endurance_jan2022](timeseries_endurance_jan2022.jpg)\n\n\n### Visual inspection of processed echograms\n\nKrillscan also contains a GUI tool (PyQT5) that lets you inspect the automatically processed echograms and correct the swarm detection masks by adding or removing areas. To start the GUI enter:\n\n```python\nks.ks.inspect()\n```\n\nThe GUI looks like this: A  menu bar lets you open processed NetCDF files, show the data folder, undo changes and quite the GUI. The Main window shows the echogram for each 10-min long NetCDF and the ping-by-ping NASC (black line) and 1-min NASC average (blue line). \n\n![menuebar](menuebar.JPG)\n\nThe tool bar below the menu bar has these functions:\n\n- Choose which frequency channel to watch\n- Tick box that lets you check whether to just browse that data or save changes. Whenever you close a 10-min snippet by clicking \"next\" or \"previous\" section a new detection mask is stored as HDF file  with the ending \"...mask_manual.h5\". And the column \"nasc_manual\" is added to the nasc table file \"...nasctable.h5\". \n- You can toggle weather to watch the raw or processed echogram\n- You can set the lower and upper NASC integration boundaries, and color scheme\n- You can go forward or backward in the dataset by pressing next (or press right arrow) or previous (or press left arrow), this opens the next 10-min echogram NetCDF and detection mask\n\n- You can add or remove areas of the detection mask (shown as red overlay) using double clicks to draw a polygon of you choice. Once finished with drawing press enter to apply the change and update the NASC accordingly.\n\n![fig_inspect](fig_inspect.png)\n\n\n\n## Run krillscan automatic processing from a Docker container\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "krillscan",
+            "package_url": "https://pypi.org/project/krillscan/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/krillscan/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/krillscan/0.2.8/",
+            "requires_dist": [
+                "lxml",
+                "numpy",
+                "matplotlib",
+                "pandas",
+                "future",
+                "pyproj",
+                "scikit-image",
+                "scipy",
+                "toml",
+                "geopy",
+                "tables",
+                "xarray",
+                "netcdf4"
+            ],
+            "requires_python": "",
+            "summary": "A python module for automatic analysis of backscatter data from vessels of opportunity",
+            "version": "0.2.8",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17804203,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "56098dc9590dfe774a435baad605808ff7b8867765a579b64527e889cc088d61",
+                    "md5": "3bae2282075315c8cc7fe926e02aa9f7",
+                    "sha256": "b590f59e39449c3b599fb019474b695e34347bb243dc0483f3f81e8a387ea685"
+                },
+                "downloads": -1,
+                "filename": "krillscan-0.2.8-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "3bae2282075315c8cc7fe926e02aa9f7",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 330348,
+                "upload_time": "2023-04-21T14:11:08",
+                "upload_time_iso_8601": "2023-04-21T14:11:08.610206Z",
+                "url": "https://files.pythonhosted.org/packages/56/09/8dc9590dfe774a435baad605808ff7b8867765a579b64527e889cc088d61/krillscan-0.2.8-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "0772938c229df50a90a1c9cd0d6bac0b84269d4bb34a164b5ccf61d2e9cb5c88",
+                    "md5": "b378072b23aa8f14bed1b7cc24ed019e",
+                    "sha256": "cd9a322064058da5282f64f394fc81f9f2914264cf9510483cd75def2abf99fe"
+                },
+                "downloads": -1,
+                "filename": "krillscan-0.2.8.tar.gz",
+                "has_sig": false,
+                "md5_digest": "b378072b23aa8f14bed1b7cc24ed019e",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 266403,
+                "upload_time": "2023-04-21T14:11:11",
+                "upload_time_iso_8601": "2023-04-21T14:11:11.050470Z",
+                "url": "https://files.pythonhosted.org/packages/07/72/938c229df50a90a1c9cd0d6bac0b84269d4bb34a164b5ccf61d2e9cb5c88/krillscan-0.2.8.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
