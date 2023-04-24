@@ -46,7 +46,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17782379,
+        "last_serial": 17832000,
         "urls": [
             {
                 "comment_text": "",
@@ -140,7 +140,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17782379,
+        "last_serial": 17832000,
         "urls": [
             {
                 "comment_text": "",
@@ -234,7 +234,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17782379,
+        "last_serial": 17832000,
         "urls": [
             {
                 "comment_text": "",
@@ -328,7 +328,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17782379,
+        "last_serial": 17832000,
         "urls": [
             {
                 "comment_text": "",
@@ -422,7 +422,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17782379,
+        "last_serial": 17832000,
         "urls": [
             {
                 "comment_text": "",
@@ -516,7 +516,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17782379,
+        "last_serial": 17832000,
         "urls": [
             {
                 "comment_text": "",
@@ -610,7 +610,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17782379,
+        "last_serial": 17832000,
         "urls": [
             {
                 "comment_text": "",
@@ -704,7 +704,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17782379,
+        "last_serial": 17832000,
         "urls": [
             {
                 "comment_text": "",
@@ -799,7 +799,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17782379,
+        "last_serial": 17832000,
         "urls": [
             {
                 "comment_text": "",
@@ -863,7 +863,6 @@
                 "Topic :: Software Development :: Libraries :: Application Frameworks",
                 "Topic :: Software Development :: Libraries :: Python Modules"
             ],
-            "description": "<p>\n<a href=\"https://pypi.org/project/oxalis/\">\n    <img src=\"https://badge.fury.io/py/oxalis.svg\" alt=\"Package version\">\n</a>\n</p>\n\n# Oxalis  \n\nDistributed async task/job queue, like Celery for `asyncio` world\n\n## Feature\n\n* Redis and AMQP(RabbitMQ etc.) support\n* Task timeout and concurrency limit support\n* Delayed task(Both Redis and RabbitMQ) support\n* Cron task/job beater\n* Built-in coroutine pool with concurrency and time limit\n\n## Install\n\n```pip install oxalis```\n\n## Example with Redis backend\n\nDefine task:\n```python\nfrom redis.asyncio.client import Redis\nfrom oxalis.redis import Oxalis\n\n\noxalis = Oxalis(Redis(host=os.getenv(\"REDIS_HOST\", \"redis\")))\n\n@oxalis.register()\nasync def hello_task():\n    print(\"Hello oxalis\")\n```\n\nRun worker(consumer):\n```python\noxalis.run_worker_master()\n```\n\n```shell\npython ex.py\nINFO:oxalis:Registered Task: <Task(hello_task)>\nINFO:oxalis:Run worker: <Oxalis(pid-101547)>...\nINFO:oxalis:Run worker: <Oxalis(pid-101548)>...\nINFO:oxalis:Run worker: <Oxalis(pid-101549)>...\nINFO:oxalis:Run worker: <Oxalis(pid-101550)>...\nINFO:oxalis:Run worker: <Oxalis(pid-101551)>...\nINFO:oxalis:Run worker: <Oxalis(pid-101552)>...\nINFO:oxalis:Run worker: <Oxalis(pid-101554)>...\n```\n\nRun client(producer):\n```python\nimport asyncio\n\nasyncio.get_event_loop().run_until_complete(oxalis.connect())\nfor i in range(10):\n    asyncio.get_event_loop().run_until_complete(hello_task.delay())\n    asyncio.get_event_loop().run_until_complete(hello_task.delay(_delay=1))  # delay execution after 1s\n```\n\nRun cron beater:\n```python\nfrom oxalis.beater import Beater\n\nbeater = Beater(oxalis)\n\nbeater.register(\"*/1 * * * *\", hello_task)\nbeater.run()\n```\n```shell\npython exb.py \nINFO:oxalis:Beat task: <Task(hello_task)> at <*/1 * * * *> ...\n```\n\n## TaskCodec\n\nThe `TaskCodec` will encode/decode task args, default codec will use `json`\n\nCustom task codec:\n```python\nfrom oxalis.base import TaskCodec\n\nclass MyTaskCodec(TaskCodec):\n    @classmethod\n    def encode(\n        cls,\n        task: Task,\n        task_args: tp.Sequence[tp.Any],\n        task_kwargs: tp.Dict[str, tp.Any],\n    ) -> bytes:\n        ...\n\n    @classmethod\n    def decode(cls, content: bytes) -> TaskCodec.MESSAGE_TYPE:\n        ...\n\n\n\noxalis = Oxalis(Redis(host=os.getenv(\"REDIS_HOST\", \"redis\")), task_codec=MyTaskCodec())\n...\n```\n\n\n## Task pool\n\nOxalis use one coroutine pool with concurrency limit and timeout limit to run all task\n\nCustom pool:\n\n```python\nfrom redis.asyncio.client import Redis\nfrom oxalis.redis import Oxalis\nfrom oxalis.pool import Pool\n\noxalis = Oxalis(Redis(host=os.getenv(\"REDIS_HOST\", \"redis\")), pool=Pool(concurrency=10, timeout=60))\n```\n\n* For Redis task, the `queue` will be blocked util `pool` is not fully loaded\n* For AMQP task, oxalis use AMQP's QOS to limit worker concurrency(`pool`'s concurrency will be -1 which means the pool's concurrency will not be limited)\n* `asyncio.TimeoutError` will be raised if one task is timeout\n* Every worker process has owned limited pool\n\n\nSpecified one task timeout limit:\n```python\n@oxalis.register(queue=custom_queue, timeout=10)\ndef custom_task():\n    print(\"Hello oxalis\")\n```\n\n## Custom hook\n\nOxalis defined some hook API for inherited subclass:\n```python\nclass MyOxalis(Oxalis):\n    def on_worker_init():\n        # will be called before worker started\n        pass\n\n    def on_worker_close():\n        # will be called after worker started\n        pass\n```\n\nSome API can be rewritten or inherited for custom usage, eg:\n```python\nimport sentry_sdk\n\nclass MyOxalis(Oxalis):\n    async def exec_task(self, task: Task, *task_args, **task_kwargs):\n        \"\"\"\n        capture exception to sentry\n        \"\"\"\n        try:\n            await super().exec_task(task, *task_args, **task_kwargs)\n        except Exception as e:\n            sentry_sdk.capture_exception(e)\n```\n\n\n## Redis Backend Detail\n\nOxalis use redis's `list` and `pubsub` structure as a message queue\n\n### Queue\n\nCustom queue:\n```python\nfrom oxalis.redis import Queue, PubsubQueue\n\ncustom_queue = Queue(\"custom\")\nbus_queue = PubsubQueue(\"bus\")\n```\n\nRegister task:\n```python\n@oxalis.register(queue=custom_queue)\ndef custom_task():\n    print(\"Hello oxalis\")\n\n@oxalis.register(queue=bus_queue)\ndef bus_task():\n    print(\"Hello oxalis\")\n```\n\n* For task producer, the task will send to specified queue when call `task.delay()`\n* For task consumer, oxalis will listen those queues and receive task from them\n\n### Concurrency limit\n\nOxalis using coroutine pool's concurrency limit way, we can set different concurrency limit with specified pool for one task:\n\n```python\n@oxalis.register(pool=Pool(concurrency=1))\ndef custom_task():\n    print(\"Hello oxalis\")\n```\n\n### Delayed task\n\nSupport by redis [zset](https://redis.com/ebook/part-2-core-concepts/chapter-6-application-components-in-redis/6-4-task-queues/6-4-2-delayed-tasks/)\n\n##  AMQP Backend Detail\n\n\n### Custom Queue and Exchange\n\nOxalis using AMQP's way to define Exchange, Queue and their bindings\n\n```python\nimport asyncio\nimport logging\nimport time\n\nfrom aio_pika import RobustConnection\nfrom oxalis.amqp import Exchange, ExchangeType, Oxalis, Pool, Queue\n\ne = Exchange(\"test\")\nq = Queue(\"test\", durable=False)\ne2 = Exchange(\"testfanout\", type=ExchangeType.FANOUT)\nq2 = Queue(\"testfanout\", durable=False)\n\n\noxalis = Oxalis(RobustConnection(\"amqp://root:letmein@rabbitmq:5672/\"))\noxalis.register_binding(q, e, \"test\")\noxalis.register_binding(q2, e2, \"\")\noxalis.register_queues([q, q2])\n\n\n@oxalis.register(exchange=e, routing_key=\"test\")\nasync def task1():\n    await asyncio.sleep(1)\n    print(\"hello oxalis\")\n\n\n@oxalis.register(exchange=e2)\nasync def task2():\n    await asyncio.sleep(10)\n    print(\"hello oxalis\")\n\n```\n\n* For producer, task `oxalis.register`  defined one task message will send to which exchange(by routing key)\n* For consumer, `register_queues` defined which queues oxalis will listened\n* Task routing defined by bindings\n\n### Concurrency limit\n\nOxalis use AMQP's QOS to limit worker concurrency(Task's `ack_later` should be true), so coroutine pool's concurrency should not be limited.\n\nCustom queue QOS:\n```python\noxalis = Oxalis(RobustConnection(\"amqp://root:letmein@rabbitmq:5672/\"), default_queue=Queue(\"custom\",consumer_prefetch_count=10))\n...\nfanout_queue = Queue(\"testfanout\", durable=False, consumer_prefetch_count=3)\noxalis.register_queues([fanout_queue])\n...\n```\n\n### Custom task behavior\n\nDefine task how to perform `ack` and `reject` \n\n```python\n# always ack even task failed(raise exception)\n@oxalis.register(ack_always=True, reject=False)\nasync def task2():\n    await asyncio.sleep(10)\n    print(\"hello oxalis\")\n\n#  reject with requeue when task failed\n@oxalis.register(reject_requeue=True)\nasync def task2():\n    await asyncio.sleep(10)\n    print(\"hello oxalis\")\n```\n\n### Delayed task\n\nSupport by RabbitMq's [plugin](https://blog.rabbitmq.com/posts/2015/04/scheduling-messages-with-rabbitmq)\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -895,7 +894,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17782379,
+        "last_serial": 17832000,
         "urls": [
             {
                 "comment_text": "",
@@ -936,6 +935,102 @@
                 "upload_time": "2023-04-20T05:28:08",
                 "upload_time_iso_8601": "2023-04-20T05:28:08.687274Z",
                 "url": "https://files.pythonhosted.org/packages/8e/e1/787f51e7518fa19420acefa584e60d806e2d37fc94d50fb17465d5d0b801/oxalis-0.5.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.5.4": {
+        "info": {
+            "author": "strongbugman",
+            "author_email": "strongbugman@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Environment :: Console",
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Software Development :: Libraries :: Application Frameworks",
+                "Topic :: Software Development :: Libraries :: Python Modules"
+            ],
+            "description": "<p>\n<a href=\"https://pypi.org/project/oxalis/\">\n    <img src=\"https://badge.fury.io/py/oxalis.svg\" alt=\"Package version\">\n</a>\n</p>\n\n# Oxalis  \n\nDistributed async task/job queue, like Celery for `asyncio` world\n\n## Feature\n\n* Redis and AMQP(RabbitMQ etc.) support\n* Task timeout and concurrency limit support\n* Delayed task(Both Redis and RabbitMQ) support\n* Cron task/job beater\n* Built-in coroutine pool with concurrency and time limit\n\n## Install\n\n```pip install oxalis```\n\n## Example with Redis backend\n\nDefine task:\n```python\nfrom redis.asyncio.client import Redis\nfrom oxalis.redis import Oxalis\n\n\noxalis = Oxalis(Redis(host=os.getenv(\"REDIS_HOST\", \"redis\")))\n\n@oxalis.register()\nasync def hello_task():\n    print(\"Hello oxalis\")\n```\n\nRun worker(consumer):\n```python\noxalis.run_worker_master()\n```\n\n```shell\npython ex.py\nINFO:oxalis:Registered Task: <Task(hello_task)>\nINFO:oxalis:Run worker: <Oxalis(pid-101547)>...\nINFO:oxalis:Run worker: <Oxalis(pid-101548)>...\nINFO:oxalis:Run worker: <Oxalis(pid-101549)>...\nINFO:oxalis:Run worker: <Oxalis(pid-101550)>...\nINFO:oxalis:Run worker: <Oxalis(pid-101551)>...\nINFO:oxalis:Run worker: <Oxalis(pid-101552)>...\nINFO:oxalis:Run worker: <Oxalis(pid-101554)>...\n```\n\nRun client(producer):\n```python\nimport asyncio\n\nasyncio.get_event_loop().run_until_complete(oxalis.connect())\nfor i in range(10):\n    asyncio.get_event_loop().run_until_complete(hello_task.delay())\n    asyncio.get_event_loop().run_until_complete(hello_task.delay(_delay=1))  # delay execution after 1s\n```\n\nRun cron beater:\n```python\nfrom oxalis.beater import Beater\n\nbeater = Beater(oxalis)\n\nbeater.register(\"*/1 * * * *\", hello_task)\nbeater.run()\n```\n```shell\npython exb.py \nINFO:oxalis:Beat task: <Task(hello_task)> at <*/1 * * * *> ...\n```\n\n## TaskCodec\n\nThe `TaskCodec` will encode/decode task args, default codec will use `json`\n\nCustom task codec:\n```python\nfrom oxalis.base import TaskCodec\n\nclass MyTaskCodec(TaskCodec):\n    @classmethod\n    def encode(\n        cls,\n        task: Task,\n        task_args: tp.Sequence[tp.Any],\n        task_kwargs: tp.Dict[str, tp.Any],\n    ) -> bytes:\n        ...\n\n    @classmethod\n    def decode(cls, content: bytes) -> TaskCodec.MESSAGE_TYPE:\n        ...\n\n\n\noxalis = Oxalis(Redis(host=os.getenv(\"REDIS_HOST\", \"redis\")), task_codec=MyTaskCodec())\n...\n```\n\n\n## Task pool\n\nOxalis use one coroutine pool with concurrency limit and timeout limit to run all task\n\nCustom pool:\n\n```python\nfrom redis.asyncio.client import Redis\nfrom oxalis.redis import Oxalis\nfrom oxalis.pool import Pool\n\noxalis = Oxalis(Redis(host=os.getenv(\"REDIS_HOST\", \"redis\")), pool=Pool(concurrency=10, timeout=60))\n```\n\n* For Redis task, the `queue` will be blocked util `pool` is not fully loaded\n* For AMQP task, oxalis use AMQP's QOS to limit worker concurrency(`pool`'s concurrency will be -1 which means the pool's concurrency will not be limited)\n* `asyncio.TimeoutError` will be raised if one task is timeout\n* Every worker process has owned limited pool\n\n\nSpecified one task timeout limit:\n```python\n@oxalis.register(queue=custom_queue, timeout=10)\ndef custom_task():\n    print(\"Hello oxalis\")\n```\n\n## Custom hook\n\nOxalis defined some hook API for inherited subclass:\n```python\nclass MyOxalis(Oxalis):\n    def on_worker_init():\n        # will be called before worker started\n        pass\n\n    def on_worker_close():\n        # will be called after worker started\n        pass\n```\n\nSome API can be rewritten or inherited for custom usage, eg:\n```python\nimport sentry_sdk\n\nclass MyOxalis(Oxalis):\n    async def exec_task(self, task: Task, *task_args, **task_kwargs):\n        \"\"\"\n        capture exception to sentry\n        \"\"\"\n        try:\n            await super().exec_task(task, *task_args, **task_kwargs)\n        except Exception as e:\n            sentry_sdk.capture_exception(e)\n```\n\n\n## Redis Backend Detail\n\nOxalis use redis's `list` and `pubsub` structure as a message queue\n\n### Queue\n\nCustom queue:\n```python\nfrom oxalis.redis import Queue, PubsubQueue\n\ncustom_queue = Queue(\"custom\")\nbus_queue = PubsubQueue(\"bus\")\n```\n\nRegister task:\n```python\n@oxalis.register(queue=custom_queue)\ndef custom_task():\n    print(\"Hello oxalis\")\n\n@oxalis.register(queue=bus_queue)\ndef bus_task():\n    print(\"Hello oxalis\")\n```\n\n* For task producer, the task will send to specified queue when call `task.delay()`\n* For task consumer, oxalis will listen those queues and receive task from them\n\n### Concurrency limit\n\nOxalis using coroutine pool's concurrency limit way, we can set different concurrency limit with specified pool for one task:\n\n```python\n@oxalis.register(pool=Pool(concurrency=1))\ndef custom_task():\n    print(\"Hello oxalis\")\n```\n\n### Delayed task\n\nSupport by redis [zset](https://redis.com/ebook/part-2-core-concepts/chapter-6-application-components-in-redis/6-4-task-queues/6-4-2-delayed-tasks/)\n\n##  AMQP Backend Detail\n\n\n### Custom Queue and Exchange\n\nOxalis using AMQP's way to define Exchange, Queue and their bindings\n\n```python\nimport asyncio\nimport logging\nimport time\n\nfrom aio_pika import RobustConnection\nfrom oxalis.amqp import Exchange, ExchangeType, Oxalis, Pool, Queue\n\ne = Exchange(\"test\")\nq = Queue(\"test\", durable=False)\ne2 = Exchange(\"testfanout\", type=ExchangeType.FANOUT)\nq2 = Queue(\"testfanout\", durable=False)\n\n\noxalis = Oxalis(RobustConnection(\"amqp://root:letmein@rabbitmq:5672/\"))\noxalis.register_binding(q, e, \"test\")\noxalis.register_binding(q2, e2, \"\")\noxalis.register_queues([q, q2])\n\n\n@oxalis.register(exchange=e, routing_key=\"test\")\nasync def task1():\n    await asyncio.sleep(1)\n    print(\"hello oxalis\")\n\n\n@oxalis.register(exchange=e2)\nasync def task2():\n    await asyncio.sleep(10)\n    print(\"hello oxalis\")\n\n```\n\n* For producer, task `oxalis.register`  defined one task message will send to which exchange(by routing key)\n* For consumer, `register_queues` defined which queues oxalis will listened\n* Task routing defined by bindings\n\n### Concurrency limit\n\nOxalis use AMQP's QOS to limit worker concurrency(Task's `ack_later` should be true), so coroutine pool's concurrency should not be limited.\n\nCustom queue QOS:\n```python\noxalis = Oxalis(RobustConnection(\"amqp://root:letmein@rabbitmq:5672/\"), default_queue=Queue(\"custom\",consumer_prefetch_count=10))\n...\nfanout_queue = Queue(\"testfanout\", durable=False, consumer_prefetch_count=3)\noxalis.register_queues([fanout_queue])\n...\n```\n\n### Custom task behavior\n\nDefine task how to perform `ack` and `reject` \n\n```python\n# always ack even task failed(raise exception)\n@oxalis.register(ack_always=True, reject=False)\nasync def task2():\n    await asyncio.sleep(10)\n    print(\"hello oxalis\")\n\n#  reject with requeue when task failed\n@oxalis.register(reject_requeue=True)\nasync def task2():\n    await asyncio.sleep(10)\n    print(\"hello oxalis\")\n```\n\n### Delayed task\n\nSupport by RabbitMq's [plugin](https://blog.rabbitmq.com/posts/2015/04/scheduling-messages-with-rabbitmq)\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "oxalis",
+            "package_url": "https://pypi.org/project/oxalis/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/oxalis/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/oxalis/0.5.4/",
+            "requires_dist": [
+                "aio-pika (>=8.0.3)",
+                "croniter (>=1.3.5)",
+                "redis (>=4.5.1)",
+                "aiokafka (>=0.8.0)"
+            ],
+            "requires_python": ">=3.7,<4.0",
+            "summary": "Distributed async task/job queue",
+            "version": "0.5.4",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17832000,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "27244a3d6d90d19947bb2550eb089a05acdb5cc7123313737ad9479fbf04b871",
+                    "md5": "2293f05f966c1c6d02f5493d896c20e8",
+                    "sha256": "c55c49ede10f2c37c59dde8602dbac9127e41d08debaa5926be107471c147422"
+                },
+                "downloads": -1,
+                "filename": "oxalis-0.5.4-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "2293f05f966c1c6d02f5493d896c20e8",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7,<4.0",
+                "size": 14227,
+                "upload_time": "2023-04-24T10:11:23",
+                "upload_time_iso_8601": "2023-04-24T10:11:23.146166Z",
+                "url": "https://files.pythonhosted.org/packages/27/24/4a3d6d90d19947bb2550eb089a05acdb5cc7123313737ad9479fbf04b871/oxalis-0.5.4-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "27279231b205829d378e59408641d81bb565a3a88b23155f6d948c71d941a4b2",
+                    "md5": "5a3b1d3de59fe749e4f2f0e8b105d46a",
+                    "sha256": "ed1a733b1fbb7c1ac04f6bb9edc6cd2446b0db1c8f8c9ebdc6904540fda5d928"
+                },
+                "downloads": -1,
+                "filename": "oxalis-0.5.4.tar.gz",
+                "has_sig": false,
+                "md5_digest": "5a3b1d3de59fe749e4f2f0e8b105d46a",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7,<4.0",
+                "size": 13667,
+                "upload_time": "2023-04-24T10:11:25",
+                "upload_time_iso_8601": "2023-04-24T10:11:25.820336Z",
+                "url": "https://files.pythonhosted.org/packages/27/27/9231b205829d378e59408641d81bb565a3a88b23155f6d948c71d941a4b2/oxalis-0.5.4.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
