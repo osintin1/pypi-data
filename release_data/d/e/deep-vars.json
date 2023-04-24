@@ -1,0 +1,91 @@
+{
+    "1.0.0": {
+        "info": {
+            "author": null,
+            "author_email": "Vedran Sego <vsego@vsego.org>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Typing :: Typed"
+            ],
+            "description": "# `deep_vars`\n\nA package providing `deep_vars` function that serves a purpose similar to `vars`, but it works with any object and can recursively process attributes as well.\n\n## Content\n\n1. [Basic use](#basic-use)\n2. [Configuration](#configuration)\n    1. [Handlers](#handlers)\n    2. [Further configuration specific to some handlers](#further-configuration-specific-to-some-handlers)\n    3. [Extending handlers](#extending-handlers)\n\n## Basic use\n\nThis is used in a way similar to `vars`. For example, the following code:\n\n```python\nfrom dataclasses import dataclass\nfrom typing import Optional\n\nfrom deep_vars import deep_vars\n\n\n@dataclass\nclass Foo:\n    x: int\n    y: Optional[\"Foo\"] = None\n\n\nfoo = Foo(17, y=Foo(19))\nprint(\"vars:                     \", vars(foo))\nprint(\"deep_vars:                \", deep_vars(foo))\nprint(\"deep_vars with maxdepth=2:\", deep_vars(foo, 2))\n```\n\nwill print this:\n\n```\nvars:                      {'x': 17, 'y': Foo(x=19, y=None)}\ndeep_vars:                 {'x': 17, 'y': Foo(x=19, y=None)}\ndeep_vars with maxdepth=2: {'x': 17, 'y': {'x': 19, 'y': None}}\n```\n\nNote that, because it covers objects of all classes, `deep_vars` might not product a dictionary. For example, if we define `foo` in the above code like this:\n\n```python\nfoo = [Foo(17), \"foo\", 17]\n```\n\nthe `vars` print would just raise an exception:\n\n```\nTypeError: vars() argument must have __dict__ attribute`\n```\n\nwhile the `deep_var` outputs will be:\n\n```\ndeep_vars:                 [Foo(x=17, y=None), 'foo', 17]\ndeep_vars with maxdepth=2: [{'x': 17, 'y': None}, 'foo', 17]\n```\n\n## Configuration\n\n`deep_vars` is meant to be simple to use, like `vars`, so its only arguments are the object being represented and the maximum depth down to witch the conversion should go.\n\nHowever, there are various possibilities for configuring it for the whole project. This is done through the attributes of `DeepVars` class.\n\n### Handlers\n\nThe main thing one can adjust is how various objects are handled. This is done by assigning \"handler types\". For example, this will cause all `float` and `str` attributes to remain hidden:\n\n```python\nDeepVars.set_handlers(DeepVarsHandlerHide, float, str)\n```\n\nThere are several `DeepVarsHandler<something>` classes that can be used:\n\n* `DeepVarsHandler`: Default class, used as a parent class for all the others. It should not be used directly.\n* `DeepVarsHandlerShow`: Show the object as it is (i.e., don't process it).\n* `DeepVarsHandlerHide`: Skip the attribute from the output. Note that this does not affect the top level call of `deep_vars`.\n* `DeepVarsHandlerProcess`: Process it in the previously described manner (similar to `vars`).\n* `DeepVarsHandlerLoop`: Loop the object (usually a list or a tuple) and process each item individually.\n* `DeepVarsHandlerLoopDict`: Loop the object as a dictionary, using its `items` method (can be changed in inherited classes) and process each `(key, value)` pair individually.\n* `DeepVarsHandlerCallable`: Special handler for callables, converting them to signature strings.\n\nOne can also configure the default handler for those attributes that are not individually set. For example, to have them show without any processing:\n\n```python\nDeepVars.default_handler = DeepVarsHandlerShow\n```\n\nLet us take another look at the above example:\n\n```python\nDeepVars.set_handlers(DeepVarsHandlerHide, float, str)\n```\n\nThe first argument is a handler class. The rest of them describe the objects that this class is used for. These are usually types, but they can also be strings. The following are recognised:\n\n* `\"magic\"`: A magic attribute. These are usually methods with names starting and ending in double underscores (for example, `__init__`), but `deep_vars` will consider any attribute, even non-callable ones, for the sake of output's consistency.\n\n* `\"private\"`: Any object that has a name starting with an underscore (for example, `_private` or `__very_private`).\n\n* `\"callable\"`: Any callable object (a function, a method, a `lambda`) except classes.\n\nThe handlers assignment is done in the same way as it is for type-based kinda of arguments:\n\n```python\n# Hide all \"callable\" arguments (not including classes):\nDeepVars.set_handlers(DeepVarsHandlerHide, \"callable\")\n# Hide all `float` and all \"callable\" arguments (not including classes):\nDeepVars.set_handlers(DeepVarsHandlerHide, float, \"callable\")\n```\n\n### Further configuration specific to some handlers\n\nSome of the handlers can be fine-tuned.\n\n`DeepVarsHandlerLoopDict` normally uses object's `items()` method to go through its items. However, this can be replaced by changing `DeepVarsHandlerLoopDict.items_method_name` to something other than `\"items\"`. Further, if this other method requires arguments, these can be set up as a tuple `DeepVarsHandlerLoopDict.items_method_args` and a dictionary `DeepVarsHandlerLoopDict.items_method_kwargs`.\n\nAll container handlers (`DeepVarsHandlerLoopDict`, `DeepVarsHandlerLoop`, and `DeepVarsHandlerProcess`) and also have the filtering of their items turned on or off. If turned off (`class_name.allow_filtering = False`), their items will show even if their handler is set to `DeepVarsHandlerHide`. This is the default for (`DeepVarsHandlerLoopDict` and `DeepVarsHandlerLoop`. If the filtering is turned on (`class_name.allow_filtering = True`), their items will be hidden if their handler decides so (i.e., if it is set to `DeepVarsHandlerHide`). This is the default for `DeepVarsHandlerProcess`.\n\n### Extending handlers\n\nOne can easily define their own special object types. Here is an example from the tests:\n\n```python\ndef special_detector(name: Optional[str], obj: Any) -> Optional[str]:\n    return (\n        \"specially_detected\"\n        if getattr(obj, \"specially_detected\", False) else\n        None\n    )\n\n\nDeepVars.special_type_detectors.append(special_detector)\nDeepVars.set_handlers(DeepVarsHandlerSpecial, \"specially_detected\")\n```\n\nFirst, we need to define a callable (usually a function) that detects the special type of the argument. This callable takes attribute's name (either a string or `None`, the latter being used for the top level call of `deep_vars`) and the object itself, returning either a string used as the name for that kind of object or `None` if the object was not identified.\n\nSecond, we add this callable to the list `DeepVars.special_type_detectors`. The three predefined special types of arguments listed above are built-in, but `special_type_detectors` is checked before they are used, so its callables can override them.\n\nLastly, one needs to define how is this special is handled, which is done as shown above with \"callable\" arguments.\n\nThis allows one to extend the functionality of `deep_vars`. Arguably, this is not very useful in regular projects, but it can be used by other packages to offer `deep_vars` functionality extended to their own needs.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": null,
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": null,
+            "keywords": null,
+            "license": null,
+            "maintainer": null,
+            "maintainer_email": null,
+            "name": "deep-vars",
+            "package_url": "https://pypi.org/project/deep-vars/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/deep-vars/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/vsego/deep-vars/issues",
+                "Changelog": "https://github.com/vsego/deep-vars/blob/master/CHANGELOG.md",
+                "Homepage": "https://github.com/vsego/deep-vars"
+            },
+            "release_url": "https://pypi.org/project/deep-vars/1.0.0/",
+            "requires_dist": null,
+            "requires_python": ">=3.10",
+            "summary": "Recursive `vars` for all objects.",
+            "version": "1.0.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17826106,
+        "urls": [
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "74a04c2633829de30d63869895fa637c79e1008d810b215e1ca41a96c8c66399",
+                    "md5": "379668246b423f1302cc4c69d0fef2b4",
+                    "sha256": "4fbf81f4a7c6bb2455d9a5682aea7edbff7b9f6b3e68641780d05374d31b265b"
+                },
+                "downloads": -1,
+                "filename": "deep_vars-1.0.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "379668246b423f1302cc4c69d0fef2b4",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.10",
+                "size": 11974,
+                "upload_time": "2023-04-23T21:49:04",
+                "upload_time_iso_8601": "2023-04-23T21:49:04.004842Z",
+                "url": "https://files.pythonhosted.org/packages/74/a0/4c2633829de30d63869895fa637c79e1008d810b215e1ca41a96c8c66399/deep_vars-1.0.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "69a7b90d797800dd61c581df6bace1205e55d5c2170bf33ecdd98a63074a2c1f",
+                    "md5": "4fc3c8f258e9a0df90df658f4aacbeab",
+                    "sha256": "6a9e9754246ec693e1c0e6cae1eaa30a84ac53b5d580c04f9100c7e619fb7879"
+                },
+                "downloads": -1,
+                "filename": "deep_vars-1.0.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "4fc3c8f258e9a0df90df658f4aacbeab",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.10",
+                "size": 11285,
+                "upload_time": "2023-04-23T21:49:01",
+                "upload_time_iso_8601": "2023-04-23T21:49:01.602798Z",
+                "url": "https://files.pythonhosted.org/packages/69/a7/b90d797800dd61c581df6bace1205e55d5c2170bf33ecdd98a63074a2c1f/deep_vars-1.0.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
