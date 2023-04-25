@@ -1,0 +1,93 @@
+{
+    "0.0.3": {
+        "info": {
+            "author": "Archie Ferguson",
+            "author_email": "iamarchieferguson@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "\r\n# <p align=\"center\">\ud83e\udd55 Rabbie \ud83e\udd55</p>\r\n\r\n\r\n![Image](https://img.shields.io/github/last-commit/scuffi/rabbie)![Image](https://img.shields.io/github/license/scuffi/rabbie)![Image](https://img.shields.io/pypi/pyversions/rabbie)\r\n\r\n\r\nRabbie is a Python package designed to provide a simple and helpful interface for interacting with AMQP message brokers, with a particular focus on RabbitMQ. This package is perfect for developers who want to build robust, scalable, and fault-tolerant messaging systems in Python without the need for extensive knowledge of AMQP protocol.\r\n\r\nRabbie provides a high-level API for sending and receiving messages using RabbitMQ, allowing developers to focus on their application logic rather than low-level details of AMQP. It includes features such as easy setup of exchanges, queues, and bindings, support for message publishing and consuming, automatic message acknowledgments, and easy handling of message routing.\r\n\r\nRabbie also provides support for various RabbitMQ features such as message persistence, TTL, priority queues, and exclusive queues. It allows developers to configure and fine-tune these features with ease using its simple and intuitive API.\r\n\r\n\r\n## \ud83e\uddd0 Features    \r\n- Multiple Workers per queue\r\n- Multiple listeners per message broker\r\n- Easy decorator interface\r\n- Decoders to allow for JSON (or other) messages\r\n- Hot reloading (COMING SOON)\r\n\r\n\r\n## \ud83d\udee0\ufe0f Installation\r\nTo install Rabbie, simply run:\r\n```bash\r\npip install rabbie\r\n```\r\n\r\n> *You of course need a message broker instance to connect to when using Rabbie*\r\n\r\n## \ud83e\uddd1\ud83c\udffb\u200d\ud83d\udcbb Usage\r\nThe basic usage to register Listeners with a few listeners:\r\n```python\r\nfrom rabbie import consumer\r\n\r\n@consumer.listen(queue=\"my_queue\", workers=3)\r\ndef myfunction():\r\n    print(\"I've been messaged!\")\r\n\r\n@consumer.listen(queue=\"my_other_queue\", workers=1)\r\ndef my_other_function():\r\n    print(\"I've been messaged again!\")\r\n\r\nif __name__ == \"__main__\":\r\n    consumer.start()\r\n```\r\n\r\nThe method above assumes a localhost rabbie instance with default credentials, to use custom credentials, adapt the code like so:\r\n```python\r\nfrom rabbie import Consumer\r\n\r\nconsumer = Consumer(\r\n    host=\"localhost\",\r\n    port=5672,\r\n    username=\"user\",\r\n    password=\"password\",\r\n)\r\n\r\n@consumer.listen(queue=\"my_queue\", workers=3)\r\ndef myfunction():\r\n    print(\"I've been messaged!\")\r\n\r\nif __name__ == \"__main__\":\r\n    consumer.start()\r\n```\r\n\r\n> \u2139\ufe0f Each Rabbie worker will be in use the entire time your custom function is running, i.e. if you have 3 workers, they can all process 1 message at a time and will not pick up anymore until the entire process has been complete. *(You can add a prefetch to allow for internal message queues)*\r\n\r\n### \ud83c\udfb1 Parameters\r\nRabbie automatically picks up the parameters your function wants depending on the types of them:\r\n```python\r\nfrom rabbie import Consumer, Channel, Method, Properties\r\n\r\nconsumer = Consumer(\r\n    ...\r\n)\r\n\r\n@consumer.listen(queue=\"my_queue\", workers=3)\r\ndef myfunction(body: bytes, channel: Channel, method: Method, properties: Properties):\r\n    print(\"I've been messaged!\")\r\n\r\nif __name__ == \"__main__\":\r\n    consumer.start()\r\n```\r\n\r\n> \u2139\ufe0f Any parameters that don't have a defined type, or cannot be mapped will be default provided with the message body\r\n\r\n### \ud83e\udeb9 Nested Consumers\r\nIf you want to have a more complex tree of consumers, you can use a 'MicroConsumer', this allows you to create your consumers anywhere in your code, which can help for readability and organisation if you have a lot of consumers:\r\n\r\n`my_module.py`\r\n```python\r\nfrom rabbie import MicroConsumer\r\n\r\nimport my_module\r\n\r\nnested_consumer = MicroConsumer()\r\n\r\n@nested_consumer.listen(queue=\"my_queue\", workers=2)\r\ndef my_function():\r\n    print(\"Hello from a nested listener!\")\r\n```\r\n`main.py`\r\n```python\r\nfrom rabbie import Consumer\r\n\r\nimport my_module\r\n\r\nconsumer = Consumer(\r\n    ...\r\n)\r\n\r\nif __name__ == \"__main__\":\r\n    consumer.add_consumer(my_module.nested_consumer)\r\n    consumer.start()\r\n```\r\n### \ud83d\udcbe Decoders\r\nWhen receiving messages through Rabbie, you have the option to pass a Decoder. This acts as a preliminary step before the data passes into your function. If you received a message like: `{\"hello\": \"world\"}`, you can use the inbuilt `JSONDecoder` to automatically parse this text into a dictionary:\r\n```python\r\nfrom rabbie import Consumer, JSONDecoder\r\n\r\nconsumer = Consumer(\r\n    host=\"localhost\",\r\n    port=5672,\r\n    username=\"user\",\r\n    password=\"password\",\r\n    default_decoder=JSONDecoder()\r\n)\r\n\r\n@consumer.listen(queue=\"my_queue\", workers=3, decoder=JSONDecoder())\r\ndef myfunction():\r\n    print(\"I've been messaged!\")\r\n\r\nif __name__ == \"__main__\":\r\n    consumer.start()\r\n```\r\n\r\n> \u2139\ufe0f A Consumer and an individual Listener can take a decoder. The decoder passed into the listener will always take precedence over the consumers decoder.\r\n\r\n\r\nIf you have some more complex messaging system that possibly involves encryption, you can create your own Decoder to implement custom preprocessing like so:\r\n```python\r\nfrom rabbie import Decoder\r\n\r\nclass CustomDecoder(Decoder):\r\n    def decode(self, body: bytes):\r\n        return # Your custom logic here\r\n\r\nconsumer = Consumer(\r\n    ...\r\n    default_decoder=CustomDecoder()\r\n)\r\n```\r\n    \r\n# TODO\r\n- Hot Reloading (Refresh listeners on file changes) \ud83d\udd04\r\n\r\n\r\n## \u27a4 License\r\nDistributed under the MIT License. See [LICENSE](LICENSE) for more information.\r\n        \r\n        \r\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/scuffi/rabbie",
+            "keywords": "",
+            "license": "MIT license",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "rabbie",
+            "package_url": "https://pypi.org/project/rabbie/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/rabbie/",
+            "project_urls": {
+                "Homepage": "https://github.com/scuffi/rabbie"
+            },
+            "release_url": "https://pypi.org/project/rabbie/0.0.3/",
+            "requires_dist": [
+                "pika",
+                "multiprocess",
+                "rich",
+                "watchdog"
+            ],
+            "requires_python": "",
+            "summary": "A simple, decorator interface for AMQP based message brokers",
+            "version": "0.0.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17839317,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "bf7bd8c42cf5766a52a80195ef41b28c72e95f04cd7f55b4ef34d95e0a311306",
+                    "md5": "ebc085b6df117f55641a9ec376232c53",
+                    "sha256": "beca3815860925eea203f00453dde2d23bb2c1caf2f539577ed92e039bb77028"
+                },
+                "downloads": -1,
+                "filename": "rabbie-0.0.3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "ebc085b6df117f55641a9ec376232c53",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 14587,
+                "upload_time": "2023-04-24T20:49:40",
+                "upload_time_iso_8601": "2023-04-24T20:49:40.307040Z",
+                "url": "https://files.pythonhosted.org/packages/bf/7b/d8c42cf5766a52a80195ef41b28c72e95f04cd7f55b4ef34d95e0a311306/rabbie-0.0.3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "097b048b254196b5741a339e114106ae178d3ace6d17b8771fb977633ab19381",
+                    "md5": "b369c2fb0ba04d0c9a467d0b2c37a10a",
+                    "sha256": "0b6c1770a5b0c5468ddb48daa4dce12c762e85492d38b3a24148c28bc1ab6b0a"
+                },
+                "downloads": -1,
+                "filename": "rabbie-0.0.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "b369c2fb0ba04d0c9a467d0b2c37a10a",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 13045,
+                "upload_time": "2023-04-24T20:49:42",
+                "upload_time_iso_8601": "2023-04-24T20:49:42.732210Z",
+                "url": "https://files.pythonhosted.org/packages/09/7b/048b254196b5741a339e114106ae178d3ace6d17b8771fb977633ab19381/rabbie-0.0.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
