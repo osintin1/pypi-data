@@ -37,7 +37,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17651829,
+        "last_serial": 17856177,
         "urls": [
             {
                 "comment_text": "",
@@ -124,7 +124,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17651829,
+        "last_serial": 17856177,
         "urls": [
             {
                 "comment_text": "",
@@ -183,7 +183,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "# Refx\n\n_A **re**ference system **f**or ja**x**_\n\n## What is Refx?\n\nRefx defines a simple reference system that allows you to create DAGs on top of JAX PyTrees. It enables some key features:\n\n* Shared state\n* Tractable mutability\n* Semantic partitioning\n\nRefx is intended to be a low-level library that can be used as a building block within other JAX libraries.\n\n<details><summary><b>Why Refx?</b></summary>\n\nFunctional systems like `flax` and `haiku` are powerful but add a lot of complexity that is often transfered to the user. On the other hand, pytree-based systems like `equinox` are simpler but lack the ability to share parameters and modules. \n\nRefx aims to create a system that can be used to build neural networks libraries that has the simplicity of pytree-based systems while also having the power of functional systems.\n\n</details>\n\n## Installation\n\n```bash\npip install refx\n```\n\n## Getting Started\n\nRefx's main data structure is the `Ref` class. It is a wrapper around a value that can be used as leaves in a pytree. It also has a `value` attribute that can be used to access and mutate the value.\n\n```python\nimport jax\nimport refx\n\nr1 = refx.Ref(1)\nr2 = refx.Ref(2)\n\npytree = {\n    'a': [r1, r1, r2],\n    'b': r2\n}\n\npytree['a'][0].value = 10\n\nassert pytree['a'][1].value == 10\n```\n`Ref` is not a pytree node, therefore you cannot pass pytrees containing `Ref`s to JAX functions. To interact with JAX, `refx` provides the following functions:\n\n* `deref`: converts a pytree of references to a pytree of values and indexes.\n* `reref`: converts a pytree of values and indexes to a pytree of references.\n\n`deref` must be called before crossing a JAX boundary and `reref` must be called after crossing a JAX boundary.\n\n```python\npytree = refx.deref(pytree)\n\n@jax.jit\ndef f(pytree):\n    pytree = refx.reref(pytree)\n    # perform some computation / update the references\n    pytree['a'][2].value = 50\n    return jax.deref(pytree)\n\npytree = f(pytree)\npytree = refx.reref(pytree)\n\nassert pytree['b'].value == 50\n```\n\nAs you see in the is example, we've effectively implemented shared state and tracktable mutability with pure pytrees. \n\n### Trace-level awareness\nIn JAX, unconstrained mutability can lead to tracer leakage. To prevent this, `refx` only allows mutating references from the same trace level they were created in.\n\n```python\nr = refx.Ref(1)\n\n@jax.jit\ndef f():\n    # ValueError: Cannot mutate ref from different trace level\n    r.value = jnp.array(1.0)\n    ...\n```\n\n### Partitioning\nEach reference has a `collection: Hashable` attribute that can be used to partition references into different groups. `refx` provides the `tree_partition` and to partition a pytree based a predicate function.\n```python\nr1 = refx.Ref(1, collection=\"params\")\nr2 = refx.Ref(2, collection=\"batch_stats\")\n\npytree = {\n    'a': [r1, r1, r2],\n    'b': r2\n}\n\n(params, rest), treedef = refx.tree_partition(\n    pytree, lambda x: isinstance(x, refx.Ref) and x.collection == \"params\")\n\nassert params == {\n    ('a', '0'): r1,\n    ('a', '1'): r1,\n    ('a', '2'): refx.NOTHING,\n    ('b',): refx.NOTHING\n}\nassert rest == {\n    ('a', '0'): refx.NOTHING,\n    ('a', '1'): refx.NOTHING,\n    ('a', '2'): r2,\n    ('b',): r2,\n}\n```\nYou can use more partitioning functions to partition a pytree into multiple groups, `tree_partition` will always return one more partition than the number of functions passed to it. The last partition (`rest`) will contain all the remaining elements of the pytree. `tree_partition` also returns a `treedef` that can be used to reconstruct the pytree by using the `merge_partitions` function:\n\n```python\npytree = refx.merge_partitions(partitions, treedef)\n```\nIf you only need a single partition, you can use the `get_partition` function:\n```python\nr1 = refx.Ref(1, collection=\"params\")\nr2 = refx.Ref(2, collection=\"batch_stats\")\n\npytree = {\n    'a': [r1, r1, r2],\n    'b': r2\n}\n\nparams = refx.get_partition(\n    pytree, lambda x: isinstance(x, refx.Ref) and x.collection == \"params\")\n\nassert params == {\n    ('a', '0'): r1,\n    ('a', '1'): r1,\n    ('a', '2'): refx.NOTHING,\n    ('b',): refx.NOTHING\n}\n```\n### Updating references\n`refx` provides the `update_refs` function to update references in a pytree. It updates a **target** pytree with references reference with the values from a **source** pytree. The source pytree can be either a pytree of references or a pytree of values. As an example, here is how you can use `update_refs` to perform gradient descent on a pytree of references:\n\n```python\ndef by_collection(c):\n    return lambda x: isinstance(x, refx.Ref) and x.collection == c\n\n(params, rest), treedef = refx.tree_partition(\n    refx.deref(pytree), by_collection(\"params\"))\n\ndef loss(params):\n    pytree = refx.merge_partitions((params, rest), treedef)\n    ...\n\ngrads = jax.grad(loss)(params)\n\n# gradient descent\nparams = jax.tree_map(lambda w, g: w - 0.1 * g, params, grads)\n\nrefx.update_refs(\n    refx.get_partition(pytree, by_collection(\"params\")), params)\n```",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -212,7 +211,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17651829,
+        "last_serial": 17856177,
         "urls": [
             {
                 "comment_text": "",
@@ -253,6 +252,94 @@
                 "upload_time": "2023-04-10T23:58:08",
                 "upload_time_iso_8601": "2023-04-10T23:58:08.064174Z",
                 "url": "https://files.pythonhosted.org/packages/f8/c1/99d72bd6fe6b742ad4378c7b065859d07e6d7ea0ceb1ee9aff65264ff9ea/refx-0.0.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.3": {
+        "info": {
+            "author": "Cristian Garcia",
+            "author_email": "cgarcia.e88@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# Refx\n\n_A **re**ference system **f**or ja**x**_\n\n## What is Refx?\n\nRefx defines a simple reference system that allows you to create DAGs on top of JAX PyTrees. It enables some key features:\n\n* Shared state\n* Tractable mutability\n* Semantic partitioning\n\nRefx is intended to be a low-level library that can be used as a building block within other JAX libraries.\n\n<details><summary><b>Why Refx?</b></summary>\n\nFunctional systems like `flax` and `haiku` are powerful but add a lot of complexity that is often transfered to the user. On the other hand, pytree-based systems like `equinox` are simpler but lack the ability to share parameters and modules. \n\nRefx aims to create a system that can be used to build neural networks libraries that has the simplicity of pytree-based systems while also having the power of functional systems.\n\n</details>\n\n## Installation\n\n```bash\npip install refx\n```\n\n## Getting Started\n\nRefx's main data structure is the `Ref` class. It is a wrapper around a value that can be used as leaves in a pytree. It also has a `value` attribute that can be used to access and mutate the value.\n\n```python\nimport jax\nimport refx\n\nr1 = refx.Ref(1)\nr2 = refx.Ref(2)\n\npytree = {\n    'a': [r1, r1, r2],\n    'b': r2\n}\n\npytree['a'][0].value = 10\n\nassert pytree['a'][1].value == 10\n```\n`Ref` is not a pytree node, therefore you cannot pass pytrees containing `Ref`s to JAX functions. To interact with JAX, `refx` provides the following functions:\n\n* `deref`: converts a pytree of references to a pytree of values and indexes.\n* `reref`: converts a pytree of values and indexes to a pytree of references.\n\n`deref` must be called before crossing a JAX boundary and `reref` must be called after crossing a JAX boundary.\n\n```python\npytree = refx.deref(pytree)\n\n@jax.jit\ndef f(pytree):\n    pytree = refx.reref(pytree)\n    # perform some computation / update the references\n    pytree['a'][2].value = 50\n    return jax.deref(pytree)\n\npytree = f(pytree)\npytree = refx.reref(pytree)\n\nassert pytree['b'].value == 50\n```\n\nAs you see in the is example, we've effectively implemented shared state and tracktable mutability with pure pytrees. \n\n### Trace-level awareness\nIn JAX, unconstrained mutability can lead to tracer leakage. To prevent this, `refx` only allows mutating references from the same trace level they were created in.\n\n```python\nr = refx.Ref(1)\n\n@jax.jit\ndef f():\n    # ValueError: Cannot mutate ref from different trace level\n    r.value = jnp.array(1.0)\n    ...\n```\n\n### Partitioning\nEach reference has a `collection: Hashable` attribute that can be used to partition references into different groups. `refx` provides the `tree_partition` and to partition a pytree based a predicate function.\n```python\nr1 = refx.Ref(1, collection=\"params\")\nr2 = refx.Ref(2, collection=\"batch_stats\")\n\npytree = {\n    'a': [r1, r1, r2],\n    'b': r2\n}\n\n(params, rest), treedef = refx.tree_partition(\n    pytree, lambda x: isinstance(x, refx.Ref) and x.collection == \"params\")\n\nassert params == {\n    ('a', '0'): r1,\n    ('a', '1'): r1,\n    ('a', '2'): refx.NOTHING,\n    ('b',): refx.NOTHING\n}\nassert rest == {\n    ('a', '0'): refx.NOTHING,\n    ('a', '1'): refx.NOTHING,\n    ('a', '2'): r2,\n    ('b',): r2,\n}\n```\nYou can use more partitioning functions to partition a pytree into multiple groups, `tree_partition` will always return one more partition than the number of functions passed to it. The last partition (`rest`) will contain all the remaining elements of the pytree. `tree_partition` also returns a `treedef` that can be used to reconstruct the pytree by using the `merge_partitions` function:\n\n```python\npytree = refx.merge_partitions(partitions, treedef)\n```\nIf you only need a single partition, you can use the `get_partition` function:\n```python\nr1 = refx.Ref(1, collection=\"params\")\nr2 = refx.Ref(2, collection=\"batch_stats\")\n\npytree = {\n    'a': [r1, r1, r2],\n    'b': r2\n}\n\nparams = refx.get_partition(\n    pytree, lambda x: isinstance(x, refx.Ref) and x.collection == \"params\")\n\nassert params == {\n    ('a', '0'): r1,\n    ('a', '1'): r1,\n    ('a', '2'): refx.NOTHING,\n    ('b',): refx.NOTHING\n}\n```\n### Updating references\n`refx` provides the `update_refs` function to update references in a pytree. It updates a **target** pytree with references reference with the values from a **source** pytree. The source pytree can be either a pytree of references or a pytree of values. As an example, here is how you can use `update_refs` to perform gradient descent on a pytree of references:\n\n```python\ndef by_collection(c):\n    return lambda x: isinstance(x, refx.Ref) and x.collection == c\n\n(params, rest), treedef = refx.tree_partition(\n    refx.deref(pytree), by_collection(\"params\"))\n\ndef loss(params):\n    pytree = refx.merge_partitions((params, rest), treedef)\n    ...\n\ngrads = jax.grad(loss)(params)\n\n# gradient descent\nparams = jax.tree_map(lambda w, g: w - 0.1 * g, params, grads)\n\nrefx.update_refs(\n    refx.get_partition(pytree, by_collection(\"params\")), params)\n```",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "refx",
+            "package_url": "https://pypi.org/project/refx/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/refx/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/refx/0.0.3/",
+            "requires_dist": [
+                "jax (>=0.4.6)"
+            ],
+            "requires_python": ">=3.8,<3.12",
+            "summary": "",
+            "version": "0.0.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17856177,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "02852ac346d5038951109af2ffc0506ae9fc54ff29266d9572859b6aac22feef",
+                    "md5": "8868bba6e91013bcd98ab82d44dafa67",
+                    "sha256": "7f1c5951616889425f01350ac74a8b3f11d180465b8e96a22b8f2612ab40a61c"
+                },
+                "downloads": -1,
+                "filename": "refx-0.0.3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "8868bba6e91013bcd98ab82d44dafa67",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8,<3.12",
+                "size": 10298,
+                "upload_time": "2023-04-25T22:27:52",
+                "upload_time_iso_8601": "2023-04-25T22:27:52.095421Z",
+                "url": "https://files.pythonhosted.org/packages/02/85/2ac346d5038951109af2ffc0506ae9fc54ff29266d9572859b6aac22feef/refx-0.0.3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "0ae19e1a64fbe01bf948422c6998032317fe71912bcbae987b337b590f5e2954",
+                    "md5": "f3b9a1af026e4475c28d94772976d160",
+                    "sha256": "1598eb96877deb5aba42a562f79b1b24c245cacfd6645b7ff64b2a00bb52081e"
+                },
+                "downloads": -1,
+                "filename": "refx-0.0.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "f3b9a1af026e4475c28d94772976d160",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8,<3.12",
+                "size": 10419,
+                "upload_time": "2023-04-25T22:27:54",
+                "upload_time_iso_8601": "2023-04-25T22:27:54.176701Z",
+                "url": "https://files.pythonhosted.org/packages/0a/e1/9e1a64fbe01bf948422c6998032317fe71912bcbae987b337b590f5e2954/refx-0.0.3.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
