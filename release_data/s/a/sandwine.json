@@ -51,7 +51,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17201299,
+        "last_serial": 17864498,
         "urls": [
             {
                 "comment_text": "",
@@ -150,7 +150,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17201299,
+        "last_serial": 17864498,
         "urls": [
             {
                 "comment_text": "",
@@ -249,7 +249,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17201299,
+        "last_serial": 17864498,
         "urls": [
             {
                 "comment_text": "",
@@ -348,7 +348,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17201299,
+        "last_serial": 17864498,
         "urls": [
             {
                 "comment_text": "",
@@ -447,7 +447,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17201299,
+        "last_serial": 17864498,
         "urls": [
             {
                 "comment_text": "",
@@ -546,7 +546,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17201299,
+        "last_serial": 17864498,
         "urls": [
             {
                 "comment_text": "",
@@ -615,7 +615,6 @@
                 "Topic :: Security",
                 "Topic :: System :: Emulators"
             ],
-            "description": "[![Run the test suite](https://github.com/hartwork/sandwine/actions/workflows/run-tests.yml/badge.svg)](https://github.com/hartwork/sandwine/actions/workflows/run-tests.yml)\n[![Run pre-commit](https://github.com/hartwork/sandwine/actions/workflows/pre-commit.yml/badge.svg)](https://github.com/hartwork/sandwine/actions/workflows/pre-commit.yml)\n\n[![sandwine_threat_model.png](https://raw.githubusercontent.com/hartwork/sandwine/main/sandwine_threat_model.png)](https://github.com/hartwork/sandwine#threat-model-and-known-limitations)\n\n\n# What is sandwine?\n\n**sandwine** is a command-line tool to run Windows applications on GNU/Linux\nthat offers more isolation than raw [Wine](https://www.winehq.org/)\nand more convenience than raw [bubblewrap](https://github.com/containers/bubblewrap).\nIt *uses* Wine and bubblewrap, it does not replace them.\n**sandwine** is Software Libre written in Python 3, and\nis licensed under the \"GPL v3 or later\" license.\n\n\n# Installation\n\n```console\n# pip3 install sandwine\n```\n\n\n# Usage Examples\n\n\n### Install Winamp 5.66: no networking, no X11, no sound, no access to `~/*` files\n\n```\n# cd ~/Downloads/\n# sha256sum -c <(echo 'ac70a0c8a2928c91400b9ac3774b331f1d700f3486bab674dbd09da6b31fe130  winamp566_full_en-us.exe')\n# WINEDEBUG=-all sandwine --dotwine winamp/:rw ./winamp566_full_en-us.exe /S /D='C:\\Program' 'Files' '(x86)\\Winamp 5.66'\n```\n\n(The weird quoting in `/D='C:\\Program' 'Files' '(x86)\\Winamp 5.66'`\nis [documented behavior](https://nsis.sourceforge.io/Which_command_line_parameters_can_be_used_to_configure_installers%3F)\nfor NSIS.)\n\n\n### Run installed Winamp: with sound, with nested X11, no networking, no `~/*` file access\n\n```console\n# sandwine --pulseaudio --x11 --dotwine winamp/:rw --pass ~/Music/:ro --configure -- winamp\n```\n\nArgument `--configure` will bring up `winecfg` prior to Winamp so that you have a chance at\nunchecking these two boxes:\n\n- `Graphics`:\n    - `Allow the window manage to *decorate* the windows`\n    - `Allow the window manage to *control* the windows`\n\nIf Winamp crashes right after showing the main window, run it once more,\nthere is some Wine bug at work here.\n\n\n### Run Geiss Screensaver: with sound, with host X11 (careful!), no networking, no `~/*` file access\n\n```console\nsandwine --host-x11-danger-danger --pulseaudio --retry -- ./geiss.scr /S\n```\n\n`--host-x11-danger-danger` make sandwine talk to the host X11 server, which would\n[expose you to keyloggers](https://blog.invisiblethings.org/2011/04/23/linux-security-circus-on-gui-isolation.html)\nso please re-visit your threat model before using `--host-x11-danger-danger`.\n\n`--retry` is used to start programs a second time that consistently\ncrash from graphics issues in a fresh Wine environment\nthe first but not the second time.\nPotentially a bug in Wine, needs more investigation.\n\nPS: The Geiss Screensaver has its home at [geisswerks.com](https://www.geisswerks.com/geiss/).\n\n\n### Run wget: with networking, no X11, no sound, no access to `~/*` files\n\n```console\n# sandwine --network --no-wine -- wget -S -O/dev/null https://blog.hartwork.org/\n```\n\nArgument `--no-wine` is mostly intended for debugging,\nbut is needed here to invoke non-Wine wget.\n\n\n# Under the Hood\n\n**sandwine** aims to protect against Windows applications that:\n\n- read and leak personal files through/to the Internet\n- read and leak keystrokes from other running applications\n  ([related post](https://blog.invisiblethings.org/2011/04/23/linux-security-circus-on-gui-isolation.html))\n- modify/destroy personal files\n- modify/destroy system files\n\nTo achieve that, by default the launched application:\n\n- Sees no files in ``${HOME}`` and/or `/home/` (unless you pass `--pass PATH:{ro,rw}` for a related directory).\n- Does not have access to the internet (unless you pass ``--network``).\n- Does not have access to your local X11 server.\n  (unless you enabled some form of X11 integration, ideally nested X11).\n- Does not have access to your sound card.\n\nSo what is shared with the application by default then?\n\n\n## What is Exposed by Default?\n\n\n### Files\n\n| Path | Content |\n| ---- | ------- |\n| `/` | new tmpfs |\n| `/bin` | read-only bind mount |\n| `/dev` | new devtmpfs |\n| `/dev/dri` | read-write bind mount with device access |\n| `/etc` | read-only bind mount |\n| `${HOME}` | new tmpfs |\n| `${HOME}/.wine` | new tmpfs |\n| `/lib` | read-only bind mount |\n| `/lib32` | read-only bind mount |\n| `/lib64` | read-only bind mount |\n| `/proc` | new procfs |\n| `/sys` | read-only bind mount |\n| `/tmp` | new tmpfs |\n| `/usr` | read-only bind mount |\n\n\n### Environment Variables\n\n- `${DISPLAY}`\n- `${HOME}`\n- `${HOSTNAME}` (with random 12-hex-digits value)\n- `${PATH}` (with known-unavailable entries removed)\n- `${TERM}`\n- `${USER}`\n\n\n**sandwine** features include:\n\n- A focus on security, usability, transparency\n- Support for nested X11 (X2Go nxagent (seamless), Xephyr, Xnest, Xvfb)\n- Support for PulseAudio\n\n\n# Threat Model and Known Limitations\n\n- If your life depends on the sandbox, please consider using\n  a virtual machine rather than sandwine, e.g. because your username\n  is exposed to the running application and depending on your threat model,\n  that may be too much already.\n- sandwine is not intended for use with known-malicous software, viruses, malware.\n- sandwine has not seen any known external security audits, yet.\n- sandwine relies on [bubblewrap](https://github.com/containers/bubblewrap)\n  for its security, so it can only be as secure as bubblewrap.\n- sandwine does not limit the set of syscalls that the application can do.\n  bubblewrap supports arguments `--seccomp` and `--add-seccomp-fd` to go further\n  on that end, but sandwine does not use them so far.\n- sandwine does not keep the application from using loads of RAM, CPU time and/or disk space.\n  If your concerns include **denial of service**, you need protection beyond sandwine.\n- sandwine relies on sane file permissions in the places that are shared read-only.\n  If you have files in e.g. `/etc` that contain credentials but are readable by\n  unprivileged users, sandwine will do nothing to block that read access.\n- If the Windows application to be run expects a GNU/Linux environment and includes\n  **Linux Kernel exploit** code, then that exploit is not likely to be stopped by sandwine.\n- If you manually allow the sandboxed application to communicate with an unsandboxed application\n  and the latter executes commands for the former, then the sandbox cannot prevent privilege\n  escalation.  Think of a model like the Docker daemon where whoever can talk to the Docker\n  daemon can become root. If you use sandwine with something like that, sandwine will have a problem.\n- Start-up time below 200ms is not a goal.\n\n\n# Reporting Vulnerabilities\n\nIf you think you found a vulnerability in sandwine,\nplease reach out [via e-mail](https://github.com/hartwork)\nso we can have a closer look\nand [coordinate disclosure](https://en.wikipedia.org/wiki/Coordinated_vulnerability_disclosure).\n\n---\n[Sebastian Pipping](https://github.com/hartwork), Berlin, 2023\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -646,7 +645,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17201299,
+        "last_serial": 17864498,
         "urls": [
             {
                 "comment_text": "",
@@ -687,6 +686,204 @@
                 "upload_time": "2023-03-08T01:58:47",
                 "upload_time_iso_8601": "2023-03-08T01:58:47.138103Z",
                 "url": "https://files.pythonhosted.org/packages/8a/86/ac492ee58a9e5c023b10d6f2647a482dba5123c9b56ca6d3ab5633b55381/sandwine-1.3.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.3.3": {
+        "info": {
+            "author": "Sebastian Pipping",
+            "author_email": "sebastian@pipping.org",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "Intended Audience :: Developers",
+                "Intended Audience :: End Users/Desktop",
+                "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+                "Operating System :: Unix",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Security",
+                "Topic :: System :: Emulators"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/hartwork/sandwine",
+            "keywords": "",
+            "license": "GPLv3+",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "sandwine",
+            "package_url": "https://pypi.org/project/sandwine/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/sandwine/",
+            "project_urls": {
+                "Homepage": "https://github.com/hartwork/sandwine"
+            },
+            "release_url": "https://pypi.org/project/sandwine/1.3.3/",
+            "requires_dist": [
+                "coloredlogs (>=15.0.1)"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "Command-line tool to run Windows apps with Wine and bwrap/bubblewrap isolation",
+            "version": "1.3.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17864498,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "32d63e05bba9b00ae8903f122fc1af7de98afaa099a48bc7494612425801ab3c",
+                    "md5": "e66d8bd70a656fd01310e3e4dc885dd0",
+                    "sha256": "b2aa0d274cb305fb0d2c964d59310b3d636a526f718a107d0f34c36ac9eb2a4e"
+                },
+                "downloads": -1,
+                "filename": "sandwine-1.3.3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "e66d8bd70a656fd01310e3e4dc885dd0",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 25410,
+                "upload_time": "2023-04-26T10:46:13",
+                "upload_time_iso_8601": "2023-04-26T10:46:13.225502Z",
+                "url": "https://files.pythonhosted.org/packages/32/d6/3e05bba9b00ae8903f122fc1af7de98afaa099a48bc7494612425801ab3c/sandwine-1.3.3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "16e1306657bc46dcff654da912548f0fb6803b36c4e5f6297119c4ebb7f78bba",
+                    "md5": "8e0c4f48b34a50652c64441d43005c83",
+                    "sha256": "84db93978e62ce5b84c9db1fd71322e3edf5c399ae040ee7003e5707a2c04a0e"
+                },
+                "downloads": -1,
+                "filename": "sandwine-1.3.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "8e0c4f48b34a50652c64441d43005c83",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 25817,
+                "upload_time": "2023-04-26T10:46:15",
+                "upload_time_iso_8601": "2023-04-26T10:46:15.783458Z",
+                "url": "https://files.pythonhosted.org/packages/16/e1/306657bc46dcff654da912548f0fb6803b36c4e5f6297119c4ebb7f78bba/sandwine-1.3.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "2.0.0": {
+        "info": {
+            "author": "",
+            "author_email": "Sebastian Pipping <sebastian@pipping.org>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "Intended Audience :: Developers",
+                "Intended Audience :: End Users/Desktop",
+                "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+                "Operating System :: Unix",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Security",
+                "Topic :: System :: Emulators"
+            ],
+            "description": "[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)\n[![Run the test suite](https://github.com/hartwork/sandwine/actions/workflows/run-tests.yml/badge.svg)](https://github.com/hartwork/sandwine/actions/workflows/run-tests.yml)\n[![Run pre-commit](https://github.com/hartwork/sandwine/actions/workflows/pre-commit.yml/badge.svg)](https://github.com/hartwork/sandwine/actions/workflows/pre-commit.yml)\n\n[![sandwine_threat_model.png](https://raw.githubusercontent.com/hartwork/sandwine/main/sandwine_threat_model.png)](https://github.com/hartwork/sandwine#threat-model-and-known-limitations)\n\n\n# What is sandwine?\n\n**sandwine** is a command-line tool to run Windows applications on GNU/Linux\nthat offers more isolation than raw [Wine](https://www.winehq.org/)\nand more convenience than raw [bubblewrap](https://github.com/containers/bubblewrap).\nIt *uses* Wine and bubblewrap (>=0.8.0), it does not replace them.\n**sandwine** is Software Libre written in Python 3, and\nis licensed under the \"GPL v3 or later\" license.\n\n\n# Installation\n\n```console\n# pip3 install sandwine\n```\n\n\n# Usage Examples\n\n\n### Install Winamp 5.66: no networking, no X11, no sound, no access to `~/*` files\n\n```\n# cd ~/Downloads/\n# sha256sum -c <(echo 'ac70a0c8a2928c91400b9ac3774b331f1d700f3486bab674dbd09da6b31fe130  winamp566_full_en-us.exe')\n# WINEDEBUG=-all sandwine --dotwine winamp/:rw ./winamp566_full_en-us.exe /S /D='C:\\Program' 'Files' '(x86)\\Winamp' '5.66'\n```\n\n(The weird quoting in `/D='C:\\Program' 'Files' '(x86)\\Winamp' '5.66'`\nis [documented behavior](https://nsis.sourceforge.io/Which_command_line_parameters_can_be_used_to_configure_installers%3F)\nfor NSIS.)\n\n\n### Run installed Winamp: with sound, with nested X11, no networking, no `~/*` file access\n\n```console\n# sandwine --pulseaudio --x11 --dotwine winamp/:rw --pass ~/Music/:ro --configure -- winamp\n```\n\nArgument `--configure` will bring up `winecfg` prior to Winamp so that you have a chance at\nunchecking these two boxes:\n\n- `Graphics`:\n    - `Allow the window manage to *decorate* the windows`\n    - `Allow the window manage to *control* the windows`\n\nIf Winamp crashes right after showing the main window, run it once more,\nthere is some Wine bug at work here.\n\n\n### Run Geiss Screensaver: with sound, with host X11 (careful!), no networking, no `~/*` file access\n\n```console\nsandwine --host-x11-danger-danger --pulseaudio --retry -- ./geiss.scr /S\n```\n\n`--host-x11-danger-danger` make sandwine talk to the host X11 server, which would\n[expose you to keyloggers](https://blog.invisiblethings.org/2011/04/23/linux-security-circus-on-gui-isolation.html)\nso please re-visit your threat model before using `--host-x11-danger-danger`.\n\n`--retry` is used to start programs a second time that consistently\ncrash from graphics issues in a fresh Wine environment\nthe first but not the second time.\nPotentially a bug in Wine, needs more investigation.\n\nPS: The Geiss Screensaver has its GitHub home at https://github.com/geissomatik/geiss .\n\n\n### Run wget: with networking, no X11, no sound, no access to `~/*` files\n\n```console\n# sandwine --network --no-wine -- wget -S -O/dev/null https://blog.hartwork.org/\n```\n\nArgument `--no-wine` is mostly intended for debugging,\nbut is needed here to invoke non-Wine wget.\n\n\n# Under the Hood\n\n**sandwine** aims to protect against Windows applications that:\n\n- read and leak personal files through/to the Internet\n- read and leak keystrokes from other running applications\n  ([related post](https://blog.invisiblethings.org/2011/04/23/linux-security-circus-on-gui-isolation.html))\n- modify/destroy personal files\n- modify/destroy system files\n\nTo achieve that, by default the launched application:\n\n- Sees no files in ``${HOME}`` and/or `/home/` (unless you pass `--pass PATH:{ro,rw}` for a related directory).\n- Does not have access to the internet (unless you pass ``--network``).\n- Does not have access to your local X11 server\n  (unless you enable some form of X11 integration, ideally nested X11).\n- Does not have access to your sound card.\n\nSo what is shared with the application by default then?\n\n\n## What is Exposed by Default?\n\n\n### Files\n\n| Path | Content |\n| ---- | ------- |\n| `/` | new tmpfs |\n| `/bin` | read-only bind mount |\n| `/dev` | new devtmpfs |\n| `/dev/dri` | read-write bind mount with device access |\n| `/etc` | read-only bind mount |\n| `${HOME}` | new tmpfs |\n| `${HOME}/.wine` | new tmpfs |\n| `/lib` | read-only bind mount |\n| `/lib32` | read-only bind mount |\n| `/lib64` | read-only bind mount |\n| `/proc` | new procfs |\n| `/sys` | read-only bind mount |\n| `/tmp` | new tmpfs |\n| `/usr` | read-only bind mount |\n\n\n### Environment Variables\n\n- `${DISPLAY}`\n- `${HOME}`\n- `${HOSTNAME}` (with random 12-hex-digits value)\n- `${PATH}` (with known-unavailable entries removed)\n- `${TERM}`\n- `${USER}`\n\n\n**sandwine** features include:\n\n- A focus on security, usability, transparency\n- Support for nested X11 provided by:\n  - X2Go nxagent (seamless)\n  - Xephyr\n  - Xnest\n  - Xvfb (invisible)\n- Support for PulseAudio\n- Support for `/etc/resolv.conf` provided by:\n  - NetworkManager\n  - systemd-resolved\n\n\n# Threat Model and Known Limitations\n\n- If your life depends on the sandbox, please consider using\n  a virtual machine rather than sandwine, e.g. because your username\n  is exposed to the running application and depending on your threat model,\n  that may be too much already.\n- sandwine is not intended for use with known-malicious software, viruses, malware.\n- sandwine has not seen any known external security audits, yet.\n- sandwine relies on [bubblewrap](https://github.com/containers/bubblewrap)\n  for its security, so it can only be as secure as bubblewrap.\n- sandwine does not limit the set of syscalls that the application can do.\n  bubblewrap supports arguments `--seccomp` and `--add-seccomp-fd` to go further\n  on that end, but sandwine does not use them so far.\n- sandwine does not keep the application from using loads of RAM, CPU time and/or disk space.\n  If your concerns include **denial of service**, you need protection beyond sandwine.\n- sandwine relies on sane file permissions in the places that are shared read-only.\n  If you have files in e.g. `/etc` that contain credentials but are readable by\n  unprivileged users, sandwine will do nothing to block that read access.\n- If the Windows application to be run expects a GNU/Linux environment and includes\n  **Linux Kernel exploit** code, then that exploit is not likely to be stopped by sandwine.\n- If you manually allow the sandboxed application to communicate with an unsandboxed application\n  and the latter executes commands for the former, then the sandbox cannot prevent privilege\n  escalation.  Think of a model like the Docker daemon where whoever can talk to the Docker\n  daemon can become root. If you use sandwine with something like that, sandwine will have a problem.\n- Start-up time below 200ms is not a goal.\n\n\n# Reporting Vulnerabilities\n\nIf you think you found a vulnerability in sandwine,\nplease reach out [via e-mail](https://github.com/hartwork)\nso we can have a closer look\nand [coordinate disclosure](https://en.wikipedia.org/wiki/Coordinated_vulnerability_disclosure).\n\n---\n[Sebastian Pipping](https://github.com/hartwork), Berlin, 2023\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "Wine,sandbox,sandboxing,bubblewrap,bwrap",
+            "license": "GPLv3+",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "sandwine",
+            "package_url": "https://pypi.org/project/sandwine/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/sandwine/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/hartwork/sandwine/issues",
+                "Homepage": "https://github.com/hartwork/sandwine"
+            },
+            "release_url": "https://pypi.org/project/sandwine/2.0.0/",
+            "requires_dist": [
+                "coloredlogs (>=15.0.1)"
+            ],
+            "requires_python": ">=3.9",
+            "summary": "Command-line tool to run Windows apps with Wine and bwrap/bubblewrap isolation",
+            "version": "2.0.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17864498,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "25331bbcf682a4f555d6396c9abf72b494d3806afdab1396541cf85abeb7c4cf",
+                    "md5": "61d107347c4b1ee7f7bd2c7315b9ce0a",
+                    "sha256": "aac53b27b31deb06940feaae71bec687617440404de5b6ee5602c95de63cac51"
+                },
+                "downloads": -1,
+                "filename": "sandwine-2.0.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "61d107347c4b1ee7f7bd2c7315b9ce0a",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9",
+                "size": 25012,
+                "upload_time": "2023-04-26T11:17:41",
+                "upload_time_iso_8601": "2023-04-26T11:17:41.036332Z",
+                "url": "https://files.pythonhosted.org/packages/25/33/1bbcf682a4f555d6396c9abf72b494d3806afdab1396541cf85abeb7c4cf/sandwine-2.0.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "047085897361f902fe27da6354d03a25bff7ad3e6295d022c87f27d2338873ae",
+                    "md5": "6c9f98a45980ca6bee10069ac9dbd83f",
+                    "sha256": "f614608d939631795c3487b854a8f0fee3e2c44c66e286a2a042792d1a4fef63"
+                },
+                "downloads": -1,
+                "filename": "sandwine-2.0.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "6c9f98a45980ca6bee10069ac9dbd83f",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9",
+                "size": 26033,
+                "upload_time": "2023-04-26T11:17:43",
+                "upload_time_iso_8601": "2023-04-26T11:17:43.438947Z",
+                "url": "https://files.pythonhosted.org/packages/04/70/85897361f902fe27da6354d03a25bff7ad3e6295d022c87f27d2338873ae/sandwine-2.0.0.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

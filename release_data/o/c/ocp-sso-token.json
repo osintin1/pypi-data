@@ -40,7 +40,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16617343,
+        "last_serial": 17865562,
         "urls": [
             {
                 "comment_text": "",
@@ -129,7 +129,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16617343,
+        "last_serial": 17865562,
         "urls": [
             {
                 "comment_text": "",
@@ -220,7 +220,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16617343,
+        "last_serial": 17865562,
         "urls": [
             {
                 "comment_text": "",
@@ -311,7 +311,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16617343,
+        "last_serial": 17865562,
         "urls": [
             {
                 "comment_text": "",
@@ -364,7 +364,6 @@
             "author_email": "cki-project@redhat.com",
             "bugtrack_url": null,
             "classifiers": [],
-            "description": "# Non-interactive CLI login for OpenShift clusters via OpenID-connected IdP with Kerberos support\n\nThis package can be found on PyPI as\n[ocp-sso-token](https://pypi.org/project/ocp-sso-token) and is tested on the\n[supported Python versions] 3.8, 3.9, 3.10, 3.11 and 3.12.\n\n[supported Python versions]: https://devguide.python.org/versions/\n\n## Quickstart\n\n```bash\npip install ocp-sso-token\nkinit USER@DOMAIN.COM\nocp-sso-token https://API.CLUSTER:6443 --context CONTEXT --namespace NAMESPACE\noc --context CONTEXT get pod\n```\n\n## Problem: several manual steps to log into an OpenShift cluster via OIDC without ROPC\n\nTo log into an OpenShift cluster on the command line, [oc login] supports\nuser/password authentication for various [identity providers] like [LDAP] or [OIDC\nwith ROPC grant flow].\n\nIf no provider with password support is configured, the user is referred to the\nOAuth login page to obtain a temporary token interactively. After selecting the\nright provider, the user is forwarded to authenticate with the SSO provider,\nand redirected back to the cluster afterwards. Another click reveals the\ntemporary token that can now be used for the CLI tools.\n\nFor an OpenID provider that supports Kerberos tickets, the authentication with\nthe SSO provider happens transparently. For such setups, logging into a cluster\nvia the CLI roughly requires the following steps:\n\n- run `oc login` and click on the link, or visit a bookmark for the cluster\n  login page\n- click on the button for the OpenID provider\n- watch the webpages forwarding to each other\n- click on the link to reveal the temporary token\n- use the shown temporary token/oc login command to log into the cluster\n\nThese steps must be performed daily and per cluster.\n\n## Approach: automate all the steps above\n\nThe Python script in this repository automates all the steps to obtain the\ntemporary token so that the following is possible:\n\n```bash\nkinit $user@$domain\n\n# either save the token directly in the specified context in ~/.kube/config...\nocp-sso-token $server --context $context --namespace $namespace\noc --context $context get pod\n\n# ...or use the token with oc login\noc login --server $server --token $(ocp-sso-token $server)\noc get pod\n```\n\n[oc login]: https://docs.openshift.com/container-platform/latest/cli_reference/openshift_cli/getting-started-cli.html#cli-logging-in_cli-developer-commands\n[identity providers]: https://docs.openshift.com/container-platform/latest/authentication/understanding-identity-provider.html\n[LDAP]: https://docs.openshift.com/container-platform/latest/authentication/identity_providers/configuring-ldap-identity-provider.html\n[OIDC with ROPC grant flow]: https://docs.openshift.com/container-platform/latest/authentication/identity_providers/configuring-oidc-identity-provider.html#add-identity-provider_configuring-oidc-identity-provider\n\n## Installing the script\n\n```bash\n# from PyPI\npip install ocp-sso-token\n\n# from source\npip install --user git+https://gitlab.com/cki-project/ocp-sso-token\n```\n\n## Using the script to log into an OpenShift cluster via OIDC\n\n```text\nusage: ocp-sso-token [-h] [--identity-providers IDENTITY_PROVIDERS]\n                     [--context CONTEXT] [--namespace NAMESPACE]\n                     api_url\n\nObtain an OCP OAuth token for a Kerberos ticket\n\npositional arguments:\n  api_url               Cluster API URL like https://api.cluster:6443\n\noptional arguments:\n  -h, --help            show this help message and exit\n  --identity-providers IDENTITY_PROVIDERS\n                        Identity provider names (default: SSO,OpenID)\n  --context CONTEXT     Instead of printing the token, store it in the given context (default:\n                        None)\n  --namespace NAMESPACE\n                        Namespace to use for --context (default: None)\n```\n\nIf your identity provider name is not included in the defaults shown above, add\nit via `--identity-providers`. The first matching identity provider will be\nused.\n\nWith `--context`, the token is directly added to the Kubernetes configuration file\n(`~/.kube/config` or KUBECONFIG). Otherwise, the token is printed to the console.\n\n### Running a smoke test\n\n```bash\nkinit user@DOMAIN.COM\nserver=https://api.cluster:6443; oc --server $server --token $(ocp-sso-token $server) get project\n```\n\n### Logging into clusters with custom context names\n\nWith `--context` and `--namespace`, the obtained tokens are directly configured\nin the specified contexts:\n\n```bash\n$ kinit user@DOMAIN.COM\n$ ocp-sso-token https://api.cluster1:6443 --context cluster1 --namespace project1\n$ ocp-sso-token https://api.cluster2:6443 --context cluster2 --namespace project2\n\n$ oc config get-contexts\nCURRENT   NAME       CLUSTER             AUTHINFO            NAMESPACE\n          cluster1   api-cluster1:6443   api-cluster1:6443   project1\n          cluster2   api-cluster2:6443   api-cluster2:6443   project2\n\n$ oc --context cluster1 get pod\n$ oc --context cluster2 get pod\n```\n\n### Logging into clusters via `oc login`\n\nWithout `--context`, the obtained tokens are printed to the console and can be\nused with `oc login`. Logging into clusters this way creates context names\nautomatically. This is most useful with a single cluster, but works with\nmultiple clusters as well:\n\n```bash\n$ kinit user@DOMAIN.COM\n$ server=https://api.cluster1:6443; oc login --server $server --token $(ocp-sso-token $server)\n$ server=https://api.cluster2:6443; oc login --server $server --token $(ocp-sso-token $server)\n\n$ oc config get-contexts\nCURRENT   NAME                                        CLUSTER             AUTHINFO                            NAMESPACE\n          default/api-cluster1:6443/user@domain.com   api-cluster1:6443   user@domain.com/api-cluster1:6443   default\n*         default/api-cluster2:6443/user@domain.com   api-cluster2:6443   user@domain.com/api-cluster2:6443   default\n\n$ oc --namespace project2 get pod\n$ oc --context default/api-cluster1:6443/user@domain.com --namespace project1 get pod\n$ oc --context default/api-cluster2:6443/user@domain.com --namespace project2 get pod\n```\n\n## Creating a development setup and running the tests\n\nInstalling development dependencies:\n\n```bash\npip install -e .[dev]\n```\n\nRunning linting/tests:\n\n```bash\ntox\n```\n\n## Creating a release\n\n1. Create a release MR with an update of the version number in\n   `ocp_sso_token/__init__.py`, e.g to '3.1.4'\n1. Create an annotated tag with the same version prefixed with `v` and enter\n   the release notes as the tag message, e.g.\n\n   ```bash\n   git tag v3.1.4 -a\n   ```\n\n   For the release notes, list the important changes and include the\n   merge requests that introduced them, e.g.\n\n   ```markdown\n   - Run tests in parallel on multiple Python versions (!8)\n   ```\n\n1. Push the tag to GitLab, e.g.\n\n   ```bash\n   git push origin v3.1.4\n   ```\n\n1. Wait for the tag pipeline to finish\n1. Check the resulting GitLab and PyPI releases\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -405,7 +404,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16617343,
+        "last_serial": 17865562,
         "urls": [
             {
                 "comment_text": "",
@@ -446,6 +445,193 @@
                 "upload_time": "2023-01-30T10:13:04",
                 "upload_time_iso_8601": "2023-01-30T10:13:04.166554Z",
                 "url": "https://files.pythonhosted.org/packages/96/30/fd842256bb26e7125f7d42f7092a461bfa1e012b51a9c4eee73bb81544b2/ocp-sso-token-1.0.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.1.0": {
+        "info": {
+            "author": "CKI Team",
+            "author_email": "cki-project@redhat.com",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://gitlab.com/cki-project/ocp-sso-token",
+            "keywords": "",
+            "license": "GPLv3",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "ocp-sso-token",
+            "package_url": "https://pypi.org/project/ocp-sso-token/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/ocp-sso-token/",
+            "project_urls": {
+                "Homepage": "https://gitlab.com/cki-project/ocp-sso-token"
+            },
+            "release_url": "https://pypi.org/project/ocp-sso-token/1.1.0/",
+            "requires_dist": [
+                "html5lib",
+                "PyYAML",
+                "requests",
+                "requests-gssapi",
+                "mypy ; extra == 'dev'",
+                "responses ; extra == 'dev'",
+                "types-html5lib ; extra == 'dev'",
+                "types-PyYAML ; extra == 'dev'",
+                "types-requests ; extra == 'dev'",
+                "build ; extra == 'release'",
+                "twine ; extra == 'release'"
+            ],
+            "requires_python": "",
+            "summary": "Obtain an OCP OAuth token for an SSO IdP with Kerberos support",
+            "version": "1.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17865562,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "8c3f73cfcd60b7ae596f7d84be62638852f92614f2650fd454e5e7764aea5311",
+                    "md5": "91a138979439e834a203f75365850a6b",
+                    "sha256": "44ff4bbcd62af2291daab9dc3a3286b85e419a43f28e0aa2dffcfa12cef51aa0"
+                },
+                "downloads": -1,
+                "filename": "ocp_sso_token-1.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "91a138979439e834a203f75365850a6b",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 20263,
+                "upload_time": "2023-04-26T11:31:32",
+                "upload_time_iso_8601": "2023-04-26T11:31:32.121843Z",
+                "url": "https://files.pythonhosted.org/packages/8c/3f/73cfcd60b7ae596f7d84be62638852f92614f2650fd454e5e7764aea5311/ocp_sso_token-1.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d912f71b7fff9fab5108f85bc2fae47931f3b829d7aec6582b01682544451b86",
+                    "md5": "dfb15c2cca75837169f4563d64fd3e9c",
+                    "sha256": "65a24c5663e2446084dd5e2768921781c3d5af5fedeaef6f28d73f8e42d331b6"
+                },
+                "downloads": -1,
+                "filename": "ocp-sso-token-1.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "dfb15c2cca75837169f4563d64fd3e9c",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 21404,
+                "upload_time": "2023-04-26T11:31:33",
+                "upload_time_iso_8601": "2023-04-26T11:31:33.879007Z",
+                "url": "https://files.pythonhosted.org/packages/d9/12/f71b7fff9fab5108f85bc2fae47931f3b829d7aec6582b01682544451b86/ocp-sso-token-1.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.2.0": {
+        "info": {
+            "author": "CKI Team",
+            "author_email": "cki-project@redhat.com",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "# Non-interactive CLI login for OpenShift clusters via OpenID-connected IdP with Kerberos support\n\nThis package can be found\n\n- on Copr as [@cki/ocp-sso-token](https://copr.fedorainfracloud.org/coprs/g/cki/ocp-sso-token)\n- on PyPI as [ocp-sso-token](https://pypi.org/project/ocp-sso-token)\n\nThe Copr packages are provided for all active Fedora releases, CentOS\nStream/EPEL Next 9 and RHEL/EPEL 9.\n\nThe code is tested on the [supported Python versions] 3.8, 3.9, 3.10, 3.11 and\n3.12.\n\n[supported Python versions]: https://devguide.python.org/versions/\n\n## Quickstart\n\n```bash\n# from Copr...\nsudo dnf copr enable @cki/ocp-sso-token\nsudo dnf install ocp-sso-token\n# ...or from PyPI\npip install ocp-sso-token\n\n# get a Kerberos token\nkinit USER@DOMAIN.COM\n# create a kubectl context with a temporary token via SSO\nocp-sso-token https://API.CLUSTER:6443 --context CONTEXT --namespace NAMESPACE\n# and try it out!\noc --context CONTEXT get pod\n```\n\n## Problem: several manual steps to log into an OpenShift cluster via OIDC without ROPC\n\nTo log into an OpenShift cluster on the command line, [oc login] supports\nuser/password authentication for various [identity providers] like [LDAP] or [OIDC\nwith ROPC grant flow].\n\nIf no provider with password support is configured, the user is referred to the\nOAuth login page to obtain a temporary token interactively. After selecting the\nright provider, the user is forwarded to authenticate with the SSO provider,\nand redirected back to the cluster afterwards. Another click reveals the\ntemporary token that can now be used for the CLI tools.\n\nFor an OpenID provider that supports Kerberos tickets, the authentication with\nthe SSO provider happens transparently. For such setups, logging into a cluster\nvia the CLI roughly requires the following steps:\n\n- run `oc login` and click on the link, or visit a bookmark for the cluster\n  login page\n- click on the button for the OpenID provider\n- watch the webpages forwarding to each other\n- click on the link to reveal the temporary token\n- use the shown temporary token/oc login command to log into the cluster\n\nThese steps must be performed daily and per cluster.\n\n## Approach: automate all the steps above\n\nThe Python script in this repository automates all the steps to obtain the\ntemporary token so that the following is possible:\n\n```bash\nkinit $user@$domain\n\n# either save the token directly in the specified context in ~/.kube/config...\nocp-sso-token $server --context $context --namespace $namespace\noc --context $context get pod\n\n# ...or use the token with oc login\noc login --server $server --token $(ocp-sso-token $server)\noc get pod\n```\n\n[oc login]: https://docs.openshift.com/container-platform/latest/cli_reference/openshift_cli/getting-started-cli.html#cli-logging-in_cli-developer-commands\n[identity providers]: https://docs.openshift.com/container-platform/latest/authentication/understanding-identity-provider.html\n[LDAP]: https://docs.openshift.com/container-platform/latest/authentication/identity_providers/configuring-ldap-identity-provider.html\n[OIDC with ROPC grant flow]: https://docs.openshift.com/container-platform/latest/authentication/identity_providers/configuring-oidc-identity-provider.html#add-identity-provider_configuring-oidc-identity-provider\n\n## Installing the script\n\n```bash\n# from Copr\nsudo dnf copr enable @cki/ocp-sso-token\nsudo dnf install ocp-sso-token\n\n# from PyPI\npip install ocp-sso-token\n\n# from source\npip install --user git+https://gitlab.com/cki-project/ocp-sso-token\n```\n\n## Using the script to log into an OpenShift cluster via OIDC\n\n```text\nusage: ocp-sso-token [-h] [--identity-providers IDENTITY_PROVIDERS]\n                     [--context CONTEXT] [--namespace NAMESPACE]\n                     api_url\n\nObtain an OCP OAuth token for a Kerberos ticket\n\npositional arguments:\n  api_url               Cluster API URL like https://api.cluster:6443\n\noptional arguments:\n  -h, --help            show this help message and exit\n  --identity-providers IDENTITY_PROVIDERS\n                        Identity provider names (default: SSO,OpenID)\n  --context CONTEXT     Instead of printing the token, store it in the given context (default:\n                        None)\n  --namespace NAMESPACE\n                        Namespace to use for --context (default: None)\n```\n\nIf your identity provider name is not included in the defaults shown above, add\nit via `--identity-providers`. The first matching identity provider will be\nused.\n\nWith `--context`, the token is directly added to the Kubernetes configuration file\n(`~/.kube/config` or KUBECONFIG). Otherwise, the token is printed to the console.\n\n### Running a smoke test\n\n```bash\nkinit user@DOMAIN.COM\nserver=https://api.cluster:6443; oc --server $server --token $(ocp-sso-token $server) get project\n```\n\n### Logging into clusters with custom context names\n\nWith `--context` and `--namespace`, the obtained tokens are directly configured\nin the specified contexts:\n\n```bash\n$ kinit user@DOMAIN.COM\n$ ocp-sso-token https://api.cluster1:6443 --context cluster1 --namespace project1\n$ ocp-sso-token https://api.cluster2:6443 --context cluster2 --namespace project2\n\n$ oc config get-contexts\nCURRENT   NAME       CLUSTER             AUTHINFO            NAMESPACE\n          cluster1   api-cluster1:6443   api-cluster1:6443   project1\n          cluster2   api-cluster2:6443   api-cluster2:6443   project2\n\n$ oc --context cluster1 get pod\n$ oc --context cluster2 get pod\n```\n\n### Logging into clusters via `oc login`\n\nWithout `--context`, the obtained tokens are printed to the console and can be\nused with `oc login`. Logging into clusters this way creates context names\nautomatically. This is most useful with a single cluster, but works with\nmultiple clusters as well:\n\n```bash\n$ kinit user@DOMAIN.COM\n$ server=https://api.cluster1:6443; oc login --server $server --token $(ocp-sso-token $server)\n$ server=https://api.cluster2:6443; oc login --server $server --token $(ocp-sso-token $server)\n\n$ oc config get-contexts\nCURRENT   NAME                                        CLUSTER             AUTHINFO                            NAMESPACE\n          default/api-cluster1:6443/user@domain.com   api-cluster1:6443   user@domain.com/api-cluster1:6443   default\n*         default/api-cluster2:6443/user@domain.com   api-cluster2:6443   user@domain.com/api-cluster2:6443   default\n\n$ oc --namespace project2 get pod\n$ oc --context default/api-cluster1:6443/user@domain.com --namespace project1 get pod\n$ oc --context default/api-cluster2:6443/user@domain.com --namespace project2 get pod\n```\n\n## ssl.SSLCertVerificationError\n\nIf you get an error similar to the following, most likely the intranet\ncertificates are not used by the [requests] module as the [certifi] module\nships its own certificate store:\n\n```text\nssl.SSLCertVerificationError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:992)\n```\n\nOn Fedora/Debian-based distributions, this can be solved by using the `certifi`\nmodule from the distribution package repositories, e.g. via\n\n```shell\npip uninstall certifi              # if certifi was already installed via pip\ndnf install python3-certifi        # Fedora-based distributions\napt install python3-certifi        # Debian-based distributions\n```\n\nIt is also possible to force the use of a specific certificate bundle via\nsomething like\n\n```shell\nexport REQUESTS_CA_BUNDLE=/etc/pki/tls/certs/ca-bundle.crt\n```\n\n[requests]: https://pypi.org/project/requests\n[certifi]: https://pypi.org/project/certifi\n\n## Creating a development setup and running the tests\n\nInstalling development dependencies:\n\n```bash\npip install -e .[dev]\n```\n\nRunning linting/tests:\n\n```bash\ntox\n```\n\n## Creating a release\n\n1. Create a release MR with an update of the version number in\n   `ocp_sso_token/__init__.py`, e.g to '3.1.4'\n1. Create an annotated tag with the same version prefixed with `v` and enter\n   the release notes as the tag message, e.g.\n\n   ```bash\n   git tag v3.1.4 -a\n   ```\n\n   For the release notes, list the important changes and include the\n   merge requests that introduced them, e.g.\n\n   ```markdown\n   - Run tests in parallel on multiple Python versions (!8)\n   ```\n\n1. Push the tag to GitLab, e.g.\n\n   ```bash\n   git push origin v3.1.4\n   ```\n\n1. Wait for the tag pipeline to finish\n1. Check the resulting GitLab and PyPI releases\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://gitlab.com/cki-project/ocp-sso-token",
+            "keywords": "",
+            "license": "GPLv3",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "ocp-sso-token",
+            "package_url": "https://pypi.org/project/ocp-sso-token/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/ocp-sso-token/",
+            "project_urls": {
+                "Homepage": "https://gitlab.com/cki-project/ocp-sso-token"
+            },
+            "release_url": "https://pypi.org/project/ocp-sso-token/1.2.0/",
+            "requires_dist": [
+                "html5lib",
+                "PyYAML",
+                "requests",
+                "requests-gssapi",
+                "mypy ; extra == 'dev'",
+                "responses ; extra == 'dev'",
+                "types-html5lib ; extra == 'dev'",
+                "types-PyYAML ; extra == 'dev'",
+                "types-requests ; extra == 'dev'",
+                "build ; extra == 'release'",
+                "twine ; extra == 'release'"
+            ],
+            "requires_python": "",
+            "summary": "Obtain an OCP OAuth token for an SSO IdP with Kerberos support",
+            "version": "1.2.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17865562,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6ae28cf8c33a7dc635034120267802aefff8d65226a18fae1c0e5d945e329295",
+                    "md5": "e20578194fe2c57cd3aaa0e947bb28ba",
+                    "sha256": "e61a46bfacc6a882384cdcf476ffa84b7cc5c6d5fe9a7b0edafb2f87058dfde8"
+                },
+                "downloads": -1,
+                "filename": "ocp_sso_token-1.2.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "e20578194fe2c57cd3aaa0e947bb28ba",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 20265,
+                "upload_time": "2023-04-26T12:59:14",
+                "upload_time_iso_8601": "2023-04-26T12:59:14.213367Z",
+                "url": "https://files.pythonhosted.org/packages/6a/e2/8cf8c33a7dc635034120267802aefff8d65226a18fae1c0e5d945e329295/ocp_sso_token-1.2.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "df45720d0cb62b87f97f466034aecce5c2bc7e9f7675f3a660d415887cc39057",
+                    "md5": "6cbbeb4b2cd52934e5a63b1fc52cde6c",
+                    "sha256": "48c069e29879c6fa235e3ec365310a6eb0cf32d2443f7135f22355a139815f24"
+                },
+                "downloads": -1,
+                "filename": "ocp-sso-token-1.2.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "6cbbeb4b2cd52934e5a63b1fc52cde6c",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 21407,
+                "upload_time": "2023-04-26T12:59:16",
+                "upload_time_iso_8601": "2023-04-26T12:59:16.090323Z",
+                "url": "https://files.pythonhosted.org/packages/df/45/720d0cb62b87f97f466034aecce5c2bc7e9f7675f3a660d415887cc39057/ocp-sso-token-1.2.0.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
