@@ -1,0 +1,94 @@
+{
+    "0.1.2": {
+        "info": {
+            "author": "Michael Wornow",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# ManiTest\n\n### An LLM evaluation harness built with Manifest + EleutherAI\n\n**ManiTest** is a simplified version of the [Eleuther-AI LLM evaluation harness](https://github.com/EleutherAI/lm-evaluation-harness) that uses [Manifest](https://github.com/som-shahlab/manifest) as its backend model server.\n\n* [Eleuther-AI LLM evaluation harness](https://github.com/EleutherAI/lm-evaluation-harness) allows you to evaluate a large language model (LLM) on tasks formulated as prompts.\n* [Manifest](https://github.com/som-shahlab/manifest) is a model server that enables fast inference via built-in support for HuggingFace Parallelize, Accelerate, DeepSpeed, and BitsAndBytes.\n\n_Note: We use our own fork of Manifest, which we hope to merge back into the main repo soon._\n\n## Installation\n\n```bash\npip3 install manitest \"git+https://github.com/som-shahlab/manifest.git@eval-michael#egg=manifest-ml[api]\"\n```\n\n## Quickstart\n\nTo run the eval harness, you must first have a Manifest server running in the background with your desired model. You can then run the eval harness on your desired task. ManiTest comes with a couple tasks pre-loaded in the `manitest.tasks` module, such as `manitest.tasks.mednli` and `manitest.tasks.scitail`.\n\n```bash\n# Run Manifest server with your desired model\npython3 -m manifest.api.app \\\n    --model_type huggingface \\\n    --model_name_or_path gpt2 \\\n    --model_generation_type text-generation \\\n    --port 5001 &\n\n# Run ManiTest evaluation harness on your desired task\n# Note: To run the MedNLI task, you must first download the dataset from: https://physionet.org/content/mednli/1.0.0/\npython3 -m manitest.main  \\\n    --manifest_url http://127.0.0.1:5001 \\\n    --path_to_task manitest.tasks.mednli \\\n    --output_dir ./ignore \\\n    --data_dir /Users/mwornow/Downloads/mednli-a-natural-language-inference-dataset-for-the-clinical-domain-1.0.0/ \\\n    --dataset_splits test\n\n# Test a few-shot prompting setup\npython3 src/manitest/main.py \\\n    --manifest_url http://127.0.0.1:5001 \\\n    --path_to_task manitest.tasks.mednli_fewshot \\\n    --output_dir ./ignore \\\n    --data_dir /Users/mwornow/Downloads/mednli-a-natural-language-inference-dataset-for-the-clinical-domain-1.0.0/ \\\n    --dataset_splits test \\\n    --n_shots 3\n```\n\n## Tips\n\nIf you're using a causal LM (e.g. GPT, OPT, Llama, Bloom)...\n* Run Manifest with the `--model_generation_type text-generation` flag\n\nIf you're using a seq2seq LM (e.g. T5, T0)...\n* Run Manifest with the `--model_generation_type text2text-generation` flag\n\n## How to create your own task\n\nWe recommend starting from the `task_template.py` file as a template. You can also view `tests/mednli/mednli.py` or  `tests/scitail/scitail.py` for worked-out examples of tasks.\n\nTo create your own task, you must...\n\n1. Create a file called `your_task.py`. You can save this anywhere.\n\n2. Create a `Task` class that inherits from `manifest.base.Task`.\n\nIt must define three attributes (`name`, `task_type`, and `prompts`) and one methods (`load_dataset()`).\n\n```python\nfrom base import Task, TaskType\n\nclass YourTask(Task):\n    name: str = \"Your Task Name\"\n    task_type: TaskType = TaskType.GENERATION\n\n    def load_dataset(self, dataloader: Optional[str], data_dir: Optional[str]) -> DatasetDict:\n        # Load your dataset here\n        return DatasetDict()\n```\n\n3. Create a `Prompt` class that inherits from `manifest.base.Prompt` for each individual prompt associated with your task.\n\nIt must define one attribute (`name`) and two methods (`generate_prompt()` and `get_label()`).\n\n```python\nfrom base import Prompt\n\nclass YourPrompt(Prompt)\n    name: str = \"Some globally unique name for this prompt\"\n\n    def generate_prompt(self, example: dict) -> str:\n        \"\"\"Takes a dataset example and returns a prompted version of that example.\"\"\"\n        return f\"Premise: {example['premise']}\\nHypothesis: {example['hypothesis']}. Does the premise entail the hypothesis?\"\n\n    def get_label(self, example: dict) -> str:\n        \"\"\"Gets the ground truth label for a dataset example\"\"\"\n        return example['true_label']\n```\n\n4. Run the evaluation harness with your task. This assumes a Manifest server is already running on `localhost:5000`\n\n```bash\npython3 main.py \\\n    --manifest_url http://localhost:5000 \\\n    --path_to_task path/to/your_task.py \\\n    --output_dir ./ignore\n```\n\n## Development\n\nInstallation:\n\n```bash\n# Download repo\ngit clone https://github.com/som-shahlab/manitest\ncd manitest\n\n# Create virtual environment + install dependencies\nconda create --name manitest_env python=3.10 -y\nconda activate manitest_env\npoetry install\n```\n\n## Special setup instructions for computers without Internet access\n\nIf you are running this on a computer without internet access (e.g. Stanford Nero), you will need to download the HuggingFace dataset, dataloader, and model that you want to use.\n\nAssuming you've downloaded these, your commands will look like the following:\n\n```\npython3 -m manifest.api.app \\\n    --model_type huggingface \\\n    # Path to locally downloaded HuggingFace model\n    --model_name_or_path /local-scratch-nvme/nigam/huggingface/pretrained/gpt2-small \\\n    --model_generation_type text-generation\n\npython3 main.py \\\n    --manifest_url http://127.0.0.1:5000 \\\n    --path_to_task tests/mednli/mednli.py \\\n    --output_dir ./ignore \\\n    # Path to locally downloaded HuggingFace dataset\n    --data_dir /local-scratch/nigam/projects/clinical_llm/data/mednli/ \\\n    --dataset_splits test \\\n    # Path to locally downloaded HuggingFace dataloader\n    --dataloader /local-scratch/nigam/projects/clinical_llm/dataloaders/mednli/mednli.py\n```\n\n## Todos\n\n- [ ] Combine Manifest command with `main.py` command into a single command\n- [ ] Merge Manifest fork back into main repo\n- [ ] Support specifying multiple tasks in a single run\n- [ ] Pretty print / format results\n- [ ] Support passing text generation flags to `main.py`, pass these along to Manifest\n- [ ] Add tests\n- [ ] Documentation\n- [ ] Multi-label classification task support\n- [X] Few-shot in-context examples\n- [X] Multi-class classification task support\n- [X] Text generation task support\n- [X] Test case with mednli replacement classification task\n- [X] Abstract things to work on not Nero (e.g. load HF models from Hub, load local HF models, hit external APIs)\n- [X] Clean up output to be more user friendly\n- [X] Convert .yaml prompt files to .py `Task` files\n\n## Development\n\nTo run pre-commit checks:\n\n```bash\npre-commit run --all-files\n```\n\nTo run tests:\n```bash\npytest tests\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "manitest",
+            "package_url": "https://pypi.org/project/manitest/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/manitest/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/manitest/0.1.2/",
+            "requires_dist": [
+                "scikit-learn (==1.2.2)",
+                "rouge-score (==0.1.2)",
+                "protobuf (==3.20)",
+                "loguru (==0.6.0)",
+                "datasets (==2.10.1)"
+            ],
+            "requires_python": ">=3.9",
+            "summary": "An LLM evaluation harness built with Manifest + EleutherAI",
+            "version": "0.1.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17877738,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "03f11374b2f61f73e5d7fd52a8fa2aea84244bcebe762899d5b1faeb209ef789",
+                    "md5": "cbd5f9887add192bf980f39a9205dad1",
+                    "sha256": "e5a874de97ea095315b7f6d885e20a6146cc7795a47a76c97bfa0064d3001adf"
+                },
+                "downloads": -1,
+                "filename": "manitest-0.1.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "cbd5f9887add192bf980f39a9205dad1",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9",
+                "size": 22764,
+                "upload_time": "2023-04-27T04:58:52",
+                "upload_time_iso_8601": "2023-04-27T04:58:52.694443Z",
+                "url": "https://files.pythonhosted.org/packages/03/f1/1374b2f61f73e5d7fd52a8fa2aea84244bcebe762899d5b1faeb209ef789/manitest-0.1.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "7e01fec1be05fc2572188142a63ce90d53cb92242413f902326045281477717b",
+                    "md5": "c5014281dd34929ab970a201959ed0fc",
+                    "sha256": "d38fe28397b9e39215d39aa4d9a062c99779f730bd6657b763bb5e1a33f78993"
+                },
+                "downloads": -1,
+                "filename": "manitest-0.1.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "c5014281dd34929ab970a201959ed0fc",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9",
+                "size": 20059,
+                "upload_time": "2023-04-27T04:58:54",
+                "upload_time_iso_8601": "2023-04-27T04:58:54.826068Z",
+                "url": "https://files.pythonhosted.org/packages/7e/01/fec1be05fc2572188142a63ce90d53cb92242413f902326045281477717b/manitest-0.1.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

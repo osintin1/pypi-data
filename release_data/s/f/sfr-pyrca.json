@@ -1,0 +1,108 @@
+{
+    "0.0.1": {
+        "info": {
+            "author": "Salesforce Research Warden AIOps",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "# PyRCA: A Python library for Root Cause Analysis\n<div align=\"center\">\n  <a href=\"#\">\n  <img src=\"https://img.shields.io/badge/Python-3.7, 3.8, 3.9-blue\">\n  </a>\n  <a href=\"https://pypi.python.org/pypi/sfr-pyrca\">\n  <img alt=\"PyPI\" src=\"https://img.shields.io/pypi/v/sfr-pyrca.svg\"/>\n  </a>\n  <a href=\"https://fuzzy-disco-r42n6p1.pages.github.io\">\n  <img alt=\"Documentation\" src=\"https://github.com/salesforce/PyRCA/actions/workflows/docs.yml/badge.svg\"/>\n  </a>\n  <a href=\"https://pepy.tech/project/sfr-pyrca\">\n  <img alt=\"Downloads\" src=\"https://pepy.tech/badge/sfr-pyrca\">\n  </a>\n  <a href=\"https://arxiv.org/abs/xxxx.xxxxx\">\n  <img alt=\"DOI\" src=\"https://zenodo.org/badge/DOI/10.48550/ARXIV.xxxx.xxxxx.svg\"/>\n  </a>\n</div>\n\n## Table of Contents\n1. [Introduction](#introduction)\n2. [Installation](#installation)\n3. [Getting Started](#getting-started)\n4. [Documentation](https://fuzzy-disco-r42n6p1.pages.github.io/)\n5. [Tutorial](https://github.com/salesforce/PyRCA/tree/main/examples)\n6. [Example](#application-example)\n7. [Benchmarks](#benchmarks)\n8. [How to Contribute](#how-to-contribute)\n\n## Introduction\n\nWith the rapidly growing adoption of microservices architectures, multi-service applications become the standard \nparadigm in real-world IT applications. A multi-service application usually contains hundreds of interacting \nservices, making it harder to detect service failures and identify the root causes. Root cause analysis (RCA) \nmethods usually leverage the KPI metrics, traces or logs monitored on those services to determine the root causes \nwhen a system failure is detected, helping engineers and SREs in the troubleshooting process.\n\nPyRCA is a Python machine-learning library designed for root cause analysis, offering multiple state-of-the-art RCA\nalgorithms and an end-to-end pipeline for building RCA solutions. Currently, PyRCA mainly focuses on metric-based RCA \nincluding two types of algorithms: 1. Identifying anomalous metrics in parallel with the observed anomaly via \nmetric data analysis, e.g., \u03b5-diagnosis, and 2. Identifying root causes based a topology/causal graph representing \nthe causal relationships between the observed metrics, e.g., Bayesian inference, Random Walk. Besides, PyRCA \nprovides a convenient tool for building causal graphs from the observed time series data and domain knowledge, \nhelping users to develop graph-based solutions quickly. PyRCA also provides a benchmark for evaluating \nvarious RCA methods, which is valuable for industry and academic research.\n\nThe following list shows the supported RCA methods in our library:\n1. \u03b5-Diagnosis\n2. Bayesian Inference-based RCA (BI)\n3. Random Walk-based RCA (RW)\n4. Root Casue Discovery method (RCD)\n5. Hypothesis Testing-based RCA (HT)\n\nWe will continue improving this library to make it more comprehensive in the future. In the future, \nPyRCA will support trace and log based RCA methods as well.\n\n## Installation\n\nYou can install ``pyrca`` from PyPI by calling ``pip install sfr-pyrca``. You may install from source by\ncloning the PyRCA repo, navigating to the root directory, and calling\n``pip install .``, or ``pip install -e .`` to install in editable mode. You may install additional dependencies:\n\n- **For plotting & visualization**: Calling ``pip install sfr-pyrca[plot]``, or ``pip install .[plot]`` from the\n  root directory of the repo.\n- **Install all the dependencies**: Calling ``pip install sfr-pyrca[all]``, or ``pip install .[all]`` from the\n  root directory of the repo.\n\n## Getting Started\n\nPyRCA provides a unified interface for training RCA models and finding root causes. To apply\na certain RCA method, you only need to specify: \n\n- **The select RCA method**: e.g., ``BayesianNetwork``, ``EpsilonDiagnosis``.\n- **The RCA configuration**: e.g., ``BayesianNetworkConfig``, ``EpsilonDiagnosisConfig``.\n- **Time series data for initialization or training**: e.g., A time series data in a \n  pandas dataframe.\n- **Some detected anomalous KPI metrics**: Some RCA methods require the anomalous KPI metrics detected by\n  certain anomaly detector.\n\nLet's take ``BayesianNetwork`` as an example. Suppose that ``graph_df`` is a pandas dataframe of\nthe graph representing causal relationships between metrics (how to construct such causal graph\nwill be discussed later), and ``df`` is a pandas dataframe containing the historical observed time series \ndata (e.g., the index is the timestamp and each column represents one monitored metric). To train a \n``BayesianNetwork``, you can simply run the following code:\n\n```python\nfrom pyrca.analyzers.bayesian import BayesianNetwork\nmodel = BayesianNetwork(config=BayesianNetwork.config_class(graph=graph_df))\nmodel.train(df)\nmodel.save(\"model_folder\")\n```\n\nAfter the model is trained, you can use it to find root causes of an incident given a list of anomalous\nmetrics detected by a certain anomaly detector, e.g.,\n\n```python\nfrom pyrca.analyzers.bayesian import BayesianNetwork\nmodel = BayesianNetwork.load(\"model_folder\")\nresults = model.find_root_causes([\"observed_anomalous_metric\", ...])\nprint(results.to_dict())\n```\n\nFor other RCA methods, you can write similar code as above for finding root causes. For example, if you want\nto try ``EpsilonDiagnosis``, you can initalize ``EpsilonDiagnosis`` as follows:\n\n```python\nfrom pyrca.analyzers.epsilon_diagnosis import EpsilonDiagnosis\nmodel = EpsilonDiagnosis(config=EpsilonDiagnosis.config_class(alpha=0.01))\nmodel.train(normal_data)\n```\n\nHere ``normal_data`` is the historically observed time series data without anomalies. To identify root causes,\nyou can run:\n\n```python\nresults = model.find_root_causes(abnormal_data)\nprint(results.to_dict())\n```\n\nwhere ``abnormal_data`` is the time series data collected in an incident window.\n\nAs mentioned above, some RCA methods such as ``BayesianNetwork`` require causal graphs as their inputs. To construct such causal\ngraphs from the observed time series data, you can utilize our tool by running ``python -m pyrca.tools``.\nThis command will launch a Dash app for time series data analysis and causal discovery.\n![alt text](https://github.com/salesforce/PyRCA/raw/main/docs/_static/dashboard.png)\n\nThe dashboard allows you to try different causal discovery methods, adjust causal discovery parameters,\nadd domain knowledge constraints (e.g., root/leaf nodes, forbidden/required links), and visualize\nthe generated causal graphs. It makes easier for manually revising causal graphs based on domain knowledge.\nYou can download the graph generated by this tool if you satisfy with it. The graph can be used by the RCA \nmethods supported in PyRCA.\n\nInstead of using this dashboard, you can also write code for building such graphs. The package \n``pyrca.graphs.causal`` includes several popular causal discovery methods you can use. All of these methods\nsupport domain knowledge constraints. Suppose ``df`` is the observed time series data\nand you want to apply the PC algorithm for building causal graphs, then the following code will help:\n\n```python\nfrom pyrca.graphs.causal.pc import PC\nmodel = PC(PC.config_class())\ngraph_df = model.train(df)\n```\n\nIf you have some domain knowledge constraints, you may run:\n\n```python\nfrom pyrca.graphs.causal.pc import PC\nmodel = PC(PC.config_class(domain_knowledge_file=\"file_path\"))\ngraph_df = model.train(df)\n```\n\nThe domain knowledge file has a YAML format, e.g.,\n\n```yaml\ncausal-graph:\n  root-nodes: [\"A\", \"B\"]\n  leaf-nodes: [\"E\", \"F\"]\n  forbids:\n    - [\"A\", \"E\"]\n  requires: \n    - [\"A\", \"C\"]\n```\n\nThis domain knowledge file states that: \n1. Metrics A and B must the root nodes, \n2. Metrics E and F must be the leaf nodes,\n3. There is no connection from A to E, and \n4. There is a connection from A to C. \n\nYou can write your domain knowledge file based on this template for generating more reliable causal\ngraphs.\n\n## Application Example\n\n[Here](https://github.com/salesforce/PyRCA/tree/main/pyrca/applications/example) is a real-world example\nof applying ``BayesianNetwork`` to build a solution for RCA, which is adapted from our internal use cases. \nThe \"config\" folder includes the settings for the stats-based anomaly detector and the domain knowledge. \nThe \"models\" folder stores the causal graph and the trained Bayesian network. The ``RCAEngine`` class in the \"rca.py\" \nfile implements the methods for building causal graphs, training Bayesian networks and finding root causes \nby utilizing the modules provided by PyRCA. You can directly use this class if the stats-based anomaly detector \nand Bayesian inference are suitable for your RCA problems. For example, given a time series dataframe ``df``, \nyou can build and train a Bayesian network via the following code:\n\n```python\nfrom pyrca.applications.example.rca import RCAEngine\nengine = RCAEngine()\nengine.build_causal_graph(\n    df=df,\n    run_pdag2dag=True,\n    max_num_points=5000000,\n    verbose=True\n)\nbn = engine.train_bayesian_network(dfs=[df])\nbn.print_probabilities()\n```\n\nAfter the Bayesian network is constructed, you can use it directly for finding root causes:\n\n```python\nengine = RCAEngine()\nresult = engine.find_root_causes_bn(anomalies=[\"conn_pool\", \"apt\"])\npprint.pprint(result)\n```\n\nThe inputs of ``find_root_causes_bn`` is a list of the anomalous metrics detected by the stats-based\nanomaly detector. This method will estimate the probability of a node being a root cause and extract\nthe paths from a potential root cause node to the leaf nodes.\n\n## Benchmarks\n\nThe following table summarizes the RCA performance of different methods on the simulated dataset.\nHow to generate the simulated dataset can be found [here](https://github.com/salesforce/PyRCA/blob/main/examples/DataGeneration.ipynb),\nand how to test different RCA methods can be found [here](https://github.com/salesforce/PyRCA/blob/main/examples/Root%20Cause%20Analysis.ipynb).\n\n<div align=\"center\">\n\n|                             |  Recall@1   |  Recall@3   |  Recall@5   |\n:---------------------------:|:-----------:|:-----------:|:-----------:\n|         \u03b5-Diagnosis         | 0.06 \u00b1 0.02 | 0.16 \u00b1 0.04 | 0.16 \u00b1 0.04 |\n|             RCD             | 0.28 \u00b1 0.05 | 0.29 \u00b1 0.05 | 0.30 \u00b1 0.05 |\n|          Local-RCD          | 0.44 \u00b1 0.05 | 0.70 \u00b1 0.05 | 0.70 \u00b1 0.05 |\n|         Random Walk         | 0.07 \u00b1 0.03 | 0.20 \u00b1 0.04 | 0.24 \u00b1 0.04 |\n|      Random Walk (PC)       | 0.06 \u00b1 0.02 | 0.17 \u00b1 0.04 | 0.21 \u00b1 0.04 |\n|     Bayesian Inference      | 0.15 \u00b1 0.04 | 0.35 \u00b1 0.05 | 0.43 \u00b1 0.05 |\n|   Bayesian Inference (PC)   | 0.11 \u00b1 0.03 | 0.30 \u00b1 0.05 | 0.40 \u00b1 0.05 |\n|     Hypothesis-testing      | 1.00 \u00b1 0.00 | 1.00 \u00b1 0.00 | 1.00 \u00b1 0.00 |\n|   Hypothesis-testing (PC)   | 0.95 \u00b1 0.02 | 1.00 \u00b1 0.00 | 1.00 \u00b1 0.00 |\n|  Hypothesis-testing (ADJ)   | 0.95 \u00b1 0.02 | 1.00 \u00b1 0.00 | 1.00 \u00b1 0.00 |\n| Hypothesis-testing (ADJ-PC) | 0.77 \u00b1 0.04 | 0.92 \u00b1 0.03 | 0.92 \u00b1 0.03 |\n\n</div>\n\n\u03b5-Diagnosis and RCD are one-phase RCA methods, while the rest methods are two-phase RCA methods. \nLocal-RCD denotes the RCD algorithm with localized learning. The Bayesian Inference algorithm \ncomputes the root cause scores by estimating each structural causal model. Hypothesis-testing (ADJ) denotes \nthe hypothesis-testing algorithm with descendant adjustment. For the two-phase models, the algorithms \nwithout suffix indicate that the root cause localization algorithm use the true causal graph for model \ntraining. The algorithms with suffix \"PC\" indicate the causal graph is estimated via PC algorithm.\n\n## How to Contribute\n\nWe welcome the contribution from the open-source community to improve the library!\nBefore you get started, clone this repo, run `pip install pre-commit`, and run `pre-commit install` \nfrom the root directory of the repo. This will ensure all files are formatted correctly and contain \nthe appropriate license headers whenever you make a commit. \n\nTo add a new RCA method into the library, you may follow the steps below:\n1. Create a new python script file for this RCA method in the ``pyrca/analyzers`` folder.\n2. Create the configuration class inheriting from ``pyrca.base.BaseConfig``.\n3. Create the method class inheriting from ``pyrca.analyzers.base.BaseRCA``. The constructor for the new \nmethod takes the new configuration instance as its input.\n4. Implement the ``train`` function that trains or initializes the new method.\n5. Implement the ``find_root_causes`` function that returns a ``pyrca.analyzers.base.RCAResults`` \ninstance for root cause analysis results.\n\nTo add a new causal discovery method, you may follow the following steps:\n1. Create a new python script file for this RCA method in the ``pyrca/graphs/causal`` folder.\n2. Create the configuration class that inherits from ``pyrca.graphs.causal.base.CausalModelConfig``.\n3. Create the method class that inherits from ``pyrca.graphs.causal.base.CausalModel``. \nThe constructor for the new method takes the new configuration instance as its input.\n4. Implement the ``_train`` function that returns the discovered casual graph. The input parameters\nof ``_train`` are the time series dataframe, the lists of forbidden and required links, and other\nadditional parameters.\n\n## Contact Us\nIf you have any questions, comments or suggestions, please do not hesitate to contact us at pyrca@salesforce.com.\n\n## License\n[BSD 3-Clause License](LICENSE)\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/salesforce/PyRCA",
+            "keywords": "AIOps RCA root cause analysis",
+            "license": "3-Clause BSD",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "sfr-pyrca",
+            "package_url": "https://pypi.org/project/sfr-pyrca/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/sfr-pyrca/",
+            "project_urls": {
+                "Homepage": "https://github.com/salesforce/PyRCA"
+            },
+            "release_url": "https://pypi.org/project/sfr-pyrca/0.0.1/",
+            "requires_dist": [
+                "numpy (>=1.17)",
+                "pandas (>=1.1.0)",
+                "scikit-learn (<1.2,>=0.24)",
+                "networkx (>=2.6)",
+                "matplotlib",
+                "pyyaml",
+                "schema",
+                "pyparsing",
+                "dill",
+                "tqdm",
+                "wheel",
+                "packaging",
+                "javabridge (>=1.0.11)",
+                "plotly (>=4) ; extra == 'all'",
+                "dash (>=2.0) ; extra == 'all'",
+                "dash-bootstrap-components (>=1.0) ; extra == 'all'",
+                "jupyter-dash (>=0.4) ; extra == 'all'",
+                "dash[diskcache] ; extra == 'all'",
+                "plotly (>=4) ; extra == 'plot'",
+                "dash (>=2.0) ; extra == 'plot'",
+                "dash-bootstrap-components (>=1.0) ; extra == 'plot'",
+                "jupyter-dash (>=0.4) ; extra == 'plot'",
+                "dash[diskcache] ; extra == 'plot'"
+            ],
+            "requires_python": ">=3.7,<4",
+            "summary": "PyRCA: A Python library for Root Cause Analysis",
+            "version": "0.0.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17878658,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "1e5068c976407e150377f326ee7c802c29170f2fe12d7d6614f07e63979f3860",
+                    "md5": "cd2854ec8daa0ec0db2b1f9bee6c33ab",
+                    "sha256": "fc54c46b1397a7828dfc6ed00cf47599e41a25bec744c0bc974d9f25d72b220e"
+                },
+                "downloads": -1,
+                "filename": "sfr_pyrca-0.0.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "cd2854ec8daa0ec0db2b1f9bee6c33ab",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7,<4",
+                "size": 356730,
+                "upload_time": "2023-04-27T06:55:43",
+                "upload_time_iso_8601": "2023-04-27T06:55:43.370004Z",
+                "url": "https://files.pythonhosted.org/packages/1e/50/68c976407e150377f326ee7c802c29170f2fe12d7d6614f07e63979f3860/sfr_pyrca-0.0.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3d739faa3b2ed2db362e260771f1a42239ac04c0688e5241ecf661b83b008eb1",
+                    "md5": "a808711074f60a79898293fbe78c7b5d",
+                    "sha256": "effc1a7d7444f2fe3731eb64ea2434082d27bcc54a42fea3d520b80fb8462178"
+                },
+                "downloads": -1,
+                "filename": "sfr-pyrca-0.0.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "a808711074f60a79898293fbe78c7b5d",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7,<4",
+                "size": 290731,
+                "upload_time": "2023-04-27T06:55:45",
+                "upload_time_iso_8601": "2023-04-27T06:55:45.365107Z",
+                "url": "https://files.pythonhosted.org/packages/3d/73/9faa3b2ed2db362e260771f1a42239ac04c0688e5241ecf661b83b008eb1/sfr-pyrca-0.0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

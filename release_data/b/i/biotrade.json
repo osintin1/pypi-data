@@ -1,0 +1,92 @@
+{
+    "0.0.23": {
+        "info": {
+            "author": "Paul Rougieux, Selene Patani",
+            "author_email": "paul.rougieux@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "The `biotrade` package analyses international trade of bio-based products. It focuses on \nthe agriculture and forestry sectors, from primary production to secondary products \ntransformation. It loads bilateral trade data from UN Comtrade, production and trade \ndata from FAOSTAT and socio-economic indicators from the World Bank.\n\nExtraction rates and waste of supply are taken from the FAO, technical conversion \nfactors for agricultural commodities available at: \nhttps://www.fao.org/economic/the-statistics-division-ess/methodology/methodology-systems/technical-conversion-factors-for-agricultural-commodities/ar/\n\n\n# Installation\n\n## Base installation \n\nInstall from the main branch of a private repo on gitlab using an\n[authentication\ntoken](https://docs.gitlab.com/ee/user/project/deploy_tokens/index.html). The tokens \nwill not be necessary once biotrade becomes publicly available.\n\n    pip install git+https://<token>@gitlab.com/bioeconomy/forobs/biotrade.git@main\n\nTo install a previous version specify the git tag, for example v0.0.1\n\n    pip install git+https://<token>@gitlab.com/bioeconomy/forobs/biotrade.git@v0.0.1\n\nTo install the latest development version, use also the `--upgrade` flag:\n\n    pip install --upgrade --force-reinstall git+https://<token>@gitlab.com/bioeconomy/forobs/biotrade.git@dev\n\n\n## Installation for contributors\n\nIf you plan to contribute to the development of the biotrade package, clone the \nrepository and tell python where it is located by adding it to your PYTHONPATH. You can \ndo this by changing the environment variables or by adding the following line to your \nshell configuration file such as `.bash_aliases`:\n\n    export PYTHONPATH=\"$HOME/repos/biotrade/\":$PYTHONPATH\n\nSpecify where you want to store the data by adding the following environment variable:\n\n    export BIOTRADE_DATA=\"$HOME/repos/biotrade_data/\"\n\nDependencies are listed in the `install_requires` argument of [setup.py](setup.py).\n\n\n# Usage\n\nThe biotrade package can download data from FAOSTAT and UN Comtrade and store it inside \na database. By default it will use an SQLite database stored locally in the folder \ndefined by the environment variable `BIOTRADE_DATA`. Alternatively, a PostGRESQL \ndatabase can be used if a connection string is defined in the environment variable \n`BIOTRADE_DATABASE_URL`, for example by adding the following to your .bash_aliases or \n.bash_rc:\n\n    export BIOTRADE_DATABASE_URL=\"postgresql://user@localhost/biotrade\"\n\nNote that database queries are abstracted with [SQL \nAlchemy](https://www.sqlalchemy.org/) which is what makes it possible to use different \ndatabase engines. SQLite is convenient for data analysis on laptops. PostGreSQL can be \nused on servers.\n\n\n## FAOSTAT\n\nFaostat provides agriculture and forestry data on their website https://www.fao.org/faostat/en/#data/\n\nThe biotrade package has a `faostat.pump` object that loads a selection of datasets. The\nlist of downloaded datasets is visible in `faostat.pump.datasets`. Column names and \nproduct descriptions are reformatted to snake case in a way that is convenient for \nanalysis. The data is then stored into an SQLite database (or PostgreSQL). The following \ncommands download and transfer the given datasets to the database:\n\n    >>> from biotrade.faostat import faostat\n    >>> faostat.pump.update([\"crop_production\", \"crop_trade\"])\n    >>> faostat.pump.update([\"forestry_production\", \"forestry_trade\", \"forest_land\"])\n    >>> faostat.pump.update([\"food_balance\"])\n    >>> faostat.pump.update([\"land_use\", \"land_cover\"])\n\nList available datasets and metadata links:\n\n    >>> faostat.pump.datasets\n    >>> faostat.pump.metadata_link\n\nOnce the data has been loaded into the database, you can query it. For example select \ncrop production data for 2 countries\n\n    >>> from biotrade.faostat import faostat\n    >>> db = faostat.db_sqlite\n    >>> cp2 = db.select(table=\"crop_production\",\n    >>>                 reporter=[\"Portugal\", \"Estonia\"])\n\nSelect forestry trade flows data reported by all countries, with\nAustria as a partner country:\n\n    >>> ft_aut = db.select(table=\"forestry_trade\",\n    >>>                    partner=[\"Austria\"])\n\nSelect crop trade flows reported by the Netherlands where Brazil was a\npartner\n\n    >>> ct_nel_bra = db.select(table=\"crop_trade\",\n    >>>                        reporter=\"Netherlands\",\n    >>>                        partner=\"Brazil\")\n\nSelect the mirror flows reported by Brazil, where the Netherlands was a partner\n\n    >>> ct_bra_bel = db.select(table=\"crop_trade\",\n    >>>                        reporter=\"Brazil\",\n    >>>                        partner=\"Netherlands\")\n\nSelect land use and land cover data\n\n    >>> lu = faostat.db.select(\"land_use\")\n    >>> lc = faostat.db.select(\"land_cover\")\n\n\n## Comtrade\n\nSee the documentation of the various methods. As an example  here is how to download \ntrade data from the Comtrade API and return a data frame, for debugging purposes:\n\n    >>> from biotrade.comtrade import comtrade\n    >>> # Other sawnwood\n    >>> swd99 = comtrade.pump.download(cc = \"440799\")\n    >>> # Soy\n    >>> soy = comtrade.pump.download(cc = \"120190\")\n\nDisplay information on column names used for renaming\nand dropping less important columns:\n\n    >>> comtrade.column_names\n\nGet the list of products from the Comtrade API\n\n    >>> hs = comtrade.pump.get_parameter_list(\"classificationHS.json\")\n\nGet the list of reporter and partner countries\n\n    >>> comtrade.pump.get_parameter_list(\"reporterAreas.json\")\n    >>> comtrade.pump.get_parameter_list(\"partnerAreas.json\")\n\n\n\n# Metadata and configuration data\n\n\n## Release dates\n\nFAOSTAT release dates are available at :\nhttps://fenixservices.fao.org/faostat/static/releasecalendar/Default.aspx\n\n\n## Variable definitions and harmonization\n\nColumn names and product descriptions are reformatted to snake case in a way that is \nconvenient for analysis. See example below.\n\n- Variables are defined and compared between the data sources in a notebook called \n  [definitions_and_harmonization](notebooks/definitions_and_harmonization.md)\n\n- Variable names are harmonized between the different sources using a mapping table \n  defined in\n  [biotrade/config_data/column_names.csv](https://gitlab.com/bioeconomy/biotrade/-/blob/main/biotrade/config_data/column_names.csv)\n  See for example how the `product_code` column is called  `PRODUCT_NC` in Eurostat Comext,\n  `commodity_code` or `cmdcode` in UN Comtrade and `item_code` in FAOSTAT.\n\n- `snake_case` is the preferred way of naming files and variables in the code. This \n  follows the R [tidyverse style guide for object \n  names](https://style.tidyverse.org/syntax.html) and the python [PEP \n  8](https://www.python.org/dev/peps/pep-0008/#function-and-variable-names) style guide \n  for function and variable names.\n\nTo illustrate the advantage of using snake case for data exploration, compare the use of \ncolumn names with space which have to be quoted. Python\n\n    >>> df[\"Product Code\"]\n    >>> df.product_code\n\nR\n     \n    R> df[\"Product Code\"]\n    R> df$`Product Code`\n    R> df$product_code\n\n\n## Configuration data\n\nThe `biotrade` package stores a small amount of configuration data such as country and \nproduct mapping tables and conversion coefficients in the `biotrade/config_data` folder.\n\n- FAOSTAT country and product mapping tables are accessible under the FAO Creative \n  Commons 3.0 Intergovernmental Organization (IGO) licence mentionned in the FAO open \n  access policy https://www.fao.org/3/I9461EN/I9461en.pdf  \n\n- The Table \"Extraction rates and value shares of major oil crops\" comes from a JRC \n  technical report: Cuypers, Dieter, Theo Geerken, Leen Gorissen, Arnoud Lust, Glen \n  Peters, Jonas Karstensen, Sylvia Prieler, G. Fischer, Eva Hizsnyik, and Harrij Van \n  Velthuizen. \"The impact of EU consumption on deforestation: Comprehensive analysis of \n  the impact of EU consumption on deforestation.\" (2013). \n  https://ec.europa.eu/environment/forests/pdf/1.%20Report%20analysis%20of%20impact.pdf\n\n\n# Licence\n\nThis software is licenced under the MIT licence.\nSee the [LICENCE.md](LICENCE.md) file.\n\n\n# Similar projects\n\n- The python package [pandas-datareader](https://pydata.github.io/pandas-datareader/)\n\n- The R packages FAOSTAT and WDI\n\n\n# Tests\n\nThis package uses pytest for unit testing. Run the test suite with\n\n    pytest\n\nRun pytest with code coverage\n\n    cd python_project_dir\n    coverage run --source=. -m pytest\n\nFollowed by\n\n    coverage html\n\nTo generate a report.\nThese tests are run as part of the Continuous Integration.\n\n\n# Acknowledgements\n\nThe authors would like to acknowledge ideas and feedback received from the following \npersons: Lucas Sinclair, Roberto Pilli, Mirco Migliavacca, Giovanni Bausano.\n\nNoemi Cazzaniga's package [eurostat](https://pypi.org/project/eurostat/) was taken as an \ninspiration to load Eurostat data from the bulk download repository.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://gitlab.com/bioeconomy/forobs/biotrade/",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "biotrade",
+            "package_url": "https://pypi.org/project/biotrade/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/biotrade/",
+            "project_urls": {
+                "Homepage": "https://gitlab.com/bioeconomy/forobs/biotrade/"
+            },
+            "release_url": "https://pypi.org/project/biotrade/0.0.23/",
+            "requires_dist": [
+                "pandas",
+                "sqlalchemy",
+                "sqlalchemy-utils",
+                "psycopg2",
+                "requests",
+                "fastapi ; extra == 'api'",
+                "uvicorn ; extra == 'api'"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "Agriculture and forestry statistics.",
+            "version": "0.0.23",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17879474,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "66495029a3c6353bc2302eb04a4e1f4dd0f02743fed813da0d6ee9e1c944fd15",
+                    "md5": "049d31d32bed6651b8bf3858888686a3",
+                    "sha256": "6eeff1faf69193bf08a937bd3a7fd3103ff8b9a1d5c86a3d08154c13b6470346"
+                },
+                "downloads": -1,
+                "filename": "biotrade-0.0.23-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "049d31d32bed6651b8bf3858888686a3",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 166548,
+                "upload_time": "2023-04-27T08:19:50",
+                "upload_time_iso_8601": "2023-04-27T08:19:50.465006Z",
+                "url": "https://files.pythonhosted.org/packages/66/49/5029a3c6353bc2302eb04a4e1f4dd0f02743fed813da0d6ee9e1c944fd15/biotrade-0.0.23-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3dd8eb1ac387dc5514925495fd418c438e954b022b6d73b1bf1d4c44a77b6464",
+                    "md5": "f05898874eaf77628171100331a782c2",
+                    "sha256": "4159f1fb40b7f00c166354cdd2e50c6d9769304eaf32a10bca98541724acc4a1"
+                },
+                "downloads": -1,
+                "filename": "biotrade-0.0.23.tar.gz",
+                "has_sig": false,
+                "md5_digest": "f05898874eaf77628171100331a782c2",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 141046,
+                "upload_time": "2023-04-27T08:19:53",
+                "upload_time_iso_8601": "2023-04-27T08:19:53.058718Z",
+                "url": "https://files.pythonhosted.org/packages/3d/d8/eb1ac387dc5514925495fd418c438e954b022b6d73b1bf1d4c44a77b6464/biotrade-0.0.23.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

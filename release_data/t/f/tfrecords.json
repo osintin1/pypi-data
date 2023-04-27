@@ -52,7 +52,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17546876,
+        "last_serial": 17882649,
         "urls": [
             {
                 "comment_text": "",
@@ -425,7 +425,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17546876,
+        "last_serial": 17882649,
         "urls": [
             {
                 "comment_text": "",
@@ -798,7 +798,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17546876,
+        "last_serial": 17882649,
         "urls": [
             {
                 "comment_text": "",
@@ -1171,7 +1171,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17546876,
+        "last_serial": 17882649,
         "urls": [
             {
                 "comment_text": "",
@@ -1544,7 +1544,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17546876,
+        "last_serial": 17882649,
         "urls": [
             {
                 "comment_text": "",
@@ -1917,7 +1917,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17546876,
+        "last_serial": 17882649,
         "urls": [
             {
                 "comment_text": "",
@@ -2262,7 +2262,6 @@
                 "Topic :: Software Development :: Libraries",
                 "Topic :: Software Development :: Libraries :: Python Modules"
             ],
-            "description": "tfrecords\n## simplify and transplant the tfrecord and table\n\n### update information\n```text\n    2022-10-30:  Add lmdb leveldb read and writer and add record batch write\n    2022-10-17:  Add shared memory for record to read mode with more accelerated Reading.\n    2022-02-01:  simplify and transplant the tfrecord dataset\n```\n\n### 1. record read and write demo , with_share_memory flags will Accelerated Reading\n\n```python\n# -*- coding: utf-8 -*-\n# @Time    : 2022/9/8 15:49\n\nimport tfrecords\noptions = tfrecords.TFRecordOptions(compression_type=tfrecords.TFRecordCompressionType.NONE)\ndef test_write(filename, N=3, context='aaa'):\n    with tfrecords.TFRecordWriter(filename, options=options) as file_writer:\n        batch_data = []\n        for i in range(N):\n            d = context + '____' + str(i)\n            batch_data.append(d)\n            if (i + 1) % 100 == 0:\n                file_writer.write_batch(batch_data)\n                batch_data.clear()\n        if len(batch_data):\n            file_writer.write_batch(batch_data)\n            batch_data.clear()\n\ndef test_record_iterator(example_paths):\n    print('test_record_iterator')\n    for example_path in example_paths:\n        iterator = tfrecords.tf_record_iterator(example_path, options=options,skip_bytes=0,with_share_memory=True)\n        offset_list = iterator.read_offsets(0)\n        count = iterator.read_count(0)\n        print(count)\n        num = 0\n        for iter in iterator:\n            num += 1\n            print(iter)\n\ndef test_random_reader(example_paths):\n    print('test_random_reader')\n    for example_path in example_paths:\n        file_reader = tfrecords.tf_record_random_reader(example_path, options=options,with_share_memory=True)\n        last_pos = 0\n        while True:\n            try:\n                x,pos = file_reader.read(last_pos)\n                print(x,pos)\n                last_pos = pos\n\n            except Exception as e:\n                break\n\ndef test_random_reader2(example_paths):\n    print('test_random_reader2')\n    for example_path in example_paths:\n        file_reader = tfrecords.tf_record_random_reader(example_path, options=options,with_share_memory=True)\n        skip_bytes = 0\n        offset_list = file_reader.read_offsets(skip_bytes)\n        for offset,length in offset_list:\n            x, _ = file_reader.read(offset)\n            print(x)\n\ntest_write('d:/example.tfrecords0',3,'file0')\n\nexample_paths = tfrecords.glob('d:/example.tfrecords*')\nprint(example_paths)\ntest_record_iterator(example_paths)\nprint()\ntest_random_reader(example_paths)\nprint()\ntest_random_reader2(example_paths)\nprint()\n```\n\n### 2. leveldb read and write demo \n```python\n# -*- coding: utf-8 -*-\n# @Time    : 2022/9/8 15:49\n\nfrom tfrecords import LEVELDB\ndb_path = 'd:/example_leveldb'\ndef test_write(db_path):\n    options = LEVELDB.LeveldbOptions(create_if_missing=True, error_if_exists=False)\n    file_writer = LEVELDB.Leveldb(db_path,options)\n\n    keys,values = [],[]\n    for i in range(30):\n        keys.append(b\"input_\" + str(i).encode())\n        keys.append(b\"label_\" + str(i).encode())\n        values.append(b\"xiaoming\" + str(i).encode())\n        values.append(b\"zzs\" + str(i).encode())\n        if (i + 1) % 1000 == 0:\n            file_writer.put_batch(keys,values)\n            keys.clear()\n            values.clear()\n    if len(keys):\n        file_writer.put_batch(keys, values)\n        keys.clear()\n        values.clear()\n\n    file_writer.close()\ndef test_read(db_path):\n    options = LEVELDB.LeveldbOptions(create_if_missing=False, error_if_exists=False)\n    reader = LEVELDB.Leveldb(db_path,options)\n\n    def show():\n        it = reader.get_iterater(reverse=False)\n        i = 0\n        for item in it:\n            print(i,item)\n            i += 1\n\n    def test_find(key):\n        value = reader.get(key)\n        print('find', type(value), value)\n\n    show()\n\n    test_find(b'input_0')\n    test_find(b'input_5')\n    test_find(b'input_10')\n\n    reader.close()\n\ntest_write(db_path)\ntest_read(db_path)\n```\n\n\n### 3. lmdb read and write demo \n```python\n# -*- coding: utf-8 -*-\n# @Time    : 2022/9/8 15:49\n\nfrom tfrecords import LMDB\ndb_path = 'd:/example_lmdb'\ndef test_write(db_path):\n    options = LMDB.LmdbOptions(env_open_flag = 0,\n                env_open_mode = 0o664, # 8\u8fdb\u5236\u8868\u793a\n                txn_flag = 0,\n                dbi_flag = 0,\n                put_flag = 0)\n    file_writer = LMDB.Lmdb(db_path,options,map_size=1024 * 1024 * 10)\n    keys, values = [], []\n    for i in range(30):\n        keys.append(b\"input_\" + str(i).encode())\n        keys.append(b\"label_\" + str(i).encode())\n        values.append(b\"xiaoming_\" + str(i).encode())\n        values.append(b\"zzs_\" + str(i).encode())\n        if (i + 1) % 1000 == 0:\n            file_writer.put_batch(keys, values)\n            keys.clear()\n            values.clear()\n    if len(keys):\n        file_writer.put_batch(keys, values)\n    file_writer.close()\ndef test_read(db_path):\n    options = LMDB.LmdbOptions( env_open_flag = LMDB.LmdbFlag.MDB_RDONLY,\n                env_open_mode = 0o664, # 8\u8fdb\u5236\u8868\u793a\n                txn_flag = 0,\n                dbi_flag = 0,\n                put_flag = 0)\n    reader = LMDB.Lmdb(db_path,options,map_size=0)\n\n    def show():\n        it = reader.get_iterater(reverse=False)\n        i = 0\n        for item in it:\n            print(i,item)\n            i += 1\n\n\n    def test_find(key):\n        value = reader.get(key)\n        print('find', type(value), value)\n\n    show()\n    test_find('input0')\n    test_find('input5')\n    test_find(b'input10')\n    reader.close()\n\ntest_write(db_path)\ntest_read(db_path)\n\n```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -2291,7 +2290,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17546876,
+        "last_serial": 17882649,
         "urls": [
             {
                 "comment_text": "",
@@ -2668,6 +2667,443 @@
                 "upload_time": "2023-04-02T11:05:39",
                 "upload_time_iso_8601": "2023-04-02T11:05:39.609096Z",
                 "url": "https://files.pythonhosted.org/packages/c0/fe/1c2675ec6d17b23c97d7da31e5b6c169f0c0a1d3c73f06e3fdb9f4f931c9/tfrecords-0.2.5-cp39-cp39-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.6": {
+        "info": {
+            "author": "ssbuild",
+            "author_email": "9727464@qq.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 5 - Production/Stable",
+                "Intended Audience :: Developers",
+                "Intended Audience :: Education",
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: Apache Software License",
+                "Programming Language :: C++",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.6",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Scientific/Engineering",
+                "Topic :: Scientific/Engineering :: Artificial Intelligence",
+                "Topic :: Scientific/Engineering :: Mathematics",
+                "Topic :: Software Development",
+                "Topic :: Software Development :: Libraries",
+                "Topic :: Software Development :: Libraries :: Python Modules"
+            ],
+            "description": "tfrecords\n## simplify and transplant the tfrecord and table\n\n### update information\n```text\n    2022-10-30:  Add lmdb leveldb read and writer and add record batch write\n    2022-10-17:  Add shared memory for record to read mode with more accelerated Reading.\n    2022-02-01:  simplify and transplant the tfrecord dataset\n```\n\n### 1. record read and write demo , with_share_memory flags will Accelerated Reading\n\n```python\n# -*- coding: utf-8 -*-\n# @Time    : 2022/9/8 15:49\n\nimport tfrecords\noptions = tfrecords.TFRecordOptions(compression_type=tfrecords.TFRecordCompressionType.NONE)\ndef test_write(filename, N=3, context='aaa'):\n    with tfrecords.TFRecordWriter(filename, options=options) as file_writer:\n        batch_data = []\n        for i in range(N):\n            d = context + '____' + str(i)\n            batch_data.append(d)\n            if (i + 1) % 100 == 0:\n                file_writer.write_batch(batch_data)\n                batch_data.clear()\n        if len(batch_data):\n            file_writer.write_batch(batch_data)\n            batch_data.clear()\n\ndef test_record_iterator(example_paths):\n    print('test_record_iterator')\n    for example_path in example_paths:\n        iterator = tfrecords.tf_record_iterator(example_path, options=options,skip_bytes=0,with_share_memory=True)\n        offset_list = iterator.read_offsets(0)\n        count = iterator.read_count(0)\n        print(count)\n        num = 0\n        for iter in iterator:\n            num += 1\n            print(iter)\n\ndef test_random_reader(example_paths):\n    print('test_random_reader')\n    for example_path in example_paths:\n        file_reader = tfrecords.tf_record_random_reader(example_path, options=options,with_share_memory=True)\n        last_pos = 0\n        while True:\n            try:\n                x,pos = file_reader.read(last_pos)\n                print(x,pos)\n                last_pos = pos\n\n            except Exception as e:\n                break\n\ndef test_random_reader2(example_paths):\n    print('test_random_reader2')\n    for example_path in example_paths:\n        file_reader = tfrecords.tf_record_random_reader(example_path, options=options,with_share_memory=True)\n        skip_bytes = 0\n        offset_list = file_reader.read_offsets(skip_bytes)\n        for offset,length in offset_list:\n            x, _ = file_reader.read(offset)\n            print(x)\n\ntest_write('d:/example.tfrecords0',3,'file0')\n\nexample_paths = tfrecords.glob('d:/example.tfrecords*')\nprint(example_paths)\ntest_record_iterator(example_paths)\nprint()\ntest_random_reader(example_paths)\nprint()\ntest_random_reader2(example_paths)\nprint()\n```\n\n### 2. leveldb read and write demo \n```python\n# -*- coding: utf-8 -*-\n# @Time    : 2022/9/8 15:49\n\nfrom tfrecords import LEVELDB\ndb_path = 'd:/example_leveldb'\ndef test_write(db_path):\n    options = LEVELDB.LeveldbOptions(create_if_missing=True, error_if_exists=False)\n    file_writer = LEVELDB.Leveldb(db_path,options)\n\n    keys,values = [],[]\n    for i in range(30):\n        keys.append(b\"input_\" + str(i).encode())\n        keys.append(b\"label_\" + str(i).encode())\n        values.append(b\"xiaoming\" + str(i).encode())\n        values.append(b\"zzs\" + str(i).encode())\n        if (i + 1) % 1000 == 0:\n            file_writer.put_batch(keys,values)\n            keys.clear()\n            values.clear()\n    if len(keys):\n        file_writer.put_batch(keys, values)\n        keys.clear()\n        values.clear()\n\n    file_writer.close()\ndef test_read(db_path):\n    options = LEVELDB.LeveldbOptions(create_if_missing=False, error_if_exists=False)\n    reader = LEVELDB.Leveldb(db_path,options)\n\n    def show():\n        it = reader.get_iterater(reverse=False)\n        i = 0\n        for item in it:\n            print(i,item)\n            i += 1\n\n    def test_find(key):\n        value = reader.get(key)\n        print('find', type(value), value)\n\n    show()\n\n    test_find(b'input_0')\n    test_find(b'input_5')\n    test_find(b'input_10')\n\n    reader.close()\n\ntest_write(db_path)\ntest_read(db_path)\n```\n\n\n### 3. lmdb read and write demo \n```python\n# -*- coding: utf-8 -*-\n# @Time    : 2022/9/8 15:49\n\nfrom tfrecords import LMDB\ndb_path = 'd:/example_lmdb'\ndef test_write(db_path):\n    options = LMDB.LmdbOptions(env_open_flag = 0,\n                env_open_mode = 0o664, # 8\u8fdb\u5236\u8868\u793a\n                txn_flag = 0,\n                dbi_flag = 0,\n                put_flag = 0)\n    file_writer = LMDB.Lmdb(db_path,options,map_size=1024 * 1024 * 10)\n    keys, values = [], []\n    for i in range(30):\n        keys.append(b\"input_\" + str(i).encode())\n        keys.append(b\"label_\" + str(i).encode())\n        values.append(b\"xiaoming_\" + str(i).encode())\n        values.append(b\"zzs_\" + str(i).encode())\n        if (i + 1) % 1000 == 0:\n            file_writer.put_batch(keys, values)\n            keys.clear()\n            values.clear()\n    if len(keys):\n        file_writer.put_batch(keys, values)\n    file_writer.close()\ndef test_read(db_path):\n    options = LMDB.LmdbOptions( env_open_flag = LMDB.LmdbFlag.MDB_RDONLY,\n                env_open_mode = 0o664, # 8\u8fdb\u5236\u8868\u793a\n                txn_flag = LMDB.LmdbFlag.MDB_RDONLY,\n                dbi_flag = 0,\n                put_flag = 0)\n    reader = LMDB.Lmdb(db_path,options,map_size=0)\n\n    def show():\n        it = reader.get_iterater(reverse=False)\n        i = 0\n        for item in it:\n            print(i,item)\n            i += 1\n\n\n    def test_find(key):\n        value = reader.get(key)\n        print('find', type(value), value)\n\n    show()\n    test_find('input0')\n    test_find('input5')\n    test_find(b'input10')\n    reader.close()\n\ntest_write(db_path)\ntest_read(db_path)\n\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/ssbuild/tfrecords",
+            "keywords": "tfrecords,tfrecords,tfrecord,records,datasets",
+            "license": "Apache 2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "tfrecords",
+            "package_url": "https://pypi.org/project/tfrecords/",
+            "platform": "linux_x86_64",
+            "project_url": "https://pypi.org/project/tfrecords/",
+            "project_urls": {
+                "Homepage": "https://github.com/ssbuild/tfrecords"
+            },
+            "release_url": "https://pypi.org/project/tfrecords/0.2.6/",
+            "requires_dist": null,
+            "requires_python": ">=3, <4",
+            "summary": "tfrecords: simplify and transplant the tfrecords",
+            "version": "0.2.6",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17882649,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "08f1fdd4141eb2239dac3e0e37544d52a52e44af213f148b30218875d4365edf",
+                    "md5": "e041284efc63bab84a7a408fc1192d96",
+                    "sha256": "b57b6d57d6785e75fa9d5f51968f6ff8fad0b83aa530815ef539d84c112b2a00"
+                },
+                "downloads": -1,
+                "filename": "tfrecords-0.2.6-cp310-cp310-manylinux2014_aarch64.whl",
+                "has_sig": false,
+                "md5_digest": "e041284efc63bab84a7a408fc1192d96",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3, <4",
+                "size": 2384649,
+                "upload_time": "2023-04-27T12:10:39",
+                "upload_time_iso_8601": "2023-04-27T12:10:39.980684Z",
+                "url": "https://files.pythonhosted.org/packages/08/f1/fdd4141eb2239dac3e0e37544d52a52e44af213f148b30218875d4365edf/tfrecords-0.2.6-cp310-cp310-manylinux2014_aarch64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "bad1a54890fd3a7a24a10381b9ffc7987a75ee6b0dfa38b47fa1aa9500ae3812",
+                    "md5": "835edf1ac7207d93c642f43eb1895e51",
+                    "sha256": "8cd9caa78c56daca5e5f0b3f9f3bb43324b86eeca9d94c0cd44f0df4a486f78b"
+                },
+                "downloads": -1,
+                "filename": "tfrecords-0.2.6-cp310-cp310-manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "835edf1ac7207d93c642f43eb1895e51",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3, <4",
+                "size": 2528264,
+                "upload_time": "2023-04-27T12:10:48",
+                "upload_time_iso_8601": "2023-04-27T12:10:48.615272Z",
+                "url": "https://files.pythonhosted.org/packages/ba/d1/a54890fd3a7a24a10381b9ffc7987a75ee6b0dfa38b47fa1aa9500ae3812/tfrecords-0.2.6-cp310-cp310-manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5be42be35eb14e5f9fb975abda5c9629aaa626657571b9e4b6ce4387735c74d6",
+                    "md5": "c4b6424b751dfcbe2084c4d7ab1c7cca",
+                    "sha256": "a355884ddc2bdb06464a30fe3130f2f32b48dc3e904323b2c95eab92d8c82992"
+                },
+                "downloads": -1,
+                "filename": "tfrecords-0.2.6-cp310-cp310-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "c4b6424b751dfcbe2084c4d7ab1c7cca",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3, <4",
+                "size": 1125719,
+                "upload_time": "2023-04-27T12:15:50",
+                "upload_time_iso_8601": "2023-04-27T12:15:50.707021Z",
+                "url": "https://files.pythonhosted.org/packages/5b/e4/2be35eb14e5f9fb975abda5c9629aaa626657571b9e4b6ce4387735c74d6/tfrecords-0.2.6-cp310-cp310-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f9120d5087d2c808c5d76d33b73db40ab3c9242dd3aa92327734cde2883015f0",
+                    "md5": "db2d7d8907bad7adef740baee1e83572",
+                    "sha256": "eba583dfba09fb719e4ef5daa32cc77f9a9d661520f518e9a0a9cd7cec36182f"
+                },
+                "downloads": -1,
+                "filename": "tfrecords-0.2.6-cp311-cp311-manylinux2014_aarch64.whl",
+                "has_sig": false,
+                "md5_digest": "db2d7d8907bad7adef740baee1e83572",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3, <4",
+                "size": 2384472,
+                "upload_time": "2023-04-27T12:10:52",
+                "upload_time_iso_8601": "2023-04-27T12:10:52.139697Z",
+                "url": "https://files.pythonhosted.org/packages/f9/12/0d5087d2c808c5d76d33b73db40ab3c9242dd3aa92327734cde2883015f0/tfrecords-0.2.6-cp311-cp311-manylinux2014_aarch64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "94b5586af735a2ae7c296eebfa6c0dce619c0189f170634b452908cbea63ef01",
+                    "md5": "902bc5fd4e8ed1bc02e6b5e24e290a51",
+                    "sha256": "0f26751791fc51a8c6a79032b6fdd7b5debb6af887e2d531a6095ae5f1d90e31"
+                },
+                "downloads": -1,
+                "filename": "tfrecords-0.2.6-cp311-cp311-manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "902bc5fd4e8ed1bc02e6b5e24e290a51",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3, <4",
+                "size": 2528036,
+                "upload_time": "2023-04-27T12:10:56",
+                "upload_time_iso_8601": "2023-04-27T12:10:56.263883Z",
+                "url": "https://files.pythonhosted.org/packages/94/b5/586af735a2ae7c296eebfa6c0dce619c0189f170634b452908cbea63ef01/tfrecords-0.2.6-cp311-cp311-manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e1af8737abf84e4b2c023f5c4ae8f0ce755a24847b9e2978d0baad89b97a45f8",
+                    "md5": "8fcf8c98a16fbdefeb7124bd3ccb1da3",
+                    "sha256": "58d0baf419b0920c5ffe78cebe3e74aec99b0d68cb64df185ad99af52a54dde2"
+                },
+                "downloads": -1,
+                "filename": "tfrecords-0.2.6-cp311-cp311-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "8fcf8c98a16fbdefeb7124bd3ccb1da3",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3, <4",
+                "size": 1125701,
+                "upload_time": "2023-04-27T12:15:53",
+                "upload_time_iso_8601": "2023-04-27T12:15:53.455471Z",
+                "url": "https://files.pythonhosted.org/packages/e1/af/8737abf84e4b2c023f5c4ae8f0ce755a24847b9e2978d0baad89b97a45f8/tfrecords-0.2.6-cp311-cp311-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e2da22949924cfb451bfa5048532e3b7268671436c08841e01fb3428584950d1",
+                    "md5": "ed4f7fb2760833bf39dae216aa2ecc74",
+                    "sha256": "d8117a5fba398dc9c984be0d571d193c98abd737f846d8b32c355baa40605576"
+                },
+                "downloads": -1,
+                "filename": "tfrecords-0.2.6-cp36-cp36m-manylinux2014_aarch64.whl",
+                "has_sig": false,
+                "md5_digest": "ed4f7fb2760833bf39dae216aa2ecc74",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp36",
+                "requires_python": ">=3, <4",
+                "size": 2386624,
+                "upload_time": "2023-04-27T12:10:59",
+                "upload_time_iso_8601": "2023-04-27T12:10:59.438319Z",
+                "url": "https://files.pythonhosted.org/packages/e2/da/22949924cfb451bfa5048532e3b7268671436c08841e01fb3428584950d1/tfrecords-0.2.6-cp36-cp36m-manylinux2014_aarch64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "47eb0cb7d12065e74a195b8926f28f15cdc5fe14d980cdad8a87fc293d8531e7",
+                    "md5": "50cbf8ad3b268fdcc9b2e714b350e748",
+                    "sha256": "ce2677504bfb80196cde7c22cc932fea4cd5ac58d6b2904a027a34ae37034fa5"
+                },
+                "downloads": -1,
+                "filename": "tfrecords-0.2.6-cp36-cp36m-manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "50cbf8ad3b268fdcc9b2e714b350e748",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp36",
+                "requires_python": ">=3, <4",
+                "size": 2530971,
+                "upload_time": "2023-04-27T12:11:03",
+                "upload_time_iso_8601": "2023-04-27T12:11:03.450273Z",
+                "url": "https://files.pythonhosted.org/packages/47/eb/0cb7d12065e74a195b8926f28f15cdc5fe14d980cdad8a87fc293d8531e7/tfrecords-0.2.6-cp36-cp36m-manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "816a983643eb279c58bcbb7dfd387746dda5d13649f05b3a332667d82c18c1cc",
+                    "md5": "d6f2718353aa46586375f50e7f27c7a0",
+                    "sha256": "180542e722611783249bdc1f49ad9041a170e075f1b6191466a01b76e4cebcc4"
+                },
+                "downloads": -1,
+                "filename": "tfrecords-0.2.6-cp36-cp36m-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "d6f2718353aa46586375f50e7f27c7a0",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp36",
+                "requires_python": ">=3, <4",
+                "size": 1124726,
+                "upload_time": "2023-04-27T12:15:56",
+                "upload_time_iso_8601": "2023-04-27T12:15:56.590682Z",
+                "url": "https://files.pythonhosted.org/packages/81/6a/983643eb279c58bcbb7dfd387746dda5d13649f05b3a332667d82c18c1cc/tfrecords-0.2.6-cp36-cp36m-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "b0ef937c7d8d445b59e49d4067aada0d8e8b76582edb1cce29d6fde3b771f378",
+                    "md5": "4a12fc6b2c65e0b3843ac0fe4ee47ccd",
+                    "sha256": "83cd822df796923702f9f885f0f5176927dada5e60903ae0f3be204e080ecdff"
+                },
+                "downloads": -1,
+                "filename": "tfrecords-0.2.6-cp37-cp37m-manylinux2014_aarch64.whl",
+                "has_sig": false,
+                "md5_digest": "4a12fc6b2c65e0b3843ac0fe4ee47ccd",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3, <4",
+                "size": 2386602,
+                "upload_time": "2023-04-27T12:11:07",
+                "upload_time_iso_8601": "2023-04-27T12:11:07.628127Z",
+                "url": "https://files.pythonhosted.org/packages/b0/ef/937c7d8d445b59e49d4067aada0d8e8b76582edb1cce29d6fde3b771f378/tfrecords-0.2.6-cp37-cp37m-manylinux2014_aarch64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "4c7157158c7748990d5e492ae5e3ebb8995f7f5bc1f2778626448668e8b9d4bb",
+                    "md5": "90effd9b32b75adb527d93795edbc61c",
+                    "sha256": "78bd9d04569e9de6a8bbf936b6a27b4455a29575472cdc7431211d571fd6e286"
+                },
+                "downloads": -1,
+                "filename": "tfrecords-0.2.6-cp37-cp37m-manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "90effd9b32b75adb527d93795edbc61c",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3, <4",
+                "size": 2531510,
+                "upload_time": "2023-04-27T12:11:18",
+                "upload_time_iso_8601": "2023-04-27T12:11:18.087797Z",
+                "url": "https://files.pythonhosted.org/packages/4c/71/57158c7748990d5e492ae5e3ebb8995f7f5bc1f2778626448668e8b9d4bb/tfrecords-0.2.6-cp37-cp37m-manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2dfd630e61d2a6a9844de0dbc84192884059b305c8d36ff1ac2e8745c86464b8",
+                    "md5": "133e11848e6120c40b0767a9e0066a98",
+                    "sha256": "7558233fb92ab82597d643f4dbeea34f8f29b5861c82b610f84fa562500f122a"
+                },
+                "downloads": -1,
+                "filename": "tfrecords-0.2.6-cp37-cp37m-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "133e11848e6120c40b0767a9e0066a98",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3, <4",
+                "size": 1124705,
+                "upload_time": "2023-04-27T12:15:59",
+                "upload_time_iso_8601": "2023-04-27T12:15:59.209872Z",
+                "url": "https://files.pythonhosted.org/packages/2d/fd/630e61d2a6a9844de0dbc84192884059b305c8d36ff1ac2e8745c86464b8/tfrecords-0.2.6-cp37-cp37m-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ed15aedacb2cc3ffa01b834a56f3fe7671302fb9fca8d67012df6f65889e67e8",
+                    "md5": "29fc42bd1158dd3b294d697934b5d548",
+                    "sha256": "54052699e6c5ebea27d8be0f06f701b14e5674cbe1b44147d22c55bb6f5e6b23"
+                },
+                "downloads": -1,
+                "filename": "tfrecords-0.2.6-cp38-cp38-manylinux2014_aarch64.whl",
+                "has_sig": false,
+                "md5_digest": "29fc42bd1158dd3b294d697934b5d548",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3, <4",
+                "size": 2382762,
+                "upload_time": "2023-04-27T12:11:22",
+                "upload_time_iso_8601": "2023-04-27T12:11:22.214608Z",
+                "url": "https://files.pythonhosted.org/packages/ed/15/aedacb2cc3ffa01b834a56f3fe7671302fb9fca8d67012df6f65889e67e8/tfrecords-0.2.6-cp38-cp38-manylinux2014_aarch64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "353a3711293f83e639ff53cd9f280675f87e905631ef6d143c3e891f23c4e1b9",
+                    "md5": "2c6cd7190e64d186ec36f7c9e2ab7bfb",
+                    "sha256": "9b23b2deaa8b6eee93f19a1ee94b43670d7a775d804a6180e34fdf06d0a6a228"
+                },
+                "downloads": -1,
+                "filename": "tfrecords-0.2.6-cp38-cp38-manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "2c6cd7190e64d186ec36f7c9e2ab7bfb",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3, <4",
+                "size": 2527866,
+                "upload_time": "2023-04-27T12:11:26",
+                "upload_time_iso_8601": "2023-04-27T12:11:26.019093Z",
+                "url": "https://files.pythonhosted.org/packages/35/3a/3711293f83e639ff53cd9f280675f87e905631ef6d143c3e891f23c4e1b9/tfrecords-0.2.6-cp38-cp38-manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ef21cacee942eb357d199c23dc521882f515bcf2ca370b1b327c504de6f39f99",
+                    "md5": "b5f964c208fb2d8e0cfd7fae5acd5a4b",
+                    "sha256": "41dbb5e46987382fea09813ad2e51b2a992e413269e88b7435027a6391fec146"
+                },
+                "downloads": -1,
+                "filename": "tfrecords-0.2.6-cp38-cp38-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "b5f964c208fb2d8e0cfd7fae5acd5a4b",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3, <4",
+                "size": 1125503,
+                "upload_time": "2023-04-27T12:16:01",
+                "upload_time_iso_8601": "2023-04-27T12:16:01.800016Z",
+                "url": "https://files.pythonhosted.org/packages/ef/21/cacee942eb357d199c23dc521882f515bcf2ca370b1b327c504de6f39f99/tfrecords-0.2.6-cp38-cp38-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "1ae64c5cf1f22dc1b71b124d5916ec8f0728de6e729b663b77d7ba91f2dfcd4f",
+                    "md5": "174a20665b7925867a4af7d10a3197c6",
+                    "sha256": "6fc16311f2e0e3f14e5bb12c9437ca0786a7acb65ec74525c4a7921d79d5874c"
+                },
+                "downloads": -1,
+                "filename": "tfrecords-0.2.6-cp39-cp39-manylinux2014_aarch64.whl",
+                "has_sig": false,
+                "md5_digest": "174a20665b7925867a4af7d10a3197c6",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3, <4",
+                "size": 2384697,
+                "upload_time": "2023-04-27T12:11:32",
+                "upload_time_iso_8601": "2023-04-27T12:11:32.632216Z",
+                "url": "https://files.pythonhosted.org/packages/1a/e6/4c5cf1f22dc1b71b124d5916ec8f0728de6e729b663b77d7ba91f2dfcd4f/tfrecords-0.2.6-cp39-cp39-manylinux2014_aarch64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c3ffe569aa9a5dd5fb616fe8e718c5a537efa535b12b4c1bc6fc77afba0b9a49",
+                    "md5": "fe697ab7142de177c1cb6c71f7e0585b",
+                    "sha256": "61c49702d42d059147d85b74286a103fa32bb5eed170df4e6072b32d22daad13"
+                },
+                "downloads": -1,
+                "filename": "tfrecords-0.2.6-cp39-cp39-manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "fe697ab7142de177c1cb6c71f7e0585b",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3, <4",
+                "size": 2529140,
+                "upload_time": "2023-04-27T12:11:36",
+                "upload_time_iso_8601": "2023-04-27T12:11:36.547313Z",
+                "url": "https://files.pythonhosted.org/packages/c3/ff/e569aa9a5dd5fb616fe8e718c5a537efa535b12b4c1bc6fc77afba0b9a49/tfrecords-0.2.6-cp39-cp39-manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "0504f392a2049760781234f460f402c6e1ad7bea926e4e7b82d02a95565bf25e",
+                    "md5": "256456c785bc99923aabf89f40f35b28",
+                    "sha256": "8c32a50542a25a5165f205bb6a618f09f682d2a5aa1546d017a7e3dbfb75646c"
+                },
+                "downloads": -1,
+                "filename": "tfrecords-0.2.6-cp39-cp39-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "256456c785bc99923aabf89f40f35b28",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3, <4",
+                "size": 1115413,
+                "upload_time": "2023-04-27T12:16:05",
+                "upload_time_iso_8601": "2023-04-27T12:16:05.204689Z",
+                "url": "https://files.pythonhosted.org/packages/05/04/f392a2049760781234f460f402c6e1ad7bea926e4e7b82d02a95565bf25e/tfrecords-0.2.6-cp39-cp39-win_amd64.whl",
                 "yanked": false,
                 "yanked_reason": null
             }
