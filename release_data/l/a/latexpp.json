@@ -1,0 +1,94 @@
+{
+    "0.2.0a1": {
+        "info": {
+            "author": "Philippe Faist",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "latexpp\n=======\n\nLatex preprocessor \u2014 apply macro definitions, remove comments, and more\n\n*Disclaimer: latexpp is still at an experimental development stage.*\n\n.. image:: https://img.shields.io/github/license/phfaist/latexpp.svg?style=flat\n   :target: https://github.com/phfaist/latexpp/blob/master/LICENSE.txt\n   \n\nInstallation\n------------\n\nYou can install `latexpp` using `pip` directly from `latexpp`'s github repo:\n\n.. code-block:: sh\n\n    > pip install git+https://github.com/phfaist/latexpp.git\n\nHow it works\n------------\n\nThe latex preprocessor ``latexpp`` reads your main latex document and copies it\nto an output directory while applying a series of \"fixes\" that you can\nconfigure.  For instance, you can remove comments, you can include files that\nyou input with ``\\input`` macros, or you can replace custom macros by their\nLaTeX expansion.\n\nYou run ``latexpp`` in a folder with a ``lppconfig.yml`` file that specifies the\nnecessary information such as the main LaTeX document, the output directory, and\nwhich fixes to apply.\n\nSample ``lppconfig.yml``:\n\n.. code-block:: yaml\n\n  # latexpp config for MyDocument.tex\n  #\n  # This is YAML syntax -- google \"YAML tutorial\" to get a quick intro.  Be\n  # careful with spaces since indentation is important.\n\n  # the master LaTeX document -- this file will not be modified, all output will\n  # be produced in the output_dir\n  fname: 'MyDocument.tex'\n\n  # output file(s) will be created in this directory, originals will not be\n  # modified\n  output_dir: 'latexpp_output'\n  \n  # main document file name in the output directory\n  output_fname: 'paper.tex'\n\n  # specify list of fixes to apply, in the given order\n  fixes:\n\n    # replace \\input{...} directives by the contents of the included file\n    - 'latexpp.fixes.input.EvalInput'\n  \n    # remove all comments\n    - 'latexpp.fixes.comments.RemoveComments'\n\n    # copy any style files (.sty) that are used in the document and that\n    # are present in the current directory to the output directory\n    - 'latexpp.fixes.usepackage.CopyLocalPkgs'\n  \n    # copy figure files to the output directory and rename them fig-1.xxx,\n    # fig-2.xxx, etc.\n    - 'latexpp.fixes.figures.CopyAndRenameFigs'\n\n    # Replace \\bibliography{...} by \\input{xxx.bbl} and copy the bbl file to the\n    # output directory.  Make sure you run (pdf)latex on the main docuemnt\n    # before running latexpp\n    - 'latexpp.fixes.bib.CopyAndInputBbl'\n  \n    # Expand some macros. Latexpp doesn't parse \\newcommand's, so you need to\n    # specify here the LaTeX code that the macro should be expanded to. If the\n    # macro has arguments, specify the nature of the arguments here in the\n    # 'argspec:' key (a '*' is an optional * character, a '[' one optional\n    # square-bracket-delimited argument, and a '{' is a mandatory argument). The\n    # argument values are available via the placeholders %(1)s, %(2)s, etc. Make\n    # sure to use single quotes for strings that contain \\ backslashes.\n    - name: 'latexpp.fixes.macro_subst.Subst'\n      config:\n        macros:\n          # \\tr         -->  \\operatorname{tr}\n          tr: '\\operatorname{tr}'\n          # \\ket{\\psi}  -->  \\lvert{\\psi}\\rangle\n          ket:\n            argspec: '{'\n            repl: '\\lvert{%(1)s}\\rangle'\n          # \\braket{\\psi}{\\phi}  -->  \\langle{\\psi}\\vert{\\phi}\\rangle\n          braket:\n            argspec: '{{'\n            repl: '\\langle{%(1)s}\\vert{%(2)s}\\rangle'\n\nThe config file follows standard YAML syntax (if you're in doubt, google a YAML\ntutorial).\n\nDocumentation is available at `latexpp.readthedocs.io\n<https://latexpp.readthedocs.io/>`_. You can also explore the ``latexpp/fixes/``\ndirectory for the list of possible fixes.  The documentation is still a little\nsparse at the moment (I wrote this preprocessor in the\nmatter of a few days, and I won't have tons of time to devote to it). But the\npython source is fairly short and should be relatively decipherable.\n\nEach fix is specified by a qualified python class name.  For instance,\n``latexpp.fixes.comments.RemoveComments`` invokes class ``RemoveComments`` from\nthe python module ``latexpp.fixes.comments``.  You can specify custom arguments\nto the class constructor by using the syntax with the 'name:' and 'config:' keys\nas shown above.  The keys in each 'config:' section are directly passed on to\nthe class constructor as corresponding keyword arguments.\n\nThe fixes in the ``latexpp/fixes/pkg/`` directory are those fixes that are\nsupposed to apply all definitions of the corresponding package in order to\nremove a dependency on that package.\n\nIt's also straightforward to write your own fix classes to do more complicated\nstuff.  Create a python package (a new folder ``mypackage`` with an empty\n``__init__.py`` file) and create a python module (e.g. ``myfixmodule.py``) in\nthat package that defines your fix class (e.g. ``MyFix``).  You can get\ninspiration from one of the simple examples in the ``latexpp/fixes/`` folder.\nSet up your ``$PYTHONPATH`` so that your python package is exposed to python.\nThen simply specify the pacakge/module your fix is located in in the YAML file,\ne.g., ``mypackage.myfixmodule.MyFix`` instead of\n``latexpp.fixes.xxxxx.YYYY``.\n\nHow it actually works\n---------------------\n\nThe ``latexpp`` preprocessor relies on `pylatexenc 2.0\n<https://github.com/phfaist/pylatexenc>`_ to parse the latex document into an\ninternal node structure.  For instance, the chunk of latex code::\n  \n  Hello, \\textit{world}! % show a greeting\n\nwill be parsed into a list of four nodes, a \u2018normal characters node\u2019 ``\"Hello,\n\"``, a \u2018macro node\u2019 ``\\textit`` with argument a \u2018group node\u2019 ``{world}`` which\nitself contains a \u2018normal characters node\u2019 ``world``, a \u2018normal characters node\u2019\n``\"! \"``, and a \u2018latex comment node\u2019 ``% show a greeting``.  The structure is\nrecursive, with e.g. macro arguments and environment contents themselves\nrepresented as nodes which can contain further macros and environments.  See\n`pylatexenc.latexwalker\n<https://pylatexenc.readthedocs.io/en/latest/latexwalker/>`_ for more\ninformation.  The `pylatexenc` library has a list of some known macros and\nenvironments, and knows how to parse their arguments.  Some fixes in `latexpp`\nadd their own macro and environment definitions.\n\nOnce the latex document is parsed into the node structure, the document is\nprocessed by the given list of fixes. Each fix is called in turn. Each fix\ntraverses the document node structure and applies any relevant changes.\n\n\nLicense\n-------\n\n\\ (C) 2019 Philippe Faist, philippe dot faist <at@at> bluewin dot ch\n\nMIT Licence, see License.txt\n\n",
+            "description_content_type": "text/x-rst",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "latexpp",
+            "package_url": "https://pypi.org/project/latexpp/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/latexpp/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/latexpp/0.2.0a1/",
+            "requires_dist": [
+                "pylatexenc (>=3.0a15)",
+                "colorlog (>=6.0.0a4)",
+                "PyYAML (>=6.0,<7.0)"
+            ],
+            "requires_python": ">=3.7,<4.0",
+            "summary": "Latex preprocessor \u2014 apply macro definitions, remove comments, and more",
+            "version": "0.2.0a1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17869611,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "61b16c8b8153b5e28db63aadad57613bc89d1ab982818b7acb4124d4b2a79e3e",
+                    "md5": "d70639f7482555c62ec412033c19340f",
+                    "sha256": "c227d56451821f6d209983d9585042e2dfd69dd45ca5b63ba685e770c1ebca75"
+                },
+                "downloads": -1,
+                "filename": "latexpp-0.2.0a1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "d70639f7482555c62ec412033c19340f",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7,<4.0",
+                "size": 92295,
+                "upload_time": "2023-04-26T18:38:27",
+                "upload_time_iso_8601": "2023-04-26T18:38:27.162564Z",
+                "url": "https://files.pythonhosted.org/packages/61/b1/6c8b8153b5e28db63aadad57613bc89d1ab982818b7acb4124d4b2a79e3e/latexpp-0.2.0a1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "78683086b6cac1c3fcbc8eecef35a26f948e0aca46e3b0048845e450c2ad1351",
+                    "md5": "d95eeec4a136e3f95d88b392d00225ea",
+                    "sha256": "18a7fc86001942a0247410492ad82dc764e4463d871e0643465e2dd93cb3eac1"
+                },
+                "downloads": -1,
+                "filename": "latexpp-0.2.0a1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "d95eeec4a136e3f95d88b392d00225ea",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7,<4.0",
+                "size": 79777,
+                "upload_time": "2023-04-26T18:38:28",
+                "upload_time_iso_8601": "2023-04-26T18:38:28.734839Z",
+                "url": "https://files.pythonhosted.org/packages/78/68/3086b6cac1c3fcbc8eecef35a26f948e0aca46e3b0048845e450c2ad1351/latexpp-0.2.0a1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

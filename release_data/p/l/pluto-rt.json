@@ -1,0 +1,90 @@
+{
+    "0.1.0": {
+        "info": {
+            "author": "",
+            "author_email": "Scot Hacker <shacker@birdhouse.org>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# Pluto: Real-time web results for long-running processes\n\nAny time you have a need to trigger a long-running process from a web view,\nyou run into Python's blocking nature. Nothing will be displayed until the\nprocess is complete, and you'll hit timeouts if you exceed the default timeout\nfor your web application process.\n\nTo solve the long-running aspect, we turn to background workers like django-q\nor django-celery. But then the user has no insight into what the background\nworker is doing.\n\nThis system solves that by using a library called [QR3](https://pypi.org/project/qr3/), which\nutilizes Redis as a message queuing service. Messages can be placed on the queue and their order is\nremembered. As messages are retrieved from the queue, it automatically delivers the\noldest ones first.\n\nhttps://user-images.githubusercontent.com/102694/233860792-652f8790-6f31-4dd8-8c37-fc479171c576.mov\n\nThe overall strategy is this:\n\n1. Invoke your background processor (worker) with a unique queue name\n1. The worker places messages onto the queue, associated with that name\n1. A private internal API retrieves and removes the oldest `n` messages from that queue\n1. HTMX polling from the web view appends the results of each gulp to a display table\n\n\n## Prerequisites\n\nWe assume you already have these installed and working\n\n- A running Django project\n- A running Redis server\n- A base project template called `base.html` (use a custom template if not - see below)\n- Your `base.html` includes HTMX\n- A runnning background processor such as django-q or django-celery\n- A standalone function that processes data and whose real-time output you want to display\n- A `KEY_PREFIX` is defined in in your project cache settings, e.g.\n\n```\nCACHES = {\n    \"default\": {\n        ...\n        \"BACKEND\": \"django_redis.cache.RedisCache\",\n        \"KEY_PREFIX\": config.REDIS_PREFIX,  # or some fixed string for your project\n        ...\n    }\n}\n```\n\n## Installation:\n\n- `pip install ~/dev/pluto-rt` (TODO: temporary)\n- Add `pluto_rt` to the list of installed apps in project settings.\n- To enable the internal API (required), add this to your top-level urls.py:\n\n```\npath(\"rt_messages/\", include(\"rt.urls\")),\n```\n\n## Usage\nThere are two views you'll need to control: the view that kicks off the process\nand passes tasks to the background worker, and the view that consumes the results.\n\n### Calling the process\n\nFirst: Work to be done should be defined in a single function, which will be passed to the\nbackground worker.  The calling view should generate a descriptive queue name, made relatively\nunique with an ID (upload ID works well for this). It should invoke your background processor with\nthat function and the queue name as arguments, then redirect to the display view. For example:\n\n```\nfrom django.views import View\n\nclass Home(View):\n    \"\"\"\n    On POST, receive upload ID (or something unique-ish), generate a queue_name,\n    and call a background process that acceps the queue_name. Then redirect\n    to the real-time results display view.\n    \"\"\"\n\n    def get(self, request):\n        ctx = {}\n        return render(request, \"home.html\", ctx)\n\n    def post(self, request):\n        upload_id = request.POST.get(\"upload_id\")\n        queue_name = f\"demo_run_{upload_id}\"\n        async_task(\n            sample_ops_function,\n            queue_name=queue_name,\n        )\n        return redirect(reverse(\"rt_demo\", kwargs={\"queue_name\": queue_name}))\n```\n\n### Background worker\n\nThe invocation above refers to `sample_ops_function` which can be any function\nin your project. The function *must* accept a `queue_name` argument. This demo\nexample just generates some random messages with random states and pushes them\nonto the queue.\n\n```\nfrom pluto_rt.views import get_rt_queue_handle\nfrom faker import Faker\nimport random\n\n\ndef sample_ops_function(queue_name: str):\n    \"\"\"\n    Demo function that processes data, such as reading and\n    handling rows of an ETL job (reading a spreadsheet, sending email, whatever.)\n    In this case, we just generate `n` random messages and put them\n    on the queue. The html template is responsible for popping those\n    messages off the queue. In real-world use, this function would be some\n    long-running ETL or other task that can be reasonably chunked.\n\n    Args:\n        Required queue_name (generated in the calling view and passed in)\n\n    \"\"\"\n    mqueue = get_rt_queue_handle(queue_name)\n\n    for idx in range(1, 26):\n        # Do some work here, on a row or any task chunk, then emit a message\n\n        msg = f\"{idx}: {Faker().sentence()}\"\n        statuses = [\"success\", \"danger\", \"info\", \"warning\"]\n\n        row_dict = {\"status\": random.choice(statuses), \"msg\": msg}\n        mqueue.push(row_dict)\n\n    row_dict = {\"status\": \"success\", \"msg\": \"Demo complete\"}\n    mqueue.push(row_dict)\n```\n\n### Displaying results\n\nThe invoking view above redirects to the real-time results display view, which would\nbe written something like this:\n\n```\nclass DemoResults(View):\n    \"\"\"\n    This view accepts the queue_name and renders HTML that uses\n    the queue_name to call the internal API, grabbing some number of\n    items, separated by some delay. The template path shown here\n    is provided by pluto-rt and does not need to be created (but feel\n    free to override).\n    \"\"\"\n\n    def get(self, request, queue_name: str):\n        \"\"\"\n        Real-time results display of demo report run\n        \"\"\"\n\n        ctx = {\n            \"queue_name\": queue_name,\n            \"num_per_gulp\": 3,\n            \"interval_seconds\": 2\n        }\n\n        return render(request, \"pluto_rt/rt_results.html\", ctx)\n\n```\n\nEach use case is different, so modify the numeric args to suit.\n\n\n\n\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "pluto-rt",
+            "package_url": "https://pypi.org/project/pluto-rt/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/pluto-rt/",
+            "project_urls": {
+                "Homepage": "https://github.com/shacker/pluto"
+            },
+            "release_url": "https://pypi.org/project/pluto-rt/0.1.0/",
+            "requires_dist": [
+                "qr3"
+            ],
+            "requires_python": ">=3.10",
+            "summary": "A reusable Django app providing a kit for storing and displaying messages from a background processor into a web view in real time, as the processor works.",
+            "version": "0.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17874132,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "641fbdb502315a70b6eff29a13d16b21bfd48ba89ec7b41a3efab4a2563a26ef",
+                    "md5": "35476247c19b85cde738ab2f0dabb568",
+                    "sha256": "3123847bebc1d61395d5a880294653c7dc42c53765e541615c7f4f2dbeb65b63"
+                },
+                "downloads": -1,
+                "filename": "pluto_rt-0.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "35476247c19b85cde738ab2f0dabb568",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.10",
+                "size": 8173,
+                "upload_time": "2023-04-27T00:20:46",
+                "upload_time_iso_8601": "2023-04-27T00:20:46.694700Z",
+                "url": "https://files.pythonhosted.org/packages/64/1f/bdb502315a70b6eff29a13d16b21bfd48ba89ec7b41a3efab4a2563a26ef/pluto_rt-0.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "bc7cd1c12762167408be066757dbfad00fdc983aefd4aa30bcadb806581d9131",
+                    "md5": "13488f2ddbf8913738e979d50499aa80",
+                    "sha256": "239757205af898d3ee83151b6cc767ec677fa7e9c02dbe11c65a5da9186492c3"
+                },
+                "downloads": -1,
+                "filename": "pluto-rt-0.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "13488f2ddbf8913738e979d50499aa80",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.10",
+                "size": 5562,
+                "upload_time": "2023-04-27T00:20:49",
+                "upload_time_iso_8601": "2023-04-27T00:20:49.583469Z",
+                "url": "https://files.pythonhosted.org/packages/bc/7c/d1c12762167408be066757dbfad00fdc983aefd4aa30bcadb806581d9131/pluto-rt-0.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

@@ -49,7 +49,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17749205,
+        "last_serial": 17868683,
         "urls": [
             {
                 "comment_text": "",
@@ -161,7 +161,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17749205,
+        "last_serial": 17868683,
         "urls": [
             {
                 "comment_text": "",
@@ -272,7 +272,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17749205,
+        "last_serial": 17868683,
         "urls": [
             {
                 "comment_text": "",
@@ -382,7 +382,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17749205,
+        "last_serial": 17868683,
         "urls": [
             {
                 "comment_text": "",
@@ -444,7 +444,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "------------\nDataJunction\n------------\n\nDataJunction (DJ) is a **metrics platform** to store and manage metric definitions. Metrics are defined using **ANSI SQL**, are **database agnostic** and can be computed via a **REST API** or **SQL** interface.\n\nWhat does that mean?\n--------------------\n\nDJ allows users to define metrics once, and reuse them in different databases. This offers a couple benefits:\n\n1. The same metric definition can be used in different databases, ensuring that the results are consistent. A daily pipeline might use Hive to compute metrics in batch mode, while a dashboard application might use a faster database like Druid.\n2. Users don't have to worry where or how a metric is computed -- all they need to know is the metric name. Tools can leverage the DJ semantic layer to allow users to easily filter and group metrics by any available dimensions.\n\nAs an example, imagine that we have 2 databases, Hive and Trino. In DJ they are represented as YAML files:\n\n.. code-block:: YAML\n\n    # databases/hive.yaml\n    description: A (slow) Hive database\n    URI: hive://localhost:10000/default\n    read_only: false\n    cost: 10\n\n.. code-block:: YAML\n\n    # databases/trino.yaml\n    description: A (fast) Trino database\n    URI: trino://localhost:8080/hive/default\n    read_only: false\n    cost: 1\n\nNow imagine we have a table in those databases, also represented as a YAML file:\n\n.. code-block:: YAML\n\n    # nodes/comments.yaml\n    type: source\n    description: A fact table with comments\n    tables:\n      hive:\n        - catalog: null\n          schema: default\n          table: fact_comments\n      trino:\n        - catalog: hive\n          schema: default\n          table: fact_comments\n\nSo far we've only described what already exists. Let's add a metric called ``num_comments``, which keeps track of how many comments have been posted so far:\n\n.. code-block:: YAML\n\n    # nodes/num_comments.yaml\n    type: metric\n    description: The number of comments\n    query: SELECT COUNT(*) FROM comments\n\nNow we run a command to parse all the configuration files and index them in a database:\n\n.. code-block:: bash\n\n    $ dj compile\n\nAnd we start a development server:\n\n.. code-block:: bash\n\n    $ uvicorn dj.api.main:app --host 127.0.0.1 --port 8000 --reload\n\nNow, if we want to compute the metric in our Hive warehouse we can build a pipeline that requests the Hive SQL:\n\n.. code-block:: bash\n\n    curl \"http://localhost:8000/metrics/basic.num_comments/sql/?database_name=postgres\" | jq\n\n.. code-block:: bash\n\n    {\n      \"database_id\": 3,\n      \"sql\": \"SELECT count(1) AS cnt \\nFROM (SELECT basic.comments.id AS id, basic.comments.user_id AS user_id, basic.comments.timestamp AS timestamp, basic.comments.text AS text \\nFROM basic.comments) AS \\\"basic.source.comments\\\"\"\n    }\n\nWe can also filter and group our metric by any of its dimensions:\n\n.. code-block:: bash\n\n    curl \"http://localhost:8000/metrics/basic.num_comments/\" | jq\n\n.. code-block:: bash\n\n    {\n      \"id\": 12,\n      \"name\": \"basic.num_comments\",\n      \"description\": \"Number of comments\",\n      \"created_at\": \"2023-01-31T04:32:01.091728\",\n      \"updated_at\": \"2023-01-31T04:32:01.091755\",\n      \"query\": \"SELECT COUNT(1) AS cnt\\nFROM basic.source.comments\",\n      \"dimensions\": [\n        \"basic.dimension.users.age\",\n        \"basic.dimension.users.country\",\n        \"basic.dimension.users.full_name\",\n        \"basic.dimension.users.gender\",\n        \"basic.dimension.users.id\",\n        \"basic.dimension.users.preferred_language\",\n        \"basic.dimension.users.secret_number\",\n        \"basic.source.comments.id\",\n        \"basic.source.comments.text\",\n        \"basic.source.comments.timestamp\",\n        \"basic.source.comments.user_id\"\n      ]\n    }\n\nFor example, if we want to group the metric by the user ID, to see how many comments each user made, while filtering out non-positive user IDs:\n\n.. code-block:: bash\n\n    curl \"http://localhost:8000/metrics/basic.num_comments/sql/?database_name=postgres&d=basic.source.comments.user_id&f=basic.source.comments.user_id>0\" | jq\n\nIf instead we want the actual data, instead of the SQL:\n\n.. code-block:: bash\n\n    curl \"http://localhost:8000/metrics/basic.num_comments/data/?database_name=postgres&d=basic.source.comments.user_id&f=basic.source.comments.user_id>0\" | jq\n\nAnd if we omit the ``database_name`` DJ will compute the data using the fastest database (ie, the one with lowest ``cost``). It's also possible to specify tables with different costs:\n\n.. code-block:: YAML\n\n    # nodes/users.yaml\n    description: A dimension table with user information\n    type: dimension\n    tables:\n      hive:\n        - catalog: null\n          schema: default\n          table: dim_users\n          cost: 10\n        - catalog: null\n          schema: default\n          table: dim_fast_users\n          cost: 1\n\nThe tables ``dim_users`` and ``dim_fast_users`` can have different columns. For example, ``dim_fast_users`` could have only a subset of the columns in ``dim_users``, the ones that can be quickly populated. DJ will use the fast table if the available columns can satisfy a given query, otherwise it will fallback to the slow table.\n\nGetting started\n---------------\n\nWhile all the functionality above currently works, DJ is still not ready for production use. Only a very small number of functions are supported, and we are still working towards a 0.1 release. If you are interested in helping take a look at the `issues marked with the \"good first issue\" label <https://github.com/DataJunction/dj/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22>`_.\n",
             "description_content_type": "text/x-rst",
             "docs_url": null,
             "download_url": "",
@@ -493,7 +492,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17749205,
+        "last_serial": 17868683,
         "urls": [
             {
                 "comment_text": "",
@@ -534,6 +533,101 @@
                 "upload_time": "2023-04-18T03:38:43",
                 "upload_time_iso_8601": "2023-04-18T03:38:43.615616Z",
                 "url": "https://files.pythonhosted.org/packages/f6/de/d9847b314f25b92aff374e187b9e73d2af3c7fac4eea2497fc408c897632/datajunction-0.0.1a5.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.1a6": {
+        "info": {
+            "author": "DataJunction Authors",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.12",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# DataJunction Python Client\n\n## Installation\nTo install:\n```\npip install datajunction\n```\n\n## Examples\n\nTo initialize the client:\n\n```python\nfrom datajunction import DJClient\n\ndj = DJClient(\"http://dj-endpoint:8000\")\n```\n\n### Catalogs and Engines\n\nTo list available catalogs for the DJ host:\n```python\ndj.catalogs()\n```\n\nTo list available engines for the DJ host:\n```python\ndj.engines()\n```\n\nTo create a catalog:\n\n```python\nfrom datajunction import Catalog\n\ncatalog = Catalog(\n    name=\"prod\"\n)\ncatalog.publish()\n```\n\nTo create an engine:\n\n```python\nfrom datajunction import Engine\n\nengine = Engine(\n    name=\"spark\",\n    version=\"3.2.2\",\n    uri=\"...\"\n)\nengine.publish()\n```\n\nTo attach an engine to a catalog:\n```python\ncatalog.add_engine(engine)\n```\n\n### Nodes\n\nAll nodes for a given namespace can be found with:\n```python\ndj.namespace(\"default\").nodes()\n```\n\nSpecific node types can be retrieved with:\n```python\ndj.namespace(\"default\").sources()\ndj.namespace(\"default\").dimensions()\ndj.namespace(\"default\").metrics()\ndj.namespace(\"default\").transforms()\ndj.namespace(\"default\").cubes()\n```\n\nTo create a source node:\n\n```python\nfrom datajunction import NodeMode\n\nrepair_orders = dj.new_source(\n    name=\"repair_orders\",\n    display_name=\"Repair Orders\",\n    description=\"Repair orders\",\n    catalog=\"dj\",\n    schema_=\"roads\",\n    table=\"repair_orders\",\n)\nrepair_orders.save(mode=NodeMode.PUBLISHED)\n```\n\nNodes can also be created as drafts with:\n```python\nrepair_orders.save(mode=NodeMode.DRAFT)\n```\n\nTo create a dimension node:\n```python\nrepair_order = dj.new_dimension(\n    name=\"repair_order\",\n    query=\"\"\"\n    SELECT\n      repair_order_id,\n      municipality_id,\n      hard_hat_id,\n      dispatcher_id\n    FROM repair_orders\n    \"\"\",\n    description=\"Repair order dimension\",\n    primary_key=[\"repair_order_id\"],\n)\nrepair_order.save()\n```\n\nTo create a transform node:\n```python\nlarge_revenue_payments_only = dj.new_transform(\n    name=\"large_revenue_payments_only\",\n    query=\"\"\"\n    SELECT\n      payment_id,\n      payment_amount,\n      customer_id,\n      account_type\n    FROM revenue\n    WHERE payment_amount > 1000000\n    \"\"\",\n    description=\"Only large revenue payments\",\n)\nlarge_revenue_payments_only.save()\n```\n\nTo create a metric:\n```python\nnum_repair_orders = dj.new_metric(\n    name=\"num_repair_orders\",\n    query=\"\"\"\n    SELECT\n      count(repair_order_id) AS num_repair_orders\n    FROM repair_orders\n    \"\"\",\n    description=\"Number of repair orders\",\n)\nnum_repair_orders.save()\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/DataJunction/dj",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "datajunction",
+            "package_url": "https://pypi.org/project/datajunction/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/datajunction/",
+            "project_urls": {
+                "Homepage": "https://github.com/DataJunction/dj",
+                "Repository": "https://github.com/DataJunction/dj"
+            },
+            "release_url": "https://pypi.org/project/datajunction/0.0.1a6/",
+            "requires_dist": [
+                "pandas (>=2)",
+                "pydantic (>=1)"
+            ],
+            "requires_python": ">=3.8,<4.0",
+            "summary": "DataJunction client library for connecting to a DataJunction server",
+            "version": "0.0.1a6",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17868683,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "981dcb568ddfaf6e42b5456f6237b15adbf4b552b5fbb5371023d213db569e29",
+                    "md5": "61b9bf9bce98eb58d908756b0f3ff764",
+                    "sha256": "0e71695b8f8bd69dddcac5ca0aa7626ae1dd616d41d9a42e7b36ccfdbb55703d"
+                },
+                "downloads": -1,
+                "filename": "datajunction-0.0.1a6-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "61b9bf9bce98eb58d908756b0f3ff764",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8,<4.0",
+                "size": 7542,
+                "upload_time": "2023-04-26T16:55:48",
+                "upload_time_iso_8601": "2023-04-26T16:55:48.976707Z",
+                "url": "https://files.pythonhosted.org/packages/98/1d/cb568ddfaf6e42b5456f6237b15adbf4b552b5fbb5371023d213db569e29/datajunction-0.0.1a6-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d5ebcddeb209388c3f65989e6f8854d05f581eba2f49eceaffb84fc1e42919ae",
+                    "md5": "39a597eb15227c971ec0ae38f2a9c879",
+                    "sha256": "d2185652de926d4a0d06040b271a9599055d266b4fc4856b91cc5c149d705d29"
+                },
+                "downloads": -1,
+                "filename": "datajunction-0.0.1a6.tar.gz",
+                "has_sig": false,
+                "md5_digest": "39a597eb15227c971ec0ae38f2a9c879",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8,<4.0",
+                "size": 7445,
+                "upload_time": "2023-04-26T16:55:50",
+                "upload_time_iso_8601": "2023-04-26T16:55:50.549656Z",
+                "url": "https://files.pythonhosted.org/packages/d5/eb/cddeb209388c3f65989e6f8854d05f581eba2f49eceaffb84fc1e42919ae/datajunction-0.0.1a6.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

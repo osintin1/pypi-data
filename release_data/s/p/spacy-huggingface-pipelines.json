@@ -21,7 +21,6 @@
                 "Topic :: Scientific/Engineering",
                 "Topic :: Scientific/Engineering :: Artificial Intelligence"
             ],
-            "description": "<a href=\"https://explosion.ai\"><img src=\"https://explosion.ai/assets/img/logo.svg\" width=\"125\" height=\"125\" align=\"right\" /></a>\n\n# spacy-huggingface-pipelines: Use pretrained transformer models for text and token classification\n\nThis package provides [spaCy](https://github.com/explosion/spaCy) components to\nuse pretrained\n[Hugging Face Transformers pipelines](https://huggingface.co/docs/transformers/main_classes/pipelines)\nfor inference only.\n\n[![PyPi](https://img.shields.io/pypi/v/spacy-huggingface-pipelines.svg?style=flat-square&logo=pypi&logoColor=white)](https://pypi.python.org/pypi/spacy-huggingface-pipelines)\n[![GitHub](https://img.shields.io/github/release/explosion/spacy-huggingface-pipelines/all.svg?style=flat-square&logo=github)](https://github.com/explosion/spacy-huggingface-pipelines/releases)\n\n## Features\n\n- Apply pretrained transformers models like\n  [`dslim/bert-base-NER`](https://huggingface.co/dslim/bert-base-NER) and\n  [`distilbert-base-uncased-finetuned-sst-2-english`](https://huggingface.co/distilbert-base-uncased-finetuned-sst-2-english).\n\n## \ud83d\ude80 Installation\n\nInstalling the package from pip will automatically install all dependencies,\nincluding PyTorch and spaCy.\n\n```bash\npip install -U pip setuptools wheel\npip install spacy-huggingface-pipelines\n```\n\nFor GPU installation, follow the\n[spaCy installation quickstart with GPU](https://spacy.io/usage/), e.g.\n\n```bash\npip install -U spacy[cuda-autodetect]\n```\n\nIf you are having trouble installing PyTorch, follow the\n[instructions](https://pytorch.org/get-started/locally/) on the official website\nfor your specific operating system and requirements.\n\n## \ud83d\udcd6 Documentation\n\nThis module provides spaCy wrappers for the inference-only transformers\n[`TokenClassificationPipeline`](https://huggingface.co/docs/transformers/main/en/main_classes/pipelines#transformers.TokenClassificationPipeline)\nand\n[`TextClassificationPipeline`](https://huggingface.co/docs/transformers/main/en/main_classes/pipelines#transformers.TextClassificationPipeline)\npipelines.\n\nThe models are downloaded on initialization from the\n[Hugging Face Hub](https://huggingface.co/models) if they're not already in your\nlocal cache, or alternatively they can be loaded from a local path.\n\nNote that the transformer model data **is not saved with the pipeline** when you\ncall `nlp.to_disk`, so if you are loading pipelines in an environment with\nlimited internet access, make sure the model is available in your\n[transformers cache directory](https://huggingface.co/docs/transformers/main/en/installation#cache-setup)\nand enable offline mode if needed.\n\n### Token classification\n\nConfig settings for `hf_token_pipe`:\n\n```ini\n[components.hf_token_pipe]\nfactory = \"hf_token_pipe\"\nmodel = \"dslim/bert-base-NER\"     # Model name or path\nrevision = \"main\"                 # Model revision\naggregation_strategy = \"average\"  # \"simple\", \"first\", \"average\", \"max\"\nstride = 16                       # Use stride > 0 to process long texts in\n                                  # overlapping windows of the model max length.\n                                  # The value is the length of the window\n                                  # overlap in transformer tokenizer tokens,\n                                  # NOT the length of the stride.\nkwargs = {}                       # Any additional arguments for\n                                  # TokenClassificationPipeline\nalignment_mode = \"strict\"         # \"strict\", \"contract\", \"expand\"\nannotate = \"ents\"                 # \"ents\", \"pos\", \"spans\", \"tag\"\nannotate_spans_key = null         # Doc.spans key for annotate = \"spans\"\nscorer = null                     # Optional scorer\n```\n\n#### `TokenClassificationPipeline` settings\n\n- `model`: The model name or path.\n- `revision`: The model revision. For production use, a specific git commit is\n  recommended instead of the default `main`.\n- `stride`: For `stride > 0`, the text is processed in overlapping windows where\n  the `stride` setting specifies the number of overlapping tokens between\n  windows (NOT the stride length). If `stride` is `0`, then the text is\n  processed as a whole, which may lead to model errors for texts longer than the\n  model max length.\n- `aggregation_strategy`: The aggregation strategy determines the word-level\n  tags for cases where subwords within one word do not receive the same\n  predicted tag. See:\n  https://huggingface.co/docs/transformers/main_classes/pipelines#transformers.TokenClassificationPipeline.aggregation_strategy\n- `kwargs`: Any additional arguments to\n  [`TokenClassificationPipeline`](https://huggingface.co/docs/transformers/main_classes/pipelines#transformers.TokenClassificationPipeline).\n\n#### spaCy settings\n\n- `alignment_mode` determines how transformer predictions are aligned to spaCy\n  token boundaries as described for\n  [`Doc.char_span`](https://spacy.io/api/doc#char_span).\n- `annotate` and `annotate_spans_key` configure how the annotation is saved to\n  the spaCy doc. You can save the output as `token.tag_`, `token.pos_` (only for\n  UPOS tags), `doc.ents` or `doc.spans`.\n\n#### Examples\n\n1. Save named entity annotation as `Doc.ents`:\n\n```python\nimport spacy\nnlp = spacy.blank(\"en\")\nnlp.add_pipe(\"hf_token_pipe\", config={\"model\": \"dslim/bert-base-NER\"})\ndoc = nlp(\"My name is Sarah and I live in London\")\nprint(doc.ents)\n# (Sarah, London)\n```\n\n2. Save named entity annotation as `Doc.spans[spans_key]`:\n\n```python\nimport spacy\nnlp = spacy.blank(\"en\")\nnlp.add_pipe(\n    \"hf_token_pipe\",\n    config={\n        \"model\": \"dslim/bert-base-NER\",\n        \"annotate\": \"spans\",\n        \"annotate_spans_key\": \"bert-base-ner\",\n    },\n)\ndoc = nlp(\"My name is Sarah and I live in London\")\nprint(doc.spans[\"bert-base-ner\"])\n# [Sarah, London]\n```\n\n3. Save fine-grained tags as `Token.tag`:\n\n```python\nimport spacy\nnlp = spacy.blank(\"en\")\nnlp.add_pipe(\n    \"hf_token_pipe\",\n    config={\n        \"model\": \"QCRI/bert-base-multilingual-cased-pos-english\",\n        \"annotate\": \"tag\",\n    },\n)\ndoc = nlp(\"My name is Sarah and I live in London\")\nprint([t.tag_ for t in doc])\n# ['PRP$', 'NN', 'VBZ', 'NNP', 'CC', 'PRP', 'VBP', 'IN', 'NNP']\n```\n\n4. Save coarse-grained tags as `Token.pos`:\n\n```python\nimport spacy\nnlp = spacy.blank(\"en\")\nnlp.add_pipe(\n    \"hf_token_pipe\",\n    config={\"model\": \"vblagoje/bert-english-uncased-finetuned-pos\", \"annotate\": \"pos\"},\n)\ndoc = nlp(\"My name is Sarah and I live in London\")\nprint([t.pos_ for t in doc])\n# ['PRON', 'NOUN', 'AUX', 'PROPN', 'CCONJ', 'PRON', 'VERB', 'ADP', 'PROPN']\n```\n\n### Text classification\n\nConfig settings for `hf_text_pipe`:\n\n```ini\n[components.hf_text_pipe]\nfactory = \"hf_text_pipe\"\nmodel = \"distilbert-base-uncased-finetuned-sst-2-english\"  # Model name or path\nrevision = \"main\"                 # Model revision\nkwargs = {}                       # Any additional arguments for\n                                  # TextClassificationPipeline\nscorer = null                     # Optional scorer\n```\n\nThe input texts are truncated according to the transformers model max length.\n\n#### `TextClassificationPipeline` settings\n\n- `model`: The model name or path.\n- `revision`: The model revision. For production use, a specific git commit is\n  recommended instead of the default `main`.\n- `kwargs`: Any additional arguments to\n  [`TextClassificationPipeline`](https://huggingface.co/docs/transformers/main_classes/pipelines#transformers.TextClassificationPipeline).\n\n#### Example\n\n```python\nimport spacy\n\nnlp = spacy.blank(\"en\")\nnlp.add_pipe(\n    \"hf_text_pipe\",\n    config={\"model\": \"distilbert-base-uncased-finetuned-sst-2-english\"},\n)\ndoc = nlp(\"This is great!\")\nprint(doc.cats)\n# {'POSITIVE': 0.9998694658279419, 'NEGATIVE': 0.00013048505934420973}\n```\n\n### Batching and GPU\n\nBoth token and text classification support batching with `nlp.pipe`:\n\n```python\nfor doc in nlp.pipe(texts, batch_size=256):\n    do_something(doc)\n```\n\nSwitch to GPU:\n\n```python\nimport spacy\nspacy.require_gpu()\n\nfor doc in nlp.pipe(texts):\n    do_something(doc)\n```\n\n## Bug reports and issues\n\nPlease report bugs in the\n[spaCy issue tracker](https://github.com/explosion/spaCy/issues) or open a new\nthread on the [discussion board](https://github.com/explosion/spaCy/discussions)\nfor other issues.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -54,7 +53,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17830959,
+        "last_serial": 17865863,
         "urls": [
             {
                 "comment_text": "",
@@ -95,6 +94,110 @@
                 "upload_time": "2023-04-24T08:44:12",
                 "upload_time_iso_8601": "2023-04-24T08:44:12.686149Z",
                 "url": "https://files.pythonhosted.org/packages/52/01/45e94c20d4fd377759ec3c68b5c6b17c7bcdd2341feea65a0270d813d0f1/spacy_huggingface_pipelines-0.0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.2": {
+        "info": {
+            "author": "Explosion",
+            "author_email": "contact@explosion.ai",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Environment :: Console",
+                "Intended Audience :: Developers",
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: MacOS :: MacOS X",
+                "Operating System :: Microsoft :: Windows",
+                "Operating System :: POSIX :: Linux",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Scientific/Engineering",
+                "Topic :: Scientific/Engineering :: Artificial Intelligence"
+            ],
+            "description": "<a href=\"https://explosion.ai\"><img src=\"https://explosion.ai/assets/img/logo.svg\" width=\"125\" height=\"125\" align=\"right\" /></a>\n\n# spacy-huggingface-pipelines: Use pretrained transformer models for text and token classification\n\nThis package provides [spaCy](https://github.com/explosion/spaCy) components to\nuse pretrained\n[Hugging Face Transformers pipelines](https://huggingface.co/docs/transformers/main_classes/pipelines)\nfor inference only.\n\n[![PyPi](https://img.shields.io/pypi/v/spacy-huggingface-pipelines.svg?style=flat-square&logo=pypi&logoColor=white)](https://pypi.python.org/pypi/spacy-huggingface-pipelines)\n[![GitHub](https://img.shields.io/github/release/explosion/spacy-huggingface-pipelines/all.svg?style=flat-square&logo=github)](https://github.com/explosion/spacy-huggingface-pipelines/releases)\n\n## Features\n\n- Apply pretrained transformers models like\n  [`dslim/bert-base-NER`](https://huggingface.co/dslim/bert-base-NER) and\n  [`distilbert-base-uncased-finetuned-sst-2-english`](https://huggingface.co/distilbert-base-uncased-finetuned-sst-2-english).\n\n## \ud83d\ude80 Installation\n\nInstalling the package from pip will automatically install all dependencies,\nincluding PyTorch and spaCy.\n\n```bash\npip install -U pip setuptools wheel\npip install spacy-huggingface-pipelines\n```\n\nFor GPU installation, follow the\n[spaCy installation quickstart with GPU](https://spacy.io/usage/), e.g.\n\n```bash\npip install -U spacy[cuda-autodetect]\n```\n\nIf you are having trouble installing PyTorch, follow the\n[instructions](https://pytorch.org/get-started/locally/) on the official website\nfor your specific operating system and requirements.\n\n## \ud83d\udcd6 Documentation\n\nThis module provides spaCy wrappers for the inference-only transformers\n[`TokenClassificationPipeline`](https://huggingface.co/docs/transformers/main/en/main_classes/pipelines#transformers.TokenClassificationPipeline)\nand\n[`TextClassificationPipeline`](https://huggingface.co/docs/transformers/main/en/main_classes/pipelines#transformers.TextClassificationPipeline)\npipelines.\n\nThe models are downloaded on initialization from the\n[Hugging Face Hub](https://huggingface.co/models) if they're not already in your\nlocal cache, or alternatively they can be loaded from a local path.\n\nNote that the transformer model data **is not saved with the pipeline** when you\ncall `nlp.to_disk`, so if you are loading pipelines in an environment with\nlimited internet access, make sure the model is available in your\n[transformers cache directory](https://huggingface.co/docs/transformers/main/en/installation#cache-setup)\nand enable offline mode if needed.\n\n### Token classification\n\nConfig settings for `hf_token_pipe`:\n\n```ini\n[components.hf_token_pipe]\nfactory = \"hf_token_pipe\"\nmodel = \"dslim/bert-base-NER\"     # Model name or path\nrevision = \"main\"                 # Model revision\naggregation_strategy = \"average\"  # \"simple\", \"first\", \"average\", \"max\"\nstride = 16                       # If stride >= 0, process long texts in\n                                  # overlapping windows of the model max\n                                  # length. The value is the length of the\n                                  # window overlap in transformer tokenizer\n                                  # tokens, NOT the length of the stride.\nkwargs = {}                       # Any additional arguments for\n                                  # TokenClassificationPipeline\nalignment_mode = \"strict\"         # \"strict\", \"contract\", \"expand\"\nannotate = \"ents\"                 # \"ents\", \"pos\", \"spans\", \"tag\"\nannotate_spans_key = null         # Doc.spans key for annotate = \"spans\"\nscorer = null                     # Optional scorer\n```\n\n#### `TokenClassificationPipeline` settings\n\n- `model`: The model name or path.\n- `revision`: The model revision. For production use, a specific git commit is\n  recommended instead of the default `main`.\n- `stride`: For `stride >= 0`, the text is processed in overlapping windows\n  where the `stride` setting specifies the number of overlapping tokens between\n  windows (NOT the stride length). If `stride` is `None`, then the text may be\n  truncated. `stride` is only supported for fast tokenizers.\n- `aggregation_strategy`: The aggregation strategy determines the word-level\n  tags for cases where subwords within one word do not receive the same\n  predicted tag. See:\n  https://huggingface.co/docs/transformers/main_classes/pipelines#transformers.TokenClassificationPipeline.aggregation_strategy\n- `kwargs`: Any additional arguments to\n  [`TokenClassificationPipeline`](https://huggingface.co/docs/transformers/main_classes/pipelines#transformers.TokenClassificationPipeline).\n\n#### spaCy settings\n\n- `alignment_mode` determines how transformer predictions are aligned to spaCy\n  token boundaries as described for\n  [`Doc.char_span`](https://spacy.io/api/doc#char_span).\n- `annotate` and `annotate_spans_key` configure how the annotation is saved to\n  the spaCy doc. You can save the output as `token.tag_`, `token.pos_` (only for\n  UPOS tags), `doc.ents` or `doc.spans`.\n\n#### Examples\n\n1. Save named entity annotation as `Doc.ents`:\n\n```python\nimport spacy\nnlp = spacy.blank(\"en\")\nnlp.add_pipe(\"hf_token_pipe\", config={\"model\": \"dslim/bert-base-NER\"})\ndoc = nlp(\"My name is Sarah and I live in London\")\nprint(doc.ents)\n# (Sarah, London)\n```\n\n2. Save named entity annotation as `Doc.spans[spans_key]`:\n\n```python\nimport spacy\nnlp = spacy.blank(\"en\")\nnlp.add_pipe(\n    \"hf_token_pipe\",\n    config={\n        \"model\": \"dslim/bert-base-NER\",\n        \"annotate\": \"spans\",\n        \"annotate_spans_key\": \"bert-base-ner\",\n    },\n)\ndoc = nlp(\"My name is Sarah and I live in London\")\nprint(doc.spans[\"bert-base-ner\"])\n# [Sarah, London]\n```\n\n3. Save fine-grained tags as `Token.tag`:\n\n```python\nimport spacy\nnlp = spacy.blank(\"en\")\nnlp.add_pipe(\n    \"hf_token_pipe\",\n    config={\n        \"model\": \"QCRI/bert-base-multilingual-cased-pos-english\",\n        \"annotate\": \"tag\",\n    },\n)\ndoc = nlp(\"My name is Sarah and I live in London\")\nprint([t.tag_ for t in doc])\n# ['PRP$', 'NN', 'VBZ', 'NNP', 'CC', 'PRP', 'VBP', 'IN', 'NNP']\n```\n\n4. Save coarse-grained tags as `Token.pos`:\n\n```python\nimport spacy\nnlp = spacy.blank(\"en\")\nnlp.add_pipe(\n    \"hf_token_pipe\",\n    config={\"model\": \"vblagoje/bert-english-uncased-finetuned-pos\", \"annotate\": \"pos\"},\n)\ndoc = nlp(\"My name is Sarah and I live in London\")\nprint([t.pos_ for t in doc])\n# ['PRON', 'NOUN', 'AUX', 'PROPN', 'CCONJ', 'PRON', 'VERB', 'ADP', 'PROPN']\n```\n\n### Text classification\n\nConfig settings for `hf_text_pipe`:\n\n```ini\n[components.hf_text_pipe]\nfactory = \"hf_text_pipe\"\nmodel = \"distilbert-base-uncased-finetuned-sst-2-english\"  # Model name or path\nrevision = \"main\"                 # Model revision\nkwargs = {}                       # Any additional arguments for\n                                  # TextClassificationPipeline\nscorer = null                     # Optional scorer\n```\n\nThe input texts are truncated according to the transformers model max length.\n\n#### `TextClassificationPipeline` settings\n\n- `model`: The model name or path.\n- `revision`: The model revision. For production use, a specific git commit is\n  recommended instead of the default `main`.\n- `kwargs`: Any additional arguments to\n  [`TextClassificationPipeline`](https://huggingface.co/docs/transformers/main_classes/pipelines#transformers.TextClassificationPipeline).\n\n#### Example\n\n```python\nimport spacy\n\nnlp = spacy.blank(\"en\")\nnlp.add_pipe(\n    \"hf_text_pipe\",\n    config={\"model\": \"distilbert-base-uncased-finetuned-sst-2-english\"},\n)\ndoc = nlp(\"This is great!\")\nprint(doc.cats)\n# {'POSITIVE': 0.9998694658279419, 'NEGATIVE': 0.00013048505934420973}\n```\n\n### Batching and GPU\n\nBoth token and text classification support batching with `nlp.pipe`:\n\n```python\nfor doc in nlp.pipe(texts, batch_size=256):\n    do_something(doc)\n```\n\nIf the component runs into an error processing a batch (e.g. on an empty text),\n`nlp.pipe` will back off to processing each text individually. If it runs into\nan error on an individual text, a warning is shown and the doc is returned\nwithout additional annotation.\n\nSwitch to GPU:\n\n```python\nimport spacy\nspacy.require_gpu()\n\nfor doc in nlp.pipe(texts):\n    do_something(doc)\n```\n\n## Bug reports and issues\n\nPlease report bugs in the\n[spaCy issue tracker](https://github.com/explosion/spaCy/issues) or open a new\nthread on the [discussion board](https://github.com/explosion/spaCy/discussions)\nfor other issues.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/explosion/spacy-huggingface-pipelines",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "spacy-huggingface-pipelines",
+            "package_url": "https://pypi.org/project/spacy-huggingface-pipelines/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/spacy-huggingface-pipelines/",
+            "project_urls": {
+                "Homepage": "https://github.com/explosion/spacy-huggingface-pipelines",
+                "Release notes": "https://github.com/explosion/spacy-huggingface-pipelines/releases",
+                "Source": "https://github.com/explosion/spacy-huggingface-pipelines"
+            },
+            "release_url": "https://pypi.org/project/spacy-huggingface-pipelines/0.0.2/",
+            "requires_dist": [
+                "spacy (<4.0.0,>=3.0.0)",
+                "transformers (<5.0.0,>=4.28.0)",
+                "torch (>=1.8.0)"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "spaCy wrapper for Hugging Face Transformers pipelines",
+            "version": "0.0.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17865863,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "4a26684503f8aa3bca0566a4e7b662b4f1ee5bbfaaac7006543491402fb72432",
+                    "md5": "645dd9b57cb57ac681653bcb158b0138",
+                    "sha256": "a3fdaf67bbf82552850d2d299a496d5d3f1c60bf930545b2c282bcb219bfc10e"
+                },
+                "downloads": -1,
+                "filename": "spacy_huggingface_pipelines-0.0.2-py2.py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "645dd9b57cb57ac681653bcb158b0138",
+                "packagetype": "bdist_wheel",
+                "python_version": "py2.py3",
+                "requires_python": ">=3.8",
+                "size": 11085,
+                "upload_time": "2023-04-26T13:26:37",
+                "upload_time_iso_8601": "2023-04-26T13:26:37.979719Z",
+                "url": "https://files.pythonhosted.org/packages/4a/26/684503f8aa3bca0566a4e7b662b4f1ee5bbfaaac7006543491402fb72432/spacy_huggingface_pipelines-0.0.2-py2.py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3edaa4004f013a7c137a35761ace2e6376df4af955cd7b634a1a81a6b05cc889",
+                    "md5": "92dfccc26d61c52f417349c1514292ca",
+                    "sha256": "a685914e3349d4463d75bfc9000e6a75dcd6396829fa5cf161998ec9d79ce86b"
+                },
+                "downloads": -1,
+                "filename": "spacy_huggingface_pipelines-0.0.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "92dfccc26d61c52f417349c1514292ca",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 11502,
+                "upload_time": "2023-04-26T13:26:39",
+                "upload_time_iso_8601": "2023-04-26T13:26:39.928341Z",
+                "url": "https://files.pythonhosted.org/packages/3e/da/a4004f013a7c137a35761ace2e6376df4af955cd7b634a1a81a6b05cc889/spacy_huggingface_pipelines-0.0.2.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

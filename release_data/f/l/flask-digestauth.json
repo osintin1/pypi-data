@@ -44,7 +44,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16319327,
+        "last_serial": 17867813,
         "urls": [
             {
                 "comment_text": "",
@@ -104,7 +104,6 @@
                 "Programming Language :: Python :: 3",
                 "Topic :: System :: Systems Administration :: Authentication/Directory"
             ],
-            "description": "================================\nFlask HTTP Digest Authentication\n================================\n\n\nDescription\n===========\n\n*Flask-DigestAuth* is an `HTTP Digest Authentication`_ implementation\nfor Flask_ applications.  It authenticates the user for the protected\nviews.\n\nHTTP Digest Authentication is specified in `RFC 2617`_.\n\nRefer to the full `Flask-DigestAuth readthedocs documentation`_.\n\n\nWhy HTTP Digest Authentication?\n-------------------------------\n\n*HTTP Digest Authentication* has the advantage that it does not send\nthee actual password to the server, which greatly enhances the\nsecurity.  It uses the challenge-response authentication scheme.  The\nclient returns the response calculated from the challenge and the\npassword, but not the original password.\n\nLog in forms has the advantage of freedom, in the senses of both the\nvisual design and the actual implementation.  You may implement your\nown challenge-response log in form, but then you are reinventing the\nwheels.  If a pretty log in form is not critical to your project, HTTP\nDigest Authentication should be a good choice.\n\nFlask-DigestAuth works with Flask-Login_.  Log in protection can be\nseparated with the authentication mechanism.  You can create protected\nFlask modules without knowing the actual authentication mechanisms.\n\n\nInstallation\n============\n\nYou can install Flask-DigestAuth with ``pip``:\n\n::\n\n    pip install Flask-DigestAuth\n\nYou may also install the latest source from the\n`Flask-DigestAuth GitHub repository`_.\n\n::\n\n    pip install git+https://github.com/imacat/flask-digestauth.git\n\n\nConfiguration\n=============\n\nFlask-DigestAuth takes the configuration ``DIGEST_AUTH_REALM`` as the\nrealm.  The default realm is ``Login Required``.\n\n\nSetting the Password\n====================\n\nThe password hash of the HTTP Digest Authentication is composed of the\nrealm, the username, and the password.  Example for setting the\npassword:\n\n::\n\n    from flask_digest_auth import make_password_hash\n\n    user.password = make_password_hash(realm, username, password)\n\nThe username is part of the hash.  If the user changes their username,\nyou need to ask their password, to generate and store the new password\nhash.\n\n\nFlask-DigestAuth Alone\n======================\n\nFlask-DigestAuth can authenticate the users alone.\n\n\nSimple Applications with Flask-DigestAuth Alone\n-----------------------------------------------\n\nIn your ``my_app.py``:\n\n::\n\n    from flask import Flask, request, redirect\n    from flask_digest_auth import DigestAuth\n\n    app: flask = Flask(__name__)\n    ... (Configure the Flask application) ...\n\n    auth: DigestAuth = DigestAuth()\n    auth.init_app(app)\n\n    @auth.register_get_password\n    def get_password_hash(username: str) -> t.Optional[str]:\n        ... (Load the password hash) ...\n\n    @auth.register_get_user\n    def get_user(username: str) -> t.Optional[t.Any]:\n        ... (Load the user) ...\n\n    @app.get(\"/admin\")\n    @auth.login_required\n    def admin():\n        return f\"Hello, {g.user.username}!\"\n\n    @app.post(\"/logout\")\n    @auth.login_required\n    def logout():\n        auth.logout()\n        return redirect(request.form.get(\"next\"))\n\n\nLarger Applications with ``create_app()`` with Flask-DigestAuth Alone\n---------------------------------------------------------------------\n\nIn your ``my_app/__init__.py``:\n\n::\n\n    from flask import Flask\n    from flask_digest_auth import DigestAuth\n\n    auth: DigestAuth = DigestAuth()\n\n    def create_app(test_config = None) -> Flask:\n        app: flask = Flask(__name__)\n        ... (Configure the Flask application) ...\n\n        auth.init_app(app)\n\n        @auth.register_get_password\n        def get_password_hash(username: str) -> t.Optional[str]:\n            ... (Load the password hash) ...\n\n        @auth.register_get_user\n        def get_user(username: str) -> t.Optional[t.Any]:\n            ... (Load the user) ...\n\n        return app\n\nIn your ``my_app/views.py``:\n\n::\n\n    from my_app import auth\n    from flask import Flask, Blueprint, request, redirect\n\n    bp = Blueprint(\"admin\", __name__, url_prefix=\"/admin\")\n\n    @bp.get(\"/admin\")\n    @auth.login_required\n    def admin():\n        return f\"Hello, {g.user.username}!\"\n\n    @app.post(\"/logout\")\n    @auth.login_required\n    def logout():\n        auth.logout()\n        return redirect(request.form.get(\"next\"))\n\n    def init_app(app: Flask) -> None:\n        app.register_blueprint(bp)\n\n\n\nFlask-Login Integration\n=======================\n\nFlask-DigestAuth works with Flask-Login_.  You can write a Flask\nmodule that requires log in, without specifying how to log in.  The\napplication can use either HTTP Digest Authentication, or the log in\nforms, as needed.\n\nTo use Flask-Login with Flask-DigestAuth,\n``login_manager.init_app(app)`` must be called before\n``auth.init_app(app)``.\n\nThe currently logged-in user can be retrieved at\n``flask_login.current_user``, if any.\n\nThe views only depend on Flask-Login, but not the Flask-DigestAuth.\nYou can change the actual authentication mechanism without changing\nthe views.\n\n\nSimple Applications with Flask-Login Integration\n------------------------------------------------\n\nIn your ``my_app.py``:\n\n::\n\n    import flask_login\n    from flask import Flask, request, redirect\n    from flask_digest_auth import DigestAuth\n\n    app: flask = Flask(__name__)\n    ... (Configure the Flask application) ...\n\n    login_manager: flask_login.LoginManager = flask_login.LoginManager()\n    login_manager.init_app(app)\n\n    @login_manager.user_loader\n    def load_user(user_id: str) -> t.Optional[User]:\n        ... (Load the user with the username) ...\n\n    auth: DigestAuth = DigestAuth()\n    auth.init_app(app)\n\n    @auth.register_get_password\n    def get_password_hash(username: str) -> t.Optional[str]:\n        ... (Load the password hash) ...\n\n    @app.get(\"/admin\")\n    @flask_login.login_required\n    def admin():\n        return f\"Hello, {flask_login.current_user.get_id()}!\"\n\n    @app.post(\"/logout\")\n    @flask_login.login_required\n    def logout():\n        auth.logout()\n        # Do not call flask_login.logout_user()\n        return redirect(request.form.get(\"next\"))\n\n\nLarger Applications with ``create_app()`` with Flask-Login Integration\n----------------------------------------------------------------------\n\nIn your ``my_app/__init__.py``:\n\n::\n\n    from flask import Flask\n    from flask_digest_auth import DigestAuth\n    from flask_login import LoginManager\n\n    auth: DigestAuth = DigestAuth()\n\n    def create_app(test_config = None) -> Flask:\n        app: flask = Flask(__name__)\n        ... (Configure the Flask application) ...\n\n        login_manager: LoginManager = LoginManager()\n        login_manager.init_app(app)\n\n        @login_manager.user_loader\n        def load_user(user_id: str) -> t.Optional[User]:\n            ... (Load the user with the username) ...\n\n        auth.init_app(app)\n\n        @auth.register_get_password\n        def get_password_hash(username: str) -> t.Optional[str]:\n            ... (Load the password hash) ...\n\n        return app\n\nIn your ``my_app/views.py``:\n\n::\n\n    import flask_login\n    from flask import Flask, Blueprint, request, redirect\n    from my_app import auth\n\n    bp = Blueprint(\"admin\", __name__, url_prefix=\"/admin\")\n\n    @bp.get(\"/admin\")\n    @flask_login.login_required\n    def admin():\n        return f\"Hello, {flask_login.current_user.get_id()}!\"\n\n    @app.post(\"/logout\")\n    @flask_login.login_required\n    def logout():\n        auth.logout()\n        # Do not call flask_login.logout_user()\n        return redirect(request.form.get(\"next\"))\n\n    def init_app(app: Flask) -> None:\n        app.register_blueprint(bp)\n\nThe views only depend on Flask-Login, but not the actual\nauthentication mechanism.  You can change the actual authentication\nmechanism without changing the views.\n\n\nSession Integration\n===================\n\nFlask-DigestAuth features session integration.  The user log in\nis remembered in the session.  The authentication information is not\nrequested again.  This is different to the practice of the HTTP Digest\nAuthentication, but is convenient for the log in accounting.\n\n\nLog In Bookkeeping\n==================\n\nYou can register a callback to run when the user logs in, for ex.,\nlogging the log in event, adding the log in counter, etc.\n\n::\n\n    @auth.register_on_login\n    def on_login(user: User) -> None:\n        user.visits = user.visits + 1\n\n\nLog Out\n=======\n\nFlask-DigestAuth supports log out.  The user will be prompted for the\nnew username and password.\n\n\nTest Client\n===========\n\nFlask-DigestAuth comes with a test client that supports HTTP digest\nauthentication.\n\n\nA unittest Test Case\n--------------------\n\n::\n\n    from flask import Flask\n    from flask_digest_auth import Client\n    from flask_testing import TestCase\n    from my_app import create_app\n\n    class MyTestCase(TestCase):\n\n        def create_app(self):\n            app: Flask = create_app({\n                \"TESTING\": True,\n                \"SECRET_KEY\": token_urlsafe(32),\n                \"DIGEST_AUTH_REALM\": \"admin\",\n            })\n            app.test_client_class = Client\n            return app\n\n        def test_admin(self):\n            response = self.client.get(\"/admin\")\n            self.assertEqual(response.status_code, 401)\n            response = self.client.get(\n                \"/admin\", digest_auth=(USERNAME, PASSWORD))\n            self.assertEqual(response.status_code, 200)\n\n\nA pytest Test\n-------------\n\n::\n\n    import pytest\n    from flask import Flask\n    from flask_digest_auth import Client\n    from my_app import create_app\n\n    @pytest.fixture()\n    def app():\n        app: Flask = create_app({\n            \"TESTING\": True,\n            \"SECRET_KEY\": token_urlsafe(32),\n            \"DIGEST_AUTH_REALM\": \"admin\",\n        })\n        app.test_client_class = Client\n        yield app\n\n    @pytest.fixture()\n    def client(app):\n        return app.test_client()\n\n    def test_admin(app: Flask, client: Client):\n        with app.app_context():\n            response = client.get(\"/admin\")\n            assert response.status_code == 401\n            response = client.get(\n                \"/admin\", digest_auth=(USERNAME, PASSWORD))\n            assert response.status_code == 200\n\n\nCopyright\n=========\n\n Copyright (c) 2022-2023 imacat.\n\n Licensed under the Apache License, Version 2.0 (the \"License\");\n you may not use this file except in compliance with the License.\n You may obtain a copy of the License at\n\n     http://www.apache.org/licenses/LICENSE-2.0\n\n Unless required by applicable law or agreed to in writing, software\n distributed under the License is distributed on an \"AS IS\" BASIS,\n WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n See the License for the specific language governing permissions and\n limitations under the License.\n\n\nAuthors\n=======\n\n| imacat\n| imacat@mail.imacat.idv.tw\n| 2022/11/23\n\n.. _HTTP Digest Authentication: https://en.wikipedia.org/wiki/Digest_access_authentication\n.. _RFC 2617: https://www.rfc-editor.org/rfc/rfc2617\n.. _Flask: https://flask.palletsprojects.com\n.. _Flask-DigestAuth GitHub repository: https://github.com/imacat/flask-digestauth\n.. _Flask-DigestAuth readthedocs documentation: https://flask-digestauth.readthedocs.io\n.. _Flask-Login: https://flask-login.readthedocs.io\n",
             "description_content_type": "text/x-rst",
             "docs_url": null,
             "download_url": "",
@@ -137,7 +136,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16319327,
+        "last_serial": 17867813,
         "urls": [
             {
                 "comment_text": "",
@@ -178,6 +177,102 @@
                 "upload_time": "2023-01-05T16:25:30",
                 "upload_time_iso_8601": "2023-01-05T16:25:30.133035Z",
                 "url": "https://files.pythonhosted.org/packages/6c/4e/fffd7851ca200aeeebc863aacccb47b198997249de8c1882ee0b79c217ed/Flask-DigestAuth-0.5.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.6.0": {
+        "info": {
+            "author": "",
+            "author_email": "imacat <imacat@mail.imacat.idv.tw>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Framework :: Flask",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: Apache Software License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Topic :: System :: Systems Administration :: Authentication/Directory"
+            ],
+            "description": "================================\nFlask HTTP Digest Authentication\n================================\n\n\nDescription\n===========\n\n*Flask-DigestAuth* is an `HTTP Digest Authentication`_ implementation\nfor Flask_ applications.  It authenticates the user for the protected\nviews.\n\nHTTP Digest Authentication is specified in `RFC 2617`_.\n\n\nWhy HTTP Digest Authentication?\n-------------------------------\n\n*HTTP Digest Authentication* has the advantage that it does not send\nthee actual password to the server, which greatly enhances the\nsecurity.  It uses the challenge-response authentication scheme.  The\nclient returns the response calculated from the challenge and the\npassword, but not the original password.\n\nLog in forms has the advantage of freedom, in the senses of both the\nvisual design and the actual implementation.  You may implement your\nown challenge-response log in form, but then you are reinventing the\nwheels.  If a pretty log in form is not critical to your project, HTTP\nDigest Authentication should be a good choice.\n\nFlask-DigestAuth works with Flask-Login_.  Log in protection can be\nseparated with the authentication mechanism.  You can create protected\nFlask modules without knowing the actual authentication mechanisms.\n\n\nInstallation\n============\n\nYou can install Flask-DigestAuth with ``pip``:\n\n::\n\n    pip install Flask-DigestAuth\n\nYou may also install the latest source from the\n`Flask-DigestAuth GitHub repository`_.\n\n::\n\n    pip install git+https://github.com/imacat/flask-digestauth.git\n\n\nDocumentation\n=============\n\nRefer to the `documentation on Read the Docs`_.\n\n\nChange Log\n==========\n\nRefer to the `change log`_.\n\n\nCopyright\n=========\n\n Copyright (c) 2022-2023 imacat.\n\n Licensed under the Apache License, Version 2.0 (the \"License\");\n you may not use this file except in compliance with the License.\n You may obtain a copy of the License at\n\n     http://www.apache.org/licenses/LICENSE-2.0\n\n Unless required by applicable law or agreed to in writing, software\n distributed under the License is distributed on an \"AS IS\" BASIS,\n WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n See the License for the specific language governing permissions and\n limitations under the License.\n\n\nAuthors\n=======\n\n| imacat\n| imacat@mail.imacat.idv.tw\n| 2022/11/23\n\n.. _HTTP Digest Authentication: https://en.wikipedia.org/wiki/Digest_access_authentication\n.. _RFC 2617: https://www.rfc-editor.org/rfc/rfc2617\n.. _Flask: https://flask.palletsprojects.com\n.. _Flask-DigestAuth GitHub repository: https://github.com/imacat/flask-digestauth\n.. _Flask-Login: https://flask-login.readthedocs.io\n.. _documentation on Read the Docs: https://flask-digestauth.readthedocs.io\n.. _change log: https://flask-digestauth.readthedocs.io/en/latest/changelog.html\n",
+            "description_content_type": "text/x-rst",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "flask,digest-authentication",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "Flask-DigestAuth",
+            "package_url": "https://pypi.org/project/Flask-DigestAuth/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/Flask-DigestAuth/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/imacat/flask-digestauth/issues",
+                "Change Log": "https://mia-accounting.readthedocs.io/en/latest/changelog.html",
+                "Documentation": "https://flask-digestauth.readthedocs.io",
+                "Repository": "https://github.com/imacat/flask-digestauth"
+            },
+            "release_url": "https://pypi.org/project/Flask-DigestAuth/0.6.0/",
+            "requires_dist": [
+                "flask",
+                "unittest ; extra == 'test'",
+                "flask-testing ; extra == 'test'"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "The Flask HTTP Digest Authentication project.",
+            "version": "0.6.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17867813,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "0d9e24f795b9d7542ec81c0943615a6d0dbea8555ce89be599db76bec5424c97",
+                    "md5": "6e43dde90ffc6cb4264c0dd50064c40f",
+                    "sha256": "7608983252a470d66347db431cd4ed33d6c2d9eb43fbfdfdac84880b1bfd9248"
+                },
+                "downloads": -1,
+                "filename": "Flask_DigestAuth-0.6.0-py3-none-any.whl",
+                "has_sig": true,
+                "md5_digest": "6e43dde90ffc6cb4264c0dd50064c40f",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 15249,
+                "upload_time": "2023-04-26T15:43:40",
+                "upload_time_iso_8601": "2023-04-26T15:43:40.972953Z",
+                "url": "https://files.pythonhosted.org/packages/0d/9e/24f795b9d7542ec81c0943615a6d0dbea8555ce89be599db76bec5424c97/Flask_DigestAuth-0.6.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "7d39d1a43fac0f569cadc7978c145390880cde95cb8ad0ed63a91ab45fd0e809",
+                    "md5": "9b487988cd39f91b0b49683588300236",
+                    "sha256": "c33768d25b6640804ffd1b466e2ea0274a63602b82e31af6949b8d1963c65693"
+                },
+                "downloads": -1,
+                "filename": "Flask-DigestAuth-0.6.0.tar.gz",
+                "has_sig": true,
+                "md5_digest": "9b487988cd39f91b0b49683588300236",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 20120,
+                "upload_time": "2023-04-26T15:43:42",
+                "upload_time_iso_8601": "2023-04-26T15:43:42.505133Z",
+                "url": "https://files.pythonhosted.org/packages/7d/39/d1a43fac0f569cadc7978c145390880cde95cb8ad0ed63a91ab45fd0e809/Flask-DigestAuth-0.6.0.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

@@ -44,7 +44,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17835729,
+        "last_serial": 17867932,
         "urls": [
             {
                 "comment_text": "",
@@ -136,7 +136,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17835729,
+        "last_serial": 17867932,
         "urls": [
             {
                 "comment_text": "",
@@ -228,7 +228,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17835729,
+        "last_serial": 17867932,
         "urls": [
             {
                 "comment_text": "",
@@ -320,7 +320,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17835729,
+        "last_serial": 17867932,
         "urls": [
             {
                 "comment_text": "",
@@ -412,7 +412,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17835729,
+        "last_serial": 17867932,
         "urls": [
             {
                 "comment_text": "",
@@ -504,7 +504,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17835729,
+        "last_serial": 17867932,
         "urls": [
             {
                 "comment_text": "",
@@ -596,7 +596,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17835729,
+        "last_serial": 17867932,
         "urls": [
             {
                 "comment_text": "",
@@ -657,7 +657,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "# Insights Analytics Collector\n\nThis package helps with collecting data by user-defined collector methods. \nIt packs collected data to one or more tarballs and sends them to user-defined URL.\n\nSome data and classes has to be implemented.\nBy function:\n- persisting settings\n- data like credentials, content type etc. for shipping (POST request)\n\nBy Classes:\n- Collector\n- Package\n- collector_module: \n  - functions with `@register` decorator, one with `config=True, format='json'`\n  - slicing functions (optional) for splitting large data (db tables) by time intervals\n\n## Collector\n\nEntrypoint with \"gather()\" method. \n\n### Implementation\n\nCollector is an Abstract class, implement abstract methods.\n\n- `_package_class`: Returns class of your implementation of Package   \n- `_is_valid_license`: Check for valid license specific to your service\n- `_is_shipping_configured`: Check if shipping to cloud is configured\n- `_last_gathering`: returns datetime. Loading last successful run from some persistent storage\n- `_save_last_gather`: Persisting last successful run\n- `_load_last_gathered_entries`: Has to fill dictionary `self.last_gathered_entries`. Load from persistent storage \n  Dict contains keys equal to collector's registered functions' keys (with @register decorator)\n- `_save_last_gathered_entries`: Persisting `self.last_gathered_entries` \n\nAn example can be found in [Test collector](tests/classes/analytics_collector.py)\n\n## Package\n\nOne package represents one `.tar.gz` file which will be uploaded to Analytics.\nRegistered collectors are placed to collections as JSON/CSV files this way:\n\n- Upload limit is 100MB. The maximum bytes of uncompressed data is MAX_DATA_SIZE (by guess 200MB, redefine if needed)\n- JSON collectors are processed first, it's not expected they'll exceed this size\n  - if yes, use CSV format instead\n- CSV files can be collected in two modes:\n  - with slicing function \n    - splitting data by custom function - usually time interval\n    - the purpose is to have reasonable SQL query in big databases\n    - `@register(fnc_slicing=...)`\n  - without slicing function\n  - \n- CSV files are expected to be large (db data), so they can be split by `CsvFileSplitter` in the collector function.\n\nHow are files included into packages:\n- JSON files are in first package\n- CSVs without slicing are included to first free package with enough size (can be added to JSON files)\n  - if function collects i.e. 900MB, it's sent in first 5 packages\n  - two functions cannot have the same name in `@register()` decorator\n- CSVs with slicing are sent after each slice is collected (with respect to smaller volume size if running in OpenShift/docker)\n  - each slice can be also split by CsvFileSplitter, if bigger than MAX_DATA_SIZE\n    - then each part of slice is sent immediately\n  - two functions can have the same name in `@register()` decorator\n\nNumber of packages (tarballs) is bigger of:\n- number of files collected by one biggest registered CSV collector without slicing\n- number of files collected by all registered CSV collectors with slicing\n- can be +1 for JSON files\n\nSee the [test_gathering.py](tests/functional/test_gathering.py) for details\n\n### Implementation\n\nPackage is also abstract class. You have to implement basically info for POST request to cloud.\n\n- `PAYLOAD_CONTENT_TYPE`: contains registered content type for cloud's ingress service\n- `MAX_DATA_SIZE`: maximum size in bytes of **uncompressed** data for one tarball. Ingress limits uploads to 100MB. Defaults to\n  200MB.\n- `get_ingress_url`: Cloud's ingress service URL\n- `_get_rh_user`: User for POST request \n- `_get_rh_password`: Password for POST request\n- `_get_x_rh_identity`: X-RH Identity Used for local testing instead of user and password\n- `_get_http_request_headers`: Dict with any custom headers for POST request \n \nAn example can be found in [Test package](tests/classes/package.py)\n\n## Collector module\n\nModule with gathering functions is the main part you need to implement.\nIt should contain functions returning data either in `dict` format or list of CSV files.\n\nFunction is registered by `@register` decorator:\n```python\nfrom insights_analytics_collector import register\n\n@register('json_data', '1.0', format='json', description=\"Data description\")\ndef json_data(**kwargs):\n    return {'my_data': 'True'}\n```\n\nDecorator `@register` has following attributes:\n- **key**: (string) name of output file (usually the same as function name)\n- **version**: (string) i.e. '1.0'. Version of data - added to the manifest.json for parsing on cloud's side\n- **description**: (string)  not used yet\n- **format**: (string) Default: 'json' extension of output file, can be \"json\" of \"csv\". Also determines function output. \n- **config**: (bool) Default: False. there **has to be one** function with `config=True, format=json`\n- **fnc_slicing**: Intended for large data. Described in [Slicing function](#slicing-function) below \n- **shipping_group**: (string) Default: 'default'. Splits data to packages by group, if required.\n\n\n```python\nfrom <your-namespace> import Collector  # your implementation\n\ncollector = Collector\ncollector.gather()\n\n```\n\n### Slicing function\n\n## Collectors\n\n\n## Registered collectors\n\n\n## Abstract classes\n\n\n## Tarballs\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -689,7 +688,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17835729,
+        "last_serial": 17867932,
         "urls": [
             {
                 "comment_text": "",
@@ -730,6 +729,99 @@
                 "upload_time": "2023-04-24T15:31:27",
                 "upload_time_iso_8601": "2023-04-24T15:31:27.018542Z",
                 "url": "https://files.pythonhosted.org/packages/4b/b4/8c5bac289b646058ea68a43b3e152143473b9113ceb4f3413658bcae7614/insights-analytics-collector-0.3.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.3.2": {
+        "info": {
+            "author": "Martin Slemr",
+            "author_email": "mslemr@redhat.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: Apache Software License",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.6",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# Insights Analytics Collector\n\nThis package helps with collecting data by user-defined collector methods. \nIt packs collected data to one or more tarballs and sends them to user-defined URL.\n\nSome data and classes has to be implemented.\nBy function:\n- persisting settings\n- data like credentials, content type etc. for shipping (POST request)\n\nBy Classes:\n- Collector\n- Package\n- collector_module: \n  - functions with `@register` decorator, one with `config=True, format='json'`\n  - slicing functions (optional) for splitting large data (db tables) by time intervals\n\n## Collector\n\nEntrypoint with \"gather()\" method. \n\n### Implementation\n\nCollector is an Abstract class, implement abstract methods.\n\n- `_package_class`: Returns class of your implementation of Package   \n- `_is_valid_license`: Check for valid license specific to your service\n- `_is_shipping_configured`: Check if shipping to cloud is configured\n- `_last_gathering`: returns datetime. Loading last successful run from some persistent storage\n- `_save_last_gather`: Persisting last successful run\n- `_load_last_gathered_entries`: Has to fill dictionary `self.last_gathered_entries`. Load from persistent storage \n  Dict contains keys equal to collector's registered functions' keys (with @register decorator)\n- `_save_last_gathered_entries`: Persisting `self.last_gathered_entries` \n\nAn example can be found in [Test collector](tests/classes/analytics_collector.py)\n\n## Package\n\nOne package represents one `.tar.gz` file which will be uploaded to Analytics.\nRegistered collectors are placed to collections as JSON/CSV files this way:\n\n- Upload limit is 100MB. The maximum bytes of uncompressed data is MAX_DATA_SIZE (by guess 200MB, redefine if needed)\n- JSON collectors are processed first, it's not expected they'll exceed this size\n  - if yes, use CSV format instead\n- CSV files can be collected in two modes:\n  - with slicing function \n    - splitting data by custom function - usually time interval\n    - the purpose is to have reasonable SQL query in big databases\n    - `@register(fnc_slicing=...)`\n  - without slicing function\n  - \n- CSV files are expected to be large (db data), so they can be split by `CsvFileSplitter` in the collector function.\n\nHow are files included into packages:\n- JSON files are in first package\n- CSVs without slicing are included to first free package with enough size (can be added to JSON files)\n  - if function collects i.e. 900MB, it's sent in first 5 packages\n  - two functions cannot have the same name in `@register()` decorator\n- CSVs with slicing are sent after each slice is collected (with respect to smaller volume size if running in OpenShift/docker)\n  - each slice can be also split by CsvFileSplitter, if bigger than MAX_DATA_SIZE\n    - then each part of slice is sent immediately\n  - two functions can have the same name in `@register()` decorator\n\nNumber of packages (tarballs) is bigger of:\n- number of files collected by one biggest registered CSV collector without slicing\n- number of files collected by all registered CSV collectors with slicing\n- can be +1 for JSON files\n\nSee the [test_gathering.py](tests/functional/test_gathering.py) for details\n\n### Implementation\n\nPackage is also abstract class. You have to implement basically info for POST request to cloud.\n\n- `PAYLOAD_CONTENT_TYPE`: contains registered content type for cloud's ingress service\n- `MAX_DATA_SIZE`: maximum size in bytes of **uncompressed** data for one tarball. Ingress limits uploads to 100MB. Defaults to\n  200MB.\n- `get_ingress_url`: Cloud's ingress service URL\n- `_get_rh_user`: User for POST request \n- `_get_rh_password`: Password for POST request\n- `_get_x_rh_identity`: X-RH Identity Used for local testing instead of user and password\n- `_get_http_request_headers`: Dict with any custom headers for POST request \n \nAn example can be found in [Test package](tests/classes/package.py)\n\n## Collector module\n\nModule with gathering functions is the main part you need to implement.\nIt should contain functions returning data either in `dict` format or list of CSV files.\n\nFunction is registered by `@register` decorator:\n```python\nfrom insights_analytics_collector import register\n\n@register('json_data', '1.0', format='json', description=\"Data description\")\ndef json_data(**kwargs):\n    return {'my_data': 'True'}\n```\n\nDecorator `@register` has following attributes:\n- **key**: (string) name of output file (usually the same as function name)\n- **version**: (string) i.e. '1.0'. Version of data - added to the manifest.json for parsing on cloud's side\n- **description**: (string)  not used yet\n- **format**: (string) Default: 'json' extension of output file, can be \"json\" of \"csv\". Also determines function output. \n- **config**: (bool) Default: False. there **has to be one** function with `config=True, format=json`\n- **fnc_slicing**: Intended for large data. Described in [Slicing function](#slicing-function) below \n- **shipping_group**: (string) Default: 'default'. Splits data to packages by group, if required.\n\n\n```python\nfrom <your-namespace> import Collector  # your implementation\n\ncollector = Collector\ncollector.gather()\n\n```\n\n### Slicing function\n\n## Collectors\n\n\n## Registered collectors\n\n\n## Abstract classes\n\n\n## Tarballs\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/RedHatInsights/insights-analytics-collector/",
+            "keywords": "",
+            "license": "Apache",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "insights-analytics-collector",
+            "package_url": "https://pypi.org/project/insights-analytics-collector/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/insights-analytics-collector/",
+            "project_urls": {
+                "Homepage": "https://github.com/RedHatInsights/insights-analytics-collector/"
+            },
+            "release_url": "https://pypi.org/project/insights-analytics-collector/0.3.2/",
+            "requires_dist": [
+                "django",
+                "requests"
+            ],
+            "requires_python": "",
+            "summary": "Collector Package for Insights for AAP",
+            "version": "0.3.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17867932,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "dbce9d978d16e64f2e20b0b5792d2c5cbfaa7eea5cde62e516aeffa449d0448a",
+                    "md5": "2f1f49c625651dd9320aae250ca58f43",
+                    "sha256": "0e88b938d05df83ced969fd0ee29e8452745240ae622fde75aded97a56ee1cf8"
+                },
+                "downloads": -1,
+                "filename": "insights_analytics_collector-0.3.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "2f1f49c625651dd9320aae250ca58f43",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 30238,
+                "upload_time": "2023-04-26T15:55:55",
+                "upload_time_iso_8601": "2023-04-26T15:55:55.663879Z",
+                "url": "https://files.pythonhosted.org/packages/db/ce/9d978d16e64f2e20b0b5792d2c5cbfaa7eea5cde62e516aeffa449d0448a/insights_analytics_collector-0.3.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a0c64b498e5f3f625a90f080753118d810a66d46a8941d98f6e4073fe9c4b733",
+                    "md5": "d4e4ecf5f8c40f52c566cbe2a736fe16",
+                    "sha256": "c8464e2f602b01e42574bdad85ed4c8afca9d613c8c886fcbe72f592899f520b"
+                },
+                "downloads": -1,
+                "filename": "insights-analytics-collector-0.3.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "d4e4ecf5f8c40f52c566cbe2a736fe16",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 25056,
+                "upload_time": "2023-04-26T15:55:57",
+                "upload_time_iso_8601": "2023-04-26T15:55:57.807573Z",
+                "url": "https://files.pythonhosted.org/packages/a0/c6/4b498e5f3f625a90f080753118d810a66d46a8941d98f6e4073fe9c4b733/insights-analytics-collector-0.3.2.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
