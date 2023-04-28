@@ -1,0 +1,102 @@
+{
+    "1.0.0": {
+        "info": {
+            "author": "",
+            "author_email": "AT0myks <at0myks.dev@gmail.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 5 - Production/Stable",
+                "Intended Audience :: Developers",
+                "Intended Audience :: End Users/Desktop",
+                "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Software Development :: Libraries",
+                "Topic :: Software Development :: Libraries :: Python Modules",
+                "Topic :: System :: Filesystems",
+                "Topic :: Utilities"
+            ],
+            "description": "# pycramfs\r\n\r\n<p align=\"left\">\r\n<a><img alt=\"Python versions\" src=\"https://img.shields.io/pypi/pyversions/pycramfs\"></a>\r\n<a href=\"https://pypi.org/project/pycramfs/\"><img alt=\"PyPI\" src=\"https://img.shields.io/pypi/v/pycramfs\"></a>\r\n<a href=\"https://github.com/AT0myks/pycramfs/blob/main/LICENSE\"><img alt=\"License\" src=\"https://img.shields.io/pypi/l/pycramfs\"></a>\r\n</p>\r\n\r\n* [Requirements](#requirements)\r\n* [Installation](#installation)\r\n* [Usage](#usage)\r\n* [References](#references)\r\n\r\nA library and tool to read and extract cramfs images.\r\n\r\nIt is far from being as complete as the tools it's based on,\r\nbut should be enough for simple images.\r\nFor example, as of right now it only supports contiguous data layout.\r\nOnly little endian images are supported.\r\n\r\nIt also provides ways to extract data from an image,\r\nalthough you might prefer using\r\n[`cramfsck`](https://github.com/npitre/cramfs-tools)\r\non Linux and 7-Zip on Windows for better compatibility.\r\n\r\n## Requirements\r\n\r\nPython 3.8+.\r\n\r\n## Installation\r\n\r\n```\r\npip install pycramfs\r\n```\r\n\r\n## Usage\r\n\r\n### API\r\n\r\nHere's an overview of what you can do:\r\n```py\r\nfrom pycramfs import Cramfs\r\nfrom pycramfs.extract import extract_dir, extract_file\r\nfrom pycramfs.util import find_superblocks\r\n\r\nfsimage = \"cramfs.bin\"\r\nsuperblocks = find_superblocks(fsimage)\r\n\r\nwith Cramfs.from_file(fsimage, offset=superblocks[0][\"offset\"]) as cramfs:\r\n    # Optional offset for start of file system.\r\n    # You can also create Cramfs instances from bytes or a file descriptor.\r\n\r\n    sblock = cramfs.super  # Access the file system's superblock\r\n    print(sblock.name)\r\n    print(dict(sblock))  # Superblock as a dictionary\r\n    assert cramfs.calculate_crc() == sblock.fsid.crc\r\n\r\n    rootdir = cramfs.rootdir  # root directory\r\n    print(cramfs.size)  # File system size in bytes (shortcut to sblock.size)\r\n    # Number of files in the whole file system (shortcut to sblock.fsid.files).\r\n    print(len(cramfs))\r\n    print(\"/etc/passwd\" in cramfs)  # Check if path exists\r\n\r\n    # Iterate over the whole file system.\r\n    for file in cramfs:\r\n        print(file.parent)  # Instance of Directory (None for the root directory)\r\n        print(file in cramfs)  # Check if file belongs to this image\r\n        if file.is_symlink:  # Check the file's type\r\n            print(file.readlink())  # Symlink target\r\n\r\n    etc = cramfs.select(\"/etc\")  # Select a specific file or directory\r\n    etc = cramfs.select(\"etc\")  # Can also be a relative path\r\n    rootdir = etc.select(\"..\")  # And a special entry\r\n    assert rootdir == rootdir.select('.')\r\n    print(etc)  # print the file or directory's name\r\n    # The file or directory's absolute path (an instance of PurePosixPath).\r\n    print(etc.path)\r\n    print(etc.files)  # A dictionary mapping file names to File instances\r\n    print(len(etc))  # Number of entries in the directory (shortcut to len(etc.files))\r\n    print(etc.total)  # Number of entries in this whole subtree\r\n    # A list of this directory's children (shortcut to list(etc.files.values())).\r\n    print(list(etc))\r\n\r\n    # Find the first file in this subtree that has this name.\r\n    passwd = cramfs.find(\"passwd\")\r\n    # Return the child entry if present else raise KeyError (shortcut to etc.files[\"passwd\"]).\r\n    passwd = etc[\"passwd\"]\r\n    print(\"passwd\" in etc)  # Check if directory contains this file\r\n    print(passwd in etc)  # Also works with instances of File\r\n\r\n    # Iterate over this directory's files.\r\n    for file in etc:\r\n        print(file.inode)  # Access inode information\r\n        # These attributes are shortcuts to file.inode.<attr>\r\n        print(file.mode)\r\n        print(file.uid)\r\n        print(file.size)\r\n        print(file.gid)\r\n\r\n    # Iterate over this whole subtree.\r\n    for file in etc.riter():\r\n        print(file.name)  # File name, equivalent to file.path.name\r\n        print(file.filemode)  # File mode as a string, for example drwxrwxrwx\r\n    \r\n    # Iterate over files in the subtree that match a pattern.\r\n    for config_file in etc.itermatch(\"*.conf\"):\r\n        print(config_file.read_bytes())  # Read the file's raw content\r\n        print(config_file.read_text(\"utf8\"))  # Or as a string with optional encoding\r\n\r\n    assert etc > cramfs.select(\"/bin\")  # Comparing instances of File compares their name\r\n\r\n    # You can use absolute paths from any directory.\r\n    cramfs.select(\"/my/dir/over/here\").select(\"/bin\")  # Selects /bin\r\n    cramfs.select(\"/my/dir/over/here\").select(\"bin\")  # Selects /my/dir/over/here/bin\r\n\r\n    # Calling find(), select() and itermatch() on cramfs\r\n    # is the same as calling them on cramfs.rootdir.\r\n\r\n    extract_dir(etc, \"extract/etc\")  # Extract a directory tree\r\n    extract_file(passwd, \"extract/passwd\")  # Extract a single file\r\n```\r\n\r\n### Command line\r\n\r\npycramfs comes with a command-line interface that consists of 4 sub-commands.\r\n\r\n#### Info\r\n\r\n```\r\nusage: pycramfs info [-h] file\r\n\r\nShow information about all the superblocks that can be found in a file\r\n\r\npositional arguments:\r\n  file\r\n```\r\n\r\nExample output:\r\n```\r\n$ pycramfs info cramfs.bin\r\nSuperblock #1\r\nMagic:     0x28CD3D45\r\nSize:      282,624\r\nFlags:     <Flag.SORTED_DIRS|FSID_VERSION_2: 3>\r\nFuture:    0\r\nSignature: Compressed ROMFS\r\nName:      Compressed\r\nCRC:       0xDEADBEEF\r\nEdition:   0\r\nBlocks:    6,926\r\nFiles:     420\r\nOffset:    8157\r\n```\r\n\r\n#### List\r\n\r\n```\r\nusage: pycramfs list [-h] [-o OFFSET] [-p PATTERN] [-t TYPE [TYPE ...]] file\r\n\r\nList the contents of the file system\r\n\r\npositional arguments:\r\n  file\r\n\r\noptions:\r\n  -o OFFSET, --offset OFFSET      absolute position of file system's start. Default: 0\r\n  -p PATTERN, --pattern PATTERN   filter by file name pattern with fnmatch\r\n  -t TYPE [TYPE ...], --type TYPE [TYPE ...]\r\n                                  filter by file type with f, d, l, p, s, b, c\r\n```\r\n\r\nExample that lists only directories and symlinks that match a pattern:\r\n```\r\n$ pycramfs list cramfs.bin -t d l -p \"*bin*\"\r\ndrwxrwxr-x      256   123:0   /bin \r\nlrwxrwxrwx        7   123:0   /bin/ash -> busybox\r\nlrwxrwxrwx        7   123:0   /bin/base64 -> busybox\r\n3 file(s) found\r\n```\r\n\r\n#### Extract\r\n\r\n```\r\nusage: pycramfs extract [-h] [-o OFFSET] [-d DEST] [-p PATH] [-f] [-q] file\r\n\r\nExtract files from the file system\r\n\r\npositional arguments:\r\n  file\r\n\r\noptions:\r\n  -o OFFSET, --offset OFFSET   absolute position of file system's start. Default: 0\r\n  -d DEST, --dest DEST         destination directory. Default: next to file\r\n  -p PATH, --path PATH         absolute path of directory or file to extract. Default: '/'\r\n  -f, --force                  overwrite files that already exist. Default: False\r\n  -q, --quiet                  don't print extraction status. Default: False\r\n```\r\n\r\nOn Linux, just like `cramfsck -x` you need to run as root\r\nif you want to preserve file mode, owner and group.\r\n\r\nOn Windows, the only reason to run as a privileged user is to be able to create\r\nsymlinks.\r\nUnprivileged accounts can create symlinks if Developer Mode is enabled.\r\nOtherwise, a regular file containing the target will be created.\r\nSpecial files will always just be empty files.\r\n\r\n#### Check\r\n\r\nThis command is similar to running `cramfsck -c file` but is not as thorough.\r\n\r\n```\r\nusage: pycramfs check [-h] [-o OFFSET] file\r\n\r\nMake a few superficial checks of the file system\r\n\r\npositional arguments:\r\n  file\r\n\r\noptions:\r\n  -o OFFSET, --offset OFFSET   absolute position of file system's start. Default: 0\r\n```\r\n\r\n## References\r\n\r\n- [cramfs readme](https://github.com/torvalds/linux/blob/master/fs/cramfs/README)\r\n- [cramfs_fs.h](https://github.com/npitre/cramfs-tools/blob/master/linux/cramfs_fs.h)\r\n- [cramfsck.c](https://github.com/npitre/cramfs-tools/blob/master/cramfsck.c)\r\n- [mkcramfs.c](https://github.com/npitre/cramfs-tools/blob/master/mkcramfs.c)\r\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "cramfs,filesystem",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "pycramfs",
+            "package_url": "https://pypi.org/project/pycramfs/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/pycramfs/",
+            "project_urls": {
+                "Issues": "https://github.com/AT0myks/pycramfs/issues",
+                "Source": "https://github.com/AT0myks/pycramfs"
+            },
+            "release_url": "https://pypi.org/project/pycramfs/1.0.0/",
+            "requires_dist": null,
+            "requires_python": ">=3.8",
+            "summary": "Read and extract cramfs images.",
+            "version": "1.0.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17886914,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "7aebac2b221dc0c42eda5f1072f7f5473a246d83d6e0a6547873f4d40717a9f1",
+                    "md5": "192be697e3adad0b2e7c712f9146a1b7",
+                    "sha256": "05dde6647412928f8a6c7464e316d4df23a1f6cdb8223c4207be4969cc040b5d"
+                },
+                "downloads": -1,
+                "filename": "pycramfs-1.0.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "192be697e3adad0b2e7c712f9146a1b7",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 27689,
+                "upload_time": "2023-04-27T17:59:20",
+                "upload_time_iso_8601": "2023-04-27T17:59:20.045640Z",
+                "url": "https://files.pythonhosted.org/packages/7a/eb/ac2b221dc0c42eda5f1072f7f5473a246d83d6e0a6547873f4d40717a9f1/pycramfs-1.0.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5701bc036b907609967ed810552c91827b2dbafc4408d8690d7495c6a2f3732e",
+                    "md5": "a555e3cc0b6770460d32f75f8ac97666",
+                    "sha256": "8f6f9821d030042b5b0c23639d38a2591c4935b1d03a08b8bb676a5bac75fd40"
+                },
+                "downloads": -1,
+                "filename": "pycramfs-1.0.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "a555e3cc0b6770460d32f75f8ac97666",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 27936,
+                "upload_time": "2023-04-27T17:59:23",
+                "upload_time_iso_8601": "2023-04-27T17:59:23.710799Z",
+                "url": "https://files.pythonhosted.org/packages/57/01/bc036b907609967ed810552c91827b2dbafc4408d8690d7495c6a2f3732e/pycramfs-1.0.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

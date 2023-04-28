@@ -53,7 +53,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17853493,
+        "last_serial": 17888702,
         "urls": [
             {
                 "comment_text": "",
@@ -120,7 +120,6 @@
                 "Topic :: Software Development :: Libraries",
                 "Typing :: Typed"
             ],
-            "description": "<h1 align=\"center\">\naio-overpass\n\n[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/timwie/aio-overpass/ci.yml)](https://github.com/timwie/aio-overpass/actions/workflows/ci.yml)\n[![codecov](https://codecov.io/gh/timwie/aio-overpass/branch/main/graph/badge.svg?token=YX1218U740)](https://codecov.io/gh/timwie/aio-overpass)\n[![PyPI version](https://badge.fury.io/py/aio_overpass.svg)](https://badge.fury.io/py/aio_overpass)\n![PyPI - Python Version](https://img.shields.io/pypi/pyversions/aio-overpass)\n</h1>\n\nA client for the [Overpass API], a read-only API that serves up custom selected\nparts of [OpenStreetMap] data. It is optimized for data consumers that need a few\nelements within a glimpse or up to roughly 10 million elements in some minutes,\nboth selected by search criteria like location, type of objects, tag properties,\nproximity, or combinations of them. To make use of it, you should familiarize yourself\nwith [Overpass QL], the query language used to select the elements that you want.\n\n#### Contents\n- [Features](#features)\n- [Getting Started](#getting-started)\n  - [Choosing Extras](#choosing-extras)\n- [Basic Usage](#basic-usage)\n  - [Example](#example)\n- [Motivation](#motivation)\n- [Related Projects](#related-projects)\n- [License](#license)\n\n#### See also\n- API reference is forthcoming :construction: \n- The version history is available in [CHANGELOG.md](CHANGELOG.md).\n- Contributor guide is forthcoming :construction:\n\n<br>\n\n## Features\n- Asynchronous requests using [aiohttp]\n- Concurrent queries\n- Respects rate limits\n- Fault tolerance through (customizable) retries\n- **Extensions**\n  - Typed elements that simplify browsing result sets\n  - [Shapely] geometries for manipulation and analysis\n  - [GeoJSON] exports\n  - Simplified querying and processing of public transportation routes\n\n<br>\n\n## Getting Started\n```\npip install aio-overpass\npip install aio-overpass[shapely, networkx, joblib]\n\npoetry add aio-overpass\npoetry add aio-overpass[shapely, networkx, joblib]\n```\n\n### Choosing Extras\nThis library can be installed with a number of optional extras.\n\n- Install no extras, if you're fine with `dict` result sets.\n\n- Install the `shapely` extra, if you would like the convenience of typed OSM elements.\n  It is also useful if you are interested in elements' geometries,\n  and either already use Shapely, or want a simple way to export [GeoJSON] or [WKT].\n\n  - This includes the `pt` module to make it easier to interact with public transportation routes.\n    Something seemingly trivial like listing the stops of a route can have unexpected pitfalls,\n    since stops can have multiple route members, and may have a range of different tags and roles.\n    This submodule will clean up the relation data for you.\n\n- Install the `networkx` extra to enable the `pt_ordered` module, if you want a route's path as a \n  simple line from A to B. It is hard to do this consistently, mainly because ways are not always\n  ordered, and stop positions might be missing. You can benefit from this submodule if you wish to\n  - render a route's path between any two stops\n  - measure the route's travelled distance between any two stops\n  - validate the order of ways in the relation\n  - check if the route relation has gaps\n\n- Install the `joblib` extra to speed up `pt_ordered.collect_ordered_routes`, which can benefit\n  greatly from parallelization.\n\n<br>\n\n## Basic Usage\nThere are three basic steps to fetch the spatial data you need:\n\n1. **Formulate a query**\n    - Either write your own custom query, f.e. `Query(\"node(5369192667); out;\")`,\n    - or use one of the `Query` subclasses, f.e. `SingleRouteQuery(relation_id=1643324)`.\n\n2. **Call the Overpass API**\n    - Prepare your client with `client = Client(user_agent=...)`.\n    - Use `await client.run_query(query)` to fetch the result set.\n\n3. **Collect results**\n    - Either access the raw result dictionaries with `query.result_set`,\n    - or use a collector, f.e. `collect_elements(query)` to get a list of typed `Elements`.\n    - Collectors are often specific to queries - `collect_routes` requires a `RouteQuery`,\n      for instance.\n\n### Example\n#### Results as Dictionaries\n```\nfrom aio_overpass import Client, Query\n\nquery = Query(\"way(24981342); out geom;\")\n\nclient = Client()\n\nawait client.run_query(query)\n\nquery.result_set\n```\n\n```\n{\n    ...\n    \"elements\": [\n        {\n            \"type\": \"way\",\n            \"id\": 24981342,\n            ...\n            \"tags\": {\n                \"addr:city\": \"Hamburg\",\n                \"addr:country\": \"DE\",\n                \"addr:housename\": \"Elbphilharmonie\",\n                ...\n            },\n        }\n    ],\n}\n```\n\n#### Results as Objects\n```\nfrom aio_overpass.element import collect_elements\n\nelems = collect_elements(query)\n\nelems[0].tags\n```\n\n```\n{\n    \"addr:city\": \"Hamburg\",\n    \"addr:country\": \"DE\",\n    \"addr:housename\": \"Elbphilharmonie\",\n    ...\n}\n\n```\n\n#### Results as GeoJSON\n```\nimport json\n\njson.dumps(elems[0].geojson, indent=4)\n```\n\n```\n{\n    \"type\": \"Feature\",\n    \"geometry\": {\n        \"type\": \"Polygon\",\n        \"coordinates\": [\n            [\n                [\n                    9.9832434,\n                    53.5415472\n                ],\n                ...\n            ]\n        ]\n    },\n    \"properties\": {\n        \"id\": 24981342,\n        \"type\": \"way\",\n        \"tags\": {\n            \"addr:city\": \"Hamburg\",\n            \"addr:country\": \"DE\",\n            \"addr:housename\": \"Elbphilharmonie\",\n            ...\n        },\n        \"bounds\": [\n            53.540877,\n            9.9832434,\n            53.5416212,\n            9.9849674\n        ]\n    },\n    \"bbox\": [\n        9.9832434,\n        53.540877,\n        9.9849674\n        53.5416212,\n    ]\n}\n```\n\n<br>\n\n## Motivation\n\n### Goals\n- A small and stable set of core functionality.\n- Good defaults for queries and retrying.\n- Room for extensions that simplify querying and/or processing of spatial data\n  in specific problem domains.\n- Sensible and spec-compliant GeoJSON exports for all objects that represent spatial features.\n- Detailed documentation that supplements learning about OSM and the Overpass API.\n\n### Non-Goals\n- Any sort of Python interface to replace writing Overpass QL code.\n- Integrating other OSM-related services (like the OSM API or Nominatim)\n- Command line interface\n\n<br>\n\n## Related Projects\n- [Overpass API](https://github.com/drolbr/Overpass-API)\n- [Overpass Turbo], the best choice to prototype your queries in a browser\n- [Folium], which can be used to visualize GeoJSON on [Leaflet] maps\n- [OSMnx], which is specialized on street networks\n- [overpass-api-python-wrapper], another Python client for the Overpass API\n- [overpy], another Python client for the Overpass API\n- [OSMPythonTools], a Python client for OSM-related services \n- [overpassify], a Python to Overpass QL transpiler\n\n<br>\n\n## License\nDistributed under the MIT License. See `LICENSE` for more information.\n\n\n[Overpass API]: https://wiki.openstreetmap.org/wiki/Overpass_API\n[Overpass QL]: https://wiki.openstreetmap.org/wiki/Overpass_API/Overpass_QL\n[OpenStreetMap]: https://www.openstreetmap.org\n\n[Overpass Turbo]: http://overpass-turbo.eu/\n[Folium]: https://python-visualization.github.io/folium/\n[Leaflet]: https://leafletjs.com/\n[overpass-api-python-wrapper]: https://github.com/mvexel/overpass-api-python-wrapper\n[overpy]: https://github.com/DinoTools/python-overpy\n[OSMnx]: https://github.com/gboeing/osmnx\n[OSMPythonTools]: https://github.com/mocnik-science/osm-python-tools\n[overpassify]: https://github.com/gappleto97/overpassify\n\n[aiohttp]: https://docs.aiohttp.org/en/stable/\n[Joblib]: https://joblib.readthedocs.io/en/latest/\n[NetworkX]: https://networkx.github.io/\n[PyGeodesy]: https://mrjean1.github.io/PyGeodesy/\n[Shapely]: https://shapely.readthedocs.io/en/latest/manual.html\n\n[GeoJSON]: https://en.wikipedia.org/wiki/GeoJSON\n[WKT]: https://en.wikipedia.org/wiki/Well-known_text_representation_of_geometry\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -155,7 +154,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17853493,
+        "last_serial": 17888702,
         "urls": [
             {
                 "comment_text": "",
@@ -196,6 +195,108 @@
                 "upload_time": "2023-04-25T17:55:49",
                 "upload_time_iso_8601": "2023-04-25T17:55:49.643419Z",
                 "url": "https://files.pythonhosted.org/packages/d1/e2/614684218eb3d03e3c8b39423c8dc01e6acac98d131f7f573d6afac40d13/aio_overpass-0.1.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.2": {
+        "info": {
+            "author": "Tim Wiechers",
+            "author_email": "mail@timwie.dev",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Framework :: AsyncIO",
+                "Framework :: aiohttp",
+                "Intended Audience :: Developers",
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Scientific/Engineering :: GIS",
+                "Topic :: Software Development :: Libraries",
+                "Typing :: Typed"
+            ],
+            "description": "<h1 align=\"center\">\naio-overpass\n\n[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/timwie/aio-overpass/ci.yml)](https://github.com/timwie/aio-overpass/actions/workflows/ci.yml)\n[![codecov](https://codecov.io/gh/timwie/aio-overpass/branch/main/graph/badge.svg?token=YX1218U740)](https://codecov.io/gh/timwie/aio-overpass)\n[![PyPI version](https://badge.fury.io/py/aio_overpass.svg)](https://badge.fury.io/py/aio_overpass)\n![PyPI - Python Version](https://img.shields.io/pypi/pyversions/aio-overpass)\n</h1>\n\nA client for the [Overpass API], a read-only API that serves up custom selected\nparts of [OpenStreetMap] data. It is optimized for data consumers that need a few\nelements within a glimpse or up to roughly 10 million elements in some minutes,\nboth selected by search criteria like location, type of objects, tag properties,\nproximity, or combinations of them. To make use of it, you should familiarize yourself\nwith [Overpass QL], the query language used to select the elements that you want.\n\n#### Contents\n- [Features](#features)\n- [Getting Started](#getting-started)\n  - [Choosing Extras](#choosing-extras)\n- [Basic Usage](#basic-usage)\n  - [Example](#example)\n- [Motivation](#motivation)\n- [Related Projects](#related-projects)\n- [License](#license)\n\n#### See also\n- An overview of modules, classes and functions can be found in the [API reference](http://www.timwie.dev/aio-overpass/).\n- The version history is available in [CHANGELOG.md](https://github.com/timwie/aio-overpass/blob/main/CHANGELOG.md).\n- Contributor guide is forthcoming :construction:\n\n<br>\n\n## Features\n- Asynchronous requests using [aiohttp]\n- Concurrent queries\n- Respects rate limits\n- Fault tolerance through (customizable) retries\n- **Extensions**\n  - Typed elements that simplify browsing result sets\n  - [Shapely] geometries for manipulation and analysis\n  - [GeoJSON] exports\n  - Simplified querying and processing of public transportation routes\n\n<br>\n\n## Getting Started\n```sh\npip install aio-overpass\npip install aio-overpass[shapely, networkx, joblib]\n\npoetry add aio-overpass\npoetry add aio-overpass[shapely, networkx, joblib]\n```\n\n### Choosing Extras\nThis library can be installed with a number of optional extras.\n\n- Install no extras, if you're fine with `dict` result sets.\n\n- Install the `shapely` extra, if you would like the convenience of typed OSM elements.\n  It is also useful if you are interested in elements' geometries,\n  and either already use Shapely, or want a simple way to export [GeoJSON] or [WKT].\n\n  - This includes the `pt` module to make it easier to interact with public transportation routes.\n    Something seemingly trivial like listing the stops of a route can have unexpected pitfalls,\n    since stops can have multiple route members, and may have a range of different tags and roles.\n    This submodule will clean up the relation data for you.\n\n- Install the `networkx` extra to enable the `pt_ordered` module, if you want a route's path as a \n  simple line from A to B. It is hard to do this consistently, mainly because ways are not always\n  ordered, and stop positions might be missing. You can benefit from this submodule if you wish to\n  - render a route's path between any two stops\n  - measure the route's travelled distance between any two stops\n  - validate the order of ways in the relation\n  - check if the route relation has gaps\n\n- Install the `joblib` extra to speed up `pt_ordered.collect_ordered_routes`, which can benefit\n  greatly from parallelization.\n\n<br>\n\n## Basic Usage\nThere are three basic steps to fetch the spatial data you need:\n\n1. **Formulate a query**\n    - Either write your own custom query, f.e. `Query(\"node(5369192667); out;\")`,\n    - or use one of the `Query` subclasses, f.e. `SingleRouteQuery(relation_id=1643324)`.\n\n2. **Call the Overpass API**\n    - Prepare your client with `client = Client(user_agent=...)`.\n    - Use `await client.run_query(query)` to fetch the result set.\n\n3. **Collect results**\n    - Either access the raw result dictionaries with `query.result_set`,\n    - or use a collector, f.e. `collect_elements(query)` to get a list of typed `Elements`.\n    - Collectors are often specific to queries - `collect_routes` requires a `RouteQuery`,\n      for instance.\n\n### Example\n#### Results as Dictionaries\n```python\nfrom aio_overpass import Client, Query\n\nquery = Query(\"way(24981342); out geom;\")\n\nclient = Client()\n\nawait client.run_query(query)\n\nquery.result_set\n```\n\n```python\n{\n    # ...\n    \"elements\": [\n        {\n            \"type\": \"way\",\n            \"id\": 24981342,\n            # ...\n            \"tags\": {\n                \"addr:city\": \"Hamburg\",\n                \"addr:country\": \"DE\",\n                \"addr:housename\": \"Elbphilharmonie\",\n                # ...\n            },\n        }\n    ],\n}\n```\n\n#### Results as Objects\n```python\nfrom aio_overpass.element import collect_elements\n\nelems = collect_elements(query)\n\nelems[0].tags\n```\n\n```python\n{\n    \"addr:city\": \"Hamburg\",\n    \"addr:country\": \"DE\",\n    \"addr:housename\": \"Elbphilharmonie\",\n    # ...\n}\n\n```\n\n#### Results as GeoJSON\n```python\nimport json\n\njson.dumps(elems[0].geojson, indent=4)\n```\n\n```json\n{\n    \"type\": \"Feature\",\n    \"geometry\": {\n        \"type\": \"Polygon\",\n        \"coordinates\": [\n            [\n                [\n                    9.9832434,\n                    53.5415472\n                ],\n                ...\n            ]\n        ]\n    },\n    \"properties\": {\n        \"id\": 24981342,\n        \"type\": \"way\",\n        \"tags\": {\n            \"addr:city\": \"Hamburg\",\n            \"addr:country\": \"DE\",\n            \"addr:housename\": \"Elbphilharmonie\",\n            ...\n        },\n        ...\n    },\n    \"bbox\": [\n        9.9832434,\n        53.540877,\n        9.9849674\n        53.5416212,\n    ]\n}\n```\n\n<br>\n\n## Motivation\n\n### Goals\n- A small and stable set of core functionality.\n- Good defaults for queries and retrying.\n- Room for extensions that simplify querying and/or processing of spatial data\n  in specific problem domains.\n- Sensible and spec-compliant GeoJSON exports for all objects that represent spatial features.\n- Detailed documentation that supplements learning about OSM and the Overpass API.\n\n### Non-Goals\n- Any sort of Python interface to replace writing Overpass QL code.\n- Integrating other OSM-related services (like the OSM API or Nominatim)\n- Command line interface\n\n<br>\n\n## Related Projects\n- [Overpass API](https://github.com/drolbr/Overpass-API)\n- [Overpass Turbo], the best choice to prototype your queries in a browser\n- [Folium], which can be used to visualize GeoJSON on [Leaflet] maps\n- [OSMnx], which is specialized on street networks\n- [overpass-api-python-wrapper], another Python client for the Overpass API\n- [overpy], another Python client for the Overpass API\n- [OSMPythonTools], a Python client for OSM-related services \n- [overpassify], a Python to Overpass QL transpiler\n\n<br>\n\n## License\nDistributed under the MIT License. See `LICENSE` for more information.\n\n\n[Overpass API]: https://wiki.openstreetmap.org/wiki/Overpass_API\n[Overpass QL]: https://wiki.openstreetmap.org/wiki/Overpass_API/Overpass_QL\n[OpenStreetMap]: https://www.openstreetmap.org\n\n[Overpass Turbo]: http://overpass-turbo.eu/\n[Folium]: https://python-visualization.github.io/folium/\n[Leaflet]: https://leafletjs.com/\n[overpass-api-python-wrapper]: https://github.com/mvexel/overpass-api-python-wrapper\n[overpy]: https://github.com/DinoTools/python-overpy\n[OSMnx]: https://github.com/gboeing/osmnx\n[OSMPythonTools]: https://github.com/mocnik-science/osm-python-tools\n[overpassify]: https://github.com/gappleto97/overpassify\n\n[aiohttp]: https://docs.aiohttp.org/en/stable/\n[Joblib]: https://joblib.readthedocs.io/en/latest/\n[NetworkX]: https://networkx.github.io/\n[PyGeodesy]: https://mrjean1.github.io/PyGeodesy/\n[Shapely]: https://shapely.readthedocs.io/en/latest/manual.html\n\n[GeoJSON]: https://en.wikipedia.org/wiki/GeoJSON\n[WKT]: https://en.wikipedia.org/wiki/Well-known_text_representation_of_geometry\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/timwie/aio-overpass",
+            "keywords": "geojson,geospatial,gis,open-street-map,osm,overpass-api,public-transport",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "aio-overpass",
+            "package_url": "https://pypi.org/project/aio-overpass/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/aio-overpass/",
+            "project_urls": {
+                "Homepage": "https://github.com/timwie/aio-overpass",
+                "Repository": "https://github.com/timwie/aio-overpass"
+            },
+            "release_url": "https://pypi.org/project/aio-overpass/0.1.2/",
+            "requires_dist": [
+                "aiohttp (>=3.8.4,<3.9.0)",
+                "joblib (>=1.2.0,<1.3.0) ; extra == \"joblib\"",
+                "networkx (>=3.1,<3.2) ; extra == \"networkx\"",
+                "shapely (>=2.0.1,<2.1.0) ; extra == \"shapely\""
+            ],
+            "requires_python": ">=3.8,<4.0",
+            "summary": "Async client for the Overpass API",
+            "version": "0.1.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17888702,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d24b9b45566d7b90bdf6a728f069c73f0952a968b7f1c125fc1d9782bc36087a",
+                    "md5": "7a2fc11e926177ea04cc2b7d26e7ca6f",
+                    "sha256": "0dfa6b95b1a9eb43704aab1c4abc0aff3e37c05f95df817df8b6f92529d681bc"
+                },
+                "downloads": -1,
+                "filename": "aio_overpass-0.1.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "7a2fc11e926177ea04cc2b7d26e7ca6f",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8,<4.0",
+                "size": 41510,
+                "upload_time": "2023-04-27T20:34:10",
+                "upload_time_iso_8601": "2023-04-27T20:34:10.105196Z",
+                "url": "https://files.pythonhosted.org/packages/d2/4b/9b45566d7b90bdf6a728f069c73f0952a968b7f1c125fc1d9782bc36087a/aio_overpass-0.1.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a2dd65b3ed3d320ecc33bf07bc89bfcbfe00272754945a3f3a69de929241c145",
+                    "md5": "8503096af227038081feaec229676f96",
+                    "sha256": "cd69dc8256e5d7959267834bf768c84aa946156ba38515175a76adb49b247742"
+                },
+                "downloads": -1,
+                "filename": "aio_overpass-0.1.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "8503096af227038081feaec229676f96",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8,<4.0",
+                "size": 40413,
+                "upload_time": "2023-04-27T20:34:12",
+                "upload_time_iso_8601": "2023-04-27T20:34:12.004559Z",
+                "url": "https://files.pythonhosted.org/packages/a2/dd/65b3ed3d320ecc33bf07bc89bfcbfe00272754945a3f3a69de929241c145/aio_overpass-0.1.2.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

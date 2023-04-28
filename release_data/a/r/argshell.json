@@ -41,7 +41,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17826718,
+        "last_serial": 17887563,
         "urls": [
             {
                 "comment_text": "",
@@ -98,7 +98,6 @@
                 "Operating System :: OS Independent",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "# argshell\n\nIntegrates the argparse and cmd modules to create custom shells with argparse functionality. \n\n## Installation\n\nInstall with:\n\n<pre>\npip install argshell\n</pre>\n\n\n\n## Usage\n\nCustom shells are created by subclassing the ArgShell class and adding functions of the form `do_*()`, just like the cmd.Cmd class.<br>\n\n<pre>\nclass MyShell(argshell.ArgShell):\n    def do_echo(self, line:str):\n        \"\"\" Print command \"\"\"\n        print(line)\n</pre>\nThen create a function that instantiates an ArgShellParser instance, adds arguments, and then returns the ArgShellParser object\n(similarly to how you would create a parser with argparse).\n<pre>\ndef get_parser()->argshell.Namespace:\n    parser = argshell.ArgShellParser()\n    parser.add_argument(\"text\", type=str, help=\"The text to print\")\n    parser.add_argument(\"-u\", \"--uppercase\", action=\"store_true\", help=\"Convert text to uppercase.\")\n    return parser\n</pre>\n\nFor do_* functions that require args instead of just a string,\ndecorate the function with `with_parser()` and pass your function that creates and returns an ArgShellParser\ninstance to `with_parser` as a parameter.\n<pre>\nclass MyShell(argshell.ArgShell):\n    @argshell.with_parser(get_parser)\n    def do_echo(self, args:argshell.Namespace):\n        \"\"\" Print command \"\"\"\n        print(args.text.upper() if args.uppercase else args.text)\n</pre>\nIn terminal:\n<pre>\nargshell>echo \"howdy y'all\"\nhowdy y'all\nargshell>echo \"howdy y'all\" -u\nHOWDY Y'ALL\n</pre>\n\n`with_parser` also accepts an optional list of functions that accept and return an argshell.Namespace object.<br>\nThese functions will be executed in order after the parser function parses the arguments.\n<pre>\ndef toggle_uppercase(args: argshell.Namespace)->argshell.Namespace:\n    \"\"\" If args.uppercase is True, make it False. If it's False, make it True.\"\"\"\n    args.uppercase = not args.uppercase\n    return args\n\nclass MyShell(argshell.ArgShell):\n    @argshell.with_parser(get_parser, [toggle_uppercase])\n    def do_echo(self, args:argshell.Namespace):\n        \"\"\" Print command \"\"\"\n        print(args.text.upper() if args.uppercase else args.text)\n    \n    @argshell.with_parser(get_parser, [toggle_uppercase, toggle_uppercase])\n    def do_echo_double_toggle(self, args.argshell.Namespace):\n        self.do_echo(args)\n</pre>\nIn terminal:\n<pre>\nargshell>echo \"howdy y'all\"\nHOWDY Y'ALL\nargshell>echo \"howdy y'all\" -u\nhowdy y'all\nargshell>echo_double_toggle \"howdy y'all\"\nhowdy y'all\nargshell>echo_double_toggle \"howdy y'all\" -u\nHOWDY Y'ALL\n</pre>\n\n\nWhen using your shell, entering `help command` will, in addition to the command's doc string,\nprint the help message of the parser that decorates it, if it is decorated.<br>\nThe parser help for a decorated command can also be printed by entering the command with the -h/--help flag.\n\n### Example\n\nA shell script that takes a list of first and last names and either prints a full name per line or prints first and last initials per line.\n\nIn a .py file:\n<pre>\nfrom argshell import ArgShell, ArgShellParser, Namespace, with_parser\n\ndef get_parser() -> ArgShellParser:\n    parser = ArgShellParser(prog=\"\")\n    parser.add_argument(\n        \"names\", type=str, nargs=\"*\", help=\"A list of first and last names to print.\"\n    )\n    parser.add_argument(\n        \"-i\", \"--initials\", action=\"store_true\", help=\"\"\" Print initials only. \"\"\"\n    )\n    return parser\n\n# Post parser function to convert list of first and last names to a list of tuples of first and last names\ndef names_list_to_tuples(args: Namespace) -> Namespace:\n    args.names = [\n        (first, last) for first, last in zip(args.names[::2], args.names[1::2])\n    ]\n    if args.initials:\n        args.names = [(name[0][0], name[1][0]) for name in args.names]\n    return args\n\n# Post parser function to capitalize names\ndef capitalize_names(args: Namespace) -> Namespace:\n    args.names = [name.capitalize() for name in args.names]\n    return args\n\nclass NameShell(ArgShell):\n    intro = \"Entering nameshell...\\nType 'help' or '?' to list commands\"\n    prompt = \"nameshell>\"\n\n    # Decorated command that gets a parser from get_parser\n    # The parsed arguments will be processed by capititalize_names and then names_list_to_tuples\n    # before being passed to do_printnames\n    @with_parser(get_parser, [capitalize_names, names_list_to_tuples])\n    def do_printnames(self, args: Namespace):\n        \"\"\"Print a list of first and last names, one per line.\"\"\"\n        print(*[f\"{name[0]} {name[1]}\" for name in args.names], sep=\"\\n\")\n\n    # Undecorated command that behaves like a standard cmd.Cmd command function\n    def do_echo(self, line: str):\n        \"\"\"Print the received text.\"\"\"\n        print(line)\n\nif __name__ == \"__main__\":\n    NameShell().cmdloop()\n</pre>\n\nLaunch the file in a terminal:\n<pre>\nEntering nameshell...\nType 'help' or '?' to list commands\nnameshell>help\n\nDocumented commands (type help <topic>):\n========================================\necho  help  printnames  quit\n\nnameshell>echo yeet\nyeet\nnameshell>printnames karl marx fred hampton emma goldman angela davis nestor makhno\nKarl Marx\nFred Hampton\nEmma Goldman\nAngela Davis\nNestor Makhno\nnameshell>printnames karl marx fred hampton emma goldman angela davis nestor makhno -i\nK M\nF H\nE G\nA D\nN M\nnameshell>help echo\nPrint the received text.\nnameshell>help printnames\nPrint a list of first and last names, one per line.\nParser help for printnames:\nusage: [-h] [-i] [names ...]\n\npositional arguments:\n  names           A list of first and last names to print.\n\noptions:\n  -h, --help      show this help message and exit\n  -i, --initials  Print initials only.\nnameshell>printnames -h\nusage: [-h] [-i] [names ...]\n\npositional arguments:\n  names           A list of first and last names to print.\n\noptions:\n  -h, --help      show this help message and exit\n  -i, --initials  Print initials only.\nnameshell>quit\n</pre>",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -131,7 +130,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17826718,
+        "last_serial": 17887563,
         "urls": [
             {
                 "comment_text": "",
@@ -172,6 +171,96 @@
                 "upload_time": "2023-04-23T23:59:32",
                 "upload_time_iso_8601": "2023-04-23T23:59:32.184246Z",
                 "url": "https://files.pythonhosted.org/packages/97/72/1f1a3c3f4caab50c4c39ed287fbda6fbc018c85f1860b96ca574c3dd09db/argshell-1.0.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.1.0": {
+        "info": {
+            "author": "",
+            "author_email": "Matt Manes <mattmanes@pm.me>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# argshell\n\nIntegrates the argparse and cmd modules to create custom shells with argparse functionality. \n\n## Installation\n\nInstall with:\n\n<pre>\npip install argshell\n</pre>\n\n\n\n## Usage\n\nCustom shells are created by subclassing the ArgShell class and adding functions of the form `do_*()`, just like the cmd.Cmd class.<br>\n\n<pre>\nclass MyShell(argshell.ArgShell):\n    def do_echo(self, line:str):\n        \"\"\" Print command \"\"\"\n        print(line)\n</pre>\nThen create a function that instantiates an ArgShellParser instance, adds arguments, and then returns the ArgShellParser object\n(similarly to how you would create a parser with argparse).\n<pre>\ndef get_parser()->argshell.Namespace:\n    parser = argshell.ArgShellParser()\n    parser.add_argument(\"text\", type=str, help=\"The text to print\")\n    parser.add_argument(\"-u\", \"--uppercase\", action=\"store_true\", help=\"Convert text to uppercase.\")\n    return parser\n</pre>\n\nFor do_* functions that require args instead of just a string,\ndecorate the function with `with_parser()` and pass your function that creates and returns an ArgShellParser\ninstance to `with_parser` as a parameter.\n<pre>\nclass MyShell(argshell.ArgShell):\n    @argshell.with_parser(get_parser)\n    def do_echo(self, args:argshell.Namespace):\n        \"\"\" Print command \"\"\"\n        print(args.text.upper() if args.uppercase else args.text)\n</pre>\nIn terminal:\n<pre>\nargshell>echo \"howdy y'all\"\nhowdy y'all\nargshell>echo \"howdy y'all\" -u\nHOWDY Y'ALL\n</pre>\n\n`with_parser` also accepts an optional list of functions that accept and return an argshell.Namespace object.<br>\nThese functions will be executed in order after the parser function parses the arguments.\n<pre>\ndef toggle_uppercase(args: argshell.Namespace)->argshell.Namespace:\n    \"\"\" If args.uppercase is True, make it False. If it's False, make it True.\"\"\"\n    args.uppercase = not args.uppercase\n    return args\n\nclass MyShell(argshell.ArgShell):\n    @argshell.with_parser(get_parser, [toggle_uppercase])\n    def do_echo(self, args:argshell.Namespace):\n        \"\"\" Print command \"\"\"\n        print(args.text.upper() if args.uppercase else args.text)\n    \n    @argshell.with_parser(get_parser, [toggle_uppercase, toggle_uppercase])\n    def do_echo_double_toggle(self, args.argshell.Namespace):\n        self.do_echo(args)\n</pre>\nIn terminal:\n<pre>\nargshell>echo \"howdy y'all\"\nHOWDY Y'ALL\nargshell>echo \"howdy y'all\" -u\nhowdy y'all\nargshell>echo_double_toggle \"howdy y'all\"\nhowdy y'all\nargshell>echo_double_toggle \"howdy y'all\" -u\nHOWDY Y'ALL\n</pre>\n\n\nWhen using your shell, entering `help command` will, in addition to the command's doc string,\nprint the help message of the parser that decorates it, if it is decorated.<br>\nThe parser help for a decorated command can also be printed by entering the command with the -h/--help flag.\n\n### Example\n\nA shell script that takes a list of first and last names and either prints a full name per line or prints first and last initials per line.\n\nIn a .py file:\n<pre>\nfrom argshell import ArgShell, ArgShellParser, Namespace, with_parser\n\ndef get_parser() -> ArgShellParser:\n    parser = ArgShellParser(prog=\"\")\n    parser.add_argument(\n        \"names\", type=str, nargs=\"*\", help=\"A list of first and last names to print.\"\n    )\n    parser.add_argument(\n        \"-i\", \"--initials\", action=\"store_true\", help=\"\"\" Print initials only. \"\"\"\n    )\n    return parser\n\n# Post parser function to convert list of first and last names to a list of tuples of first and last names\ndef names_list_to_tuples(args: Namespace) -> Namespace:\n    args.names = [\n        (first, last) for first, last in zip(args.names[::2], args.names[1::2])\n    ]\n    if args.initials:\n        args.names = [(name[0][0], name[1][0]) for name in args.names]\n    return args\n\n# Post parser function to capitalize names\ndef capitalize_names(args: Namespace) -> Namespace:\n    args.names = [name.capitalize() for name in args.names]\n    return args\n\nclass NameShell(ArgShell):\n    intro = \"Entering nameshell...\\nType 'help' or '?' to list commands\"\n    prompt = \"nameshell>\"\n\n    # Decorated command that gets a parser from get_parser\n    # The parsed arguments will be processed by capititalize_names and then names_list_to_tuples\n    # before being passed to do_printnames\n    @with_parser(get_parser, [capitalize_names, names_list_to_tuples])\n    def do_printnames(self, args: Namespace):\n        \"\"\"Print a list of first and last names, one per line.\"\"\"\n        print(*[f\"{name[0]} {name[1]}\" for name in args.names], sep=\"\\n\")\n\n    # Undecorated command that behaves like a standard cmd.Cmd command function\n    def do_echo(self, line: str):\n        \"\"\"Print the received text.\"\"\"\n        print(line)\n\nif __name__ == \"__main__\":\n    NameShell().cmdloop()\n</pre>\n\nLaunch the file in a terminal:\n<pre>\nEntering nameshell...\nType 'help' or '?' to list commands\nnameshell>help\n\nDocumented commands (type help <topic>):\n========================================\necho  help  printnames  quit\n\nnameshell>echo yeet\nyeet\nnameshell>printnames karl marx fred hampton emma goldman angela davis nestor makhno\nKarl Marx\nFred Hampton\nEmma Goldman\nAngela Davis\nNestor Makhno\nnameshell>printnames karl marx fred hampton emma goldman angela davis nestor makhno -i\nK M\nF H\nE G\nA D\nN M\nnameshell>help echo\nPrint the received text.\nnameshell>help printnames\nPrint a list of first and last names, one per line.\nParser help for printnames:\nusage: [-h] [-i] [names ...]\n\npositional arguments:\n  names           A list of first and last names to print.\n\noptions:\n  -h, --help      show this help message and exit\n  -i, --initials  Print initials only.\nnameshell>printnames -h\nusage: [-h] [-i] [names ...]\n\npositional arguments:\n  names           A list of first and last names to print.\n\noptions:\n  -h, --help      show this help message and exit\n  -i, --initials  Print initials only.\nnameshell>quit\n</pre>",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "argparse,cmd,commandline,shell,terminal",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "argshell",
+            "package_url": "https://pypi.org/project/argshell/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/argshell/",
+            "project_urls": {
+                "Documentation": "https://github.com/matt-manes/argshell/tree/main/docs",
+                "Homepage": "https://github.com/matt-manes/argshell",
+                "Source code": "https://github.com/matt-manes/argshell/tree/main/src/argshell"
+            },
+            "release_url": "https://pypi.org/project/argshell/1.1.0/",
+            "requires_dist": [
+                "pytest"
+            ],
+            "requires_python": ">=3.10",
+            "summary": "Integrates the argparse and cmd modules.",
+            "version": "1.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17887563,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3a4a87d4d587907592eb64198b431e917c9c0c9aba6be118edaf6ebe83e4c6a1",
+                    "md5": "041f3b7ff04c3ef6550f1a58ff06c8d7",
+                    "sha256": "054f0e89103f882b0f4266e96433538278d4654d235a6effe4d2df9695d34381"
+                },
+                "downloads": -1,
+                "filename": "argshell-1.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "041f3b7ff04c3ef6550f1a58ff06c8d7",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.10",
+                "size": 7237,
+                "upload_time": "2023-04-27T19:02:50",
+                "upload_time_iso_8601": "2023-04-27T19:02:50.111166Z",
+                "url": "https://files.pythonhosted.org/packages/3a/4a/87d4d587907592eb64198b431e917c9c0c9aba6be118edaf6ebe83e4c6a1/argshell-1.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "205b331ee393d0cca24bdf35742b2b23b82b1dbcdd3dc7e1662c8f3c86f5de06",
+                    "md5": "dbbfb421c6fcb24a8149009e570eee9b",
+                    "sha256": "09e2a3139f3f14420fdc7c532da2865f8231ba242f4a3f4904727195b1e58ec4"
+                },
+                "downloads": -1,
+                "filename": "argshell-1.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "dbbfb421c6fcb24a8149009e570eee9b",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.10",
+                "size": 55087,
+                "upload_time": "2023-04-27T19:02:52",
+                "upload_time_iso_8601": "2023-04-27T19:02:52.003464Z",
+                "url": "https://files.pythonhosted.org/packages/20/5b/331ee393d0cca24bdf35742b2b23b82b1dbcdd3dc7e1662c8f3c86f5de06/argshell-1.1.0.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
