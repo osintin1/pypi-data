@@ -1,0 +1,99 @@
+{
+    "0.0.1": {
+        "info": {
+            "author": "Beauhurst",
+            "author_email": "dev@beauhurst.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Environment :: Web Environment",
+                "Framework :: Django",
+                "Framework :: Django :: 3.2",
+                "Framework :: Django :: 4.0",
+                "Framework :: Django :: 4.1",
+                "Framework :: Django :: 4.2",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# django_pg_simple_hll\n\nPostgres-only HyperLogLog cardinality aggregation for the Django ORM.\n\nInstead of counting the number of distinct users,\n\n```python\n%%time\nSession.objects.aggregate(unique_users=Count(\"user_uuid\", distinct=True))\n\nCPU times: user 864 \u00b5s, sys: 2.46 ms, total: 3.32 ms\nWall time: 461 ms\n{'unique_users': 140000}\n```\n\nyou can approximate it,\n\n```python\n%%time\nSession.objects.aggregate(approx_unique_users=HLLCardinality(\"user_uuid\"))\n\nCPU times: user 480 \u00b5s, sys: 1.54 ms, total: 2.02 ms\nWall time: 845 ms\n{'approx_unique_users': 144594}\n```\n\nOr, instead of counting the number of distinct users per day,\n\n```python\n%%time\nlist(\n    Session.objects\n        .annotate(date_of_session=TruncDate(\"created\"))\n        .values(\"date_of_session\")\n        .annotate(unique_users=Count(\"user_uuid\", distinct=True))\n        .values(\"unique_users\", \"date_of_session\")\n        .order_by(\"date_of_session\")\n)\n\nCPU times: user 1.47 ms, sys: 3.16 ms, total: 4.64 ms\nWall time: 758 ms\n[{'date_of_session': datetime.date(2023, 4, 28), 'unique_users': 20000},\n {'date_of_session': datetime.date(2023, 4, 29), 'unique_users': 40000},\n {'date_of_session': datetime.date(2023, 4, 30), 'unique_users': 60000},\n {'date_of_session': datetime.date(2023, 5, 1), 'unique_users': 80000},\n {'date_of_session': datetime.date(2023, 5, 2), 'unique_users': 100000},\n {'date_of_session': datetime.date(2023, 5, 3), 'unique_users': 120000},\n {'date_of_session': datetime.date(2023, 5, 4), 'unique_users': 140000}]\n```\n\nyou can approximate it,\n\n```python\n%%time\nlist(\n    Session.objects\n        .annotate(date_of_session=TruncDate(\"created\"))\n        .values(\"date_of_session\")\n        .annotate(approx_unique_users=HLLCardinality(\"user_uuid\"))\n        .values(\"approx_unique_users\", \"date_of_session\")\n        .order_by(\"date_of_session\")\n)\n\nCPU times: user 1.53 ms, sys: 3.57 ms, total: 5.1 ms\nWall time: 838 ms\n[{'date_of_session': datetime.date(2023, 4, 28), 'approx_unique_users': 19322},\n {'date_of_session': datetime.date(2023, 4, 29), 'approx_unique_users': 39356},\n {'date_of_session': datetime.date(2023, 4, 30), 'approx_unique_users': 61202},\n {'date_of_session': datetime.date(2023, 5, 1), 'approx_unique_users': 80917},\n {'date_of_session': datetime.date(2023, 5, 2), 'approx_unique_users': 102914},\n {'date_of_session': datetime.date(2023, 5, 3), 'approx_unique_users': 125637},\n {'date_of_session': datetime.date(2023, 5, 4), 'approx_unique_users': 144594}]\n```\n\nThe approximation is sometimes faster and uses less memory, particularly when faceting by other variables.\n\nBy default, it uses a precision of 9, which tends to have an error of about 5%. You can set a higher precision (up to 26) through a second parameter:\n\n```python\n%%time\nlist(\n    Session.objects\n        .annotate(date_of_session=TruncDate(\"created\"))\n        .values(\"date_of_session\")\n        .annotate(approx_unique_users=HLLCardinality(\"user_uuid\", 11))\n        .values(\"approx_unique_users\", \"date_of_session\")\n        .order_by(\"date_of_session\")\n)\n\nCPU times: user 1.71 ms, sys: 3.82 ms, total: 5.53 ms\nWall time: 1.98 s\n[{'date_of_session': datetime.date(2023, 4, 28), 'approx_unique_users': 20013},\n {'date_of_session': datetime.date(2023, 4, 29), 'approx_unique_users': 39616},\n {'date_of_session': datetime.date(2023, 4, 30), 'approx_unique_users': 59312},\n {'date_of_session': datetime.date(2023, 5, 1), 'approx_unique_users': 81278},\n {'date_of_session': datetime.date(2023, 5, 2), 'approx_unique_users': 101880},\n {'date_of_session': datetime.date(2023, 5, 3), 'approx_unique_users': 122343},\n {'date_of_session': datetime.date(2023, 5, 4), 'approx_unique_users': 141375}]\n```\n\nYou can also set a lower precision (down to 4) for a faster, less accurate estimate.\n\n```python\n%%time\nlist(\n    Session.objects\n        .annotate(date_of_session=TruncDate(\"created\"))\n        .values(\"date_of_session\")\n        .annotate(approx_unique_users=HLLCardinality(\"user_uuid\", 7))\n        .values(\"approx_unique_users\", \"date_of_session\")\n        .order_by(\"date_of_session\")\n)\n\nCPU times: user 1.3 ms, sys: 2.85 ms, total: 4.15 ms\nWall time: 547 ms\n[{'date_of_session': datetime.date(2023, 4, 28), 'approx_unique_users': 19363},\n {'date_of_session': datetime.date(2023, 4, 29), 'approx_unique_users': 40627},\n {'date_of_session': datetime.date(2023, 4, 30), 'approx_unique_users': 63159},\n {'date_of_session': datetime.date(2023, 5, 1), 'approx_unique_users': 83371},\n {'date_of_session': datetime.date(2023, 5, 2), 'approx_unique_users': 96185},\n {'date_of_session': datetime.date(2023, 5, 3), 'approx_unique_users': 116565},\n {'date_of_session': datetime.date(2023, 5, 4), 'approx_unique_users': 143588}]\n```\n\nThe aggregation is also available in SQL for analytics:\n\n```sql\n\nselect\n    date_trunc('day', created) as date_of_session,\n    hll_cardinality(user_uuid, 11) as approx_unique_users\nfrom\n    testapp_session\ngroup by\n    date_trunc('day', created)\norder by date_of_session;\n\n    date_of_session     | approx_unique_users\n------------------------+---------------------\n 2023-04-28 00:00:00+00 |               20013\n 2023-04-29 00:00:00+00 |               39616\n 2023-04-30 00:00:00+00 |               59312\n 2023-05-01 00:00:00+00 |               81278\n 2023-05-02 00:00:00+00 |              101880\n 2023-05-03 00:00:00+00 |              122343\n 2023-05-04 00:00:00+00 |              141375\n(7 rows)\n\nTime: 2121.662 ms (00:02.122)\n```\n\n## SQL implementation\n\nThis is a low-privilege implementation of [Hyperloglog](https://www.lix.polytechnique.fr/~fusy/Articles/FlFuGaMe07.pdf) approximate cardinality aggregation written in SQL and some [PL/pgSQL](https://www.postgresql.org/docs/current/plpgsql.html). Read about it [here](http://alejandro.giacometti.me/2023-03-30/hyperloglog-in-sql/),\n\n## Should I use this?\n\nIf you can use [an optimised version](https://github.com/citusdata/postgresql-hll), you should use that. It will be faster - although I haven't done any benchmarks.\n\nUse this if you can't install extensions on your database, such as on [Amazon RDS](https://aws.amazon.com/rds/).\n\n## Performance\n\nThis is not a scientific test, but here is an example of performance running on an M1 Macbook Pro, running Postgres 14 in Docker.\n\nFor a dataset of 560k rows and 140k unique values a precision of 6 matches the speed of `COUNT(DISTINCT ...)`:\n\n```sql\n\nselect count(user_uuid) from testapp_session;\n count\n--------\n 560000\n(1 row)\n\nTime: 115.919 ms\n\nselect count(distinct user_uuid) as unique_users from testapp_session;\n unique_users\n--------------\n       140000\n(1 row)\n\nTime: 434.234 ms\n\nselect hll_cardinality(user_uuid, 6) as approx_unique_users from testapp_session;\n  approx_unique_users\n---------------------\n              136260\n(1 row)\n\nTime: 409.562 ms\n\nselect hll_cardinality(user_uuid, 11) as approx_unique_users from testapp_session;\n approx_unique_users\n---------------------\n              141375\n(1 row)\n\nTime: 1309.422 ms (00:01.309)\n```\n\nFor a dataset of 5.6M rows and 1.4M unique values:\n\n- with a precision of 7, `hll_aggregate` runs in about 0.79x the speed of `COUNT(DISTINCT ...)`\n- with a precision of 8, it roughly matches (0.94x)\n\n```sql\nselect count(user_uuid) from testapp_session;\n  count\n---------\n 5600000\n(1 row)\n\nTime: 6021.708 ms (00:06.022)\n\nselect count(distinct user_uuid) as unique_users from testapp_session;\n unique_users\n--------------\n      1400000\n(1 row)\n\nTime: 5414.085 ms (00:05.414)\n\nselect hll_cardinality(user_uuid, 7) as approx_unique_users from\n approx_unique_users\n---------------------\n             1308235\n(1 row)\n\nTime: 4308.065 ms (00:04.308)\n\nselect hll_cardinality(user_uuid, 8) as approx_unique_users from testapp_session;\n approx_unique_users\n---------------------\n             1407331\n(1 row)\n\nTime: 5083.205 ms (00:05.083)\n\nselect hll_cardinality(user_uuid, 11) as approx_unique_users from testapp_session;\n approx_unique_users\n---------------------\n             1390983\n(1 row)\n\nTime: 12468.054 ms (00:12.468)\n```\n\nFor a dataset of 56M rows and 14M unique values:\n\n- with a precision of 8, `hll_aggregate` runs in about 0.68x the speed of `COUNT(DISTINCT ...)`\n- with a precision of 9, it runs in about 0.76x\n- with a precision of 10, it runs in about 0.87x\n- with a precision of 11, it runs in about 1.10x\n\n```sql\n\nselect count(user_uuid) from testapp_session;\n  count\n----------\n 56000000\n(1 row)\n\nTime: 86902.105 ms (01:26.902)93)\n\nselect count(distinct user_uuid) as unique_users from testapp_session;\n unique_users\n--------------\n     14000000\n(1 row)\n\nTime: 145953.595 ms (02:25.954)\n\nselect hll_cardinality(user_uuid, 8) as approx_unique_users from testapp_session;\n approx_unique_users\n---------------------\n            13469591\n(1 row)\n\nTime: 99688.330 ms (01:39.688)\n\nselect hll_cardinality(user_uuid, 9) as approx_unique_users from testapp_session;\n approx_unique_users\n---------------------\n            13028181\n(1 row)\n\nTime: 111210.513 ms (01:51.211)\n\nselect hll_cardinality(user_uuid, 10) as approx_unique_users from testapp_session;\n approx_unique_users\n---------------------\n            13147406\n(1 row)\n\nTime: 126465.312 ms (02:06.465)\n\nhll_cardinality(user_uuid, 11) as approx_unique_users from testapp_session;\n approx_unique_users\n---------------------\n            13363203\n(1 row)\n\nTime: 160958.580 ms (02:40.959)\n```\n\nThe real advantage though is in combination with other properties:\n\nE.g. this query runs 0.37x quicker if using `hll_aggregate` than with `COUNT(DISTINCT ...)`:\n\n```sql\nselect\n  date_trunc('day', created) as date_of_session,\n  count(distinct user_uuid) as unique_users\nfrom testapp_session\ngroup by\n  date_trunc('day', created)\norder by\n  date_of_session;\n    date_of_session     | unique_users\n------------------------+--------------\n 2023-04-28 00:00:00+00 |      2000000\n 2023-04-29 00:00:00+00 |      4000000\n 2023-04-30 00:00:00+00 |      6000000\n 2023-05-01 00:00:00+00 |      8000000\n 2023-05-02 00:00:00+00 |     10000000\n 2023-05-03 00:00:00+00 |     12000000\n 2023-05-04 00:00:00+00 |     14000000\n(7 rows)\n\nTime: 296766.361 ms (04:56.766)\n\nselect\n  date_trunc('day', created) as date_of_session,\n  hll_cardinality(user_uuid, 9) as unique_users\nfrom\n  testapp_session\ngroup by\n  date_trunc('day', created)\norder by\n  date_of_session;\n    date_of_session     | unique_users\n------------------------+--------------\n 2023-04-28 00:00:00+00 |      1963972\n 2023-04-29 00:00:00+00 |      4096876\n 2023-04-30 00:00:00+00 |      5869339\n 2023-05-01 00:00:00+00 |      7412843\n 2023-05-02 00:00:00+00 |      9401010\n 2023-05-03 00:00:00+00 |     11443836\n 2023-05-04 00:00:00+00 |     13028181\n(7 rows)\n\nTime: 110217.665 ms (01:50.218)\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "django-pg-simple-hll",
+            "package_url": "https://pypi.org/project/django-pg-simple-hll/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/django-pg-simple-hll/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/django-pg-simple-hll/0.0.1/",
+            "requires_dist": [
+                "Django (>=3.2.4)",
+                "psycopg2 (>=2.9.6,<3.0.0)"
+            ],
+            "requires_python": ">=3.9,<3.12",
+            "summary": "A low-privilege implementation of hyperloglog for django and postgres",
+            "version": "0.0.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17898761,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "406894b01a953e49edae68c60594045bcf40220ac2c6c2031c203d4780dc6788",
+                    "md5": "0dd2d035571f6d33f246cb08f257be7d",
+                    "sha256": "8a5b68c46174e5ef3bb40b8a1b8f13ae7a0eb6de5eecb8c52680473c5e18011c"
+                },
+                "downloads": -1,
+                "filename": "django_pg_simple_hll-0.0.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "0dd2d035571f6d33f246cb08f257be7d",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9,<3.12",
+                "size": 8457,
+                "upload_time": "2023-04-28T13:44:34",
+                "upload_time_iso_8601": "2023-04-28T13:44:34.038259Z",
+                "url": "https://files.pythonhosted.org/packages/40/68/94b01a953e49edae68c60594045bcf40220ac2c6c2031c203d4780dc6788/django_pg_simple_hll-0.0.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2df8b7308a3ea8dbb72e059a2852a5d37a9660bd4a97c577091f55a29981579b",
+                    "md5": "4cfd00ab679d1bddbc13e7632be8756f",
+                    "sha256": "dd0cd67d316c4204bbc1c1b96aea7dd5d441310af01132f3914f91af37d8bdf4"
+                },
+                "downloads": -1,
+                "filename": "django_pg_simple_hll-0.0.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "4cfd00ab679d1bddbc13e7632be8756f",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9,<3.12",
+                "size": 9615,
+                "upload_time": "2023-04-28T13:44:35",
+                "upload_time_iso_8601": "2023-04-28T13:44:35.589628Z",
+                "url": "https://files.pythonhosted.org/packages/2d/f8/b7308a3ea8dbb72e059a2852a5d37a9660bd4a97c577091f55a29981579b/django_pg_simple_hll-0.0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
