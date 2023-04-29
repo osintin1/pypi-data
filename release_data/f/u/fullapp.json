@@ -1,0 +1,126 @@
+{
+    "0.0.5": {
+        "info": {
+            "author": "",
+            "author_email": "Graham Coster <bitjugglers@gmail.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 5 - Production/Stable",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "![PyPI](https://img.shields.io/pypi/v/fullapp)\n![PyPI - Python Version](https://img.shields.io/pypi/pyversions/fullapp)\n![GitHub all releases](https://img.shields.io/github/downloads/grumbit/fullapp/total)\n[![GitHub license](https://img.shields.io/github/license/grumbit/fullapp)](https://github.com/grumbit/fullapp/blob/master/LICENSE)\n![PyPI - Implementation](https://img.shields.io/pypi/implementation/fullapp)\n![PyPI - Wheel](https://img.shields.io/pypi/wheel/fullapp)\n![PyPI - Status](https://img.shields.io/pypi/status/fullapp)\n[![GitHub issues](https://img.shields.io/github/issues/grumbit/fullapp)](https://github.com/grumbit/fullapp/issues)\n[![GitHub forks](https://img.shields.io/github/forks/grumbit/fullapp)](https://github.com/grumbit/fullapp/network)\n[![GitHub stars](https://img.shields.io/github/stars/grumbit/fullapp)](https://github.com/grumbit/fullapp/stargazers)\n\n# Fullapp Notes  \n<!-- omit in toc -->\n\n<!-- @import \"[TOC]\" {cmd=\"toc\" depthFrom=1 depthTo=6 orderedList=false} -->\n\n<!-- code_chunk_output -->\n\n- [Fullapp Notes](#fullapp-notes)\n- [Development log](#development-log)\n  - [Create minimal app](#create-minimal-app)\n    - [Python packages](#python-packages)\n    - [Docker test db](#docker-test-db)\n    - [Alembic setup](#alembic-setup)\n    - [FastAPI setup](#fastapi-setup)\n- [Installing](#installing)\n- [Usage](#usage)\n  - [FastAPI app server](#fastapi-app-server)\n- [Notes](#notes)\n  - [Connecting to the test DB](#connecting-to-the-test-db)\n- [Releasing to PyPI](#releasing-to-pypi)\n  - [How I did it this time](#how-i-did-it-this-time)\n    - [Initial upload to Test PyPI](#initial-upload-to-test-pypi)\n    - [Set up project specific token](#set-up-project-specific-token)\n    - [Test uploaded project](#test-uploaded-project)\n    - [Add the TestPyPi and PyPi API tokens to the repo](#add-the-testpypi-and-pypi-api-tokens-to-the-repo)\n\n<!-- /code_chunk_output -->\n\n---\n\nThis combines the learning from these repos into one app;\n\n- fastapi_play\n- alembic_play\n- sqlalchemy_play\n- pydantic_play\n\n# Development log\n\n## Create minimal app\n\n### Python packages\n\n- Added the following to `requirements.in`;\n\n```txt\nalembic\nfastapi[all]\npydantic\npsycopg2\nSQLAlchemy\nsqlalchemy[mypy]\n```\n\n- Then ran;\n\n```bash\npip-compile requirements.in\npip-compile requirements_dev.in\npip-sync requirements.txt requirements_dev.txt \n```\n\n### Docker test db\n\n- Created `docker-compose.yml` - see the \"Connecting to the test DB\" section below\n\n- Created the app's test db;\n\n```bash\ndocker-compose up\n```\n\n- Add `db/pgdata` to `.gitignore`\n\n### Alembic setup\n\n- Initialise Alembic;\n\n```bash\nalembic init alembic\n```\n\n- In `alembic.ini` update config for docker DB;\n\n```ini\nsqlalchemy.url = postgresql+psycopg2://play:play@localhost:5440/alembicplay\n```\n\n- In `alembic.ini` uncomment file_template line as migration file default naming is pretty awful\n\n```ini\nfile_template = %%(year)d_%%(month).2d_%%(day).2d_%%(hour).2d%%(minute).2d-%%(rev)s_%%(slug)s\n```\n\n- Setup Alembic to find the app's ORM by changing `target_metadata = None` in `alembic/env.py` to;\n\n```python\nfrom src.fullapp.apporm import Base\ntarget_metadata = Base.metadata\n```\n\n- Added initial ORM file; `src/fullapp/apporm.py`\n\n- Auto-generated migration using metadata created in apporm.py and apply it;\n\n```bash\nalembic revision --autogenerate -m \"Bring in initial app orm\"\nalembic upgrade head\n```\n\n### FastAPI setup\n\n- Added this to `src/fullapp/myapp.py`;\n\n```python\nfrom fastapi import FastAPI\n\napp = FastAPI()\n\n\n@app.get(\"/\")\nasync def root():\n    return {\"message\": \"Hello World\"}\n```\n\n# Installing\n\n- Run;\n\n```bash\npython3 -m venv .venv\nsource .venv/bin/activate\npip install --upgrade pip\npip install wheel pip-tools\npip-sync requirements.txt requirements_dev.txt\n```\n\n- Create the app db;\n\n```bash\ndocker-compose up\nalembic upgrade head\n```\n\n# Usage\n\n## FastAPI app server\n\n- Run the app server;\n\n```bash\nuvicorn src.fullapp.myapp:app --reload\n```\n\n- Open the app server on <http://127.0.0.1:8000>\n\n- Open the auto docs on;\n- Interactive: <http://127.0.0.1:8000/docs>\n- Redoc: <http://127.0.0.1:8000/redoc>\n- OpenAPI schema: <http://127.0.0.1:8000/openapi.json>\n\n# Notes\n\n## Connecting to the test DB\n\n- Can connect using;\n\n```bash\npsql -hlocalhost -p5444 -dtestdb -Uappuser # with password 'generic'\n```\n\n- Can also connect using Adminer using; <http://localhost:8095/?pgsql=fullapp&username=appuser&db=testdb&ns=public>\n\n# Releasing to PyPI\n\n- See [GitHub Actions CI/CD workflows](https://github.com/grumBit/python_packaging_example/blob/master/README.md#github-actions-cicd-workflows)\n\n## How I did it this time\n\n### Initial upload to Test PyPI\n\n- Upload using Test PyPI global scope API key;\n\n```bash\npython3 -m pip install --upgrade twine # Maybe I should add twine to requirements_dev.in?\npython3 -m build\npython3 -m twine upload --repository testpypi dist/*\n    # user name = __token__\n    # For p/w, get \"API token - Global scope\" in 1Password \"TestPyPI - grumBit\" item \n```\n\n### Set up project specific token\n\n- Create a new token specifically for the project;\n  - Head to [Test PtPI](https://test.pypi.org/manage/projects/) -> `Manage` for fullapp -> `Settings` -> `Create a token for fullapp`\n  - Set `Token name` to fullapp\n  - Change the `Scope` to \"Project: fullapp`\n  - Click `Add Token`\n  - Add the generated token in a new password field named '\ud83d\udd11 API Token - \"fullapp\"' in the 1Password \"TestPyPI - grumBit\" item\n- Test the new token by running `python3 -m pip install --upgrade twine` again, but with the new token\n\n### Test uploaded project\n\n- In a new directory, create a new python venv;\n\n```bash\npython3 -m venv .venv\nsource .venv/bin/activate\npip install --upgrade pip\npip install wheel pip-tools\n```\n\n- Install the new project;\n\n```bash\npackage_name=\"fullapp\"\npython3 -m pip install --index-url https://test.pypi.org/simple/ --pre ${package_name}  # Check the package can be installed\npython3 -c \"from fullapp import myapp\" # Check package functions\n```\n\n### Add the TestPyPi and PyPi API tokens to the repo\n\n- Open the [repo on github](https://github.com/grumBit/fullapp) -> `Settings` -> `Secrets and variables` -> `Actions` -> `New respository secret`\n- Name = \"TEST_PYPI_API_TOKEN\"\n- Secret = The project's API token form the 1Password \"TestPyPI - grumBit\" item\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "fullapp",
+            "package_url": "https://pypi.org/project/fullapp/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/fullapp/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/grumBit/fullapp/issues",
+                "Homepage": "https://github.com/grumBit/fullapp.git",
+                "Security Policy": "https://github.com/grumbit/fullapp/blob/master/.github/SECURITY.md",
+                "Source": "https://github.com/grumBit/fullapp"
+            },
+            "release_url": "https://pypi.org/project/fullapp/0.0.5/",
+            "requires_dist": [
+                "alembic (==1.10.4)",
+                "anyio (==3.6.2)",
+                "certifi (==2022.12.7)",
+                "click (==8.1.3)",
+                "dnspython (==2.3.0)",
+                "email-validator (==2.0.0.post2)",
+                "fastapi[all] (==0.95.1)",
+                "h11 (==0.14.0)",
+                "httpcore (==0.17.0)",
+                "httptools (==0.5.0)",
+                "httpx (==0.24.0)",
+                "idna (==3.4)",
+                "itsdangerous (==2.1.2)",
+                "jinja2 (==3.1.2)",
+                "mako (==1.2.4)",
+                "markupsafe (==2.1.2)",
+                "mypy (==1.2.0)",
+                "mypy-extensions (==1.0.0)",
+                "orjson (==3.8.11)",
+                "psycopg2 (==2.9.6)",
+                "pydantic (==1.10.7)",
+                "python-dotenv (==1.0.0)",
+                "python-multipart (==0.0.6)",
+                "pyyaml (==6.0)",
+                "sniffio (==1.3.0)",
+                "sqlalchemy[mypy] (==2.0.11)",
+                "starlette (==0.26.1)",
+                "typing-extensions (==4.5.0)",
+                "ujson (==5.7.0)",
+                "uvicorn[standard] (==0.22.0)",
+                "uvloop (==0.17.0)",
+                "watchfiles (==0.19.0)",
+                "websockets (==11.0.2)"
+            ],
+            "requires_python": ">=3.11",
+            "summary": "fullapp TDB",
+            "version": "0.0.5",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17907160,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f6bebaa6582262f7829a67f8e8dc1d62ba2a25d397a8cddd5ea1b3c3dff40a13",
+                    "md5": "b00550f4deb9747c683d484c7caaa2cb",
+                    "sha256": "24a27386b08f48068183a8f8f47e4a048101ade1c0e5e9d38417acf833932070"
+                },
+                "downloads": -1,
+                "filename": "fullapp-0.0.5-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "b00550f4deb9747c683d484c7caaa2cb",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.11",
+                "size": 6309,
+                "upload_time": "2023-04-29T06:40:56",
+                "upload_time_iso_8601": "2023-04-29T06:40:56.370993Z",
+                "url": "https://files.pythonhosted.org/packages/f6/be/baa6582262f7829a67f8e8dc1d62ba2a25d397a8cddd5ea1b3c3dff40a13/fullapp-0.0.5-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e61bd6a701cd2bda5ae123ddad91f9ce2e35f2bf0c9350c743cb8b0d0e031fc7",
+                    "md5": "650f074a63e2ad7e3f332d0ea42d232a",
+                    "sha256": "85d88f26e3ac0484f6eb25c783f467da4bbc0faa9e190f61eefb8f420c7b2672"
+                },
+                "downloads": -1,
+                "filename": "fullapp-0.0.5.tar.gz",
+                "has_sig": false,
+                "md5_digest": "650f074a63e2ad7e3f332d0ea42d232a",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.11",
+                "size": 7145,
+                "upload_time": "2023-04-29T06:40:58",
+                "upload_time_iso_8601": "2023-04-29T06:40:58.624544Z",
+                "url": "https://files.pythonhosted.org/packages/e6/1b/d6a701cd2bda5ae123ddad91f9ce2e35f2bf0c9350c743cb8b0d0e031fc7/fullapp-0.0.5.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
