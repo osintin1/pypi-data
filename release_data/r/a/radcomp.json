@@ -1,0 +1,96 @@
+{
+    "0.0.1": {
+        "info": {
+            "author": "Jake Forster",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Topic :: Scientific/Engineering :: Medical Science Apps."
+            ],
+            "description": "# Radcomp: Radioactive compartment models\n\nRadcomp is a Python package for modelling the movement of radioactive nuclei and their progeny through a system. \n\nCurrently only deterministic compartment models are provided. \n\n## Requires\n\nPython >= 3.10, < 3.12\n\n## Installation\n\n    python -m pip install radcomp\n\n## Deterministic compartment model\n\nA system of $m$ \"layers\" and $n$ compartments is modelled, where each layer corresponds to a different nuclide and all layers share the same set of compartments. \n\nThe deterministic compartment model (DCM) is specified by $m \\times n$ ODEs of the form:\n\n$\\frac{dN_{ai}}{dt} = \\sum_j M_{aij} N_{aj} - N_{ai} \\left( \\lambda_a + \\sum_j M_{aji}  \\right) + \\sum_{b < a} f_{ab} \\lambda_b W_{bi}(t)$,\n\nwhere\n+ $N_{ai}$ is the number of nuclei in layer $a$ compartment $i$. This is solved numerically on a grid of times. \n+ $M_{aij}$ is the coefficient of transfer of the nuclide in layer $a$ from compartment $j$ to $i$. Note $M$ is an $m \\times n \\times n$ array with $M_{aij} \\geq 0$ and $M_{aii} = 0$.\n+ $\\lambda_a$ is the transition rate (physical decay constant) of the nuclide in layer $a$. Must be $\\geq 0$.\n+ $f_{ab}$ is the branching fraction (0 to 1) for the nuclide in layer $b$ to the nuclide in layer $a$. Note $f$ is an $m \\times m$ array with $0 \\leq f_{ab} \\leq 1$ and $f_{ab} = 0$ for $b \\geq a$.\n+ $W_{bi}(t)$ is the number of nuclei in layer $b$ compartment $i$ at time $t$. This is a function defined for all times in the integration interval (not just on the grid) and returns values $\\geq 0$. Here it is approximated by linear interpolation of the solution for $N_{bi}$ (except for the prelayer, if one is used - see [below](#option-to-input-time-activity-curves-in-a-prelayer)).\n\nThe terms on the RHS of the equation above represent:\n+ transfer into the compartment \n+ physical decay\n+ transfer out of the compartment\n+ growth by decay of parent nuclei\n\nThis is an initial value problem; i.e., provided the initial values $N_{ai}(0)$ it can be solved by numerical integration. \nEach layer $a$ (described by a system of $n$ ODEs) is solved separately and in order, with the solution for one layer able to serve as input for subsequent layers. \n\nThis program aims to provide a convenient interface for solving the DCM for any system of layers and compartments.\n\n## TOML configuration file\n\nInput parameters to models are read from a TOML file. \nFor example, the method `solve_dcm_from_toml()` for solving a DCM requires the filepath to a TOML file and an array of times at which the solution will be found.\nIn the TOML file, the parameters for each layer are specified separately.\nThe parameters for a layer are provided below a line containing `[[layer]]`. \nThe layers must be provided in an order such that the nuclide in one layer cannot transition to any of the nuclides in previous layers. \nThe \"keys\" to specify a layer depend on the type of model and are described below.\n\nThere is also the option to assign names to the compartments in the TOML file. \nTo do this, include a line containing `[compartments]` and below it assign the key `names` to an array of strings, which will be the names of the compartments in order.\nE.g. \n\n``` toml\n    [compartments]\n    names = [\"plasma\", \"kidneys\", \"lungs\"]\n```\n\n## Layer keys for a DCM\n\nThe model parameters for a DCM are $M_{aij}$, $\\lambda_a$, $f_{ab}$, and $N_{ai}(0)$.\nValid keys that can be used to specify these parameters for each layer $a$ are given in [Table 1](#table-dcm-layer-keys).\n\n<a name=\"table-dcm-layer-keys\"></a>\n\n| Key               | Description                                                | Units          | Associated model parameter                           | Data type (size)                              | Required?                                                    |\n|-------------------|------------------------------------------------------------|----------------|------------------------------------------------------|-----------------------------------------------|--------------------------------------------------------------|\n| `xfer_coeffs_h-1` | Transfer coefficients between compartments for layer       | h<sup>-1</sup> | $M_{aij}$ for $i,j = 1,\\ldots,n$                     | Array of $n$ Arrays of $n$ Floats or Integers | If $n > 1$ (else ignored)                                    |\n| `trans_rate_h-1`  | Transition rate for (nuclide in) layer                     | h<sup>-1</sup> | $\\lambda_a$                                          | Float or Integer                              | Yes                                                          |\n| `branching_fracs` | Branching fractions (0 to 1) of layer to subsequent layers |                | $f_{ba}$ for $b = a+1,\\ldots, m$                     | Array of $m-a$ Floats or Integers             | If $m-a \\geq 1$ and `trans_rate_h-1` $\\neq 0$ (else ignored) |\n| `initial_MBq`     | Initial activity of nuclide in layer in each compartment   | MBq            | $A_{ai}(0) = \\lambda_a N_{ai}(0)$ for $i=1,\\ldots,n$ | Array of $n$ Floats or Integers               | If `trans_rate_h-1` $\\neq 0$ (else ignored)                  |\n| `initial_nuclei`  | Initial number of nuclei in layer in each compartment      |                | $N_{ai}(0)$ for $i=1,\\ldots,n$                       | Array of $n$ Floats or Integers               | If `trans_rate_h-1` $= 0$ (else ignored)                     |\n| `name`            | Name of layer                                              |                |                                                      | String                                        | No                                                           |\n\nTable 1: Layer keys for a DCM. Here $a$ is the index of the layer (1-based index), $m$ is the number of layers, and $n$ is the number of compartments.\n\nNote:\n+ The values in `xfer_coeffs_h-1`, `initial_MBq`, and `initial_nuclei` are in order of compartments.\n+ The first value in `branching_fracs` is for the transition to the layer immediately below. \nTo check the input was as intended, call the `info_xfer()` and `info_growth()` methods of the `DetCompModelSol` instance.\n\nAn example of a TOML file for a DCM is provided below. \n\n``` toml\n[compartments]\nnames = [\"Organ 1\", \"Organ 2\", \"Organ 3\"]\n\n[[layer]]\nname = \"Nuclide A\"\ntrans_rate_h-1 = 0.91\nbranching_fracs = [0.1, 0.9]\ninitial_MBq = [1, 3.3, 2]\nxfer_coeffs_h-1 = [\n[0, 3.4, 2.1],  # flow to Organ 1\n[4.3, 0, 1.3],  # flow to Organ 2\n[5.8, 9.2, 0]   # flow to Organ 3\n]\n\n[[layer]]\nname = \"Nuclide B\"\ntrans_rate_h-1 = 0  # stable\ninitial_nuclei = [3, 2, 2]\nxfer_coeffs_h-1 = [[0, 3, 2], [4, 0, 1], [5.1, 9, 0]]\n\n[[layer]]\nname = \"Nuclide C\"\ntrans_rate_h-1 = 0.2\ninitial_MBq = [0, 1.3, 0]\nxfer_coeffs_h-1 = [[0, 1, 0], [2, 0, 1.3], [3, 1, 0]]\n```\n\nNote in this example, the transfer coefficient for Nuclide A from Organ 2 to Organ 3 is 9.2 h<sup>-1</sup> and the branching fraction of Nuclide A to Nuclide C is 0.9.\n\n\n## Option to input time activity curves in a prelayer\n\nThe user has the option to supply time-activity curves (TACs) for a nuclide that is able to transition to one or more layers in the model. \nThe TACs in the \"prelayer\" can then contribute to the growth of nuclei in layers. \nIf a prelayer is provided, prelayer TACs must be provided for all compartments. \n\nUnlike the layers in the model, the prelayer is **not** specified in the input TOML file. \nInstead, pass an instance of the `Prelayer` class to the instantiating model method (e.g. `solve_dcm_from_toml()`) using the optional keyword argument `prelayer`.\n\n## API reference\n\nhttps://radcomp.readthedocs.io\n\n## Examples \n\nhttps://github.com/jakeforster/radcomp/tree/main/examples\n\n## Testing\n\n    python -m pytest\n\n## TODO\n\nAdd stochastic models\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "radcomp",
+            "package_url": "https://pypi.org/project/radcomp/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/radcomp/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/jakeforster/radcomp/issues",
+                "Changelog": "https://github.com/jakeforster/radcomp/CHANGELOG.md",
+                "Documentation": "https://radcomp.readthedocs.io",
+                "Homepage": "https://github.com/jakeforster/radcomp"
+            },
+            "release_url": "https://pypi.org/project/radcomp/0.0.1/",
+            "requires_dist": [
+                "matplotlib<4,>=3.7.1",
+                "numpy<2,>=1.24.2",
+                "scipy<2,>=1.10.1"
+            ],
+            "requires_python": "<3.12,>=3.10",
+            "summary": "Model the movement of radioactive nuclei and their progeny through a system",
+            "version": "0.0.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17911035,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "31c4208a8030b70c6065396a634247aa57a9276ab32940647b0d535dc14c9961",
+                    "md5": "dcd9f045d151e64ecf792c43d0844147",
+                    "sha256": "b7fee753733309c15fbfdf3a7730bb65b4a0cbf9278c4b3969b769dfd639b446"
+                },
+                "downloads": -1,
+                "filename": "radcomp-0.0.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "dcd9f045d151e64ecf792c43d0844147",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": "<3.12,>=3.10",
+                "size": 14629,
+                "upload_time": "2023-04-29T17:21:31",
+                "upload_time_iso_8601": "2023-04-29T17:21:31.585189Z",
+                "url": "https://files.pythonhosted.org/packages/31/c4/208a8030b70c6065396a634247aa57a9276ab32940647b0d535dc14c9961/radcomp-0.0.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "4e0eb8fc5ad1cd9385d92d044dcff2d9351fa7630869ce47d6396b96d4efb51a",
+                    "md5": "f44cfd4fdd1627b8efe799bb739c5801",
+                    "sha256": "dd89e5fc3d7624a00df531b399bb01016172f3a60f711dca86f70de90aba86d6"
+                },
+                "downloads": -1,
+                "filename": "radcomp-0.0.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "f44cfd4fdd1627b8efe799bb739c5801",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": "<3.12,>=3.10",
+                "size": 41633,
+                "upload_time": "2023-04-29T17:21:35",
+                "upload_time_iso_8601": "2023-04-29T17:21:35.050065Z",
+                "url": "https://files.pythonhosted.org/packages/4e/0e/b8fc5ad1cd9385d92d044dcff2d9351fa7630869ce47d6396b96d4efb51a/radcomp-0.0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

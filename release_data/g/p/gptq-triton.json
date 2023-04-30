@@ -17,7 +17,6 @@
                 "Topic :: Scientific/Engineering :: Artificial Intelligence",
                 "Topic :: Software Development :: Libraries :: Python Modules"
             ],
-            "description": "# GPTQ-triton\n\nThis is my attempt at implementing a Triton kernel for GPTQ inference.  This code is based on the [GPTQ-for-LLaMa](https://github.com/qwopqwop200/GPTQ-for-LLaMa) codebase, which is itself based on the [GPTQ](https://github.com/IST-DASLab/gptq) codebase.\n\n```\n@article{frantar-gptq,\n  title={{GPTQ}: Accurate Post-training Compression for Generative Pretrained Transformers}, \n  author={Elias Frantar and Saleh Ashkboos and Torsten Hoefler and Dan Alistarh},\n  year={2022},\n  journal={arXiv preprint arXiv:2210.17323}\n}\n```\n\n## Installation\n\n`pip install .`\n\n\n## Motivation\n\nAs of today (2023-03-27) the CUDA kernels in the aforementioned codebases do not scale well with context length, running up to 10x slower when the context is large versus the equivilent FP16 model.  To solve this I'm implementing the inference kernel in Triton, which should allow for much better scaling.\n\nThe implementation is based around the matmul tutorial from the Triton documentation.  The main difference is decoding the quantized weights before performing each sub-block of the matrix multiplication.\n\nFusing of the FF layers and QKV matrix are also applied.\n\n\n## Performance\n\nThis benchmark was run on a 3090 using the `benchmark_generate.py` script.\n\n![Triton benchmark graph](TritonBench.png)\n\n\n## Accuracy (PPL)\n\nThe following results were obtained using the `ppl.py` script with a stride of 512 and a context length of 2048.\nFor the 4bit CUDA results, a custom version of `ppl.py` was used, as the current script is dedicated to the Triton kernel convensions.\nit/s numbers are from a 3090.\n\n\n| [LLaMA-7B](https://arxiv.org/abs/2302.13971)       | Bits | group-size | memory(MiB) | it/s | Wikitext2 |  PTB  |  C4  | \n| -------------------------------------------------- | ---- | ---------- | ----------- | ---- | --------- | ----- | ---- |\n| FP16                                               |  16  |      -     |    17373    | 1.64 |    5.04   |  7.85 | 6.99 |\n| GPTQ CUDA                                          |   4  |     -1     |     8805    | 0.11 |    5.44   |  8.24 |   -  |\n| GPTQ Triton                                        |   4  |     -1     |     8099    | 1.63 |    5.44   |  8.24 | 7.48 |\n\n\n| [LLaMA-13B](https://arxiv.org/abs/2302.13971)      | Bits | group-size | memory(MiB) | it/s | Wikitext2 |  PTB  |  C4  |\n| -------------------------------------------------- | ---- | ---------- | ----------- | ---- | --------- | ----- | ---- |\n| FP16                                               |  16  |      -     |    31633    |   -  |    4.52   |  7.19 | 6.66 |\n| GPTQ Triton                                        |   4  |     -1     |    13241    | 0.89 |    4.74   |  7.49 | 7.00 |\n\n\n| [LLaMA-30B](https://arxiv.org/abs/2302.13971)      | Bits | group-size | memory(MiB) | it/s | Wikitext2 |  PTB  |  C4  |\n| -------------------------------------------------- | ---- | ---------- | ----------- | ---- | --------- | ----- | ---- |\n| FP16                                               |  16  |      -     |    72491    |   -  |    3.61   |  6.50 | 6.07 |\n\n\n## Requirements\n\nSee `setup.cfg`, but note that a nightly `transformers` is preferred right now. v4.28.1 might work.  Known working `transformers` commit is `28f26c107b4a1c5c7e32ed4d9575622da0627a40`.\n\n\n## Quantizing a model\n\nThe `quantize.py` script is used to quantize a HuggingFace model.  Example usage:\n\n`./quantize.py --model <Path to a HF FP16 model> --dataset c4 --wbits 4 --groupsize -1 --act-order --true-sequential --save <Path to the output folder>`\n\nArguments:\n\n* `--model`: Path to a HF FP16 model\n* `--dataset`: Dataset to use for calibration.  Can be `wikitext-2`, `ptb`, `ptb-new` or `c4`.\n* `--seed`: Seed for sampling the calibration data.\n* `--nsamples`: Number of calibration data samples.\n* `--percdamp`: Percent of the average Hessian diagonal to use for dampening (default 0.01).\n* `--wbits`: Number of bits to use for quantization.\n* `--groupsize`: Groupsize to use for quantization; default (-1) uses full row.\n* `--save`: Save quantized result to this folder.\n* `--safetensors`: Save using the safetensors format.\n* `--act-order`: Use activation order quantization.\n* `--true-sequential`: Use true sequential quantization.\n\n**NOTE:** The Triton kernel is currently only implemented for 4-bits and groupsize -1.\n\n### Explanation of `groupsize`\n\nThe GPTQ quantization algorithm gets applied to `nn.Linear`, `nn.Conv2d`, and `transformers.Conv1d` layers.  (NOTE: `quantize.py` currently only supports LLaMA like models, and thus only `nn.Linear` layers are quantized, and `lm_head` is skipped.)  Each matrix is quantized into a quantized weight matrix, quantized zeros, and float16 scale (bias is not quantized).  During matmul, the weights are decoded using the formula `w = (w - z - 1) * s`.\n\nScales and zeros are per-outfeature, so when there is no grouping, scales and zeros would be `1xOutfeatures`.  That means that each row of the matrix (i.e. along the infeatures dimension) is quantized using the same scalar scale and zero.  When grouping is used, each row is split into `groupsize` values, and each group is quantized using its own scalar scale and zero.  This means that the scales and zeros are `(Infeatures//groupsize)xOutfeatures`.\n\nGroupsize provides a tradeoff.  Lower groupsizes offer more granularity to the quantization and thus less loss of accuracy, but decrease the memory savings offered by quantization.\n\n### Explanation of `nsamples` and `dataset`\nnsamples and dataset effect the calibration data.  This input data is fed through the network during quantization to calibrate the algorithm.  See the GPTQ paper for more detail.\n\n### Explanation of `true-sequential`\nModels are quantized sequentially, one \"layer\" at a time.  For example, LLaMA 7B has 32 layers, starting after the input embedding, following by the head.  Each of these layers has many different Linear modules that can be quantized.  Without the `true-sequential` flag, these Linear modules will be quantized in an arbitrary order.  With the `true-sequential` flag, the Linear modules will be quantized in the order they would be encountered during a forward pass.  This can provide an accuracy boost.\n\n### Explanation of `act-order`\n\nI don't know.  Looking at the code (in `gptq.py`), it seems to re-order the matrix before quantization based on the `argsort` of the estimated `H`.  The order in which the matrix columns of the matrix are quantized might have an impact on final accuracy.  `act-order` was introduced by the GPTQ authors to improve accuracy when quantizing \"small\" models like LLaMA 7B.\n\n\n## Files\n\n* `benchmark_generate.py` - A script for benchmarking generation speed at different prompt lengths and generation lengths.\n\n* `Benchmark.ipynb` - A notebook for benchmarking the Triton kernel against the CUDA kernel and FP16.\n\n* `quantize.py` - A script for quantizing a model.\n\n* `generate.py` - An example script for generating text from a model.  Example usage: `./generate.py --model <Path to your quantized model> --quant --prompt \"Write a story about a duck: Once upon a time there was a duck\" --temperature 0.6 --top-p 0.6 --repetition-penalty 1.1`\n\n* `ppl.py` - A script for calculating the perplexity of a model against wikitext2, PTB, and C4.  This is useful for verifying correctness of the Triton kernel, comparing it to the CUDA kernel and the original FP16 model.\n\n* `Verify.ipynb` - A notebook for verifying the correctness of the Triton kernel.\n",
             "description_content_type": "text/markdown; charset=UTF-8",
             "docs_url": null,
             "download_url": "",
@@ -50,7 +49,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17781673,
+        "last_serial": 17910528,
         "urls": [
             {
                 "comment_text": "",
@@ -91,6 +90,104 @@
                 "upload_time": "2023-04-20T03:29:50",
                 "upload_time_iso_8601": "2023-04-20T03:29:50.220690Z",
                 "url": "https://files.pythonhosted.org/packages/df/9f/57d70fdbc6666bdd102bfc9432335ff223393ffa69d25f84f7f062a24342/gptq_triton-0.0.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.4": {
+        "info": {
+            "author": "fpgaminer",
+            "author_email": "fpgaminer@bitcoin-mining.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: Apache Software License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.6",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Scientific/Engineering :: Artificial Intelligence",
+                "Topic :: Software Development :: Libraries :: Python Modules"
+            ],
+            "description": "# GPTQ-triton\n\nThis is my attempt at implementing a Triton kernel for GPTQ inference.  This code is based on the [GPTQ-for-LLaMa](https://github.com/qwopqwop200/GPTQ-for-LLaMa) codebase, which is itself based on the [GPTQ](https://github.com/IST-DASLab/gptq) codebase.\n\n```\n@article{frantar-gptq,\n  title={{GPTQ}: Accurate Post-training Compression for Generative Pretrained Transformers}, \n  author={Elias Frantar and Saleh Ashkboos and Torsten Hoefler and Dan Alistarh},\n  year={2022},\n  journal={arXiv preprint arXiv:2210.17323}\n}\n```\n\n## Installation\n\n`pip install .`\n\n\n## Motivation\n\nAs of today (2023-03-27) the CUDA kernels in the aforementioned codebases do not scale well with context length, running up to 10x slower when the context is large versus the equivilent FP16 model.  To solve this I'm implementing the inference kernel in Triton, which should allow for much better scaling.\n\nThe implementation is based around the matmul tutorial from the Triton documentation.  The main difference is decoding the quantized weights before performing each sub-block of the matrix multiplication.\n\nFusing of the FF layers and QKV matrix are also applied.\n\n\n## Performance\n\nThis benchmark was run on a 3090 using the `benchmark_generate.py` script.\n\n![Triton benchmark graph](TritonBench.png)\n\n\n## Accuracy (PPL)\n\nThe following results were obtained using the `ppl.py` script with a stride of 512 and a context length of 2048.\nFor the 4bit CUDA results, a custom version of `ppl.py` was used, as the current script is dedicated to the Triton kernel convensions.\nit/s numbers are from a 3090.\n\n\n| [LLaMA-7B](https://arxiv.org/abs/2302.13971)       | Bits | group-size | memory(MiB) | it/s | Wikitext2 |  PTB  |  C4  | \n| -------------------------------------------------- | ---- | ---------- | ----------- | ---- | --------- | ----- | ---- |\n| FP16                                               |  16  |      -     |    17373    | 1.64 |    5.04   |  7.85 | 6.99 |\n| GPTQ CUDA                                          |   4  |     -1     |     8805    | 0.11 |    5.44   |  8.24 |   -  |\n| GPTQ Triton                                        |   4  |     -1     |     6323    | 1.70 |    5.44   |  8.24 | 7.48 |\n\n\n| [LLaMA-13B](https://arxiv.org/abs/2302.13971)      | Bits | group-size | memory(MiB) | it/s | Wikitext2 |  PTB  |  C4  |\n| -------------------------------------------------- | ---- | ---------- | ----------- | ---- | --------- | ----- | ---- |\n| FP16                                               |  16  |      -     |    31633    |   -  |    4.52   |  7.19 | 6.66 |\n| GPTQ Triton                                        |   4  |     -1     |    10325    | 0.95 |    4.74   |  7.49 | 7.00 |\n| GPTQ Triton                                        |   4  |    128     |     9547    | 0.92 |    4.67   |  7.38 | 6.99 |\n\n\n| [LLaMA-30B](https://arxiv.org/abs/2302.13971)      | Bits | group-size | memory(MiB) | it/s | Wikitext2 |  PTB  |  C4  |\n| -------------------------------------------------- | ---- | ---------- | ----------- | ---- | --------- | ----- | ---- |\n| FP16                                               |  16  |      -     |    72491    |   -  |    3.61   |  6.50 | 6.07 |\n| GPTQ Triton                                        |   4  |     -1     |    19989    | 0.40 |    3.89   |  6.71 | 6.44 |\n| GPTQ Triton                                        |   4  |    128     |    20055    | 0.39 |    3.79   |  6.70 | 6.34 |\n| GPTQ Triton                                        |   4  |    512     |    19547    | 0.39 |    3.78   |  6.62 | 6.30 |\n\n\n## Requirements\n\nSee `setup.cfg`, but note that a nightly `transformers` is preferred right now. v4.28.1 might work.  Known working `transformers` commit is `28f26c107b4a1c5c7e32ed4d9575622da0627a40`.\n\n\n## Quantizing a model\n\nThe `quantize.py` script is used to quantize a HuggingFace model.  Example usage:\n\n`./quantize.py --model <Path to a HF FP16 model> --dataset c4 --wbits 4 --groupsize -1 --act-order --true-sequential --save <Path to the output folder>`\n\nArguments:\n\n* `--model`: Path to a HF FP16 model\n* `--dataset`: Dataset to use for calibration.  Can be `wikitext-2`, `ptb`, `ptb-new` or `c4`.\n* `--seed`: Seed for sampling the calibration data.\n* `--nsamples`: Number of calibration data samples.\n* `--percdamp`: Percent of the average Hessian diagonal to use for dampening (default 0.01).\n* `--wbits`: Number of bits to use for quantization.\n* `--groupsize`: Groupsize to use for quantization; default (-1) uses full row.\n* `--save`: Save quantized result to this folder.\n* `--safetensors`: Save using the safetensors format.\n* `--act-order`: Use activation order quantization.\n* `--true-sequential`: Use true sequential quantization.\n\n**NOTE:** The Triton kernel is currently only implemented for 4-bits and groupsize -1.\n\n### Explanation of `groupsize`\n\nThe GPTQ quantization algorithm gets applied to `nn.Linear`, `nn.Conv2d`, and `transformers.Conv1d` layers.  (NOTE: `quantize.py` currently only supports LLaMA like models, and thus only `nn.Linear` layers are quantized, and `lm_head` is skipped.)  Each matrix is quantized into a quantized weight matrix, quantized zeros, and float16 scale (bias is not quantized).  During matmul, the weights are decoded using the formula `w = (w - z - 1) * s`.\n\nScales and zeros are per-outfeature, so when there is no grouping, scales and zeros would be `1xOutfeatures`.  That means that each row of the matrix (i.e. along the infeatures dimension) is quantized using the same scalar scale and zero.  When grouping is used, each row is split into `groupsize` values, and each group is quantized using its own scalar scale and zero.  This means that the scales and zeros are `(Infeatures//groupsize)xOutfeatures`.\n\nGroupsize provides a tradeoff.  Lower groupsizes offer more granularity to the quantization and thus less loss of accuracy, but decrease the memory savings offered by quantization.\n\n### Explanation of `nsamples` and `dataset`\nnsamples and dataset effect the calibration data.  This input data is fed through the network during quantization to calibrate the algorithm.  See the GPTQ paper for more detail.\n\n### Explanation of `true-sequential`\nModels are quantized sequentially, one \"layer\" at a time.  For example, LLaMA 7B has 32 layers, starting after the input embedding, following by the head.  Each of these layers has many different Linear modules that can be quantized.  Without the `true-sequential` flag, these Linear modules will be quantized in an arbitrary order.  With the `true-sequential` flag, the Linear modules will be quantized in the order they would be encountered during a forward pass.  This can provide an accuracy boost.\n\n### Explanation of `act-order`\n\nI don't know.  Looking at the code (in `gptq.py`), it seems to re-order the matrix before quantization based on the `argsort` of the estimated `H`.  The order in which the matrix columns of the matrix are quantized might have an impact on final accuracy.  `act-order` was introduced by the GPTQ authors to improve accuracy when quantizing \"small\" models like LLaMA 7B.\n\n\n## Files\n\n* `benchmark_generate.py` - A script for benchmarking generation speed at different prompt lengths and generation lengths.\n\n* `Benchmark.ipynb` - A notebook for benchmarking the Triton kernel against the CUDA kernel and FP16.\n\n* `quantize.py` - A script for quantizing a model.\n\n* `generate.py` - An example script for generating text from a model.  Example usage: `./generate.py --model <Path to your quantized model> --quant --prompt \"Write a story about a duck: Once upon a time there was a duck\" --temperature 0.6 --top-p 0.6 --repetition-penalty 1.1`\n\n* `ppl.py` - A script for calculating the perplexity of a model against wikitext2, PTB, and C4.  This is useful for verifying correctness of the Triton kernel, comparing it to the CUDA kernel and the original FP16 model.\n\n* `Verify.ipynb` - A notebook for verifying the correctness of the Triton kernel.\n",
+            "description_content_type": "text/markdown; charset=UTF-8",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/fpgaminer/GPTQ-triton",
+            "keywords": "gptq,triton,torch,cuda,gpu,quantization,quantize,quantized,inference,deep learning,machine learning",
+            "license": "Apache License 2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "gptq-triton",
+            "package_url": "https://pypi.org/project/gptq-triton/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/gptq-triton/",
+            "project_urls": {
+                "Homepage": "https://github.com/fpgaminer/GPTQ-triton"
+            },
+            "release_url": "https://pypi.org/project/gptq-triton/0.0.4/",
+            "requires_dist": [
+                "triton (>=2.0.0)",
+                "torch (>=2.0.0)",
+                "transformers"
+            ],
+            "requires_python": ">=3.6",
+            "summary": "Fast GPTQ kernels written in Triton",
+            "version": "0.0.4",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17910528,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "47624e11f518129715ac451111735c096fe183ece74d43c8c9efa7a90ce465f1",
+                    "md5": "ca84a2fec5a701850fd2e02ae2899e6a",
+                    "sha256": "4bcf33f160b25854b2f1248ca8859147dfbd81264655ae5e6d41c9fc5f865778"
+                },
+                "downloads": -1,
+                "filename": "gptq_triton-0.0.4-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "ca84a2fec5a701850fd2e02ae2899e6a",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.6",
+                "size": 22828,
+                "upload_time": "2023-04-29T16:08:36",
+                "upload_time_iso_8601": "2023-04-29T16:08:36.578771Z",
+                "url": "https://files.pythonhosted.org/packages/47/62/4e11f518129715ac451111735c096fe183ece74d43c8c9efa7a90ce465f1/gptq_triton-0.0.4-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "51517819be9fe4dcc26e591e77a912efba00554690ab0ee86441d31d7063fd3f",
+                    "md5": "88e821a9736d6f906aae1bc9a725db85",
+                    "sha256": "9ebb7513a6b715ffac697e56880f13143d69856b923767030f72354429723d3e"
+                },
+                "downloads": -1,
+                "filename": "gptq_triton-0.0.4.tar.gz",
+                "has_sig": false,
+                "md5_digest": "88e821a9736d6f906aae1bc9a725db85",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.6",
+                "size": 22244,
+                "upload_time": "2023-04-29T16:08:38",
+                "upload_time_iso_8601": "2023-04-29T16:08:38.063095Z",
+                "url": "https://files.pythonhosted.org/packages/51/51/7819be9fe4dcc26e591e77a912efba00554690ab0ee86441d31d7063fd3f/gptq_triton-0.0.4.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

@@ -40,7 +40,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17865700,
+        "last_serial": 17911219,
         "urls": [
             {
                 "comment_text": null,
@@ -107,7 +107,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17865700,
+        "last_serial": 17911219,
         "urls": [
             {
                 "comment_text": null,
@@ -174,7 +174,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17865700,
+        "last_serial": 17911219,
         "urls": [
             {
                 "comment_text": null,
@@ -210,7 +210,6 @@
                 "Operating System :: OS Independent",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "# Filter K8s Audit Logs\n\n## Abstract\n\nThis library provides a simple way to filter Kubernetes audit logs, if you, whit some reason, are not able to apply\naudit policy directly at your cloud (e. g. in yandex cloud) and have to filter it with python script. \nAlso you can use this library to analyze audit logs.\nThe library does not provide any service, it just give you easy way to filter audit logs in your python script\nwith ```AuditFilter``` class interfaces.\n\n## Instalation\n\n```bash\npip install k8s-audit-filter\n```\n\n## Usage\n\nYou can easly modify your python script to filter audit logs.\nJust import ```AuditFilter``` class, init it with your ```audit-policy.yaml``` file and use it's methods.\nSee an example of modification\nof [this script](<https://github.com/yandex-cloud/yc-solution-library-for-security/blob/master/auditlogs/export-k8s-to-s3/terraform/function/main.py>):\n\n```python\nimport json\n\nimport os\nimport boto3\nimport string\nimport random\n\nfrom datetime import datetime\n\nfrom k8s_audit_filter import AuditFilter  # import AuditFilter class\n\n\ndef get_random_alphanumeric_string(length):\n    letters_and_digits = string.ascii_letters + string.digits\n    result_str = ''.join((random.choice(letters_and_digits) for i in range(length)))\n    return result_str\n\n\nclient = boto3.client(\n    service_name='s3',\n    endpoint_url='https://storage.yandexcloud.net',\n    region_name='ru-central1'\n)\n\n\ndef handler(event, context):\n    for log_data in event['messages']:\n\n        full_log = []\n        for log_entry in log_data['details']['messages']:\n            kubernetes_log = json.loads(log_entry['message'])\n            full_log.append(json.dumps(kubernetes_log))\n\n        audit_filter = AuditFilter('path/to/audit_policy.yaml')  # init AuditFilter class with path to audit policy file\n        filtered_log = [line for line in full_log if audit_filter.filter(full_log)]  # filter audit logs\n\n        bucket_name = os.environ.get('BUCKET_NAME')\n        object_key = 'AUDIT/' + os.environ.get('CLUSTER_ID') + '/' + datetime.now().strftime(\n            '%Y-%m-%d-%H:%M:%S') + '-' + get_random_alphanumeric_string(5)\n        object_value = '\\n'.join(filtered_log)  # prepare data to load\n        # load data to cloud storage\n        client.put_object(Bucket=bucket_name, Key=object_key, Body=object_value, StorageClass='COLD')\n```\n\nAlso you can update your policy dinamically, just use ```add_rule``` and ```remove_rule``` method:\n\n```python\nfrom k8s_audit_filter import AuditFilter\n\naudit_filter = AuditFilter()  # init AuditFilter class with blink audit policy\naudit_filter.add_rule({'level': 'Metadata'})\naudit_filter.filter({'level': 'Metadata'})  # return True\naudit_filter.remove_rule({'level': 'Metadata'})\naudit_filter.filter({'level': 'Metadata'})  # return False\n```\n\n## Describing Audit Policy\n\nYou can use find the way to describe k8s audit policy rules in Official Kubernetes Documentation at <https://kubernetes.io/docs/reference/config-api/apiserver-audit.v1/>\n\nSee example of audit policy:\n\n```yaml\napiVersion: audit.k8s.io/v1 # This is required.\n\nkind: Policy\n\nrules:\n  # Include line in the audit log which contains verb \"get\" and have level \"Metadata\"\n  - level: Metadata\n    verbs:\n      - \"get\"\n\n  # Exclude line in the audit log which contains verb \"create\"\n  - level: None\n    verbs:\n      - \"create\"\n\n  - level: Request\n    users:\n      - \"admin\"\n\n  - level: Request\n    userGroups:\n      - \"system:admins\"\n\n```\n\n## Describing Audit Policy in Python\n\nIf you want to describe audit policy in python, you can describe it in the same way as in yaml file with dict:\n\n```python\nfrom k8s_audit_filter import AuditFilter\n\naudit_filter = AuditFilter()\n\nrules = [\n    {'level': 'Metadata', 'verbs': ['get']},\n    {'level': 'None', 'verbs': ['create']},\n    {'level': 'Request', 'users': ['admin']},\n    {'level': 'Request', 'userGroups': ['system:admins']},\n    {'level': 'Request', 'namespaces': ['kube-system']},\n    {'level': 'RequestResponse',\n     'resources': [\n             {'group': '', 'resources': ['deployments'], 'resourceNames': ['pods']},\n             {'group': 'apps', 'resources': ['leases'], 'resourceNames': ['test']}\n         ]\n     }\n]\naudit_filter.add_rules(rules)\n\n```\n\n## Supported Rules\n\nPlease note, that ```level``` is required field for every rule, and should have of one of next values:\n\n- ```None``` - do not log events that match this rule (this is ExcludeRule)\n- ```Metadata``` - log line marked as \"Metadata\"\n- ```Request``` - log line marked as \"Request\"\n- ```RequestResponse``` - log line marked as \"RequestResponse\"\n\nThe library supports the following rules k8s audit PolicyRules:\n\n- ```level```\n- ```verbs```\n- ```users```\n- ```userGroups```\n- ```namespaces```\n- ```resources``` - Partly supported. Please read about limitations below\n\n## Limitations\n\nThe library does not support following k8s Audit rules:\n\n- ```resources``` - please note, that unlike original k8s audit policy, empty string \"\" in \"group\" field will not return \"core\" group, but will return all groups\n- ```nonResourceURLs``` - notResourceURLs are not declared explicitly in audit logs\n- ```omitStages``` - now it does not discern any stages\n- ```omitManagedFields``` - omitManagedFields is not declared explicitly in audit logs\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": null,
@@ -242,7 +241,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17865700,
+        "last_serial": 17911219,
         "urls": [
             {
                 "comment_text": null,
@@ -262,6 +261,141 @@
                 "upload_time": "2023-04-26T13:13:17",
                 "upload_time_iso_8601": "2023-04-26T13:13:17.646094Z",
                 "url": "https://files.pythonhosted.org/packages/5c/67/fde502161a2b251666b4a46494d65b993869f3b7f210758f8f552867b384/k8s_audit_filter-0.3.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.4.0": {
+        "info": {
+            "author": null,
+            "author_email": "Petr Ishutinr <ishutinpetrdev@gmail.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: GNU General Public License (GPL)",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": null,
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": null,
+            "keywords": "audit,filter,k8s",
+            "license": null,
+            "maintainer": null,
+            "maintainer_email": null,
+            "name": "k8s-audit-filter",
+            "package_url": "https://pypi.org/project/k8s-audit-filter/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/k8s-audit-filter/",
+            "project_urls": {
+                "Homepage": "https://github.com/petrishutin/k8s-audit-filter",
+                "Tracker": "https://github.com/petrishutin/k8s-audit-filter/issues"
+            },
+            "release_url": "https://pypi.org/project/k8s-audit-filter/0.4.0/",
+            "requires_dist": [
+                "pyyaml"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "A tool to filter k8s audit logs",
+            "version": "0.4.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17911219,
+        "urls": [
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "e4e128d6eabb000f2bd85724592dbca29b0b93f1e42bcf5444ff3ee001a29f5e",
+                    "md5": "b0fcf5b4fdae9b31e227ad43b31676b1",
+                    "sha256": "b7a1fbda8fe4150ebf2dfad73f9d270630b09d4207f5263ca994d67fc3a21ca7"
+                },
+                "downloads": -1,
+                "filename": "k8s_audit_filter-0.4.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "b0fcf5b4fdae9b31e227ad43b31676b1",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 22770,
+                "upload_time": "2023-04-29T16:26:08",
+                "upload_time_iso_8601": "2023-04-29T16:26:08.425947Z",
+                "url": "https://files.pythonhosted.org/packages/e4/e1/28d6eabb000f2bd85724592dbca29b0b93f1e42bcf5444ff3ee001a29f5e/k8s_audit_filter-0.4.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.5.0": {
+        "info": {
+            "author": null,
+            "author_email": "Petr Ishutinr <ishutinpetrdev@gmail.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: GNU General Public License (GPL)",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# Filter K8s Audit Logs\n\n## Abstract\n\nThis library provides a simple way to filter Kubernetes audit logs, if you, whit some reason, are not able to apply\naudit policy directly at your cloud (e. g. in yandex cloud) and have to filter it with python script. \nAlso you can use this library to analyze audit logs.\nThe library does not provide any service, it just give you easy way to filter audit logs in your python script\nwith ```AuditFilter``` class interfaces.\n\n## Instalation\n\n```bash\npip install k8s-audit-filter\n```\n\n## Usage\n\nYou can easly modify your python script to filter audit logs.\nJust import ```AuditFilter``` class, init it with your ```audit-policy.yaml``` file and use it's methods.\nSee an example of modification\nof [this script](<https://github.com/yandex-cloud/yc-solution-library-for-security/blob/master/auditlogs/export-k8s-to-s3/terraform/function/main.py>):\n\n```python\nimport json\n\nimport os\nimport boto3\nimport string\nimport random\n\nfrom datetime import datetime\n\nfrom k8s_audit_filter import AuditFilter  # import AuditFilter class\n\n\ndef get_random_alphanumeric_string(length):\n    letters_and_digits = string.ascii_letters + string.digits\n    result_str = ''.join((random.choice(letters_and_digits) for i in range(length)))\n    return result_str\n\n\nclient = boto3.client(\n    service_name='s3',\n    endpoint_url='https://storage.yandexcloud.net',\n    region_name='ru-central1'\n)\n\n\ndef handler(event, context):\n    for log_data in event['messages']:\n\n        full_log = []\n        for log_entry in log_data['details']['messages']:\n            kubernetes_log = json.loads(log_entry['message'])\n            full_log.append(json.dumps(kubernetes_log))\n\n        audit_filter = AuditFilter('path/to/audit_policy.yaml')  # init AuditFilter class with path to audit policy file\n        filtered_log = [line for line in full_log if audit_filter.filter(full_log)]  # filter audit logs\n\n        bucket_name = os.environ.get('BUCKET_NAME')\n        object_key = 'AUDIT/' + os.environ.get('CLUSTER_ID') + '/' + datetime.now().strftime(\n            '%Y-%m-%d-%H:%M:%S') + '-' + get_random_alphanumeric_string(5)\n        object_value = '\\n'.join(filtered_log)  # prepare data to load\n        # load data to cloud storage\n        client.put_object(Bucket=bucket_name, Key=object_key, Body=object_value, StorageClass='COLD')\n```\n\nAlso you can update your policy dinamically, just use ```add_rule``` and ```remove_rule``` method:\n\n```python\nfrom k8s_audit_filter import AuditFilter\n\naudit_filter = AuditFilter()  # init AuditFilter class with blink audit policy\naudit_filter.add_rule({'level': 'Metadata'})\naudit_filter.filter({'level': 'Metadata'})  # return True\naudit_filter.remove_rule({'level': 'Metadata'})\naudit_filter.filter({'level': 'Metadata'})  # return False\n```\n\n## Describing Audit Policy\n\nYou can use find the way to describe k8s audit policy rules in Official Kubernetes Documentation at <https://kubernetes.io/docs/reference/config-api/apiserver-audit.v1/>\n\nSee example of audit policy:\n\n```yaml\napiVersion: audit.k8s.io/v1 # This is required.\n\nkind: Policy\n\nrules:\n  # Include line in the audit log which contains verb \"get\" and have level \"Metadata\"\n  - level: Metadata\n    verbs:\n      - \"get\"\n\n  # Exclude line in the audit log which contains verb \"create\"\n  - level: None\n    verbs:\n      - \"create\"\n\n  - level: Request\n    users:\n      - \"admin\"\n\n  - level: Request\n    userGroups:\n      - \"system:admins\"\n\n```\n\n## Describing Audit Policy in Python\n\nIf you want to describe audit policy in python, you can describe it in the same way as in yaml file with dict:\n\n```python\nfrom k8s_audit_filter import AuditFilter\n\naudit_filter = AuditFilter()\n\nrules = [\n    {'level': 'Metadata', 'verbs': ['get']},\n    {'level': 'None', 'verbs': ['create']},\n    {'level': 'Request', 'users': ['admin']},\n    {'level': 'Request', 'userGroups': ['system:admins']},\n    {'level': 'Request', 'namespaces': ['kube-system']},\n    {'level': 'RequestResponse',\n     'resources': [\n             {'group': '', 'resources': ['deployments'], 'resourceNames': ['pods']},\n             {'group': 'apps', 'resources': ['leases'], 'resourceNames': ['test']}\n         ]\n     }\n]\naudit_filter.add_rules(rules)\n\n```\n\n## Supported Rules\n\nPlease note, that ```level``` is required field for every rule, and should have of one of next values:\n\n- ```None``` - do not log events that match this rule (this is ExcludeRule)\n- ```Metadata``` - log line marked as \"Metadata\"\n- ```Request``` - log line marked as \"Request\"\n- ```RequestResponse``` - log line marked as \"RequestResponse\"\n\nThe library supports the following rules k8s audit PolicyRules:\n\n- ```level```\n- ```verbs```\n- ```users```\n- ```userGroups```\n- ```namespaces```\n- ```resources``` - Partly supported. Please read about limitations below\n\n## Limitations\n\nThe library does not support following k8s Audit rules:\n\n- ```resources``` - please note, that unlike original k8s audit policy, empty string \"\" in \"group\" field will not return \"core\" group, but will return all groups\n- ```nonResourceURLs``` - notResourceURLs are not declared explicitly in audit logs\n- ```omitStages``` - now it does not discern any stages\n- ```omitManagedFields``` - omitManagedFields is not declared explicitly in audit logs\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": null,
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": null,
+            "keywords": "audit,filter,k8s",
+            "license": null,
+            "maintainer": null,
+            "maintainer_email": null,
+            "name": "k8s-audit-filter",
+            "package_url": "https://pypi.org/project/k8s-audit-filter/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/k8s-audit-filter/",
+            "project_urls": {
+                "Homepage": "https://github.com/petrishutin/k8s-audit-filter",
+                "Tracker": "https://github.com/petrishutin/k8s-audit-filter/issues"
+            },
+            "release_url": "https://pypi.org/project/k8s-audit-filter/0.5.0/",
+            "requires_dist": [
+                "pyyaml"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "A tool to filter k8s audit logs",
+            "version": "0.5.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17911219,
+        "urls": [
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "ba572aae3fb572d83a4f630f73e668514dc9b3befebd6eb4eb2a64ecb0a51fb5",
+                    "md5": "520a8980db8f541022843201e8b769c3",
+                    "sha256": "d7d86dd5a8205861926d6b9dea58f14cdfd9d0f31a33e29271631f007a5edaee"
+                },
+                "downloads": -1,
+                "filename": "k8s_audit_filter-0.5.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "520a8980db8f541022843201e8b769c3",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 22947,
+                "upload_time": "2023-04-29T18:02:13",
+                "upload_time_iso_8601": "2023-04-29T18:02:13.198953Z",
+                "url": "https://files.pythonhosted.org/packages/ba/57/2aae3fb572d83a4f630f73e668514dc9b3befebd6eb4eb2a64ecb0a51fb5/k8s_audit_filter-0.5.0-py3-none-any.whl",
                 "yanked": false,
                 "yanked_reason": null
             }
