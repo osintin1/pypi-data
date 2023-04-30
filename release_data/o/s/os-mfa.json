@@ -1,0 +1,92 @@
+{
+    "0.0.1": {
+        "info": {
+            "author": "",
+            "author_email": "Simon Merrick <s.m3rrick@gmail.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# OS-MFA: Easily manage one or more openstack credentials for command line and programmatic access\n\nos-mfa makes using MFA with cli/programmatic authentication with OpenStack easier and more secure by combining the convenience of durable authentication session persistence with better credential management hygiene though automatically managing the lifecycle of authentication tokens in the `clouds.yaml` file.\n\nInspired by https://github.com/broamski/aws-mfa\n\nNote: This is currently a proof of concept/Work in progress. Pull requests welcome.\n\n## In this README\n\n* [The Problems this project aims to Address](#the-problems-this-project-aims-to-address)\n* [Installation](#installation)\n  * [Linux](#linux)\n  * [macOS](#macos)\n  * [Windows](#windows)\n* [Quick Start](#quick-start)\n* [How it Works](#how-it-works)\n\n## The Problem(s) this project aims to address\n\nOpenstack provides several methods for configuring authentication for its SDK's and clients including CLI arguments, environment variables and a [clouds.yaml](https://docs.openstack.org/python-openstackclient/latest/configuration/index.html#configuration-files) file.\n\n### 1. Using openrc files/environment variables is not durable across terminal sessions\n\nFor some reason the preferred / default authentication method users are steered towards is using openrc files - non-trivial bash files which set environment variables in your shell session.\n\nUsing environment variables to persist your authentication session is not durable across terminal instances or restarts. If you open a new terminal for any reason you will need to re authenticate there with your username, password and MFA token. This becomes very tiresome very quickly.\n\n### 2. Using clouds.yaml does not work nicely with token authentication or MFA\n\nOpenstack does provide a better, more persisted, authentication mechanism by way of the [clouds.yaml](https://docs.openstack.org/python-openstackclient/latest/configuration/index.html#configuration-files) configuration file.\n\nSwitching sessions is then simplified by referencing the cloud config name from `clouds.yaml\n  * Using an cli argument (`--os-cloud=<name>`) \n  * Setting the `OS_CLOUD` environment variable inline (E.g `OS_CLOUD=<name> <command>`)\n  * Exporting `OS_CLOUD` environnement variable to used by all future commands in that session (`export OS_CLOUD=<name>`)\n\nHowever using `clouds.yaml` files also has some drawbacks.\n\n* It discourages token based authorization as tokens expire after 12 hours requiring users to constantly manually update clouds.yaml with new tokens.\n* It discourages the use of MFA which requires token based authorization.\n* It encourages storing usernames and passwords in clear text in a file on your machine as this is less friction than using token based authorization.\n\n## Best of both worlds: Convenience + Hygiene with os-mfa\n\nThis openstack MFA helper combines the convenience of durable authentication session persistence with better security hygiene by utilizing `clouds.yaml` and automatically managing the lifecycle of tokens in the config file allowing users to keep passwords out of their `clouds.yaml` file.\n\n## Quick Start\n\n1. Obtain a `clouds.yaml` file from the cloud dashboard. For catalyst cloud:\n    * Go to https://dashboard.cloud.catalyst.net.nz/project/api_access/\n    * Hover over `Download OpenStack RC File` on the top right\n    * Click the `OpenStack clouds.yml file`\n\n2. Place your `clouds.yaml` file in one of the following locations detailed in the [upstream docs](https://docs.openstack.org/python-openstackclient/latest/cli/man/openstack.html#config-files)\n    * `./clouds.yaml`\n    * `~/config/openstack/clouds.yaml`\n    * `/etc/openstack/clouds.yaml`\n\n3. E.g. Assign and export your config name as the OS_CLOUD environment variable\n\n    ```bash\n    $ export OS_CLOUD=catalystcloud\n    ```\n\n4. Authenticate using `os-mfa`\n\n    ```bash\n    $ os-mfa\n\n    Authenticating 'john.smith@example.com' in project 'john-smith'\n    Enter Password:\n    TOTP (press enter to skip): 654321\n    ```\n\n5. Happy OpenStacking\n    ```bash\n    $ openstack server list\n    +---------------+---------------+--------+---------------+---------------+---------+\n    | ID            | Name          | Status | Networks      | Image         | Flavor  |\n    +---------------+---------------+--------+---------------+---------------+---------+\n    | a5d3814a-4f6e | proxy-server- | ACTIVE | proxy-        | N/A (booted   | c1.c1r1 |\n    | -493f-aa03-ac | yohjuqh5vzhm  |        | network-lju2p | from volume)  |         |\n    | 13fdb9a860    |               |        | kokjtsh=10.0. |               |         |\n    |               |               |        | 0.4, 103.***. |               |         |\n    |               |               |        | ***.***       |               |         |\n    +---------------+---------------+--------+---------------+---------------+---------+\n    ```\n## How it works\n\nWith os-mfa we introduce the concept of a \"Long Term\" configuration, distinguished by a suffix of `-long-term`, which is a copy of the original config that does not contain any secretes such as passwords or tokens.\n\nos-mfa will assume ownership and manage the lifecycle of the original config, which we will refer to as the \"Ephemeral\" config going forward.\n\nThe Long Term and Ephemeral configs are described as follows.\n\n|Long Term|Ephemeral|\n|---|---|\n|Managed by you, the user|Managed by os-mfa|\n|Contains project information. Does not contain any secrets|Contains project information + temporary authentication token|\n|Used as basis to create an Ephemeral config but is otherwise ignored|Used by SDK's and clients for authentication|\n|Has a suffix of `-long-term`|Does not have a suffix|\n|Manual changes will be passed on to the Ephemeral config|Manual changes will be overwritten|\n\nThe \"Long Term\" and \"Ephemeral\" configs coexist in the same clouds.yaml file. For example: Here's an annotated example of a `clouds.yaml` file with a Long Term and Ephemeral config.\n\n```yaml\nclouds:\n    # Managed by os-mfa, Ephemeral.\n    catalystcloud:\n        auth_type: token # Managed by os-mfa\n        auth:\n            auth_url: https://api.nz-hlz-1.catalystcloud.io:5000 # Inherited\n            project_id: 33735662374f4b7a9621631f2e7e5e15         # Inherited\n            project_name: john-smith    # Inherited\n            token: gAAAAABjrN[...]e6vqt # Ephemeral, Managed by os-mfa\n        region_name: nz-hlz-1           # Inherited\n        interface: public               # Inherited\n        identity_api_version: 3         # Inherited\n\n    # Managed by you - the user.\n    catalystcloud-long-term:\n        auth:\n            auth_url: https://api.nz-hlz-1.catalystcloud.io:5000\n            username: john.smith@example.com\n            project_id: 33735662374f4b7a9621631f2e7e5e15\n            project_name: john-smith\n            user_domain_name: Default\n        region_name: nz-hlz-1\n        interface: public\n        identity_api_version: 3\n```\n\nJust the same as openstack sdk's and clients, os-mfa finds your cloud.yaml file by checking the following locations in order:\n\n  * Current directory (`./clouds.yaml`)\n  * `~/config/openstack/clouds.yaml`\n  * `/etc/openstack/clouds.yaml`\n\nWe specify which config we are working with by setting the `OS_CLOUD` environment variable.\n\n```bash\nexport OS_CLOUD=catalystcloud\n```\n\nWhen we run os-mfa, it will check our `clouds.yaml` file for a long term profile called `<OS_CLOUD>-long-term`. E.g. `catalystcloud-long-term`.\n\nIf a long term config does not exist, os-mfa will try to create a default long term config for us based on the original config and sanitized of sensitive values.\n\nOnce os-mfa finds (or creates) the Long Term Config os-mfa will then:\n\n 1. Read the project information from the long term config `<OS_CLOUD>-long-term`\n 2. Prompt for your secret credentials (password, MFA code)\n 3. Swap your credentials (username, password and MFA code) for an authorized token\n 4. Create/update a token based Ephemeral configuration in your `clouds.yaml` named `<OS_CLOUD>`\n\n## Run tests\n\n```\npython -m unittest discover\n```\n\n## Building Package\n\nSource: https://realpython.com/pypi-publish-python-package/\n\n```\npython -m pip install pip-tools\npip-compile pyproject.toml\n```\n\n## TODO:\n\n * [/] TBH I am probably going to port this back to python\n * [/] Alert if no clouds.yaml found\n * [/] Better error message if OS_CLOUD not set\n * Non-interactive mode\n * Sanitize long-term config better\n * Store and check expiry of token\n    * Only reauthenticate if token is not valid\n    * -f, --force cli option to force authentication\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "openstack,mfa,auth",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "os-mfa",
+            "package_url": "https://pypi.org/project/os-mfa/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/os-mfa/",
+            "project_urls": {
+                "Homepage": "https://github.com/iokiwi/os-mfa"
+            },
+            "release_url": "https://pypi.org/project/os-mfa/0.0.1/",
+            "requires_dist": [
+                "requests",
+                "PyYaml",
+                "black ; extra == 'dev'"
+            ],
+            "requires_python": ">=3.6",
+            "summary": "A minimal utility for managing cli authentication with openstack more securely and conveniently",
+            "version": "0.0.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17915936,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d1bceec5706d45de12416ba3ee50a15a71d958524c0e3c6e69f77851ac65644e",
+                    "md5": "5226024006dcc2e780125b8e9b9505d2",
+                    "sha256": "aed6c69101871898658e742246235ede62e22bbfde0ba99710adc86a9c440ce8"
+                },
+                "downloads": -1,
+                "filename": "os_mfa-0.0.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "5226024006dcc2e780125b8e9b9505d2",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.6",
+                "size": 8048,
+                "upload_time": "2023-04-30T10:09:44",
+                "upload_time_iso_8601": "2023-04-30T10:09:44.521797Z",
+                "url": "https://files.pythonhosted.org/packages/d1/bc/eec5706d45de12416ba3ee50a15a71d958524c0e3c6e69f77851ac65644e/os_mfa-0.0.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "0360700508919991d7fe34bfb54539e2f6591f46b15008a5f9ca80e1fa6e5243",
+                    "md5": "5526b2b100c50452f340b14ee5d743a7",
+                    "sha256": "736dbe1b82fc9fa1d777b54c4bf8dc044b7419423fc5fff6caac97345399efe6"
+                },
+                "downloads": -1,
+                "filename": "os-mfa-0.0.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "5526b2b100c50452f340b14ee5d743a7",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.6",
+                "size": 8404,
+                "upload_time": "2023-04-30T10:09:47",
+                "upload_time_iso_8601": "2023-04-30T10:09:47.335806Z",
+                "url": "https://files.pythonhosted.org/packages/03/60/700508919991d7fe34bfb54539e2f6591f46b15008a5f9ca80e1fa6e5243/os-mfa-0.0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
