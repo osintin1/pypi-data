@@ -1,0 +1,97 @@
+{
+    "0.1.0": {
+        "info": {
+            "author": "Emlyn O'Regan",
+            "author_email": "emlynoregan@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "License :: OSI Approved :: Apache Software License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.6",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# Dumb Vector\r\n_Semantic Search done the dumb way._\r\n\r\nDumb Vector is a python library implementing a really dumb brute force approach to semantic search. It's fast! It's simple! It's dumb!\r\n\r\n# Quickstart\r\n``` py\r\nfrom dumbvector.docs import make_docs_v1, get_docs_file_and_cache_reader, get_docs_file_and_cache_writer\r\nfrom dumbvector.index import create_dumb_index, docs_from_dumb_index\r\nfrom dumbvector.search import top_k_similar\r\nfrom openai.embedding_utils import get_embedding\r\nimport numpy as np\r\n\r\n# Create some docs\r\ndoclist = [\r\n    {\"text\": \"hello\", \"embedding\": get_embedding(\"hello\", model=\"text-embedding-ada-002\")},\r\n    {\"text\": \"world\", \"embedding\": get_embedding(\"world\", model=\"text-embedding-ada-002\")},\r\n    {\"text\": \"hello world\", \"embedding\": get_embedding(\"hello world\", model=\"text-embedding-ada-002\")}\r\n]\r\n\r\nname = \"my_docs\"\r\ndocs = make_docs_v1(name, doclist)\r\nwriter = get_docs_file_and_cache_writer(\"path/to/docs/folder\", overwrite=True)\r\nwriter(docs)\r\n\r\n# Create an index\r\nindex_name = \"my_index\"\r\ndocs_list = [docs]\r\ndef f_get_vector_from_doc(doc):\r\n    return np.array(doc[\"embedding\"])\r\n\r\ndumb_index = create_dumb_index(index_name, docs_list, f_get_vector_from_doc)\r\n\r\n# Search\r\nquery = \"hello\"\r\nquery_embedding = get_embedding(query)\r\nk = 2\r\n\r\nresult_index = top_k_similar(dumb_index, query_embedding, k)\r\n\r\n# Get the docs\r\nreader = get_docs_file_and_cache_reader(\"path/to/docs/folder\")\r\ndocs = docs_from_dumb_index(result_index, reader, 0, k)\r\n\r\nfor ix, doc in enumerate(docs.get(\"doclist\")):\r\n    print(f\"Result {ix}: {doc['text']}\")\r\n\r\n# Output:\r\n# Result 0: hello\r\n# Result 1: hello world\r\n```\r\n\r\n# How it works\r\nSay you have N documents, and you want to search through them. \r\n\r\nYou generate an embedding for each document, with D dimensions.\r\n\r\nA dumbindex is a list of N vectors, each with D dimensions, paired with a reference to the document that the vector came from.\r\n\r\nA dumbindex search calculates the cosine similarity between the query vector and each vector in the dumbindex, and returns the top K results.\r\n\r\nCosine similarity is a measure of how similar two vectors are. It's a number between -1 and 1, where 1 is the most similar, and -1 is the least similar.\r\n\r\nIt is calculated like so:\r\n``` py\r\ndef cosine_similarity(a, b):\r\n    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))\r\n```\r\n\r\nie: the dot product of the two vectors, divided by the product of the norms of the two vectors.\r\n\r\nWe can assume that the vectors are unit vectors, so the norms are 1 (if your embeddings are not unit vectors, you should normalize them first). This means that the cosine similarity is the dot product of the two vectors.\r\n\r\nSo we need to calculate the dot product of the query vector and each vector in the dumbindex. This is a matrix multiplication!\r\n\r\nThe query vector is a 1xD matrix, and the dumbindex is an NxD matrix. The transpose of the dumbindex is a DxN matrix.\r\n\r\nSo if we multiple the query vector by the transpose of the dumbindex, we get a 1xN matrix, which is the cosine similarity of the query vector with each vector in the dumbindex.\r\n\r\nWe then find the top k results from this result vector; these are the search results.\r\n\r\nThis algorithm is O(N) in the number of documents (if we assume D is a constant). That's not great in terms of algorithmic complexity. \r\n\r\nHowever, implementing this as a single matrix multiplication using numpy means that it's very fast in practice up to quite large numbers of documents. For example, using sbert embeddings, I can search through 1,000,000 documents in under 1 second on my laptop, using the \r\ncurrent implementation.\r\n\r\nTip: If you want another speedup at the (very small) cost of some accuracy, try casting all your vectors to float16. This will make the matrix multiplication faster, but will also reduce the accuracy of the cosine similarity calculation. eg:\r\n\r\n``` py\r\nsmaller_embedding = np.array(embedding, dtype=np.float16)\r\n```\r\n\r\n# Docs\r\nA Docs file is a file storing a list of json-compatible documents. These documents are your source records, the things that you want \r\nto search through.\r\n\r\nA simple convention is to include an embedding vector for each document, in the attribute \"embedding\", but this isn't required. You \r\ncould put more than one embedding vector in there, you could use a different attribute name or names, or you could even leave \r\ngenerating the embedding until index building time (see below).\r\n\r\nIf you do include an embedding, it should be a numpy array of floats, like so:\r\n``` py\r\ntext = <some text that we are searching>\r\nraw_embedding = <get an embedding from somewhere, based on text>\r\nnp_embedding = np.array(raw_embedding)\r\n\r\ndoc = {\r\n    \"text\": text,\r\n    \"embedding\": embedding\r\n}\r\n```\r\n\r\nDo this, because when the binary format for Docs files is emitted, numpy arrays are converted to a binary format that is far more\r\ncompact than a list of floats.\r\n\r\nOnce you have an array of documents (a \"doclist\"), you can create a Docs file like so:\r\n``` py\r\nfrom dumbvector.docs import make_docs_v1\r\n\r\ndoclist = [{\"text\": \"hello\", \"embedding\": [1, 2, 3]}, ...]\r\nname = \"my_docs\"\r\ndocs = make_docs_v1(name, doclist)\r\n```\r\n\r\nThe docs object is a python dictionary, with the following attributes:\r\n``` py\r\n{\r\n    \"name\": <name of the docs>,\r\n    \"version\": 1.1,\r\n    \"doclist\": <list of documents>\r\n}\r\n```\r\nSo the way to access your original doc dictionaries is like so:\r\n``` py\r\ndoclist = docs[\"doclist\"]\r\n# I want the first doc\r\ndoc = doclist[0]\r\n```\r\n\r\nYou can then write the docs to a file in your docs folder like so:\r\n``` py\r\nfrom dumbvector.docs import docs_to_file\r\n\r\ndocs_to_file(docs, \"path/to/docs/folder\")\r\n```\r\nIt'll be named \"my_docs.docs\".\r\n\r\n*NOTE: A Docs file is a binary format which is compact and very fast to read and write.*\r\n\r\nYou can read a Docs file back like so:\r\n``` py\r\nfrom dumbvector.docs import file_to_docs\r\n\r\nname = \"my_docs\"\r\ndocs = file_to_docs(name, \"path/to/docs/folder\")\r\n```\r\n\r\nA better way to read a Docs file is to use a Docs reader, which is a higher order function that returns a function that reads a Docs file.\r\n``` py\r\nfrom dumbvector.docs import get_docs_file_and_cache_reader\r\n\r\nname = \"my_docs\"\r\nreader = get_docs_file_and_cache_reader(\"path/to/docs/folder\")\r\ndocs = reader(name)\r\n```\r\nThis is better because it caches the Docs files in memory, so you don't have to read them from disk every time you want to use them.\r\n\r\nA better way to write a Docs file is to use a Docs writer, which is a higher order function that returns a function that writes a Docs file.\r\n``` py\r\nfrom dumbvector.docs import get_docs_file_and_cache_writer\r\n\r\nname = \"my_docs\"\r\nwriter = get_docs_file_and_cache_writer(\"path/to/docs/folder\", overwrite=True)\r\nwriter(docs)\r\n```\r\nThis will write the docs to the file \"my_docs.docs\" in the docs folder. It will also cache the docs in memory.\r\nIf you want to overwrite an existing file, and the cache, you can set the `overwrite` parameter to True.\r\nOtherwise it will only write the file if it doesn't already exist, and it will only cache the docs if they aren't already cached.\r\n\r\nNote there are readers and writers for just the filesystem and just the cache as well.\r\n\r\npath_to_docs_list() is a function which reads all docs files in a folder and returns a list of Docs.\r\n``` py\r\nfrom dumbvector.docs import path_to_docs_list\r\n\r\ndocs_list = path_to_docs_list(\"path/to/docs/folder\")\r\n```\r\n\r\nfile_docs_exists() is a function which checks if a docs file exists on the filesystem.\r\n``` py\r\nfrom dumbvector.docs import file_docs_exists\r\n\r\nexists = file_docs_exists(\"my_docs\", \"path/to/docs/folder\")\r\n```\r\n\r\n# dumbindex\r\nOnce you have some Docs, you can create a dumbindex file from them. A dumbindex file is a file storing the embeddings for each\r\ndoc in the Docs, and a corresponding reference to the Docs it comes from and the doc's index in the Docs.\r\n\r\nA dumbindex is required for searching through (one or more) Docs.\r\n\r\nTo create a dumbindex, you need a list of docs, and a function which gets one embedding from a single doc.\r\n``` py\r\nfrom dumbvector.index import create_dumb_index\r\n\r\nindex_name = \"my_index\"\r\ndocs_list = [Docs, ...]\r\ndef get_embedding(doc):\r\n    return doc[\"embedding\"]\r\n\r\ndumb_index = create_dumb_index(index_name, docs_list, get_embedding)\r\n```\r\n\r\nThe vector returned by _get_embedding()_ should be a one dimensional numpy array of floats. It should be normalized to \r\nhave a length of 1. Many models will do this for you, but if you are using a model that doesn't, you can normalize it like so:\r\n``` py\r\nimport numpy as np\r\n\r\ndef get_embedding(doc):\r\n    embedding = doc[\"embedding\"]\r\n    norm_embedding = embedding / np.linalg.norm(embedding)\r\n    return norm_embedding\r\n```\r\n\r\nYou can then write the index to a file in your index folder like so:\r\n``` py\r\nfrom dumbvector.index import dumb_index_to_file\r\n\r\ndumb_index_to_file(dumb_index, \"path/to/index/folder\")\r\n```\r\nIt'll be named \"my_index.dumbindex\".\r\n\r\n*NOTE: An Index file is a binary format which is compact and very fast to read and write.*\r\n\r\nYou can read an Index file back like so:\r\n``` py\r\nfrom dumbvector.index import file_to_dumb_index\r\n\r\nname = \"my_index\"\r\ndumb_index = file_to_dumb_index(name, \"path/to/index/folder\")\r\n```\r\n\r\nA better way to read an Index file is to use an Index reader, which is a higher order function that returns a function that reads an Index file.\r\n``` py\r\nfrom dumbvector.index import get_dumb_index_file_and_cache_reader\r\n\r\nname = \"my_index\"\r\nreader = get_dumb_index_file_and_cache_reader(\"path/to/index/folder\")\r\ndumb_index = reader(name)\r\n```\r\n\r\nA better way to write an Index file is to use an Index writer, which is a higher order function that returns a function that writes an Index file.\r\n``` py\r\nfrom dumbvector.index import get_dumb_index_file_and_cache_writer\r\n\r\nname = \"my_index\"\r\nwriter = get_dumb_index_file_and_cache_writer(\"path/to/index/folder\", overwrite=True)\r\nwriter(dumb_index)\r\n```\r\n\r\nNote there are readers and writers for just the filesystem and just the cache as well.\r\n\r\ndumb_index_exists() is a function which checks if an Index file exists on the filesystem.\r\n``` py\r\nfrom dumbvector.index import dumb_index_exists\r\n\r\nexists = dumb_index_exists(\"my_index\", \"path/to/index/folder\")\r\n```\r\n\r\nFinally, you can get a list of doc dictionaries from your index, in order, as a Docs object, like so:\r\n``` py\r\nfrom dumbvector.index import docs_from_dumb_index\r\n\r\ndumb_index = ...\r\ndocs_reader = get_docs_file_and_cache_reader(\"path/to/docs/folder\")\r\n\r\ndocs = docs_from_dumb_index(dumb_index, docs_reader, 0, 20)\r\n\r\n# docs is a Docs object with the first 20 docs from the index\r\n```\r\nThis is an essential function for retrieving results after searching.\r\n\r\n# search\r\nOnce you have some Docs and a dumbindex, you can search through them.\r\n\r\nSay the user has typed in a query, and you want to find the most similar docs to the query:\r\n\r\n``` py\r\nfrom dumbvector.search import top_k_similar\r\nfrom dumbvector.index import docs_from_dumb_index\r\n\r\nquery = \"this is a query\"\r\nquery_embedding = model.encode(query)\r\nk = 10\r\n\r\ntop_k_index = top_k_similar(dumb_index, query_embedding, k) # this is the semantic search\r\n\r\ndocs_reader = get_docs_file_and_cache_reader(\"path/to/docs/folder\")\r\ndocs = docs_from_dumb_index(top_k_index, docs_reader, 0, k)\r\n\r\nfor ix, doc in enumerate(docs.get(\"doclist\")):\r\n    print(f\"Result {ix}: {doc['text']}\")\r\n```\r\n\r\nThis will print the top 10 results from the search.\r\n\r\nFor more examples, see the examples folders:\r\n\r\n* [OpenAI Examples - requires OpenAI API key](openai_examples)\r\n* [SBert Examples - uses a downloadable SBert model](sbert_examples)\r\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/emlynoregan/dumbvector",
+            "keywords": "",
+            "license": "Apache License 2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "dumbvector",
+            "package_url": "https://pypi.org/project/dumbvector/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/dumbvector/",
+            "project_urls": {
+                "Homepage": "https://github.com/emlynoregan/dumbvector"
+            },
+            "release_url": "https://pypi.org/project/dumbvector/0.1.0/",
+            "requires_dist": [
+                "numpy",
+                "bson"
+            ],
+            "requires_python": "",
+            "summary": "Semantic Search done the dumb way.",
+            "version": "0.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17923222,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "aa3c825dfc1f80f1b8243c241e94ae808fe35631ba343110fbd4348c7ffbc402",
+                    "md5": "4be6b8156fb12562ccfada9e5407e668",
+                    "sha256": "26231b63559f5ecd8b92443f0a373592a0a1ea78a4655403e9aa52aa3ea96efc"
+                },
+                "downloads": -1,
+                "filename": "dumbvector-0.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "4be6b8156fb12562ccfada9e5407e668",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 25103,
+                "upload_time": "2023-05-01T05:59:48",
+                "upload_time_iso_8601": "2023-05-01T05:59:48.086188Z",
+                "url": "https://files.pythonhosted.org/packages/aa/3c/825dfc1f80f1b8243c241e94ae808fe35631ba343110fbd4348c7ffbc402/dumbvector-0.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "9992c1a4827823d80978e1af057a9aadb96c08b98354ec7d9a135f8e6decc5e6",
+                    "md5": "849d79439a8e40b83d026502debff7bb",
+                    "sha256": "07bc8100fbeca3726b658c606c7f0e18296d0cd3a057223b5c1db23adad8e975"
+                },
+                "downloads": -1,
+                "filename": "dumbvector-0.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "849d79439a8e40b83d026502debff7bb",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 24426,
+                "upload_time": "2023-05-01T05:59:50",
+                "upload_time_iso_8601": "2023-05-01T05:59:50.682103Z",
+                "url": "https://files.pythonhosted.org/packages/99/92/c1a4827823d80978e1af057a9aadb96c08b98354ec7d9a135f8e6decc5e6/dumbvector-0.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
