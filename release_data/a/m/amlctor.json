@@ -10,7 +10,6 @@
                 "License :: OSI Approved :: MIT License",
                 "Operating System :: OS Independent"
             ],
-            "description": "# AMLCTOR\n\n## Azure Machine Learning Pipeline Constructor\n\n`amlctor` allows you to create Azure Machine Learning(shortly - `AML`)  [Pipeline](https://learn.microsoft.com/en-us/azure/machine-learning/concept-ml-pipelines?view=azureml-api-2). `amlctor` based on the [Azure Machine Learning SDK](https://learn.microsoft.com/en-us/azure/machine-learning/v1/how-to-create-machine-learning-pipelines?view=azureml-api-1&preserve-view=true), and implements main operations of the Pipeline creation. You can create pipelines with AML Steps, which can take DataInputs.\nIn amlctor pipeline creation consists of 3 steps:\n\n### 0. Preporation\n\nIt's highly recommended to create separated folder your pipeline projects. And also, virtual environment(venv). You can create separated venv for future AML projects. It's specially useful if you are working with different kinds of libraries: data science oriented, web and so on.\n\n### 1. Pipeline initialisation\n\nSomething like project initialisation. You choose pipeline name, directory and credential `.env` file. For storing amlctor has denv storage - or **EnvBank**. Initialise pipeline as:\n\n```bash\npython -m amlctor init -n myfirstpipe -p . -e denv_name\n```\n\nHere `-n` shows pipeline name, `-p` - directory in which pipeline will be created, `-e` - dotenv name. I will talk about denv's a little bit later. After this, in the passed directory will be created named as pipeline passed name.\n\n```directory\nmyfirstpipe\n---|settings/\n------|settings.py\n------|.amlignore\n------|.env\n------|conda_dependencies.yml\n```\n\n Inside the directory `settings` directory which contains: `settings.py`, `.amlignore`, `.env` and `conda_dependencies.yml` files. `conda_dependencies.yml` will be used for environment creation on AML side. `.amlignore` something like `.gitignore` but for AML. `.env` is file form of our EnvBank instance. `-e` is optional, if it's skipped, will be created `.env` template with necessary fields, which you have to fill before *running* pipeline.\n\n **`settings.py`**:\n\n This module contains all necessary configuractions:\n\n ```python\nfrom amlctor.input import FileInputSchema, PathInputSchema\nfrom amlctor.core import StepSchema\n\n# --------------------------| Module Names |----------------------------\nAML_MODULE_NAME: str =       'aml'\nSCRIPT_MODULE_NAME: str =    'script'\nDATALOADER_MODULE_NAME: str = 'data_loader'\n\n\n\n# ---------------------------| General |---------------------------------\n\nNAME = \"{{pipe_name}}\"\nDESCRIPTION = \"Your pipeline description\"\n\n\n# ---------------------------| DataInputs |-------------------------------\n\nfile = FileInputSchema(\n                        name='name', \n                        datastore_name='datastore', \n                        path_on_datastore='', \n                        files = ['file.ext'], \n                        data_reference_name = ''\n    )\n\npath = PathInputSchema(\n                        name='name', \n                        datastore_name='datastore', \n                        path_on_datastore='',\n                        data_reference_name=''\n    )\n# ---------------------------| Steps |---------------------------------\nstep1 = StepSchema(\n                        name='step_name', \n                        compute_target='compute_name', \n                        input_data=[file, path], \n                        allow_reuse=False\n            )\nSTEPS = [step1, ]\n\n# ---------------------------| extra |---------------------------------\n\n\nEXTRA = {\n            'continue_on_step_failure': False,\n}\n ```\n\nLets look at the variables we have here.\n\n`AML_MODULE_NAME` - initially, pipeline project has 3 main scripts: `dataloader.py` - loads all the DataInputs into the pipeline, `aml.py` - main script of the pipeline, loaded data inputs imported here automaticaly, `script.py` - just empty script for implement your deep logic. You are free for remove this module or add so many as you need, however - the entry point of project is `aml.py`. `AML_MODULE_NAME` is the name of aml.py module. And the same thing for `DATALOADER_MODULE_NAME` and `SCRIPT_MODULE_NAME`.\n\n`NAME` - name of your pipeline.\n\n`DESCRIPTION` - description of the pipeline.\n\n`PathInputSchema` and `FileInputSchema` DataInput of your pipeline. You create instances of the classes and pass into `StepSchema` class. Each `StepSchema` class is abstraction of [`PythonScriptStep`](https://learn.microsoft.com/en-us/python/api/azureml-pipeline-steps/azureml.pipeline.steps.python_script_step.pythonscriptstep?view=azure-ml-py). All steps must be inside `STEPS` list.\n\nAfter filling settings, you have to apply your settings.\n\n### 2. **Apply** Settings\n\n```bash\npython -m amlctor apply -p <path_to_pipeline>\n```\n\nApplying pipeline means - create structure based on the `settings.py` module. For each step will be created directory inside pipeline directory and each directory will contain: `aml.py`, `dataloader.py` and `script.py`. **Note**: names of the modules setted in the `settings.py` module.\n\n### 3. **Run** Pipeline\n\n```bash\npython -m amlctor run -p <path_to_pipeline>\n```\n\nThis command will publish your pipeline into your AML.\n\n## EnvBank\n\nFor work on AML pipeline you have to use your credentials: `workspace_name`, `resource_group`, `subscription_id`, `build_id`, `environment_name` and `tenant_id`. In amltor these variables store as instances of `EnvBank`, which is encrypted jsonlike file. You can create, retrieve or remove `EnvBank` instances(I'll name it as `denv`). In this purpose you've to use `denv` command.\n\n### **Create denv**\n\nYou can create denv in 2 ways: pass path of existing `.env` file or in interactive mode - via terminal. In the first case:\n\n```bash\npython -m amlctor denv create -p <path_to_.env file> -n <new_name>\n```\n\nThen you'll type new password twise for encryption. After that, denv will save into local storage and you will be able to use it for future pipeline creation.\n\nFor create denv in interactive mode, you have to pass `-i` or `--interactive` arg:\n\n```bash\npython -m amlctor denv create -i\n```\n\nAfter that you have to type each asked field and set password.\n\n### Get denv\n\nFor retrieve denv use:\n\n```bash\npython -m amlctor denv get -n <name_of_denv>\n```\n\nFor list all existing denv names add -`-all` argument:\n\n```bash\npython -m amlctor denv get --all\n```\n\n**Note**: *for view the denv, you have to type password*.\n\n### Remove denv\n\nFor removing denv:\n\n```bash\npython -m amlctor denv rm -n <name_of_denv>\n```\n\n## DataInputs\n\nDataInputs can be files or paths from [AML Datastore](https://learn.microsoft.com/en-us/python/api/azureml-core/azureml.core.datastore.datastore?view=azure-ml-py). Whole process is creating [DataReference](https://learn.microsoft.com/en-us/python/api/azureml-core/azureml.data.data_reference.datareference?view=azure-ml-py) object behind the scenes... All inputs will be loaded in the `dataloader.py` and imported into `aml.py` module. Lets look at `amlctor` DataInputs.\n\n### PathInputSchema\n\nAllows you to create data reference link to any directory inside the datastore. class looks like this:\n\n```python\nclass PathInputSchema:\n    name: str\n    datastore_name: str\n    path_on_datastore: str\n    data_reference_name: str\n```\n\nWhere: `name` name of your PathInput, this name will be used as variable name for importing. `datastore_name` - Datastore name, `path_on_datastore` - target path related to the Datastore. `data_reference_name` - data reference name for `DataReference` class, optional - if empty, will be used name.\n\n### FileInputSchema\n\nAllows you to mount files from Datastore. Behind the scines, very similar to PathInput, but with *file oriented* additions.\n\n```python\nclass FileInputSchema:\n    name: str\n    datastore_name: str\n    path_on_datastore: str\n    data_reference_name: str\n    files: List[str]\n```\n\nFirst 4 fields as previous. `files` - you can list file or files as list, which will be mounted from Datastore. If you want to get one file, pass as string, for more files - list of strings. When you pass multiple filename, they must be on the same path.\n\n**Supported file types**: `amlctor` uses `pandas` read methods for read the mounted files. At the moment, suported file types:\n\n```directory\ncsv, parquet, excell sheet, json\n```\n\nSlugged file names will be used as variable names for importing files.\n\n## Other commands\n\n### Update\n\nYou can update `dataloader` according to the `settings.py` module. It can be useful when you maked some changes into `settings.py` and don't want to overwrite whole pipeline structure by scratch, in this case you can use `update`:\n\n```bash\npython -m amlctor update -p <path_to_pipe> -s step_name [Optional]\n```\n\n`step_name` argument is optional, if not passed, updating will apply for all steps, otherwise - only for passed step.\n\n### Rename\n\n```bash\npython -m amlctor rename -p <path_to_pipe> -n <new_name>\n```\n\nRenames pipeline into `new_name`. Renaming pipeline means: rename pipeline project directory, change `NAME` variable in `settings.py` and edit `ENVIRONMENT_FILE` in the `.env` file.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": null,
@@ -47,7 +46,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17908754,
+        "last_serial": 17918678,
         "urls": [
             {
                 "comment_text": null,
@@ -88,6 +87,101 @@
                 "upload_time": "2023-04-29T11:52:36",
                 "upload_time_iso_8601": "2023-04-29T11:52:36.343405Z",
                 "url": "https://files.pythonhosted.org/packages/49/ce/4fb3dd82edde338df557ee4e61acb0432d2381dd12d425836b105d7cb312/amlctor-0.0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.2": {
+        "info": {
+            "author": null,
+            "author_email": "Aziz Nadirov <aziznadirov@yahoo.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent"
+            ],
+            "description": "# AMLCTOR\n\n## Azure Machine Learning Pipeline Constructor\n\n`amlctor` allows you to create Azure Machine Learning(shortly - `AML`)  [Pipeline](https://learn.microsoft.com/en-us/azure/machine-learning/concept-ml-pipelines?view=azureml-api-2). `amlctor` based on the [Azure Machine Learning SDK](https://learn.microsoft.com/en-us/azure/machine-learning/v1/how-to-create-machine-learning-pipelines?view=azureml-api-1&preserve-view=true), and implements main operations of the Pipeline creation. You can create pipelines with AML Steps, which can take DataInputs.\nIn amlctor pipeline creation consists of 3 steps:\n\n### 0. Preporation\n\nIt's highly recommended to create separated folder your pipeline projects. And also, virtual environment(venv). You can create separated venv for future AML projects. It's specially useful if you are working with different kinds of libraries: data science oriented, web and so on.\n\n### 1. Pipeline initialisation\n\nSomething like project initialisation. You choose pipeline name, directory and credential `.env` file. For storing amlctor has denv storage - or **EnvBank**. Initialise pipeline as:\n\n```bash\npython -m amlctor init -n myfirstpipe -p . -e denv_name\n```\n\nHere `-n` shows pipeline name, `-p` - directory in which pipeline will be created, `-e` - dotenv name. I will talk about denv's a little bit later. After this, in the passed directory will be created named as pipeline passed name.\n\n```directory\nmyfirstpipe\n---|settings/\n------|settings.py\n------|.amlignore\n------|.env\n------|conda_dependencies.yml\n```\n\n Inside the directory `settings` directory which contains: `settings.py`, `.amlignore`, `.env` and `conda_dependencies.yml` files. `conda_dependencies.yml` will be used for environment creation on AML side. `.amlignore` something like `.gitignore` but for AML. `.env` is file form of our EnvBank instance. `-e` is optional, if it's skipped, will be created `.env` template with necessary fields, which you have to fill before *running* pipeline.\n\n **`settings.py`**:\n\n This module contains all necessary configuractions:\n\n ```python\nfrom amlctor.input import FileInputSchema, PathInputSchema\nfrom amlctor.core import StepSchema\n\n# --------------------------| Module Names |----------------------------\nAML_MODULE_NAME: str =       'aml'\nSCRIPT_MODULE_NAME: str =    'script'\nDATALOADER_MODULE_NAME: str = 'data_loader'\n\n\n\n# ---------------------------| General |---------------------------------\n\nNAME = \"{{pipe_name}}\"\nDESCRIPTION = \"Your pipeline description\"\n\n\n# ---------------------------| DataInputs |-------------------------------\n\nfile = FileInputSchema(\n                        name='name', \n                        datastore_name='datastore', \n                        path_on_datastore='', \n                        files = ['file.ext'], \n                        data_reference_name = ''\n    )\n\npath = PathInputSchema(\n                        name='name', \n                        datastore_name='datastore', \n                        path_on_datastore='',\n                        data_reference_name=''\n    )\n# ---------------------------| Steps |---------------------------------\nstep1 = StepSchema(\n                        name='step_name', \n                        compute_target='compute_name', \n                        input_data=[file, path], \n                        allow_reuse=False\n            )\nSTEPS = [step1, ]\n\n# ---------------------------| extra |---------------------------------\n\n\nEXTRA = {\n            'continue_on_step_failure': False,\n}\n ```\n\nLets look at the variables we have here.\n\n`AML_MODULE_NAME` - initially, pipeline project has 3 main scripts: `dataloader.py` - loads all the DataInputs into the pipeline, `aml.py` - main script of the pipeline, loaded data inputs imported here automaticaly, `script.py` - just empty script for implement your deep logic. You are free for remove this module or add so many as you need, however - the entry point of project is `aml.py`. `AML_MODULE_NAME` is the name of aml.py module. And the same thing for `DATALOADER_MODULE_NAME` and `SCRIPT_MODULE_NAME`.\n\n`NAME` - name of your pipeline.\n\n`DESCRIPTION` - description of the pipeline.\n\n`PathInputSchema` and `FileInputSchema` DataInput of your pipeline. You create instances of the classes and pass into `StepSchema` class. Each `StepSchema` class is abstraction of [`PythonScriptStep`](https://learn.microsoft.com/en-us/python/api/azureml-pipeline-steps/azureml.pipeline.steps.python_script_step.pythonscriptstep?view=azure-ml-py). All steps must be inside `STEPS` list.\n\nAfter filling settings, you have to apply your settings.\n\n### 2. **Apply** Settings\n\n```bash\npython -m amlctor apply -p <path_to_pipeline>\n```\n\nApplying pipeline means - create structure based on the `settings.py` module. For each step will be created directory inside pipeline directory and each directory will contain: `aml.py`, `dataloader.py` and `script.py`. **Note**: names of the modules setted in the `settings.py` module.\n\n### 3. **Run** Pipeline\n\n```bash\npython -m amlctor run -p <path_to_pipeline>\n```\n\nThis command will publish your pipeline into your AML.\n\n## EnvBank\n\nFor work on AML pipeline you have to use your credentials: `workspace_name`, `resource_group`, `subscription_id`, `build_id`, `environment_name` and `tenant_id`. In amltor these variables store as instances of `EnvBank`, which is encrypted jsonlike file. You can create, retrieve or remove `EnvBank` instances(I'll name it as `denv`). In this purpose you've to use `denv` command.\n\n### **Create denv**\n\nYou can create denv in 2 ways: pass path of existing `.env` file or in interactive mode - via terminal. In the first case:\n\n```bash\npython -m amlctor denv create -p <path_to_.env file> -n <new_name>\n```\n\nThen you'll type new password twise for encryption. After that, denv will save into local storage and you will be able to use it for future pipeline creation.\n\nFor create denv in interactive mode, you have to pass `-i` or `--interactive` arg:\n\n```bash\npython -m amlctor denv create -i\n```\n\nAfter that you have to type each asked field and set password.\n\n### Get denv\n\nFor retrieve denv use:\n\n```bash\npython -m amlctor denv get -n <name_of_denv>\n```\n\nFor list all existing denv names add -`-all` argument:\n\n```bash\npython -m amlctor denv get --all\n```\n\n**Note**: *for view the denv, you have to type password*.\n\n### Remove denv\n\nFor removing denv:\n\n```bash\npython -m amlctor denv rm -n <name_of_denv>\n```\n\n## DataInputs\n\nDataInputs can be files or paths from [AML Datastore](https://learn.microsoft.com/en-us/python/api/azureml-core/azureml.core.datastore.datastore?view=azure-ml-py). Whole process is creating [DataReference](https://learn.microsoft.com/en-us/python/api/azureml-core/azureml.data.data_reference.datareference?view=azure-ml-py) object behind the scenes... All inputs will be loaded in the `dataloader.py` and imported into `aml.py` module. Lets look at `amlctor` DataInputs.\n\n### PathInputSchema\n\nAllows you to create data reference link to any directory inside the datastore. class looks like this:\n\n```python\nclass PathInputSchema:\n    name: str\n    datastore_name: str\n    path_on_datastore: str\n    data_reference_name: str\n```\n\nWhere: `name` name of your PathInput, this name will be used as variable name for importing. `datastore_name` - Datastore name, `path_on_datastore` - target path related to the Datastore. `data_reference_name` - data reference name for `DataReference` class, optional - if empty, will be used name.\n\n### FileInputSchema\n\nAllows you to mount files from Datastore. Behind the scines, very similar to PathInput, but with *file oriented* additions.\n\n```python\nclass FileInputSchema:\n    name: str\n    datastore_name: str\n    path_on_datastore: str\n    data_reference_name: str\n    files: List[str]\n```\n\nFirst 4 fields as previous. `files` - you can list file or files as list, which will be mounted from Datastore. If you want to get one file, pass as string, for more files - list of strings. When you pass multiple filename, they must be on the same path.\n\n**Supported file types**: `amlctor` uses `pandas` read methods for read the mounted files. At the moment, suported file types:\n\n```directory\ncsv, parquet, excell sheet, json\n```\n\nSlugged file names will be used as variable names for importing files.\n\n## Other commands\n\n### Update\n\nYou can update `dataloader` according to the `settings.py` module. It can be useful when you maked some changes into `settings.py` and don't want to overwrite whole pipeline structure by scratch, in this case you can use `update`:\n\n```bash\npython -m amlctor update -p <path_to_pipe> -s step_name [Optional]\n```\n\n`step_name` argument is optional, if not passed, updating will apply for all steps, otherwise - only for passed step.\n\n### Rename\n\n```bash\npython -m amlctor rename -p <path_to_pipe> -n <new_name>\n```\n\nRenames pipeline into `new_name`. Renaming pipeline means: rename pipeline project directory, change `NAME` variable in `settings.py` and edit `ENVIRONMENT_FILE` in the `.env` file.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": null,
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": null,
+            "keywords": "azure,machine leaning,aml,pipeline",
+            "license": null,
+            "maintainer": null,
+            "maintainer_email": null,
+            "name": "amlctor",
+            "package_url": "https://pypi.org/project/amlctor/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/amlctor/",
+            "project_urls": {
+                "Source": "https://github.com/AzizNadirov/amlctor"
+            },
+            "release_url": "https://pypi.org/project/amlctor/0.0.2/",
+            "requires_dist": [
+                "azureml-core >=1.49.0",
+                "azureml-pipeline >=1.49.0",
+                "python-dotenv >=1.0.0",
+                "pandas >=1.5.3",
+                "pyarrow >=9.0.0",
+                "pydantic >=1.10.5",
+                "Jinja2 >=3.1.2"
+            ],
+            "requires_python": ">=3.9,<3.11",
+            "summary": "AML Pipeline Constructor ",
+            "version": "0.0.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17918678,
+        "urls": [
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "7e8a04d48138ff6bc2f883ac648237cf5be2a808981da645f0fd4e7e04878484",
+                    "md5": "ddd7b58552463c9ce39df615423fd408",
+                    "sha256": "99e32b1bda696b3bd48ad442bf050bcf10d3bb2e5ad488ebcdfd8ee34f3e7374"
+                },
+                "downloads": -1,
+                "filename": "amlctor-0.0.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "ddd7b58552463c9ce39df615423fd408",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9,<3.11",
+                "size": 33225,
+                "upload_time": "2023-04-30T17:50:57",
+                "upload_time_iso_8601": "2023-04-30T17:50:57.618745Z",
+                "url": "https://files.pythonhosted.org/packages/7e/8a/04d48138ff6bc2f883ac648237cf5be2a808981da645f0fd4e7e04878484/amlctor-0.0.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "badb5445c839e637aa83e1faa7319bb318ea9280688191ebda02d471e909681b",
+                    "md5": "ef65ebc8cf4169944a1bc2577ac96a1e",
+                    "sha256": "243e946a8548cad9471ec07d0d578ae00440db5bbe551aa35b96e60b0d1367f6"
+                },
+                "downloads": -1,
+                "filename": "amlctor-0.0.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "ef65ebc8cf4169944a1bc2577ac96a1e",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9,<3.11",
+                "size": 29882,
+                "upload_time": "2023-04-30T17:51:05",
+                "upload_time_iso_8601": "2023-04-30T17:51:05.096944Z",
+                "url": "https://files.pythonhosted.org/packages/ba/db/5445c839e637aa83e1faa7319bb318ea9280688191ebda02d471e909681b/amlctor-0.0.2.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
