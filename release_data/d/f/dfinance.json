@@ -1,0 +1,94 @@
+{
+    "0.0.1": {
+        "info": {
+            "author": "Tin Kei Cheng",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Intended Audience :: Financial and Insurance Industry",
+                "License :: OSI Approved :: GNU Affero General Public License v3",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# dFin\r\n\r\n![Workflow status - Options package - Master branch](https://github.com/tinkei/dfin/actions/workflows/python-package.yml/badge.svg?branch=master)\r\n![GitHub language count](https://img.shields.io/github/languages/count/tinkei/dfin)\r\n![GitHub top language](https://img.shields.io/github/languages/top/tinkei/dfin)\r\n![GitHub all releases](https://img.shields.io/github/downloads/tinkei/dfin/total)\r\n![GitHub commit activity](https://img.shields.io/github/commit-activity/m/tinkei/dfin)\r\n![GitHub last commit](https://img.shields.io/github/last-commit/tinkei/dfin)\r\n\r\ndFin (\u02c8di-f\u012bn) is a random assortment of Quantitative Finance algorithms that are implemented to be differentiable.\r\nFor starters, risk metrics such as Option Greeks are trivially obtainable through autograd.\r\nThis also opens the door to AI/ML applications, as implied volatility can be backpropped through the equations.\r\nTheoretical price and implied volatility can then be jointly optimized using a recommender system.\r\n\r\nAt the current stage this is only a collection of individual functions yet to be integrated together into a wider framework.\r\n\r\n\r\n\r\n---\r\n\r\n## Getting Started\r\n\r\nFor normal users:  \r\n`pip install dfinance`  \r\n\r\nDevelopment version:  \r\n`pip install --index-url https://test.pypi.org/simple/ --no-deps dfinance`  \r\n\r\nFor developers:  \r\n`git clone git@github.com:tinkei/dfin.git`  \r\n`cd dfin`  \r\n`pip install -e .`  \r\n\r\n\r\n\r\n---\r\n\r\n## Example Use Cases\r\n\r\n\r\n\r\n### (1) Compute Option Greeks\r\n\r\nIt's a no-brainer really:\r\n\r\n```python\r\nimport torch\r\nfrom dfin.options.bs_torch import call_price\r\n\r\nif __name__ == \"__main__\":\r\n\r\n    S = torch.tensor([100.], requires_grad=True)\r\n    K = torch.tensor([110.], requires_grad=True)\r\n    r = torch.tensor([0.05], requires_grad=True)\r\n    t = torch.tensor([1.], requires_grad=True)\r\n    sigma = torch.tensor([0.2], requires_grad=True)\r\n\r\n    C = call_price(S, K, r, t, sigma)\r\n    C.backward(retain_graph=True)\r\n    Cdelta = torch.autograd.grad(C, S, create_graph=True)\r\n    Cgamma = torch.autograd.grad(Cdelta, S, create_graph=True)[0]\r\n\r\n    print(f\"Theoretical price of a call option: ${C.item():.4f}\")\r\n    print(f\"Gradients (Option Greeks)\")\r\n    print(f\"dC/dS   (delta) : {S.grad.item():+.4f}\") # ==  0.450\r\n    print(f\"d2C/dS2 (gamma) : {Cgamma.item():+.4f}\") # == 0.020\r\n    print(f\"dC/dK   (N/A)   : {K.grad.item():+.4f}\")\r\n    print(f\"dC/dr   (rho)   : {r.grad.item():+.4f}\") # ==  38.925\r\n    print(f\"dC/dt   (theta) : {-t.grad.item():+.4f}\") # == -5.904\r\n    print(f\"dC/d\u03c3   (vega)  : {sigma.grad.item():+.4f}\") # == 39.576\r\n```\r\n\r\n\r\n\r\n### (2) Compute Implied Volatility\r\n\r\nI know gradient descent is nowhere near the most efficient way to compute implied volatility, but it works out-of-the-box. So why not?\r\nPlus autograd gives us the Hessian semi-automatically so one can easily make higher-order optimization schemes work as well.\r\n\r\n```python\r\nimport torch\r\nfrom dfin.optimize import gradient_descent, lbfgs, secant, newton, halley\r\nfrom dfin.options.iv_torch import call_implied_volatility\r\n\r\nif __name__ == \"__main__\":\r\n\r\n    S = torch.tensor([100.], requires_grad=False)\r\n    K = torch.tensor([110.], requires_grad=False)\r\n    r = torch.tensor([0.05], requires_grad=False)\r\n    t = torch.tensor([1.], requires_grad=False)\r\n    price = torch.tensor([6.040088129724], requires_grad=False)\r\n    sigma0 = torch.tensor(0.5, requires_grad=True)\r\n\r\n    sigma = call_implied_volatility(S, K, r, t, price, sigma0, optim=gradient_descent)\r\n    print(f'Gradient descent (linear-ish convergence) : {sigma.item():+.6f}') # == 0.2\r\n    sigma = call_implied_volatility(S, K, r, t, price, sigma0, optim=lbfgs)\r\n    print(f'LBFGS (superlinear-ish convergence)       : {sigma.item():+.6f}') # == 0.2\r\n    sigma = call_implied_volatility(S, K, r, t, price, sigma0, optim=secant)\r\n    print(f\"Secant method (quadratic convergence)     : {sigma.item():+.6f}\") # == 0.2\r\n    sigma = call_implied_volatility(S, K, r, t, price, sigma0, optim=newton)\r\n    print(f\"Newton's method (quadratic convergence)   : {sigma.item():+.6f}\") # == 0.2\r\n    sigma = call_implied_volatility(S, K, r, t, price, sigma0, optim=halley)\r\n    print(f\"Halley's method (cubic convergence)       : {sigma.item():+.6f}\") # == 0.2\r\n```\r\n\r\nPerformance comparison on CPU:\r\n\r\n| Method | Time (ms) | Iterations |\r\n| :----: | --------: | :--------: |\r\n| Adam   | 134.52 ms |        245 |\r\n| LBFGS  |   3.46 ms |          6 |\r\n| Secant |   1.54 ms |          5 |\r\n| Newton |   1.41 ms |          4 |\r\n| Halley |   3.08 ms |          3 |\r\n| SciPy  | 0.0751 ms |          4 |\r\n\r\nConvenient doesn't mean fast...\r\nSecant method (SciPy) doesn't need to evaluate analytical gradient at all.\r\nAnyway, moving on...\r\n\r\n\r\n\r\n### (3) Learn Volatility Smile (Smirk)\r\n\r\nImplied volatility computed from option prices of different expiration dates and different strike prices give different values.\r\nThe result often looks like a smirk if one were to plot implied volatility against time to maturity, or a smile when plotted against strike price.\r\nOne can use ML to introduce an appropriate amount of bias to your _\"fair volatility\"_, given a target maturity and strike.\r\n\r\n```python\r\n```\r\n\r\n\r\n\r\n### (4) Predict Theoretical Price\r\n\r\nThe quoted market price of an instrument isn't really _one_ price, but rather it is an order book of bid and ask orders.\r\nNeither is the theoretical price necessarily the midpoint between the nearest bid and ask prices, nor is it guaranteed that the nearest bid/ask order has sufficient volume to fulfill _your_ order.\r\nWhen the underlying is trending (bull or bear), demand-supply can cause implied volatilities of put and call options to diverge.\r\nThe inconvenience of market microstructure is often simplified (read: overlooked) in textbook pricing models.\r\nFor those who don't have a PhD in Financial Engineering, let AI do the heavy lifting for you.\r\n\r\n```python\r\n```\r\n\r\n\r\n\r\n### (5) Why Not Both?\r\n\r\nTraditionally one can either estimate implied volatility given the current option price, _xor_ calculate a fair option price given an estimate of implied volatility.\r\nWhy not both?\r\nThat's the reason this repository exists:\r\nTo use a recommender system to predict both variables simultaneously.\r\n\r\n```python\r\n```\r\n\r\n\r\n\r\n### (6) ...\r\n\r\n......\r\n\r\n\r\n\r\n### (7) Profit!\r\n\r\nOf course the whole point of this is to identify profit opportunities in the market!\r\nWhy else do you think I spend all these hours to code up this mother &ast;&ast;&ast;&ast;ing hot steaming pile of &ast;&ast;&ast;&ast;!?!?\r\nA backtest engine will be included in future releases.\r\n\r\n\r\n\r\n<!---\r\n\r\n---\r\n\r\n## TODO\r\n\r\n- [ ] Packaging\r\n- [ ] Documentation\r\n- [ ] Data connectors\r\n- [ ] Portfolio management\r\n- [ ] Front-end dashboard\r\n- [ ] Backtest\r\n- [ ] Order execution\r\n- [ ] Data governance\r\n- [ ] Monitoring and observability\r\n\r\n--->\r\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "quant,quantitative finance,black-scholes,option pricing,implied volatility,volatility,autograd",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "dfinance",
+            "package_url": "https://pypi.org/project/dfinance/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/dfinance/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/tinkei/dfin/issues",
+                "Homepage": "https://github.com/tinkei/dfin/wiki",
+                "Repository": "https://github.com/tinkei/dfin"
+            },
+            "release_url": "https://pypi.org/project/dfinance/0.0.1/",
+            "requires_dist": [
+                "torch",
+                "scipy"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "A random assortment of Quantitative Finance algorithms that are implemented to be differentiable.",
+            "version": "0.0.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17932386,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a7e7f8cddc3f85120c123b4c7fb35565cb633ad71874abf4258192f0883b197b",
+                    "md5": "9ca033ffa27254f698f99222f3aef3fb",
+                    "sha256": "9f3962f5c78b4b684b5aab079aeef5706f7afc35826e1476b882c3c4072cfb9a"
+                },
+                "downloads": -1,
+                "filename": "dfinance-0.0.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "9ca033ffa27254f698f99222f3aef3fb",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 30596,
+                "upload_time": "2023-05-01T22:09:43",
+                "upload_time_iso_8601": "2023-05-01T22:09:43.921168Z",
+                "url": "https://files.pythonhosted.org/packages/a7/e7/f8cddc3f85120c123b4c7fb35565cb633ad71874abf4258192f0883b197b/dfinance-0.0.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e4fc6a764efa6d05c783fd0f4dd07090f639e2e3810aabf8c1dee72affaa3bfd",
+                    "md5": "003088c6ae549e6363c0f5e892a234a0",
+                    "sha256": "3db1e52f722fc8bd3f32765e294288175fad8c4c0c614b096096546858c248a6"
+                },
+                "downloads": -1,
+                "filename": "dfinance-0.0.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "003088c6ae549e6363c0f5e892a234a0",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 27710,
+                "upload_time": "2023-05-01T22:09:47",
+                "upload_time_iso_8601": "2023-05-01T22:09:47.148442Z",
+                "url": "https://files.pythonhosted.org/packages/e4/fc/6a764efa6d05c783fd0f4dd07090f639e2e3810aabf8c1dee72affaa3bfd/dfinance-0.0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

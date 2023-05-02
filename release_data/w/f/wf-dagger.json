@@ -44,7 +44,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17562610,
+        "last_serial": 17928804,
         "urls": [
             {
                 "comment_text": "",
@@ -136,7 +136,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17562610,
+        "last_serial": 17928804,
         "urls": [
             {
                 "comment_text": "",
@@ -228,7 +228,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17562610,
+        "last_serial": 17928804,
         "urls": [
             {
                 "comment_text": "",
@@ -320,7 +320,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17562610,
+        "last_serial": 17928804,
         "urls": [
             {
                 "comment_text": "",
@@ -412,7 +412,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17562610,
+        "last_serial": 17928804,
         "urls": [
             {
                 "comment_text": "",
@@ -504,7 +504,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17562610,
+        "last_serial": 17928804,
         "urls": [
             {
                 "comment_text": "",
@@ -566,7 +566,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "![CI pipeline status](https://github.com/wayfair-incubator/dagger/workflows/CI/badge.svg?branch=main)\n[![PyPI](https://img.shields.io/pypi/v/wf-dagger)](https://pypi.org/project/wf-dagger/)\n![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)\n![Maintainer](https://img.shields.io/badge/Maintainer-Wayfair-7F187F)\n![codecov](https://codecov.io/gh/wayfair-incubator/dagger/branch/main/graph/badge.svg)\n![Checked with mypy](https://img.shields.io/badge/mypy-checked-blue)\n![Code style: black](https://img.shields.io/badge/code%20style-black-black.svg)\n\n# Dagger\n\n**Dagger** is a distributed, scalable, durable, and highly available orchestration engine to execute asynchronous and\nsynchronous long-running business logic in a scalable and resilient way.\nDagger requires Python 3.7 or later for the new `async/await`_ syntax, and variable type annotations.\n\n## Pizza Ordering and Delivery Workflow Example\nHere's an example of how to use the library to build and run a Pizza Ordering Workflow:\n\n![Pizza Workflow](docs/images/workflow.jpg)\n\nThe PizzaWorkflow consists of 2 Processes: \n\n* Order : Responsible for communicating with the order service to place a pizza order(CommandTask) and wait for the order\nto be ready(ListenerTask)\n* Delivery: Once the order is ready, this process communicates with the delivery service to start delivery of the pizza\norder(CommandTask)\n\n### Step 1 Instantiate Dagger\n\n```python\nworkflow_engine = Dagger(\n                    broker=KAFKA_ADMIN_CLIENT_URL,\n                    store=\"aerospike://\",\n                    consumer_auto_offset_reset=\"latest\",\n                    task_update_topic=\"task_update_topic\",\n                    trigger_interval=600,\n                    aerospike_config=aerospike_config,\n                    enable_changelog=False,\n                    web_port=6066,\n                    serializer=\"raw\",\n                )\n```\n\n### Step 2 Define Leaf Command and Listener Tasks For Order Process\n\nLet's assume that the Order Microservice processes incoming orders over a Kafka Topic - `pizza_order_topic` with the \nJSON schema\n\n```json\n{\n  \"order_id\": \"id\",\n  \"pizza_type\": \"1\",\n  \"customer_id\": \"customer_id\"\n}\n```\n\nUsing this information let's build out the OrderCommandTask by overriding the `execute` method that implements the \nbusiness logic on how to send the payload to the Order Service over a Kafka topic\n\n```python\nclass OrderCommandTask(KafkaCommandTask[str, str]):\n    async def execute(\n        self,\n        runtime_parameters: Dict[str, str],\n        workflow_instance: ITemplateDAGInstance,\n    ) -> None:\n        payload = {\n            \"order_id\": runtime_parameters[\"order_id\"],\n            \"customer_id\": runtime_parameters[\"customer_id\"],\n            \"pizza_type\": runtime_parameters[\"pizza_type\"],\n        }\n        await workflow_engine.topics[self.topic].send(\n            value=json.dumps(payload)\n        )\n```\n\nAfter executing the `OrderCommandTask`, the workflow should enter a `WAIT_STATE` until it receives a message from the \nOrderService about the status of the order. Let's assume that Order Service sends a message on a Kafka Topic: \norder_status_topic when the order is ready in the following JSON format\n\n```json\n{\n  \"order_id\": \"id\",\n  \"status\": \"READY\"\n}\n```\n\nLet's model the `OrderListenerTask` to process this message on the `order_status_topic` by implementing the \n`get_correlatable_keys_from_payload` and `on_message` methods on the Listener. It also needs to specify the `correletable_key`\nas `order_id` to look up the payload\n\n```python\nclass PizzaWaitForReadyListener(KafkaListenerTask[str, str]):\n    correlatable_key = \"order_id\"\n\n    async def get_correlatable_keys_from_payload(\n        self, payload: Any\n    ) -> List[TaskLookupKey]:\n        tpayload = json.loads(payload)\n        key = tpayload[self.correlatable_key]\n        return [(self.correlatable_key, key)]\n\n    async def on_message(\n            self, runtime_parameters: Dict[str, VT], *args: Any, **kwargs: Any\n    ) -> bool :\n        logger.info(f\"Pizza Order is Ready\")\n        return True\n```\n\nWhen the order service sends a status message on the `order_status_topic`, Dagger invokes the `get_correlatable_keys_from_payload`\nto determine which workflow instance that message belongs to. Once it determines the workflow instance, it invokes \n`on_message` on the corresponding ListenerTask\n\nNow that we have the LEAF tasks modeled, lets attach them to the parent `Order` Process\n\n```python\ndef pizza_ordering_process(\n    process_name: str = \"Order\"\n) -> IProcessTemplateDAGBuilder:\n    dag_builder = DAGBuilderHelper(dagger_app=workflow_engine)\n    root_task = dag_builder.build_and_link_tasks(\n        [\n           dag_builder.generic_command_task_builder(\n                topic=\"pizza_order_topic\",\n                task_type=OrderCommandTask,\n                process_name=process_name,\n            ),\n            dag_builder.generic_listener_task_builder(\n                topic=\"PizzaWaitForReadyListener\",\n                task_type=PizzaWaitForReadyListener,\n                process_name=process_name,\n            ),\n        ]\n    )\n    return dag_builder.generic_process_builder(process_name=process_name, root_task=root_task)\n```\n\nThe Order Process is in `COMPLETED` when both the CommandTask and the PizzaWaitForReadyListener are `COMPLETED` and then\nthe workflow transitions to execute the next Process `Delivery`\n\n### Step 3 Define Leaf Command Tasks For Delivery Process\n\nLet's assume that the delivery service just requires an HTTP POST request with the following schema\n\n```json\n{\n  \"order_id\": \"id\",\n  \"customer_id\": \"customer_id\"\n}\n```\n\nWe can model the DeliveryCommandTask to POST this payload by implementing the `execute` method as follows\n\n```python\nclass DeliveryCommandTask(ExecutorTask[str, str]):\n    async def execute(\n        self, runtime_parameters: Dict[str, VT], workflow_instance: ITask = None\n    ) -> None:\n        payload = {\n            \"order_id\": runtime_parameters[\"order_id\"],\n            \"customer_id\": runtime_parameters[\"customer_id\"],\n        }\n        async with aiohttp.ClientSession() as session:\n            async with session.post(url=\"http://www.deliverysvc.com\", json=payload):\n                pass\n```\n\nLet's attach this to the parent `Delivery` Process\n\n```python\ndef pizza_delivery_process(\n    process_name: str = \"Delivery\",\n) -> IProcessTemplateDAGBuilder:\n    dag_builder = DAGBuilderHelper(dagger_app=workflow_engine)\n    root_task = dag_builder.build_and_link_tasks(\n        [\n            dag_builder.generic_executor_task_builder(\n                task_type=DeliveryCommandTask,\n                name=process_name,\n            )\n        ]\n    )\n    return dag_builder.generic_process_builder(\n        process_name=process_name, root_task=root_task\n    )\n```\n\n### Step 4 Define the Sequence of Process Execution and register the workflow definition using `register_template`\n\nBased on the workflow, we want the `Order` Process to execute first before the `Delivery` Process. The workflow ensures\nthat the `Delivery` tasks are executed only after both the tasks in the `Order` process are in a terminal state\n\n```python\n@Dagger.register_template(\"PizzaWorkflow\")\ndef register_pizza_workflow(template_name: str) -> ITemplateDAG:\n    dag_builder_helper = DAGBuilderHelper(workflow_engine)\n    order_process = dag_builder_helper.build_and_link_processes(\n        [\n            pizza_ordering_process(process_name=\"Order\"),\n            pizza_delivery_process(process_name=\"Delivery\"),\n        ]\n    )\n    return dag_builder_helper.generic_template(\n        template_name=template_name, root_process=order_process\n    )\n```\n\n### Step 5 Define an API to instantiate and execute pizza order workflows\n\n```python\nasync def create_and_submit_pizza_delivery_workflow(\n    order_id: str, customer_id: str, pizza_type: int\n):\n    pizza_workflow_template = workflow_engine.template_dags[\"PizzaWorkflow\"]\n    pizza_workflow_instance = await pizza_workflow_template.create_instance(\n        uuid.uuid1(),\n        repartition=False,  # Create this instance on the current worker\n        order_id=order_id,\n        customer_id=customer_id,\n        pizza_type=pizza_type,\n    )\n    await workflow_engine.submit(pizza_workflow_instance, repartition=False)\n```\n\n### Step 6 Start the worker\n\n```python\nworkflow_engine.main()\n```\n\n## Dagger is\n\n### Simple\n\nDagger is extremely easy to use. To get started applications need to install this library, define a DAG using the\ndefault templates or extending them based on the use case, creating instances of these DAG's and scheduling them for\nexecution. The library hides all the complexity of producing and consuming from Kafka, maintaining Kafka Streams\ntopology processing and also persistence and recovery of created tasks\n\n### Highly Available\n\nDagger is highly available and can survive network problems and server crashes. In the case of node failure, it can\nautomatically recover the state store(representing task data)\nor failover to a standby node\n\n### Distributed\n\nStart more instances of your application as needed to distribute the load on the system\n\n### Fast\n\nA single-core worker instance can already process tens of thousands of tasks every second. Dagger uses a fast key-value\nlookup store based on rocksDB replicated to kafka topics for fault tolerance\n\n## Installation\n\nYou can install dagger via the Wayfair artifactory or from source.\n\nTo install using `pip`:\n\n```shell\npip install wf-dagger\n```\n\ndagger has a dependency on `faust-streaming` for kafka stream processing\n\n## FAQ\n\n### Which version of python is supported?\n\ndagger supports python version >= 3.7\n\n### What kafka versions are supported?\n\ndagger supports kafka with version >= 0.10.\n\n## Roadmap\n\nSee the [open issues](https://github.com/wayfair-incubator/dagger/issues) for a list of proposed features (and known\nissues).\n\n## Contributing\n\nContributions are what make the open source community such an amazing place to learn, inspire, and create. Any\ncontributions you make are **greatly appreciated**. For detailed contributing guidelines, please\nsee [CONTRIBUTING.md](CONTRIBUTING.md)\n\n## License\n\nDistributed under the `MIT LICENSE` License. See `LICENSE` for more information.\n\n## Contact\n\nVikram Patki - vpatki@wayfair.com\n\nProject Link: [https://github.com/wayfair-incubator/dagger](https://github.com/wayfair-incubator/dagger)\n\n## Acknowledgements\n\nThis template was adapted from\n[https://github.com/othneildrew/Best-README-Template](https://github.com/othneildrew/Best-README-Template).\n\n## Documentation\n\nCheck out the [project documentation][dagger-docs].\n\nFor an overview on the repository structure and how to work with the code base, read the\n[Development Guide][development-docs].\n\n[dagger-docs]: https://wayfair-incubator.github.io/dagger/latest/\n[development-docs]: https://wayfair-incubator.github.io/dagger/latest/development-guide/\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -597,7 +596,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17562610,
+        "last_serial": 17928804,
         "urls": [
             {
                 "comment_text": "",
@@ -638,6 +637,99 @@
                 "upload_time": "2023-04-03T17:14:33",
                 "upload_time_iso_8601": "2023-04-03T17:14:33.072640Z",
                 "url": "https://files.pythonhosted.org/packages/54/89/23128980cb603e874ecf43f38cc9b01270c81b266cfe6fa9574bada2b3c4/wf-dagger-0.2.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.2": {
+        "info": {
+            "author": "Vikram Patki, Aditya Vaderiyettil",
+            "author_email": "vpatki@wayfair.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "![CI pipeline status](https://github.com/wayfair-incubator/dagger/workflows/CI/badge.svg?branch=main)\n[![PyPI](https://img.shields.io/pypi/v/wf-dagger)](https://pypi.org/project/wf-dagger/)\n![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)\n![Maintainer](https://img.shields.io/badge/Maintainer-Wayfair-7F187F)\n![codecov](https://codecov.io/gh/wayfair-incubator/dagger/branch/main/graph/badge.svg)\n![Checked with mypy](https://img.shields.io/badge/mypy-checked-blue)\n![Code style: black](https://img.shields.io/badge/code%20style-black-black.svg)\n\n# Dagger\n\n**Dagger** is a distributed, scalable, durable, and highly available orchestration engine to execute asynchronous and\nsynchronous long-running business logic in a scalable and resilient way.\nDagger requires Python 3.7 or later for the new `async/await`_ syntax, and variable type annotations.\n\n## Pizza Ordering and Delivery Workflow Example\nHere's an example of how to use the library to build and run a Pizza Ordering Workflow:\n\n![Pizza Workflow](docs/images/workflow.jpg)\n\nThe PizzaWorkflow consists of 2 Processes: \n\n* Order : Responsible for communicating with the order service to place a pizza order(CommandTask) and wait for the order\nto be ready(ListenerTask)\n* Delivery: Once the order is ready, this process communicates with the delivery service to start delivery of the pizza\norder(CommandTask)\n\n### Step 1 Instantiate Dagger\n\n```python\nworkflow_engine = Dagger(\n                    broker=KAFKA_ADMIN_CLIENT_URL,\n                    store=\"aerospike://\",\n                    consumer_auto_offset_reset=\"latest\",\n                    task_update_topic=\"task_update_topic\",\n                    trigger_interval=600,\n                    aerospike_config=aerospike_config,\n                    enable_changelog=False,\n                    web_port=6066,\n                    serializer=\"raw\",\n                )\n```\n\n### Step 2 Define Leaf Command and Listener Tasks For Order Process\n\nLet's assume that the Order Microservice processes incoming orders over a Kafka Topic - `pizza_order_topic` with the \nJSON schema\n\n```json\n{\n  \"order_id\": \"id\",\n  \"pizza_type\": \"1\",\n  \"customer_id\": \"customer_id\"\n}\n```\n\nUsing this information let's build out the OrderCommandTask by overriding the `execute` method that implements the \nbusiness logic on how to send the payload to the Order Service over a Kafka topic\n\n```python\nclass OrderCommandTask(KafkaCommandTask[str, str]):\n    async def execute(\n        self,\n        runtime_parameters: Dict[str, str],\n        workflow_instance: ITemplateDAGInstance,\n    ) -> None:\n        payload = {\n            \"order_id\": runtime_parameters[\"order_id\"],\n            \"customer_id\": runtime_parameters[\"customer_id\"],\n            \"pizza_type\": runtime_parameters[\"pizza_type\"],\n        }\n        await workflow_engine.topics[self.topic].send(\n            value=json.dumps(payload)\n        )\n```\n\nAfter executing the `OrderCommandTask`, the workflow should enter a `WAIT_STATE` until it receives a message from the \nOrderService about the status of the order. Let's assume that Order Service sends a message on a Kafka Topic: \norder_status_topic when the order is ready in the following JSON format\n\n```json\n{\n  \"order_id\": \"id\",\n  \"status\": \"READY\"\n}\n```\n\nLet's model the `OrderListenerTask` to process this message on the `order_status_topic` by implementing the \n`get_correlatable_keys_from_payload` and `on_message` methods on the Listener. It also needs to specify the `correletable_key`\nas `order_id` to look up the payload\n\n```python\nclass PizzaWaitForReadyListener(KafkaListenerTask[str, str]):\n    correlatable_key = \"order_id\"\n\n    async def get_correlatable_keys_from_payload(\n        self, payload: Any\n    ) -> List[TaskLookupKey]:\n        tpayload = json.loads(payload)\n        key = tpayload[self.correlatable_key]\n        return [(self.correlatable_key, key)]\n\n    async def on_message(\n            self, runtime_parameters: Dict[str, VT], *args: Any, **kwargs: Any\n    ) -> bool :\n        logger.info(f\"Pizza Order is Ready\")\n        return True\n```\n\nWhen the order service sends a status message on the `order_status_topic`, Dagger invokes the `get_correlatable_keys_from_payload`\nto determine which workflow instance that message belongs to. Once it determines the workflow instance, it invokes \n`on_message` on the corresponding ListenerTask\n\nNow that we have the LEAF tasks modeled, lets attach them to the parent `Order` Process\n\n```python\ndef pizza_ordering_process(\n    process_name: str = \"Order\"\n) -> IProcessTemplateDAGBuilder:\n    dag_builder = DAGBuilderHelper(dagger_app=workflow_engine)\n    root_task = dag_builder.build_and_link_tasks(\n        [\n           dag_builder.generic_command_task_builder(\n                topic=\"pizza_order_topic\",\n                task_type=OrderCommandTask,\n                process_name=process_name,\n            ),\n            dag_builder.generic_listener_task_builder(\n                topic=\"PizzaWaitForReadyListener\",\n                task_type=PizzaWaitForReadyListener,\n                process_name=process_name,\n            ),\n        ]\n    )\n    return dag_builder.generic_process_builder(process_name=process_name, root_task=root_task)\n```\n\nThe Order Process is in `COMPLETED` when both the CommandTask and the PizzaWaitForReadyListener are `COMPLETED` and then\nthe workflow transitions to execute the next Process `Delivery`\n\n### Step 3 Define Leaf Command Tasks For Delivery Process\n\nLet's assume that the delivery service just requires an HTTP POST request with the following schema\n\n```json\n{\n  \"order_id\": \"id\",\n  \"customer_id\": \"customer_id\"\n}\n```\n\nWe can model the DeliveryCommandTask to POST this payload by implementing the `execute` method as follows\n\n```python\nclass DeliveryCommandTask(ExecutorTask[str, str]):\n    async def execute(\n        self, runtime_parameters: Dict[str, VT], workflow_instance: ITask = None\n    ) -> None:\n        payload = {\n            \"order_id\": runtime_parameters[\"order_id\"],\n            \"customer_id\": runtime_parameters[\"customer_id\"],\n        }\n        async with aiohttp.ClientSession() as session:\n            async with session.post(url=\"http://www.deliverysvc.com\", json=payload):\n                pass\n```\n\nLet's attach this to the parent `Delivery` Process\n\n```python\ndef pizza_delivery_process(\n    process_name: str = \"Delivery\",\n) -> IProcessTemplateDAGBuilder:\n    dag_builder = DAGBuilderHelper(dagger_app=workflow_engine)\n    root_task = dag_builder.build_and_link_tasks(\n        [\n            dag_builder.generic_executor_task_builder(\n                task_type=DeliveryCommandTask,\n                name=process_name,\n            )\n        ]\n    )\n    return dag_builder.generic_process_builder(\n        process_name=process_name, root_task=root_task\n    )\n```\n\n### Step 4 Define the Sequence of Process Execution and register the workflow definition using `register_template`\n\nBased on the workflow, we want the `Order` Process to execute first before the `Delivery` Process. The workflow ensures\nthat the `Delivery` tasks are executed only after both the tasks in the `Order` process are in a terminal state\n\n```python\n@Dagger.register_template(\"PizzaWorkflow\")\ndef register_pizza_workflow(template_name: str) -> ITemplateDAG:\n    dag_builder_helper = DAGBuilderHelper(workflow_engine)\n    order_process = dag_builder_helper.build_and_link_processes(\n        [\n            pizza_ordering_process(process_name=\"Order\"),\n            pizza_delivery_process(process_name=\"Delivery\"),\n        ]\n    )\n    return dag_builder_helper.generic_template(\n        template_name=template_name, root_process=order_process\n    )\n```\n\n### Step 5 Define an API to instantiate and execute pizza order workflows\n\n```python\nasync def create_and_submit_pizza_delivery_workflow(\n    order_id: str, customer_id: str, pizza_type: int\n):\n    pizza_workflow_template = workflow_engine.template_dags[\"PizzaWorkflow\"]\n    pizza_workflow_instance = await pizza_workflow_template.create_instance(\n        uuid.uuid1(),\n        repartition=False,  # Create this instance on the current worker\n        order_id=order_id,\n        customer_id=customer_id,\n        pizza_type=pizza_type,\n    )\n    await workflow_engine.submit(pizza_workflow_instance, repartition=False)\n```\n\n### Step 6 Start the worker\n\n```python\nworkflow_engine.main()\n```\n\n## Dagger is\n\n### Simple\n\nDagger is extremely easy to use. To get started applications need to install this library, define a DAG using the\ndefault templates or extending them based on the use case, creating instances of these DAG's and scheduling them for\nexecution. The library hides all the complexity of producing and consuming from Kafka, maintaining Kafka Streams\ntopology processing and also persistence and recovery of created tasks\n\n### Highly Available\n\nDagger is highly available and can survive network problems and server crashes. In the case of node failure, it can\nautomatically recover the state store(representing task data)\nor failover to a standby node\n\n### Distributed\n\nStart more instances of your application as needed to distribute the load on the system\n\n### Fast\n\nA single-core worker instance can already process tens of thousands of tasks every second. Dagger uses a fast key-value\nlookup store based on rocksDB replicated to kafka topics for fault tolerance\n\n## Installation\n\nYou can install dagger via the Wayfair artifactory or from source.\n\nTo install using `pip`:\n\n```shell\npip install wf-dagger\n```\n\ndagger has a dependency on `faust-streaming` for kafka stream processing\n\n## FAQ\n\n### Which version of python is supported?\n\ndagger supports python version >= 3.7\n\n### What kafka versions are supported?\n\ndagger supports kafka with version >= 0.10.\n\n## Roadmap\n\nSee the [open issues](https://github.com/wayfair-incubator/dagger/issues) for a list of proposed features (and known\nissues).\n\n## Contributing\n\nContributions are what make the open source community such an amazing place to learn, inspire, and create. Any\ncontributions you make are **greatly appreciated**. For detailed contributing guidelines, please\nsee [CONTRIBUTING.md](CONTRIBUTING.md)\n\n## License\n\nDistributed under the `MIT LICENSE` License. See `LICENSE` for more information.\n\n## Contact\n\nVikram Patki - vpatki@wayfair.com\n\nProject Link: [https://github.com/wayfair-incubator/dagger](https://github.com/wayfair-incubator/dagger)\n\n## Acknowledgements\n\nThis template was adapted from\n[https://github.com/othneildrew/Best-README-Template](https://github.com/othneildrew/Best-README-Template).\n\n## Documentation\n\nCheck out the [project documentation][dagger-docs].\n\nFor an overview on the repository structure and how to work with the code base, read the\n[Development Guide][development-docs].\n\n[dagger-docs]: https://wayfair-incubator.github.io/dagger/latest/\n[development-docs]: https://wayfair-incubator.github.io/dagger/latest/development-guide/\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/wayfair-incubator/dagger",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "wf-dagger",
+            "package_url": "https://pypi.org/project/wf-dagger/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/wf-dagger/",
+            "project_urls": {
+                "Homepage": "https://github.com/wayfair-incubator/dagger"
+            },
+            "release_url": "https://pypi.org/project/wf-dagger/0.2.2/",
+            "requires_dist": [
+                "faust-streaming"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "Workflow Engine.",
+            "version": "0.2.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17928804,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2e2d7bb67c645327551a5bd57bd142e66de9e78ffab9e566246380e18d37f8dc",
+                    "md5": "066ea722064e22120893077664393b69",
+                    "sha256": "79700f0f4a9dcee963cd0775e2b342d330ae8ec3ddbe277e7a95649303df235d"
+                },
+                "downloads": -1,
+                "filename": "wf_dagger-0.2.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "066ea722064e22120893077664393b69",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 66207,
+                "upload_time": "2023-05-01T16:28:52",
+                "upload_time_iso_8601": "2023-05-01T16:28:52.385565Z",
+                "url": "https://files.pythonhosted.org/packages/2e/2d/7bb67c645327551a5bd57bd142e66de9e78ffab9e566246380e18d37f8dc/wf_dagger-0.2.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "536a9540ddd6057da29999d8be015d9f04c44d6fc6d95abd2fcdbede255da243",
+                    "md5": "ce9ded25dd57d9b0b1b51320eef439f1",
+                    "sha256": "03856deeded334da17afeabc0f9dd362db60e733eeeef1c1fb6f4458adc176ab"
+                },
+                "downloads": -1,
+                "filename": "wf-dagger-0.2.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "ce9ded25dd57d9b0b1b51320eef439f1",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 61336,
+                "upload_time": "2023-05-01T16:28:54",
+                "upload_time_iso_8601": "2023-05-01T16:28:54.744394Z",
+                "url": "https://files.pythonhosted.org/packages/53/6a/9540ddd6057da29999d8be015d9f04c44d6fc6d95abd2fcdbede255da243/wf-dagger-0.2.2.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
