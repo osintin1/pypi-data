@@ -41,7 +41,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17798066,
+        "last_serial": 17935716,
         "urls": [
             {
                 "comment_text": "",
@@ -109,7 +109,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17798066,
+        "last_serial": 17935716,
         "urls": [
             {
                 "comment_text": "",
@@ -177,7 +177,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17798066,
+        "last_serial": 17935716,
         "urls": [
             {
                 "comment_text": "",
@@ -219,7 +219,6 @@
                 "Programming Language :: Python :: Implementation :: CPython",
                 "Topic :: Utilities"
             ],
-            "description": "# lazycsv - a memory-efficient csv parser\n\n###### Developers: Michael Green, Chris Perkins\n\nlazycsv is a C implementation of a csv parser for python. The aim of this\nparser is to provide for fast extraction of sequences of data from a CSV file\nin a memory-efficient manner, with zero dependencies.\n\nLazyCSV utilizes memory mapped files and iterators to parse the file without\npersisting any significant amounts of data to physical memory. The design\nallows a user to generate PyObject's from a csv file lazily.\n\nThe parser works as follows:\n\nFirst, The user file is memory-mapped internally to the LazyCSV object. That\nfile is used to generate three indexes. The first is an index of values which\ncorrespond to the position in the user file where a given CSV field starts.\nThis value is always a `uint16_t` which we found to be the optimal bit size for\ndisk usage and execution performance (This type can however be changed by\nsetting the `LAZYCSV_INDEX_DTYPE` environment variable to any unsigned integer\ntype). For index values outside the range of an unsigned short, An \"anchor\npoint\" is created, which is a pair of `size_t` values that mark both the value\nwhich is subtracted from the index value such that the index value fits within\n16 bits, and the first column of the CSV where the anchor value applies. This\nanchor point is periodically written to the second index file when required for\na given comma index. Finally, the third index writes the index of the first\nanchor point for each row of the file.\n\nWhen a user requests a sequence of data (i.e. a row or a column), an iterator\nis created and returned. This iterator uses the value of the requested sequence\nand its internal position state to index into the index files the values\nrepresenting the index of the requested field, and its length. Those two values\nare then used to create a single PyBytes object. These PyBytes objects are then\nyielded to the user per-iteration.\n\nThis process is lazy, only yielding data from the user file as the iterator is\nconsumed. It does not cache results as they are generated - it is the\nresponsibility of the user to store in physical memory the data which must be\npersisted. The only persisted overhead in physical memory is the LazyCSV object\nitself, any created iterators, a small cache of common length-0 and length-1\n`PyObject*`'s for fast returns, and optionally the headers of the CSV file.\n\n```python\n>>> from lazycsv import lazycsv\n>>> lazy = lazycsv.LazyCSV(\"tests/fixtures/file.csv\")\n>>> lazy\n<lazycsv.LazyCSV object at 0x7f5b212ea3d0>\n>>> (col := lazy.sequence(col=0))\n<lazycsv_iterator object at 0x7f5b212ea420>\n>>> next(col)\nb'0'\n>>> next(col)\nb'1'\n>>> next(col)\nTraceback (most recent call last):\n  File \"<stdin>\", line 1, in <module>\nStopIteration\n```\n\nSince data is yielded through the iterator protocol, lazycsv pairs well with\nmany of the builtin functional components of Python, and third-party libraries\nwith support for iterators. This has the added benefit of keeping iterations in\nthe C level, maximizing performance.\n\n```python\n>>> row = lazy.sequence(row=1)\n>>> list(map(lambda x: x.decode('utf8'), row))\n['1', 'a1', 'b1']\n>>>\n>>> import numpy as np\n>>> np.fromiter(map(int, lazy.sequence(col=0)), dtype=np.int64)\narray([0, 1])\n```\n\nIterators can be materialized at any point by calling the `to_list()` or\n`to_numpy()` methods on the iterator object (to enable optional numpy support,\nsee the Numpy section of this document). These methods exhaust the iterator,\nplacing the remaining PyBytes values into a PyObject.\n\n```python\n>>> col = lazy.sequence(col=0)\n>>> next(col)\nb'0'\n>>> col.to_list()\n[b'1']\n>>>\n```\n\nHeaders are by default parsed from the csv file and packaged into a tuple under\na `.headers` attribute. This can be skipped by passing `skip_headers=True` to\nthe object constructor. Skipping the header parsing step results in the header\nvalue being included in the iterator.\n\n*Note: `lazycsv` makes no effort to deduplicate headers and it is the\nresponsibility of the user to make sure that columns are properly named.*\n\n```python\n>>> lazy.headers\n(b'', b'ALPHA', b'BETA')\n>>> (col := lazy.sequence(col=1))\n<lazycsv_iterator object at 0x7f599fd86b50>\n>>> list(col)\n[b'a0', b'a1']\n>>> lazy = lazycsv.LazyCSV(FPATH, skip_headers=True)\n>>> (col := lazy.sequence(col=1))\n<lazycsv_iterator object at 0x7f59d1b21890>\n>>> list(col)\n[b'ALPHA', b'a0', b'a1']\n```\n\nFields which are double-quoted by default are yielded without quotes. This\nbehavior can be disabled by passing `unquoted=False` to the object constructor.\n\n```python\n>>> lazy = lazycsv.LazyCSV(\n...     \"tests/fixtures/file_crlf2.csv\"\n... )\n>>> lazy.headers\n(b'', b'This,that', b'Fizz,Buzz')\n>>> lazy = lazycsv.LazyCSV(\n...     \"tests/fixtures/file_crlf2.csv\", unquote=False\n... )\n>>> lazy.headers\n(b'', b'\"This,that\"', b'\"Fizz,Buzz\"')\n```\n\n### Numpy\n\nOptional, opt-in numpy support is built into the module. Access to this\nextended feature set can be had by building the extension from source while\nsetting a `LAZYCSV_INCLUDE_NUMPY` environment variable to `1`. This adds a\n`to_numpy()` method to the iterator, which allows iterators to materialize in a\n1-dimensional numpy array without creating intermediary PyObject*'s for each\nfield of the CSV file.\n\nAccess to this feature requires numpy to be preinstalled as this feature makes\nnumpy a compilation dependency.\n\n```bash\n$ LAZYCSV_INCLUDE_NUMPY=1 python -m pip install lazycsv\n```\n```python\n>>> import numpy as np\n>>> from lazycsv import lazycsv\n>>> lazy = lazycsv.LazyCSV(\"\")\n>>> lazy = lazycsv.LazyCSV(\"./tests/fixtures/file.csv\")\n>>> lazy.sequence(col=0).to_numpy().astype(np.int8)\narray([0, 1], dtype=int8)\n```\n\nUsers pinned to an older version of numpy (<1.7) may wish to instead compile\nusing a `LAZYCSV_INCLUDE_NUMPY_LEGACY=1` flag, which drops the API pin in the\nmodule while still compiling with numpy support.\n\n#### Benchmarks (CPU)\n\n```\nroot@aa9d7c7ffb59:/code# python tests/benchmark_lazy.py\nfilesize: 0.134gb\ncols=10000\nrows=10000\nsparsity=0.95\n\nbenchmarking lazycsv:\nindexing lazy... time to index: 0.5116381410043687\nparsing cols... time to parse: 1.5931394950021058\ntotal time: 2.1047776360064745\n\nbenchmarking datatable:\n100% |\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| Reading data [done]\ncreating datatables frame... time to object: 0.40828132900060154\nparsing cols... time to parse: 3.810204313998838\ntotal time: 4.21848564299944\n\nbenchmarking polars (read):\ncreating polars df... time to object: 2.357821761001105\nparsing cols... time to parse: 1.3874979300017003\ntotal time: 3.7453196910028055\n```\n\n```\nroot@aa9d7c7ffb59:/code# python tests/benchmark_lazy.py\nfilesize: 1.387gb\ncols=10000\nrows=100000\nsparsity=0.95\n\nbenchmarking lazycsv:\nindexing lazy... time to index: 4.990824360997067\nparsing cols... time to parse: 19.573407171003055\ntotal time: 24.56423153200012\n\nbenchmarking datatable:\n100% |\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| Reading data [done]\ncreating datatables frame... time to object: 2.4456441220027045\nparsing cols... time to parse: 37.424315700998704\ntotal time: 39.86995982300141\n\nbenchmarking polars (read):\ncreating polars df... time to object: 22.383294907001982\nparsing cols... time to parse: 14.16580996599805\ntotal time: 36.54910487300003\n```\n\n```\nfilesize: 14.333gb\ncols=100000\nrows=100000\nsparsity=0.95\n\nbenchmarking lazycsv:\nindexing lazy... time to index: 58.97352126000624\nparsing cols... time to parse: 508.8208989979903\ntotal time: 567.7944202579965\n\nbenchmarking datatable:\n 58% |\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u258d                    | Reading data Killed\n\nbenchmarking polars (read):\nKilled\n```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -246,7 +245,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17798066,
+        "last_serial": 17935716,
         "urls": [
             {
                 "comment_text": "",
@@ -266,6 +265,75 @@
                 "upload_time": "2023-04-21T01:33:42",
                 "upload_time_iso_8601": "2023-04-21T01:33:42.970783Z",
                 "url": "https://files.pythonhosted.org/packages/93/9e/aa484fd1561faa277bbab132431e668f4ab2f1db02984460ece9bd187c61/lazycsv-1.0.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.1.0": {
+        "info": {
+            "author": "Michael Green, Chris Perkins",
+            "author_email": "dev@crunch.io",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 5 - Production/Stable",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: MIT License",
+                "Natural Language :: English",
+                "Operating System :: POSIX",
+                "Operating System :: POSIX :: Linux",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: Implementation :: CPython",
+                "Topic :: Utilities"
+            ],
+            "description": "# lazycsv - a memory-efficient csv parser\n\n###### Developers: Michael Green, Chris Perkins\n\nlazycsv is a C implementation of a csv parser for python. The aim of this\nparser is to provide for fast extraction of sequences of data from a CSV file\nin a memory-efficient manner, with zero dependencies.\n\nLazyCSV utilizes memory mapped files and iterators to parse the file without\npersisting any significant amounts of data to physical memory. The design\nallows a user to generate PyObject's from a csv file lazily.\n\nThe parser works as follows:\n\nFirst, The user file is memory-mapped internally to the LazyCSV object. That\nfile is used to generate three indexes. The first is an index of values which\ncorrespond to the position in the user file where a given CSV field starts.\nThis value is always a `uint16_t` which we found to be the optimal bit size for\ndisk usage and execution performance (This type can however be changed by\nsetting the `LAZYCSV_INDEX_DTYPE` environment variable to any unsigned integer\ntype). For index values outside the range of an unsigned short, An \"anchor\npoint\" is created, which is a pair of `size_t` values that mark both the value\nwhich is subtracted from the index value such that the index value fits within\n16 bits, and the first column of the CSV where the anchor value applies. This\nanchor point is periodically written to the second index file when required for\na given comma index. Finally, the third index writes the index of the first\nanchor point for each row of the file.\n\nWhen a user requests a sequence of data (i.e. a row or a column), an iterator\nis created and returned. This iterator uses the value of the requested sequence\nand its internal position state to index into the index files the values\nrepresenting the index of the requested field, and its length. Those two values\nare then used to create a single PyBytes object. These PyBytes objects are then\nyielded to the user per-iteration.\n\nThis process is lazy, only yielding data from the user file as the iterator is\nconsumed. It does not cache results as they are generated - it is the\nresponsibility of the user to store in physical memory the data which must be\npersisted. The only persisted overhead in physical memory is the LazyCSV object\nitself, any created iterators, a small cache of common length-0 and length-1\n`PyObject*`'s for fast returns, and optionally the headers of the CSV file.\n\n```python\n>>> from lazycsv import lazycsv\n>>> lazy = lazycsv.LazyCSV(\"tests/fixtures/file.csv\")\n>>> lazy\n<lazycsv.LazyCSV object at 0x7f5b212ea3d0>\n>>> (col := lazy.sequence(col=0))\n<lazycsv_iterator object at 0x7f5b212ea420>\n>>> next(col)\nb'0'\n>>> next(col)\nb'1'\n>>> next(col)\nTraceback (most recent call last):\n  File \"<stdin>\", line 1, in <module>\nStopIteration\n```\n\nSince data is yielded through the iterator protocol, lazycsv pairs well with\nmany of the builtin functional components of Python, and third-party libraries\nwith support for iterators. This has the added benefit of keeping iterations in\nthe C level, maximizing performance.\n\n```python\n>>> row = lazy.sequence(row=1)\n>>> list(map(lambda x: x.decode('utf8'), row))\n['1', 'a1', 'b1']\n>>>\n>>> import numpy as np\n>>> np.fromiter(map(int, lazy.sequence(col=0)), dtype=np.int64)\narray([0, 1])\n```\n\nThe `lazy` object also supports indexing operations for expressive iterables.\nThe axis for iteration can be passed as a slice object, and the index of the\niterable can be passed as a integer. Individual coordinate values can also be\npassed as a pair of integers, this call will eagerly return the value at that\nindex.\n\n```python\n>>> list(lazy[::-1, 1])\n[b'a1', b'a0']\n>>> lazy[-1, -1]\nb\"b1\"\n```\n\nIterators can be materialized at any point by calling the `to_list()` or\n`to_numpy()` methods on the iterator object (to enable optional numpy support,\nsee the Numpy section of this document). These methods exhaust the iterator,\nplacing the remaining PyBytes values into a PyObject.\n\n```python\n>>> col = lazy[:, 0]\n>>> next(col)\nb'0'\n>>> col.to_list()\n[b'1']\n>>>\n```\n\nHeaders are by default parsed from the csv file and packaged into a tuple under\na `.headers` attribute. This can be skipped by passing `skip_headers=True` to\nthe object constructor. Skipping the header parsing step results in the header\nvalue being included in the iterator.\n\n*Note: `lazycsv` makes no effort to deduplicate headers and it is the\nresponsibility of the user to make sure that columns are properly named.*\n\n```python\n>>> lazy.headers\n(b'', b'ALPHA', b'BETA')\n>>> (col := lazy.sequence(col=1))\n<lazycsv_iterator object at 0x7f599fd86b50>\n>>> list(col)\n[b'a0', b'a1']\n>>> lazy = lazycsv.LazyCSV(FPATH, skip_headers=True)\n>>> (col := lazy[:, 1])\n<lazycsv_iterator object at 0x7f59d1b21890>\n>>> list(col)\n[b'ALPHA', b'a0', b'a1']\n```\n\nFields which are double-quoted by default are yielded without quotes. This\nbehavior can be disabled by passing `unquoted=False` to the object constructor.\n\n```python\n>>> lazy = lazycsv.LazyCSV(\n...     \"tests/fixtures/file_crlf2.csv\"\n... )\n>>> lazy.headers\n(b'', b'This,that', b'Fizz,Buzz')\n>>> lazy = lazycsv.LazyCSV(\n...     \"tests/fixtures/file_crlf2.csv\", unquote=False\n... )\n>>> lazy.headers\n(b'', b'\"This,that\"', b'\"Fizz,Buzz\"')\n```\n\n### Numpy\n\nOptional, opt-in numpy support is built into the module. Access to this\nextended feature set can be had by building the extension from source while\nsetting a `LAZYCSV_INCLUDE_NUMPY` environment variable to `1`. This adds a\n`to_numpy()` method to the iterator, which allows iterators to materialize in a\n1-dimensional numpy array without creating intermediary PyObject*'s for each\nfield of the CSV file.\n\nAccess to this feature requires numpy to be preinstalled as this feature makes\nnumpy a compilation dependency.\n\n```bash\n$ LAZYCSV_INCLUDE_NUMPY=1 python -m pip install lazycsv\n```\n```python\n>>> import numpy as np\n>>> from lazycsv import lazycsv\n>>> lazy = lazycsv.LazyCSV(\"\")\n>>> lazy = lazycsv.LazyCSV(\"./tests/fixtures/file.csv\")\n>>> lazy.sequence(col=0).to_numpy().astype(np.int8)\narray([0, 1], dtype=int8)\n```\n\nUsers pinned to an older version of numpy (<1.7) may wish to instead compile\nusing a `LAZYCSV_INCLUDE_NUMPY_LEGACY=1` flag, which drops the API pin in the\nmodule while still compiling with numpy support.\n\n#### Benchmarks (CPU)\n\n```\nroot@aa9d7c7ffb59:/code# python tests/benchmark_lazy.py\nfilesize: 0.134gb\ncols=10000\nrows=10000\nsparsity=0.95\n\nbenchmarking lazycsv:\nindexing lazy... time to index: 0.4978358040098101\nparsing cols... time to parse: 1.8409163669857662\ntotal time: 2.3387521709955763\n\nbenchmarking datatable:\n100% |\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| Reading data [done]\ncreating datatables frame... time to object: 0.40828132900060154\nparsing cols... time to parse: 3.810204313998838\ntotal time: 4.21848564299944\n\nbenchmarking polars (read):\ncreating polars df... time to object: 2.357821761001105\nparsing cols... time to parse: 1.3874979300017003\ntotal time: 3.7453196910028055\n```\n\n```\nroot@aa9d7c7ffb59:/code# python tests/benchmark_lazy.py\nfilesize: 1.387gb\ncols=10000\nrows=100000\nsparsity=0.95\n\nbenchmarking lazycsv:\nindexing lazy... time to index: 4.978727137990063\nparsing cols... time to parse: 23.64216143201338\ntotal time: 28.620888570003444\n\nbenchmarking datatable:\n100% |\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| Reading data [done]\ncreating datatables frame... time to object: 2.4456441220027045\nparsing cols... time to parse: 37.424315700998704\ntotal time: 39.86995982300141\n\nbenchmarking polars (read):\ncreating polars df... time to object: 22.383294907001982\nparsing cols... time to parse: 14.16580996599805\ntotal time: 36.54910487300003\n```\n\n```\nfilesize: 14.333gb\ncols=100000\nrows=100000\nsparsity=0.95\n\nbenchmarking lazycsv:\nindexing lazy... time to index: 58.97352126000624\nparsing cols... time to parse: 508.8208989979903\ntotal time: 567.7944202579965\n\nbenchmarking datatable:\n 58% |\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u258d                    | Reading data Killed\n\nbenchmarking polars (read):\nKilled\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "lazycsv",
+            "package_url": "https://pypi.org/project/lazycsv/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/lazycsv/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/lazycsv/1.1.0/",
+            "requires_dist": null,
+            "requires_python": "",
+            "summary": "an OOM csv parser",
+            "version": "1.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17935716,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3ec566ed0391d26e56e305dd8283278bbf5bba88e6410cb5305da860145770e3",
+                    "md5": "33e06b2d85188dbc23749d696484250f",
+                    "sha256": "80b59bc96c038ec625267d4c46c8110c412eb88619c05e3b5584d8e63e2bff00"
+                },
+                "downloads": -1,
+                "filename": "lazycsv-1.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "33e06b2d85188dbc23749d696484250f",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 21526,
+                "upload_time": "2023-05-02T03:29:34",
+                "upload_time_iso_8601": "2023-05-02T03:29:34.120180Z",
+                "url": "https://files.pythonhosted.org/packages/3e/c5/66ed0391d26e56e305dd8283278bbf5bba88e6410cb5305da860145770e3/lazycsv-1.1.0.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

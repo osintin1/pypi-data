@@ -44,7 +44,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17932673,
+        "last_serial": 17935404,
         "urls": [
             {
                 "comment_text": "",
@@ -136,7 +136,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17932673,
+        "last_serial": 17935404,
         "urls": [
             {
                 "comment_text": "",
@@ -228,7 +228,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17932673,
+        "last_serial": 17935404,
         "urls": [
             {
                 "comment_text": "",
@@ -320,7 +320,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17932673,
+        "last_serial": 17935404,
         "urls": [
             {
                 "comment_text": "",
@@ -412,7 +412,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17932673,
+        "last_serial": 17935404,
         "urls": [
             {
                 "comment_text": "",
@@ -504,7 +504,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17932673,
+        "last_serial": 17935404,
         "urls": [
             {
                 "comment_text": "",
@@ -561,7 +561,6 @@
                 "Programming Language :: Python",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "# smartsheet-pydantic\n## What is it?\nSmartsheet Python SDK wrapper, incorporating Pydantic models for type validation to guarantee successful data read/updates into Smartsheet.\n\nSmartsheet API requires the incoming data to comply with Smartsheet column types. When the types do not align then the write call can fail. In order streamline the data validation this package piggybacks off the Pydantic BaseModel structure and their data validation capabilities as a \"SmartModel\".\n\nThis package also provides frameworks to create a \"DataSource\" class which you can declaratively define your data source and attach it to the SmartModel, so you can have a standard method of querying your datasource and create/update into Smartsheet.\n\n---\n\n# Getting Started\n\n## Install & Import The Module\n__requires python greater than 3.10__\nStandard installation using pip install, and package import.\n```\npip install smartsheet-pydantic\n```\n```python\n# The package name uses underscore \"_\" instead of hyphen\nimport smartsheet_pydantic\n```\n\n---\n\n\n## Everything revolves around the __Controller__\n\n__smartsheet_pydantic__ package's function revolves around the __Controller__. Once a Controller is setup, it can facilitate data extraction from the user designated data source (RESTful API or PostgreSQL) and refresh the designated Smartsheet using an additive approach (data is updated or added, but never deleted). The __Controller__ can also facilitate writing into the Smartsheet.\n\nDuring both the write, read, or update of the Smartsheet the __smartsheet_pydantic__ as the name suggest uses __Pydantic__'s BaseModel to validate the data. This ensures the data has the write data type and will not fail to write to the given Smartsheet.\n\n\n\n## Defining the Controller\n\nIn order to generate the Controller we will use the __SheetDetail__ class to collect the necessary details.\n\n1. __sheet_id__: Every Smartsheet grid has a unique id, this is used to target the Smartsheet.\n2. __description__: User defined description of the target Smartsheet to give some context. Can be anything.\n3. __smart_model__: A __smartsheet-pydantic__ model we will create to aid in data validation (Extension of Pydantic BaseModel).\n4. __source__: A __smartsheet-pydantic__ model we will create which contains the connection detail so data can be extracted from, and written into the target Smartsheet.\n\n```python\nfrom smartsheet_pydantic import SheetDetail, SmartModel, DataSource\n\n\nsheet_detail = SheetDetail(\n    sheet_id: int = 0123456789\n    description: str = \"Description of the target Smartsheet\"\n    smart_model: SmartModel = WeatherModel # we will create this in the subsequent steps\n    source: DataSource = ExamplePostgres   # we will create this in the subsequent steps\n)\n```\n\n---\n## Defining a DataSource\nThere are options when creating a data source. One is a RESTful API endpoint, where the you can extend the __DataSourceAPI__ class, and provide a __url__ attribute. The other is a PostgreSQL database source using __DataSourcePostgres__, where you can provide the access details as well as the query to use, and the column name designations. We will use the latter in this example.\n\n```python\n# DataSource class to call a RESTful API endpoint.\nclass WeatherRestAPI(DataSourceAPI):\n    url = 'http://127.0.0.1:8000/weather_data'\n\n\n# DataSource class for PostgreSQL database\nclass ExamplePostgres(DataSourcePostgres):\n    user: str          = \"username\"\n    password: str      = \"password\"\n    host: str          = \"host name\"\n    database: str      = \"database name\"\n    query: str         = 'SELECT * FROM weather_table WHERE location = \"USA\"'\n    columns: list[str] = [ \"index\", \"date\", \"temperature\", \"humidity\", \"rain\" ]\n```\n\n---\n\n\n## Defining a SmartModel\nA __SmartModel__ class is an extension of Pydantic BaseModel. Therefore the definition of a __SmartModel__ is very similar. Define the data fields and their type as a class attribute.\n\nYou will also need to define 2 additional Configuration parameters.\n1. __source__: this is the DataSource class you defined in the previous step which is associated with this SmartModel.\n1. __unique_key__: is a list of column names which the model will use to define uniqueness. When data in Smartsheet is updated these columns will be used to find and update the data if the data already exists.\n2. __key_mapping__: if you have defined the data field names that differs from the source data, then this dictionary can be used to map and rename those columns. If the data field names are the same, the value must be set to None.\n\n```python\nfrom datetime import date\n\n\nclass WeatherModel(SmartModel):\n\n    index: int\n    date: date\n    temperature: float\n    humidity: float\n    rain: bool\n\n    class Configuration\n        Source = WeatherRestAPI\n        unique_columns: list[int] = ['index']\n        key_mapping: dict = None\n```\n\n---\n\n## Generating the controller\nNow that all of the components are ready we will now take the __SheetDetail__ instance, and provide it to the __SmartsheetControllerFactory__ class to generate a __ControllerFactory__. By calling on the __.get_controller()__ method we can generate the __SmarsheetController__ object.\n\n```python\nfrom smartsheet_pydantic import SmartsheetControllerFactory\n\ncontroller_factory = SmartsheetControllerFactory()\ncontroller = controller_factory.get_controller(sheet_detail)\n```\n\n---\n\n## Using the controller\n\n### Use the provided data source to refresh the target Smartsheet\n```python\ncontroller.refresh_smartsheet_from_source()\n```\n\n### Extracting data from Smartsheet\n```python\ndata: list[WeatherData] = controller.extract_as_smartmodel()\n```\n\n### Manually write new data, or update existing data to Smartsheet\n```python\ndata: list[WeatherData]\ncontroller.update_rows(data)\n```\n\n\n### Delete all row data from Smartsheet\n```python\ncontroller.delete_all_rows()\n```\n\n---\n\n# SmartModel\nNot all data can be handled within the SmartModel. You may want to manipulate the data using Pandas or Numpy. Therefore SmartModel has methods to aid in the transforming of data into a SmartModel, as well as extracting data out into a dictionary.\n## Extracting Data From SmartModel\n```python\nweather_data: list[WeatherData]\nextracted_data: list[dict] = [smart_model.dict() for smart_model in weather_data]\n\nprint(extracted_data)\n```\n#### Results\n```python\n[\n    {\n        'index': 1\n        'date': date(2023, 1, 1)\n        'temperature': 65.2\n        'humidity': 14.5\n        'rain': False\n    },\n    {\n        'index': 2\n        'date': date(2023, 1, 2)\n        'temperature': 67.2\n        'humidity': 14.2\n        'rain': False\n    },\n    {\n        'index': 1\n        'date': date(2023, 1, 3)\n        'temperature': 62.3\n        'humidity': 12.2\n        'rain': False\n    },\n]\n\n```\n\n## Converting Data Into SmartModel\n```python\nextracted_data: list[dict]\n\nweather_data: list[WeatherData] = \\\n    [WeatherData.from_source(data) for data in extracted_data]\n```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -597,7 +596,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17932673,
+        "last_serial": 17935404,
         "urls": [
             {
                 "comment_text": "",
@@ -638,6 +637,99 @@
                 "upload_time": "2023-05-01T22:50:52",
                 "upload_time_iso_8601": "2023-05-01T22:50:52.160418Z",
                 "url": "https://files.pythonhosted.org/packages/2a/54/b66d7ecef0925270b860cce387938db36606d16899f70214788caea49eae/smartsheet-pydantic-1.4.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.4.1": {
+        "info": {
+            "author": "Takahiro Watanabe",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# smartsheet-pydantic\n## What is it?\nSmartsheet Python SDK wrapper, incorporating Pydantic models for type validation to guarantee successful data read/updates into Smartsheet.\n\nSmartsheet API requires the incoming data to comply with Smartsheet column types. When the types do not align then the write call can fail. In order streamline the data validation this package piggybacks off the Pydantic BaseModel structure and their data validation capabilities as a \"SmartModel\".\n\nThis package also provides frameworks to create a \"DataSource\" class which you can declaratively define your data source and attach it to the SmartModel, so you can have a standard method of querying your datasource and create/update into Smartsheet.\n\n---\n\n# Getting Started\n\n## Install & Import The Module\n__requires python greater than 3.10__\nStandard installation using pip install, and package import.\n```\npip install smartsheet-pydantic\n```\n```python\n# The package name uses underscore \"_\" instead of hyphen\nimport smartsheet_pydantic\n```\n\n---\n\n\n## Everything revolves around the __Controller__\n\n__smartsheet_pydantic__ package's function revolves around the __Controller__. Once a Controller is setup, it can facilitate data extraction from the user designated data source (RESTful API or PostgreSQL) and refresh the designated Smartsheet using an additive approach (data is updated or added, but never deleted). The __Controller__ can also facilitate writing into the Smartsheet.\n\nDuring both the write, read, or update of the Smartsheet the __smartsheet_pydantic__ as the name suggest uses __Pydantic__'s BaseModel to validate the data. This ensures the data has the write data type and will not fail to write to the given Smartsheet.\n\n\n\n## Defining the Controller\n\nIn order to generate the Controller we will use the __SheetDetail__ class to collect the necessary details.\n\n1. __sheet_id__: Every Smartsheet grid has a unique id, this is used to target the Smartsheet.\n2. __description__: User defined description of the target Smartsheet to give some context. Can be anything.\n3. __smart_model__: A __smartsheet-pydantic__ model we will create to aid in data validation (Extension of Pydantic BaseModel).\n4. __source__: A __smartsheet-pydantic__ model we will create which contains the connection detail so data can be extracted from, and written into the target Smartsheet.\n\n```python\nfrom smartsheet_pydantic import SheetDetail, SmartModel, DataSource\n\n\nsheet_detail = SheetDetail(\n    sheet_id: int = 0123456789\n    description: str = \"Description of the target Smartsheet\"\n    smart_model: SmartModel = WeatherModel # we will create this in the subsequent steps\n    source: DataSource = ExamplePostgres   # we will create this in the subsequent steps\n)\n```\n\n---\n## Defining a DataSource\nThere are options when creating a data source. One is a RESTful API endpoint, where the you can extend the __DataSourceAPI__ class, and provide a __url__ attribute. The other is a PostgreSQL database source using __DataSourcePostgres__, where you can provide the access details as well as the query to use, and the column name designations. We will use the latter in this example.\n\n```python\n# DataSource class to call a RESTful API endpoint.\nclass WeatherRestAPI(DataSourceAPI):\n    url = 'http://127.0.0.1:8000/weather_data'\n\n\n# DataSource class for PostgreSQL database\nclass ExamplePostgres(DataSourcePostgres):\n    user: str          = \"username\"\n    password: str      = \"password\"\n    host: str          = \"host name\"\n    database: str      = \"database name\"\n    query: str         = 'SELECT * FROM weather_table WHERE location = \"USA\"'\n    columns: list[str] = [ \"index\", \"date\", \"temperature\", \"humidity\", \"rain\" ]\n```\n\n---\n\n\n## Defining a SmartModel\nA __SmartModel__ class is an extension of Pydantic BaseModel. Therefore the definition of a __SmartModel__ is very similar. Define the data fields and their type as a class attribute.\n\nYou will also need to define 2 additional Configuration parameters.\n1. __source__: this is the DataSource class you defined in the previous step which is associated with this SmartModel.\n1. __unique_key__: is a list of column names which the model will use to define uniqueness. When data in Smartsheet is updated these columns will be used to find and update the data if the data already exists.\n2. __key_mapping__: if you have defined the data field names that differs from the source data, then this dictionary can be used to map and rename those columns. If the data field names are the same, the value must be set to None.\n\n```python\nfrom datetime import date\n\n\nclass WeatherModel(SmartModel):\n\n    index: int\n    date: date\n    temperature: float\n    humidity: float\n    rain: bool\n\n    class Configuration\n        Source = WeatherRestAPI\n        unique_columns: list[int] = ['index']\n        key_mapping: dict = None\n```\n\n---\n\n## Generating the controller\nNow that all of the components are ready we will now take the __SheetDetail__ instance, and provide it to the __SmartsheetControllerFactory__ class to generate a __ControllerFactory__. By calling on the __.get_controller()__ method we can generate the __SmarsheetController__ object.\n\n```python\nfrom smartsheet_pydantic import SmartsheetControllerFactory\n\ncontroller_factory = SmartsheetControllerFactory()\ncontroller = controller_factory.get_controller(sheet_detail)\n```\n\n---\n\n## Using the controller\n\n### Use the provided data source to refresh the target Smartsheet\n```python\ncontroller.refresh_smartsheet_from_source()\n```\n\n### Extracting data from Smartsheet\n```python\ndata: list[WeatherData] = controller.extract_as_smartmodel()\n```\n\n### Manually write new data, or update existing data to Smartsheet\n```python\ndata: list[WeatherData]\ncontroller.update_rows(data)\n```\n\n\n### Delete all row data from Smartsheet\n```python\ncontroller.delete_all_rows()\n```\n\n---\n\n# SmartModel\nNot all data can be handled within the SmartModel. You may want to manipulate the data using Pandas or Numpy. Therefore SmartModel has methods to aid in the transforming of data into a SmartModel, as well as extracting data out into a dictionary.\n## Extracting Data From SmartModel\n```python\nweather_data: list[WeatherData]\nextracted_data: list[dict] = [smart_model.dict() for smart_model in weather_data]\n\nprint(extracted_data)\n```\n#### Results\n```python\n[\n    {\n        'index': 1\n        'date': date(2023, 1, 1)\n        'temperature': 65.2\n        'humidity': 14.5\n        'rain': False\n    },\n    {\n        'index': 2\n        'date': date(2023, 1, 2)\n        'temperature': 67.2\n        'humidity': 14.2\n        'rain': False\n    },\n    {\n        'index': 1\n        'date': date(2023, 1, 3)\n        'temperature': 62.3\n        'humidity': 12.2\n        'rain': False\n    },\n]\n\n```\n\n## Converting Data Into SmartModel\n```python\nextracted_data: list[dict]\n\nweather_data: list[WeatherData] = \\\n    [WeatherData.from_source(data) for data in extracted_data]\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "smartsheet,pydantic",
+            "license": "The MIT License (MIT) Copyright \u00a9 2023 <copyright holders>  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \u201cSoftware\u201d), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.  THE SOFTWARE IS PROVIDED \u201cAS IS\u201d, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "smartsheet-pydantic",
+            "package_url": "https://pypi.org/project/smartsheet-pydantic/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/smartsheet-pydantic/",
+            "project_urls": {
+                "Homepage": "https://github.com/oneTakeda/smartsheet-pydantic"
+            },
+            "release_url": "https://pypi.org/project/smartsheet-pydantic/1.4.1/",
+            "requires_dist": [
+                "psycopg2 (>=2.9.6)",
+                "pydantic (>=1.10.7)",
+                "requests (>=2.28.2)",
+                "smartsheet-python-sdk (>=3.0.0)",
+                "coverage ; extra == 'dev'",
+                "pytest ; extra == 'dev'"
+            ],
+            "requires_python": ">=3.10",
+            "summary": "Smartsheet Python SDK and Pydantic Wrapper",
+            "version": "1.4.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17935404,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "12a2490d388c4de1a2621976b4036693e0b731bfe833eac3d468122bbbbb4a54",
+                    "md5": "73a6f0304e1ac7205db85d5f3b7c1a3a",
+                    "sha256": "2b5aa91b2b49a293960b02aae7da1ea3da94a90ce63444cd394d5e08f6d452ef"
+                },
+                "downloads": -1,
+                "filename": "smartsheet_pydantic-1.4.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "73a6f0304e1ac7205db85d5f3b7c1a3a",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.10",
+                "size": 13442,
+                "upload_time": "2023-05-02T02:41:18",
+                "upload_time_iso_8601": "2023-05-02T02:41:18.860049Z",
+                "url": "https://files.pythonhosted.org/packages/12/a2/490d388c4de1a2621976b4036693e0b731bfe833eac3d468122bbbbb4a54/smartsheet_pydantic-1.4.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a68922d74dc8781399921579da33a3bca43e4a8c993652a285b8febef31d3251",
+                    "md5": "8abfba811cc680f238b5aa3f67d1dee3",
+                    "sha256": "bbbea2268232ef009de7440e4f978e8a489b85b68d06ea6d68aff4d322761989"
+                },
+                "downloads": -1,
+                "filename": "smartsheet-pydantic-1.4.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "8abfba811cc680f238b5aa3f67d1dee3",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.10",
+                "size": 17522,
+                "upload_time": "2023-05-02T02:41:22",
+                "upload_time_iso_8601": "2023-05-02T02:41:22.815610Z",
+                "url": "https://files.pythonhosted.org/packages/a6/89/22d74dc8781399921579da33a3bca43e4a8c993652a285b8febef31d3251/smartsheet-pydantic-1.4.1.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
