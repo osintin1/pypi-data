@@ -1,0 +1,98 @@
+{
+    "0.1.0": {
+        "info": {
+            "author": "Marvin L\u00fccke",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Scientific/Engineering :: Mathematics",
+                "Topic :: Scientific/Engineering :: Physics"
+            ],
+            "description": "[![build](https://github.com/lueckem/cnvm/actions/workflows/build.yml/badge.svg)](https://github.com/lueckem/cnvm/actions/workflows/build.yml)\n\n# Continuous-time noisy voter model (CNVM)\nThis package provides an efficient implementation of the CNVM, which is a dynamical system consisting a network of interacting *agents*.\nIt can be used to simulate how opinions about certain issues develop over time within a population, or how an infectious disease spreads.\nAlthough the interaction rules of the CNVM are quite simple, the resulting dynamics is complex and rich.\nThere are numerous papers studying the behavior of the CNVM or similar voter models.\nIn this package the simulation loop is just-in-time compiled using `numba`, which makes performance comparable with languages like C++.\n\n## Installation\nThe CNVM package requires Python 3.9 or 3.10.\nInstall from the PyPI repository:\n```\npip install cnvm\n```\nor get the latest version directly from GitHub:\n```\npip install git+https://github.com/lueckem/cnvm\n```\n\n\n## About the CNVM\nLet a network (undirected simple graph) of $N$ nodes be given. The nodes represent agents and the edges social interactions. \nEach node is endowed with one of $M$ discrete opinions. Thus, the system state is given by a vector $x \\in \\{1,\\dots,M\\}^N$, where $x_i$ describes the opinion of node $i$.\nEach node's opinion $x_i \\in \\{1,\\dots,M\\}$ changes over time according to a continuous-time Markov chain (Markov jump process).\nGiven the current system state $x$, the generator matrix $Q^i$ of the continuous-time Markov chain associated with node $i$ is defined as\n\n$$ Q^i \\in \\mathbb{R}^{M \\times M},\\quad (Q^i)_ {m,n} := r_{m,n} \\frac{d_ {i,n}(x)}{(d_i)^\\alpha} + \\tilde{r}_ {m,n},\\ m\\neq n, $$\n\nwhere $d_{i,n}(x)$ denotes the number of neighbors of node $i$ with opinion $n$ and $d_i$ is the degree of node $i$. The matrices $r, \\tilde{r} \\in \\mathbb{R}^{M \\times M}$ and $\\alpha \\in \\mathbb{R}$ are model parameters.\n\nThus, the transition rates $(Q^i)_ {m,n}$ consist of two components.\nThe first component $r_{m,n} d_{i,n}(x)/ (d_i)^\\alpha$ describes at which rate node $i$ gets \"infected\" with opinion $n$ by nodes in its neighborhood.\nThe second part $\\tilde{r}_{m,n}$ describes transitions that are independent from the neighborhood (e.g., noise).\n\nThe parameter $\\alpha$ can be used to tune the type of interaction. For $\\alpha=1$ the transition rates are normalized because $d_{i,n}(x)/d_i \\in [0,1]$.\nThe setting $\\alpha=0$ however yields a linear increase of the transition rates with the number of \"infected\" neighbors, and is often used in epidemic modeling, e.g., the contact process or SIS model.\n\nIn the CNVM the network itself is static, i.e., the nodes and edges do not change over time.\n\n## Basic Usage\nFirst define the model paramaters:\n```python\nfrom cnvm import Parameters\nimport numpy as np\nimport networkx as nx\n\nnum_nodes = 100\nr = np.array([[0, .8], [.2, 0]])\nr_tilde = np.array([[0, .1], [.2, 0]])\nnetwork = nx.erdos_renyi_graph(n=num_nodes, p=0.1)\n\nparams = Parameters(\n    num_opinions=2,\n    network=network,\n    r=r,\n    r_tilde=r_tilde,\n    alpha=1,\n)\n```\nThen simulate the model, starting in state `x_init`:\n```python\nfrom cnvm import CNVM\n\nx_init = np.random.randint(0, 2, num_nodes)\nmodel = CNVM(params)\nt, x = model.simulate(t_max=50, x_init=x_init)\n```\nThe output `t` contains the time points of state jumps and `x` the system states after each jump.\n\nA more detailed overview of the package can be found in the jupyter notebook [*examples/tutorial.ipynb*](examples/tutorial.ipynb).\nMoreover, the behavior of the CNVM in the mean-field limit is discussed in [*examples/mean_field.ipynb*](examples/mean_field.ipynb).\nIn the notebook [*examples/SIS-model.ipynb*](examples/SIS-model.ipynb) the existence of an epidemic threshold for the SIS model in epidemiology is demonstrated.\n\n## Implementation details\n\nAfter a node switches its opinion, the system state $x$ changes and hence all the generator matrices $Q^i$ may change as well.\nWe apply a Gillespie-like algorithm to generate statistically correct samples of the process.\nWe start a Poisson clock for each possible transition and as soon as the first transition occurs we modify the generator matrices and reset all the clocks.\nTo do this efficiently, it is advantageous to transform the rate matrices $r$ and $\\tilde{r}$ into an equivalent format consisting of base rates $r_0, \\tilde{r}_0 > 0$ and probability matrices $p, \\tilde{p} \\in [0, 1]^{M\\times M}$ such that\n\n$$ r_{m,n} = r_0 p_ {m,n}, \\quad \\tilde{r}_ {m,n} = \\tilde{r}_ 0 \\tilde{p}_ {m,n} / M. $$\n\nFurthermore, we define the cumulative rates\n\n$$ \\lambda := \\sum_{i=1}^N r_0 d_i^{(1-\\alpha)},\\quad \\tilde{\\lambda} := N \\tilde{r}_0,\\quad \\hat{\\lambda} := \\lambda + \\tilde{\\lambda}. $$\n\nThen the simulation loop is given by\n1. Draw time of next jump event from exponential distribution $\\exp(\\hat{\\lambda})$. Go to 2.\n2. With probability $\\lambda / \\hat{\\lambda}$ the event is due to infection, in which case go to 3.\nElse it is due to noise, go to 4.\n3. Draw agent $i$ from $\\{1,\\dots,N\\}$ according to distribution $\\mathbb{P}(i = j) = r_0 d_j^{(1-\\alpha)} / \\lambda$. Let $m$ denote the state of agent $i$.\nDraw $n$ from $\\{1,\\dots,M\\}$ according to $\\mathbb{P}(n = k) = d_{i,k}(x) / d_i$.\nWith probability $p_{m,n}$ agent $i$ switches to state $n$. Go back to 1.\n4. Draw $i$ from $\\{1,\\dots,N\\}$ and $n$ from $\\{1,\\dots,M\\}$ uniformly. Let $m$ denote the state of agent $i$.\nWith probability $\\tilde{p}_{m,n}$ agent $i$ switches to state $n$. Go back to 1.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/lueckem/cnvm",
+            "keywords": "voter model,social dynamics,opinion dynamics,statistical physics,agent-based model,epidemiology,interacting particle system",
+            "license": "GPL-3.0-or-later",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "cnvm",
+            "package_url": "https://pypi.org/project/cnvm/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/cnvm/",
+            "project_urls": {
+                "Homepage": "https://github.com/lueckem/cnvm",
+                "Repository": "https://github.com/lueckem/cnvm"
+            },
+            "release_url": "https://pypi.org/project/cnvm/0.1.0/",
+            "requires_dist": [
+                "numpy (>=1.21)",
+                "numba (>=0.55)",
+                "networkx (>=2.8.4)",
+                "scipy (>=1.9.3)"
+            ],
+            "requires_python": ">=3.9,<3.11",
+            "summary": "Continuous-time Noisy Voter Model (CNVM) of social dynamics.",
+            "version": "0.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17944823,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "b9499b09502585ea377fcdd88aec2938db397edcd19adc31de813e0e4b64aaf8",
+                    "md5": "c54217a91514fe32b3a2d49c9cb83542",
+                    "sha256": "b03325cdd456958786d1018faf66bd30f0d306a3ff3c227b355fd4238cce05c7"
+                },
+                "downloads": -1,
+                "filename": "cnvm-0.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "c54217a91514fe32b3a2d49c9cb83542",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9,<3.11",
+                "size": 27338,
+                "upload_time": "2023-05-02T17:46:27",
+                "upload_time_iso_8601": "2023-05-02T17:46:27.776261Z",
+                "url": "https://files.pythonhosted.org/packages/b9/49/9b09502585ea377fcdd88aec2938db397edcd19adc31de813e0e4b64aaf8/cnvm-0.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2d4d44514674300d64d47629dec4dc770523269f22e30e2ee4cb196f5b123062",
+                    "md5": "25cb6f530939d004204c4974cd1c8dc8",
+                    "sha256": "96462acdf2e7b5ea85d6fb5b4ada81cd787165b7a10805622e88d72bebb15be3"
+                },
+                "downloads": -1,
+                "filename": "cnvm-0.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "25cb6f530939d004204c4974cd1c8dc8",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9,<3.11",
+                "size": 25369,
+                "upload_time": "2023-05-02T17:52:58",
+                "upload_time_iso_8601": "2023-05-02T17:52:58.570070Z",
+                "url": "https://files.pythonhosted.org/packages/2d/4d/44514674300d64d47629dec4dc770523269f22e30e2ee4cb196f5b123062/cnvm-0.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

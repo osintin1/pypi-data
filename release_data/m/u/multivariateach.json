@@ -13,7 +13,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "# MultivariaTeach\n\n## Table of Contents\n\n1. [Introduction](#introduction)\n2. [Prerequisites](#prerequisites)\n3. [Installation](#installation)\n4. [Usage](#usage)\n5. [Testing](#testing)\n6. [Contributing](#contributing)\n7. [License](#license)\n8. [Acknowledgments](#acknowledgments)\n\n## Introduction\n\nMultivariaTeach is designed to help students of multivariate statistics understand and perform a selection of fundamental tests. Where many statistical packages provide \u201chelpful\u201d features that automatically perform various functions or hide \u201cuseless\u201d information, the goal of this package is to provide a selection of simple tools which can be easily enough put together as desired. For example, rather than use a command to indicate you wish to perform a repeated measures analysis, there is a tool to create a matrix of polynomial contrasts which you can then use in the rest of the analysis.\n\n## Prerequisites\n\nIn addition to Python, you will need the standard `numpy`, `pandas`, and `scipy` packages installed (which is almost certainly already the case). Almost all of the mathematical calculations are done with `numpy`; the `pandas` library is used in the initial transformation of data into the necessary format; and `scipy` is used to calculate $p$-values.\n\nIt is assumed that you are a graduate-level student in a multivariate statistics course. The math won't make much sense to those without the necessary academic prerequisites; and, to those who have completed such a course, the more common statistical analysis software packages (such as SAS or R) are almost certainly more practical.\n\n## Installation\n\nTo install the `multivariateach` package, simply run the following command:\n\n```bash\npip install multivariateach\n```\n\n## Usage\n\n### MANOVA\n\nFor those familiar with SAS, MultivariTeach provides much (but certainly not all!) of the basic functionality of `PROC GLM` \u2014 that is, of testing the null hypothesis $H_0: \\mathbf{C} \\boldsymbol{\\beta} \\mathbf{M} = \\mathbf{0}$, against the alternative $H_a: \\mathbf{C} \\boldsymbol{\\beta}\\mathbf{M} \\neq 0$, where $\\mathbf{C}$ is a matrix of contrasts across varables; $\\boldsymbol{\\beta}$ is the parameter matrix; and $\\mathbf{M}$ is a matrix of contrasts across groups.\n\nIn most software packages, performing a MANOVA test is done by loading all the data into an object and then writing out a math-looking command to indicate the test you wish to perform. For example, consider Ronald Fisher\u2019s famous 1936 iris flower data set, with the species in the first column named `group` and the four measurements in the remaining columns, labeled `x1`, `x2`, `x3`, and `x4`. In Python, you can easily load the data as follows:\n\n```python\nimport pandas as pd\nfrom sklearn import datasets\n\niris = datasets.load_iris()\ndata = pd.DataFrame(np.hstack([iris.target.reshape(-1, 1), iris.data]))\ndata.columns = ['group', 'x1', 'x2', 'x3', 'x4']\n```\n\nElsewhere, you might use something in the spirit of `manova data=data, test='group ~ x1 + x2 + x3 + x4'`. The software then \u201dhelpfully\u201d does this-and-that to the data and reports the various test statistics.\n\nHere, instead, you must yourself prepare the $\\mathbf{X}$, $\\mathbf{Y}$, $\\mathbf{C}$, and $\\mathbf{M}$ matrices which are used in the actual calcuations. Note that all software which performs a MANOVA does this, one way or another; it\u2019s just that you mostly don\u2019t ever get a chance to see how it happens. Further, there are different-but-equivalent mathematical approaches to take; here, we use the same \u201dreduced rank\u201d model as SAS, but R uses the \u201dfull rank\u201d model instead.\n\nIn our model, $\\mathbf{C}$ and $\\mathbf{M}$ are as described above: matrices of contrasts. Here, $\\mathbf{X}$ is the \u201dmodel matrix.\u201d It has a leading column of ones, followed by \u201ddummy\u201d indicators (either $1$ or $0$) that identify which group the observation (row) belongs to. Then $\\mathbf{Y}$ is simply the observations themselves.\n\nWhen you perform the MANOVA, the function first finds $\\hat{\\boldsymbol{\\beta}} = (\\mathbf{X}^\\intercal \\mathbf{X})^- \\mathbf{X}^\\intercal \\mathbf{Y}$, where $\\mathbf{A}^\\intercal$ denotes the transpose of $\\mathbf{A}$ and $\\mathbf{A}^-$ denotes the Moore-Penrose generalized inverse of $\\mathbf{A}$. Then, the function calculates:\n$$\n\\mathbf{E} = \\mathbf{M}^\\intercal(\\mathbf{Y}^\\intercal \\mathbf{Y} - \\mathbf{Y}^\\intercal \\mathbf{X} (\\mathbf{X}^\\intercal \\mathbf{X})^- \\mathbf{X}^\\intercal \\mathbf{Y})\\mathbf{M}\n$$\nand\n$$\n\\mathbf{B} = (\\mathbf{C} \\hat{\\boldsymbol{\\beta}})^\\intercal (\\mathbf{C} (\\mathbf{X}^\\intercal \\mathbf{X}) \\mathbf{C}^\\intercal)^{-1} (\\mathbf{C}{\\hat{\\boldsymbol{\\beta}}}).\n$$\nFinally, $\\mathbf{H} = \\mathbf{M}^\\intercal \\mathbf{B} \\mathbf{M}$. The $\\mathbf{E}$ and $\\mathbf{H}$ matrices are then used to calculate the test statistics.\n\nWhile you are welcome to construct all four matrices by hand, MultivariaTeach provides tools to help construct them.\n\nFirst, as usual, make sure you load the package at the top of your Python file:\n\n```python\nimport MultivariaTeach as mt\n```\n\nThis would typically be included with the lines above importing `pandas` and `sklearn`. We can now create our $\\mathbf{X}$ and $\\mathbf{Y}$ matrices:\n\n```python\nX = mt.create_design_matrix(data, 'group')\nY = mt.create_response_matrix(data, ['x1', 'x2', 'x3', 'x4'])\n```\n\nYou can now inspect these two matrices, if you wish, before performing the analysis.\n\nFor this example, we will use a \u201dType III\u201d contrast matrix for $\\mathbf{C}$. It is intended to test the null hypothesis of all variables having similar variance against the alternative of at least one pairing of variables having differing variance. Note that this hypothesis will not make sense in many real-world analyses; for example, it assumes that the variables are scaled comparably, and that they come from populations with similar variance, both of which are often not the case. However, it is the default analysis performed by SAS and is suitable for many textbook examples.\n\nCreating such a matrix with MultivariaTeach is trivial:\n\n```python\nC = mt.create_contrast_type_iii(X)\n```\n\nIn many MANOVA tests, there is no need to examine variation across groups, in which case one is testing $H_0: \\mathbf{C} \\boldsymbol{\\beta} = \\mathbf{0}$. To perform such a test in MultivariaTeach, use an identity matrix the size of the number of variables in $\\mathbf{Y}$ for your $\\mathbf{M}$ matrix. You can do this with `numpy`, another library which you should import at the top of your file:\n\n```python\nimport numpy as np\n\nM = np.eye(Y.shape[1])\n```\n\nWith all the building blocks assembled, you can now perform the MANOVA:\n\n```python\nresults = mt.run_manova(X, Y, C, M)\n```\n\nUnlike with most other software, you are not presented with a pretty-formatted table of results; instead, the `results` object can now be itself queried for \u2026 well, for anything and everything. So, for example, a simple-but-complete test might look like this:\n\n```python\nimport numpy as np\nimport pandas as pd\nfrom sklearn import datasets\nimport MultivariaTeach as mt\n\niris = datasets.load_iris() # Fisher's 1936 flower data\n\ndata = pd.DataFrame(np.hstack([iris.target.reshape(-1, 1), iris.data])) # Extract the parts we want in the structure we need\ndata.columns = ['group', 'x1', 'x2', 'x3', 'x4'] # Give names to the columns\n\nX = mt.create_design_matrix(data, 'group')\nY = mt.create_response_matrix(data, ['x1', 'x2', 'x3', 'x4'])\nC = mt.create_contrast_type_iii(X)\nM = np.eye(Y.shape[1])\n\nresults = mt.run_manova(X, Y, C, M)\n\nprint(\"beta_hat: \", results.beta_hat)\nprint(\"E: \", results.E)\nprint(\"B: \", results.B)\nprint(\"H: \", results.H)\nprint(\"wilks_lambda: \", results.wilks_lambda.statistic, results.wilks_lambda.F, results.wilks_lambda.df_n, results.wilks_lambda.df_d, results.wilks_lambda.p_value)\nprint(\"pillais_trace: \", results.pillais_trace.statistic, results.pillais_trace.F, results.pillais_trace.df_n, results.pillais_trace.df_d, results.pillais_trace.p_value)\nprint(\"hotelling_lawley_trace: \", results.hotelling_lawley_trace.statistic, results.hotelling_lawley_trace.F, results.hotelling_lawley_trace.df_n, results.hotelling_lawley_trace.df_d, results.hotelling_lawley_trace.p_value)\nprint(\"roys_largest_root: \", results.roys_largest_root.statistic, results.roys_largest_root.F, results.roys_largest_root.df_n, results.roys_largest_root.df_d, results.roys_largest_root.p_value)\n```\n\nThis will create the following output:\n\n```[text]\nbeta_hat:  [[ 4.3825  2.293   2.8185  0.8995]\n [ 0.6235  1.135  -1.3565 -0.6535]\n [ 1.5535  0.477   1.4415  0.4265]\n [ 2.2055  0.681   2.7335  1.1265]]\nE:  [[38.9562 13.63   24.6246  5.645 ]\n [13.63   16.962   8.1208  4.8084]\n [24.6246  8.1208 27.2226  6.2718]\n [ 5.645   4.8084  6.2718  6.1566]]\nB:  [[ 63.21213333 -19.95266667 165.2484      71.27933333]\n [-19.95266667  11.34493333 -57.2396     -22.93266667]\n [165.2484     -57.2396     437.1028     186.774     ]\n [ 71.27933333 -22.93266667 186.774       80.41333333]]\nH:  [[ 63.21213333 -19.95266667 165.2484      71.27933333]\n [-19.95266667  11.34493333 -57.2396     -22.93266667]\n [165.2484     -57.2396     437.1028     186.774     ]\n [ 71.27933333 -22.93266667 186.774       80.41333333]]\nwilks_lambda:  0.023438630650877965 199.14534354008606 8 288 1.3650058325882981e-112\npillais_trace:  1.191898825041458 53.466488784612224 8.0 290.0 9.74216271945252e-53\nhotelling_lawley_trace:  32.4773202409019 580.5320993061215 8.0 286.0 6.436176201217028e-172\nroys_largest_root:  32.19192919827884 1166.957433437608 4 145 3.42202725324015e-19\n```\n\nWith luck, by now the code above and its results are obvious and self-explanatory.\n\nNote that, since $\\mathbf{M} = \\mathbf{I}$, our $\\mathbf{B}$ and $\\mathbf{H}$ matrices are the same for this example.\n\nAlso note that the $p$-values are given with their full precision \u2014 an hundred and twelve leading zeros in the case of Wilks\u2019s Lambda above. As a general practice, when you report a $p$-value in your analysis, you should indicate it as being less than some arbitrarily small number, such as, \u201cWe find $p < 0.00001$ and therefore reject $H_0$.\u201d If you use code to produce such output, be sure to check for vanishingly small $p$-values and adjust accordingly; MultivariaTeach will report the results of the calculation without adjustment.\n\n### Repeated measures\n\nOne can use MANOVA with an $\\mathbf{M}$ matrix of polynomial contrasts across time to perform an analysis of repeated measures. To construct such a matrix, use something such as the following:\n\n```python\nn = Y.shape[1] # number of contrasts\ndegree = 3 # up to cubic polynomials\nM = orthopolynomial_cotrasts(n, degree)\n```\n\nThe iris data, of course, is not a repeated measures experiment, so performing such a test with the data would not make sense.\n\n### Box\u2019s M test\n\nThe `perform_box_m_test` in MultivariaTeach can perform Box\u2019s M test for the homogeneity of covariance matrices. It takes $\\mathbf{X}$ and $\\mathbf{Y}$ as prepared above and returns a $\\chi^2$ statistic object similar to the $F$ statistic objects returned by the MANOVA test.\n\n### Mauchly\u2019s Test of Sphericity\n\nMauchly\u2019s test is used in repeated measures to test for equal variances among the differences between all possible pairings of the independent variables. To perform the test with MultivariaTeach, you only need supply the $\\mathbf{X}$ and $\\mathbf{Y}$ matrices to the `mauchly` function; it will return the same type of $\\chi^2$ statistic object as Box\u2019s M test. Note that the test requires polynomial contrasts of a degree equal to the number of variables in $\\mathbf{Y}$; since there are no other reasonable options for the $\\mathbf{M}$ matrix used in the computation, the function automatically creates a suitable $\\mathbf{M}$ matrix.\n\n### Greenhouse-Geisser correction\n\nIf Mauchly\u2019s test indicates asphericity, you may wish to perform univariate tests with the Greenhouse-Geisser correction. The correction itself can be calculated with `mt.greenhouse_geisser_correction(Y, M)`, which will return the value of $\\epsilon$ to apply to the univariate tests. To perform the univariate tests, simply \u201cpick apart\u201d your $\\mathbf{Y}$ matrix and analyze each column in a separate test. If you have a great many such columns \u2026 first, this package probably isn\u2019t for you; but, if you insist, a simple loop iterating over the columns should make for cleaner code.\n\n### Additional functions\n\n#### Pooled Covariance\n\nThe function `calculate_pooled_covariance_matrix(X, Y)` will return $S_p$, the pooled covariance matrix used in many of the other calculations.\n\n#### Individual test statistic calculations\n\nFor each of the four main MANOVA test statistics, you can directly provide the $\\mathbf{E}$ and $\\mathbf{H}$ matrices in addition to three or four of the following (depending on the statistic):\n\n* n, the number of observations (rows of data);\n* p, the number of variables (columns in $\\mathbf{Y}$)\n* g, the number of groups (equal to one less than the number of columns of $\\mathbf{X}$)\n* q, the rank of $\\mathbf{C} (\\mathbf{X}^\\intercal \\mathbf{X})^- \\mathbf{C}^\\intercal$.\n\nThese functions would be of most interest if you are supplied not with data to analyze but instead with the above information and asked to calculate the corresponding statistic. However, in such a circumstance, the math represented in the code may well be of more interest.\n\n## Testing\n\nThe `MultivariaTeach` package includes a suite of tests to ensure its functionality. To run the tests, you'll need to have `pytest` installed. If you don't have it installed, you can do so with the following command:\n\n```[bash]\npip install pytest\n```\n\nAfter installing `pytest`, navigate to the directory containing the `MultivariaTeach` package, and run the following command:\n\n```[bash]\npytest MultivariaTeach\n```\n\nThis will execute the included tests and provide you with the results.\n\n## Contributing\n\nImplementation of additional multivariate statistical methods would be most welcome. Please [email](ben@trumpetpower.com) me with suggestions.\n\n## License\n\nThis project is licensed under the ISC License. The full license text can be found in the [LICENSE](./LICENSE) file in the repository.\n\n## Acknowledgments\n\nThanks first and foremost to Dr. Mark Reiser, who has been most generous of his knowledge and experience and patience in helping me to understand multivariate statistics.\n\nThanks also to ChatGPT, who has been a surprisingly good coach and even copilot. Though we've chased each other down rabbit holes, almost every rabbit hole has led to a deeper understanding.\n\nThe math for the MANOVA test follows that specified by [SAS](https://documentation.sas.com/doc/en/pgmsascdc/9.4_3.3/statug/statug_introreg_sect038.htm).\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -46,7 +45,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17933672,
+        "last_serial": 17947296,
         "urls": [
             {
                 "comment_text": "",
@@ -87,6 +86,565 @@
                 "upload_time": "2023-05-02T00:53:32",
                 "upload_time_iso_8601": "2023-05-02T00:53:32.964947Z",
                 "url": "https://files.pythonhosted.org/packages/ad/f5/b20386c682111aaf2fb9440f8123fc17062f4990eb7ad63fa1f73f7f1720/MultivariaTeach-0.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.1": {
+        "info": {
+            "author": "Ben Goren",
+            "author_email": "bgoren@asu.edu",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Intended Audience :: Education",
+                "License :: OSI Approved :: ISC License (ISCL)",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/Ben-Goren/MultivariaTeach",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "MultivariaTeach",
+            "package_url": "https://pypi.org/project/MultivariaTeach/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/MultivariaTeach/",
+            "project_urls": {
+                "Homepage": "https://github.com/Ben-Goren/MultivariaTeach"
+            },
+            "release_url": "https://pypi.org/project/MultivariaTeach/0.1.1/",
+            "requires_dist": [
+                "numpy (>=1.19.5)",
+                "scipy (>=1.5.0)",
+                "pandas (>=1.2.0)"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "A collection of tools intended for students of multivariate analysis",
+            "version": "0.1.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17947296,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3c4cbdc46187720b1e571173b1d03c265b2e2ea5235ef76e8e8cf4b4af393de6",
+                    "md5": "6af02953126175ec6f98e606e53554f1",
+                    "sha256": "e23b1acf92ee91d3c0667802e6bc7ab2573c331505633351408a9b8869cda770"
+                },
+                "downloads": -1,
+                "filename": "MultivariaTeach-0.1.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "6af02953126175ec6f98e606e53554f1",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 14161,
+                "upload_time": "2023-05-02T20:38:06",
+                "upload_time_iso_8601": "2023-05-02T20:38:06.615654Z",
+                "url": "https://files.pythonhosted.org/packages/3c/4c/bdc46187720b1e571173b1d03c265b2e2ea5235ef76e8e8cf4b4af393de6/MultivariaTeach-0.1.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "40a5b925a1649068c8e59579be498777174140dce6731be3c5dd0d46ce33da42",
+                    "md5": "fa793c07233d671757d6cf4dc3b65718",
+                    "sha256": "bd6bd374949bbd0d305017a39a23bb4452b361998c0d6526860edd5318092102"
+                },
+                "downloads": -1,
+                "filename": "MultivariaTeach-0.1.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "fa793c07233d671757d6cf4dc3b65718",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 9798,
+                "upload_time": "2023-05-02T20:38:08",
+                "upload_time_iso_8601": "2023-05-02T20:38:08.470878Z",
+                "url": "https://files.pythonhosted.org/packages/40/a5/b925a1649068c8e59579be498777174140dce6731be3c5dd0d46ce33da42/MultivariaTeach-0.1.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.2": {
+        "info": {
+            "author": "Ben Goren",
+            "author_email": "bgoren@asu.edu",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Intended Audience :: Education",
+                "License :: OSI Approved :: ISC License (ISCL)",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/Ben-Goren/MultivariaTeach",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "MultivariaTeach",
+            "package_url": "https://pypi.org/project/MultivariaTeach/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/MultivariaTeach/",
+            "project_urls": {
+                "Homepage": "https://github.com/Ben-Goren/MultivariaTeach"
+            },
+            "release_url": "https://pypi.org/project/MultivariaTeach/0.1.2/",
+            "requires_dist": [
+                "numpy (>=1.19.5)",
+                "scipy (>=1.5.0)",
+                "pandas (>=1.2.0)"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "A collection of tools intended for students of multivariate analysis",
+            "version": "0.1.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17947296,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "73100c79f68b9f29b36010a789f75ffeaf7830823d7cd4d98207ad036d13510d",
+                    "md5": "dcd8fb71143066d24d71b835c8652a64",
+                    "sha256": "93b1b346adacb835d82ebc8f91026bd1bf59543d57b145fc129c48851e5df9c3"
+                },
+                "downloads": -1,
+                "filename": "MultivariaTeach-0.1.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "dcd8fb71143066d24d71b835c8652a64",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 14161,
+                "upload_time": "2023-05-02T20:46:21",
+                "upload_time_iso_8601": "2023-05-02T20:46:21.255804Z",
+                "url": "https://files.pythonhosted.org/packages/73/10/0c79f68b9f29b36010a789f75ffeaf7830823d7cd4d98207ad036d13510d/MultivariaTeach-0.1.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "43aefd1b2dea6246140a8396f33474d5bf9fd0f449403a24abad77e69037815d",
+                    "md5": "2662a1eeba6203f0c2c1c64b01d92618",
+                    "sha256": "1942830a8398c11533abec53a41c3c6e9219a83d2448284c0e5e702b3671c9ff"
+                },
+                "downloads": -1,
+                "filename": "MultivariaTeach-0.1.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "2662a1eeba6203f0c2c1c64b01d92618",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 9800,
+                "upload_time": "2023-05-02T20:46:24",
+                "upload_time_iso_8601": "2023-05-02T20:46:24.346766Z",
+                "url": "https://files.pythonhosted.org/packages/43/ae/fd1b2dea6246140a8396f33474d5bf9fd0f449403a24abad77e69037815d/MultivariaTeach-0.1.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.3": {
+        "info": {
+            "author": "Ben Goren",
+            "author_email": "bgoren@asu.edu",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Intended Audience :: Education",
+                "License :: OSI Approved :: ISC License (ISCL)",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/Ben-Goren/MultivariaTeach",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "MultivariaTeach",
+            "package_url": "https://pypi.org/project/MultivariaTeach/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/MultivariaTeach/",
+            "project_urls": {
+                "Homepage": "https://github.com/Ben-Goren/MultivariaTeach"
+            },
+            "release_url": "https://pypi.org/project/MultivariaTeach/0.1.3/",
+            "requires_dist": [
+                "numpy (>=1.19.5)",
+                "scipy (>=1.5.0)",
+                "pandas (>=1.2.0)"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "A collection of tools intended for students of multivariate analysis",
+            "version": "0.1.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17947296,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "84477bfa25fcc98ec937cb4c40a10b72a4e42f92c61782b8a1cb275041a2149e",
+                    "md5": "c1052d36bd0676ce1330516bdfce019f",
+                    "sha256": "3f23430c6c23304e764fbdf46c41a1795d52474ce1193aad9ee68b2ea199d8b4"
+                },
+                "downloads": -1,
+                "filename": "MultivariaTeach-0.1.3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "c1052d36bd0676ce1330516bdfce019f",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 10125,
+                "upload_time": "2023-05-02T20:56:49",
+                "upload_time_iso_8601": "2023-05-02T20:56:49.821691Z",
+                "url": "https://files.pythonhosted.org/packages/84/47/7bfa25fcc98ec937cb4c40a10b72a4e42f92c61782b8a1cb275041a2149e/MultivariaTeach-0.1.3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "615b501fcd2aee19ff4e556b716193a61285db29f0da5348853807dbf7cfbe9f",
+                    "md5": "aa0ba7a1e7baa9927f4e7d5c81368d8d",
+                    "sha256": "3a34ded1e9f13c0670a39d1db68d8c1820971bae0f87209f7eda5915d8f56e17"
+                },
+                "downloads": -1,
+                "filename": "MultivariaTeach-0.1.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "aa0ba7a1e7baa9927f4e7d5c81368d8d",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 9793,
+                "upload_time": "2023-05-02T20:56:52",
+                "upload_time_iso_8601": "2023-05-02T20:56:52.567704Z",
+                "url": "https://files.pythonhosted.org/packages/61/5b/501fcd2aee19ff4e556b716193a61285db29f0da5348853807dbf7cfbe9f/MultivariaTeach-0.1.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.4": {
+        "info": {
+            "author": "Ben Goren",
+            "author_email": "bgoren@asu.edu",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Intended Audience :: Education",
+                "License :: OSI Approved :: ISC License (ISCL)",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/Ben-Goren/MultivariaTeach",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "MultivariaTeach",
+            "package_url": "https://pypi.org/project/MultivariaTeach/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/MultivariaTeach/",
+            "project_urls": {
+                "Homepage": "https://github.com/Ben-Goren/MultivariaTeach"
+            },
+            "release_url": "https://pypi.org/project/MultivariaTeach/0.1.4/",
+            "requires_dist": [
+                "numpy (>=1.19.5)",
+                "scipy (>=1.5.0)",
+                "pandas (>=1.2.0)"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "A collection of tools intended for students of multivariate analysis",
+            "version": "0.1.4",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17947296,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "92b6bbb969bc3f01f53ddbd07215084ed82423b0e28b9b11324cb9699812a32e",
+                    "md5": "1f1820e07a5bdebfd8eafd581007b922",
+                    "sha256": "c03b3ceaba20f54b15ecc8bc7815f93f7fac7f89acf6551f9f3a3e231cfc76bb"
+                },
+                "downloads": -1,
+                "filename": "MultivariaTeach-0.1.4-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "1f1820e07a5bdebfd8eafd581007b922",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 14242,
+                "upload_time": "2023-05-02T21:14:29",
+                "upload_time_iso_8601": "2023-05-02T21:14:29.304079Z",
+                "url": "https://files.pythonhosted.org/packages/92/b6/bbb969bc3f01f53ddbd07215084ed82423b0e28b9b11324cb9699812a32e/MultivariaTeach-0.1.4-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e90685e3008bd512126e5002ded83bed7041d8d68c27cd613a119842c8dc0149",
+                    "md5": "1db1e9e3726f87330931a799bc46f9a2",
+                    "sha256": "b84d01544bacbc8e35999f41d9028234e610fe1da48c3ac0989ed39ffefb3781"
+                },
+                "downloads": -1,
+                "filename": "MultivariaTeach-0.1.4.tar.gz",
+                "has_sig": false,
+                "md5_digest": "1db1e9e3726f87330931a799bc46f9a2",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 13429,
+                "upload_time": "2023-05-02T21:14:32",
+                "upload_time_iso_8601": "2023-05-02T21:14:32.145319Z",
+                "url": "https://files.pythonhosted.org/packages/e9/06/85e3008bd512126e5002ded83bed7041d8d68c27cd613a119842c8dc0149/MultivariaTeach-0.1.4.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.5": {
+        "info": {
+            "author": "Ben Goren",
+            "author_email": "bgoren@asu.edu",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Intended Audience :: Education",
+                "License :: OSI Approved :: ISC License (ISCL)",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/Ben-Goren/MultivariaTeach",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "MultivariaTeach",
+            "package_url": "https://pypi.org/project/MultivariaTeach/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/MultivariaTeach/",
+            "project_urls": {
+                "Homepage": "https://github.com/Ben-Goren/MultivariaTeach"
+            },
+            "release_url": "https://pypi.org/project/MultivariaTeach/0.1.5/",
+            "requires_dist": [
+                "numpy (>=1.19.5)",
+                "scipy (>=1.5.0)",
+                "pandas (>=1.2.0)"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "A collection of tools intended for students of multivariate analysis",
+            "version": "0.1.5",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17947296,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "91f1b0a345b071b05f555dde79992594a8b9a4ff5294008815c61e03d2335b27",
+                    "md5": "76c8f6f09d72ef0850802aade0bafa58",
+                    "sha256": "cf428a6407fbbba6c4620ad8795d1c08f7940a72efdc2566f525057ad24ea287"
+                },
+                "downloads": -1,
+                "filename": "MultivariaTeach-0.1.5-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "76c8f6f09d72ef0850802aade0bafa58",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 14246,
+                "upload_time": "2023-05-02T21:22:44",
+                "upload_time_iso_8601": "2023-05-02T21:22:44.274806Z",
+                "url": "https://files.pythonhosted.org/packages/91/f1/b0a345b071b05f555dde79992594a8b9a4ff5294008815c61e03d2335b27/MultivariaTeach-0.1.5-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "04eca10567f734f519c1baec2995153b355e311e5f2302a5438822a77f91a6b4",
+                    "md5": "ecddf19679197f77dc0c1340c43ba77f",
+                    "sha256": "5562f2c9be27b529e99209a2dd3a198591c8a109250455d97c1e555e6399ba35"
+                },
+                "downloads": -1,
+                "filename": "MultivariaTeach-0.1.5.tar.gz",
+                "has_sig": false,
+                "md5_digest": "ecddf19679197f77dc0c1340c43ba77f",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 13397,
+                "upload_time": "2023-05-02T21:22:48",
+                "upload_time_iso_8601": "2023-05-02T21:22:48.335357Z",
+                "url": "https://files.pythonhosted.org/packages/04/ec/a10567f734f519c1baec2995153b355e311e5f2302a5438822a77f91a6b4/MultivariaTeach-0.1.5.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.6": {
+        "info": {
+            "author": "Ben Goren",
+            "author_email": "bgoren@asu.edu",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Intended Audience :: Education",
+                "License :: OSI Approved :: ISC License (ISCL)",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# MultivariaTeach\n\n## Table of Contents\n\n1. [Introduction](#introduction)\n2. [Prerequisites](#prerequisites)\n3. [Installation](#installation)\n4. [Usage](#usage)\n5. [Testing](#testing)\n6. [Contributing](#contributing)\n7. [License](#license)\n8. [Acknowledgments](#acknowledgments)\n\n## Introduction\n\nMultivariaTeach is designed to help students of multivariate statistics understand and perform a selection of fundamental tests. Where many statistical packages provide \u201chelpful\u201d features that automatically perform various functions or hide \u201cuseless\u201d information, the goal of this package is to provide a selection of simple tools which can be easily enough put together as desired. For example, rather than use a command to indicate you wish to perform a repeated measures analysis, there is a tool to create a matrix of polynomial contrasts which you can then use in the rest of the analysis.\n\n## Prerequisites\n\nIn addition to Python, you will need the standard `numpy`, `pandas`, and `scipy` packages installed (which is almost certainly already the case). Almost all of the mathematical calculations are done with `numpy`; the `pandas` library is used in the initial transformation of data into the necessary format; and `scipy` is used to calculate $p$-values.\n\nIt is assumed that you are a graduate-level student in a multivariate statistics course. The math won't make much sense to those without the necessary academic prerequisites; and, to those who have completed such a course, the more common statistical analysis software packages (such as SAS or R) are almost certainly more practical.\n\n## Installation\n\nTo install the `multivariateach` package, simply run the following command:\n\n```bash\npip install multivariateach\n```\n\n## Usage\n\n### MANOVA\n\nFor those familiar with SAS, MultivariTeach provides much (but certainly not all!) of the basic functionality of `PROC GLM` \u2014 that is, of testing the null hypothesis $H_0: \\mathbf{C} \\boldsymbol{\\beta} \\mathbf{M} = \\mathbf{0}$, against the alternative $H_a: \\mathbf{C} \\boldsymbol{\\beta}\\mathbf{M} \\neq 0$, where $\\mathbf{C}$ is a matrix of contrasts across varables; $\\boldsymbol{\\beta}$ is the parameter matrix; and $\\mathbf{M}$ is a matrix of contrasts across groups.\n\nIn most software packages, performing a MANOVA test is done by loading all the data into an object and then writing out a math-looking command to indicate the test you wish to perform. For example, consider Ronald Fisher\u2019s famous 1936 iris flower data set, with the species in the first column named `group` and the four measurements in the remaining columns, labeled `x1`, `x2`, `x3`, and `x4`. In Python, you can easily load the data as follows:\n\n```python\nimport pandas as pd\nfrom sklearn import datasets\n\niris = datasets.load_iris()\ndata = pd.DataFrame(np.hstack([iris.target.reshape(-1, 1), iris.data]))\ndata.columns = ['group', 'x1', 'x2', 'x3', 'x4']\n```\n\nElsewhere, you might use something in the spirit of `manova data=data, test='group ~ x1 + x2 + x3 + x4'`. The software then \u201dhelpfully\u201d does this-and-that to the data and reports the various test statistics.\n\nHere, instead, you must yourself prepare the $\\mathbf{X}$, $\\mathbf{Y}$, $\\mathbf{C}$, and $\\mathbf{M}$ matrices which are used in the actual calcuations. Note that all software which performs a MANOVA does this, one way or another; it\u2019s just that you mostly don\u2019t ever get a chance to see how it happens. Further, there are different-but-equivalent mathematical approaches to take; here, we use the same \u201dreduced rank\u201d model as SAS, but R uses the \u201dfull rank\u201d model instead.\n\nIn our model, $\\mathbf{C}$ and $\\mathbf{M}$ are as described above: matrices of contrasts. Here, $\\mathbf{X}$ is the \u201dmodel matrix.\u201d It has a leading column of ones, followed by \u201ddummy\u201d indicators (either $1$ or $0$) that identify which group the observation (row) belongs to. Then $\\mathbf{Y}$ is simply the observations themselves.\n\nWhen you perform the MANOVA, the function first finds $\\hat{\\boldsymbol{\\beta}} = (\\mathbf{X}^\\intercal \\mathbf{X})^- \\mathbf{X}^\\intercal \\mathbf{Y}$, where $\\mathbf{A}^\\intercal$ denotes the transpose of $\\mathbf{A}$ and $\\mathbf{A}^-$ denotes the Moore-Penrose generalized inverse of $\\mathbf{A}$. Then, the function calculates:\n$$\n\\mathbf{E} = \\mathbf{M}^\\intercal(\\mathbf{Y}^\\intercal \\mathbf{Y} - \\mathbf{Y}^\\intercal \\mathbf{X} (\\mathbf{X}^\\intercal \\mathbf{X})^- \\mathbf{X}^\\intercal \\mathbf{Y})\\mathbf{M}\n$$\nand\n$$\n\\mathbf{B} = (\\mathbf{C} \\hat{\\boldsymbol{\\beta}})^\\intercal (\\mathbf{C} (\\mathbf{X}^\\intercal \\mathbf{X}) \\mathbf{C}^\\intercal)^{-1} (\\mathbf{C}{\\hat{\\boldsymbol{\\beta}}}).\n$$\nFinally, $\\mathbf{H} = \\mathbf{M}^\\intercal \\mathbf{B} \\mathbf{M}$. The $\\mathbf{E}$ and $\\mathbf{H}$ matrices are then used to calculate the test statistics.\n\nWhile you are welcome to construct all four matrices by hand, MultivariaTeach provides tools to help construct them.\n\nFirst, as usual, make sure you load the package at the top of your Python file:\n\n```python\nimport multivariateach as mt\n```\n\nThis would typically be included with the lines above importing `pandas` and `sklearn`. We can now create our $\\mathbf{X}$ and $\\mathbf{Y}$ matrices:\n\n```python\nX = mt.create_design_matrix(data, 'group')\nY = mt.create_response_matrix(data, ['x1', 'x2', 'x3', 'x4'])\n```\n\nYou can now inspect these two matrices, if you wish, before performing the analysis.\n\nFor this example, we will use a \u201dType III\u201d contrast matrix for $\\mathbf{C}$. It is intended to test the null hypothesis of all variables having similar variance against the alternative of at least one pairing of variables having differing variance. Note that this hypothesis will not make sense in many real-world analyses; for example, it assumes that the variables are scaled comparably, and that they come from populations with similar variance, both of which are often not the case. However, it is the default analysis performed by SAS and is suitable for many textbook examples.\n\nCreating such a matrix with MultivariaTeach is trivial:\n\n```python\nC = mt.create_contrast_type_iii(X)\n```\n\nIn many MANOVA tests, there is no need to examine variation across groups, in which case one is testing $H_0: \\mathbf{C} \\boldsymbol{\\beta} = \\mathbf{0}$. To perform such a test in MultivariaTeach, use an identity matrix the size of the number of variables in $\\mathbf{Y}$ for your $\\mathbf{M}$ matrix. You can do this with `numpy`, another library which you should import at the top of your file:\n\n```python\nimport numpy as np\n\nM = np.eye(Y.shape[1])\n```\n\nWith all the building blocks assembled, you can now perform the MANOVA:\n\n```python\nresults = mt.run_manova(X, Y, C, M)\n```\n\nUnlike with most other software, you are not presented with a pretty-formatted table of results; instead, the `results` object can now be itself queried for \u2026 well, for anything and everything. So, for example, a simple-but-complete test might look like this:\n\n```python\nimport numpy as np\nimport pandas as pd\nfrom sklearn import datasets\nimport multivariateach as mt\n\niris = datasets.load_iris() # Fisher's 1936 flower data\n\ndata = pd.DataFrame(np.hstack([iris.target.reshape(-1, 1), iris.data])) # Extract the parts we want in the structure we need\ndata.columns = ['group', 'x1', 'x2', 'x3', 'x4'] # Give names to the columns\n\nX = mt.create_design_matrix(data, 'group')\nY = mt.create_response_matrix(data, ['x1', 'x2', 'x3', 'x4'])\nC = mt.create_contrast_type_iii(X)\nM = np.eye(Y.shape[1])\n\nresults = mt.run_manova(X, Y, C, M)\n\nprint(\"beta_hat: \", results.beta_hat)\nprint(\"E: \", results.E)\nprint(\"B: \", results.B)\nprint(\"H: \", results.H)\nprint(\"wilks_lambda: \", results.wilks_lambda.statistic, results.wilks_lambda.F, results.wilks_lambda.df_n, results.wilks_lambda.df_d, results.wilks_lambda.p_value)\nprint(\"pillais_trace: \", results.pillais_trace.statistic, results.pillais_trace.F, results.pillais_trace.df_n, results.pillais_trace.df_d, results.pillais_trace.p_value)\nprint(\"hotelling_lawley_trace: \", results.hotelling_lawley_trace.statistic, results.hotelling_lawley_trace.F, results.hotelling_lawley_trace.df_n, results.hotelling_lawley_trace.df_d, results.hotelling_lawley_trace.p_value)\nprint(\"roys_largest_root: \", results.roys_largest_root.statistic, results.roys_largest_root.F, results.roys_largest_root.df_n, results.roys_largest_root.df_d, results.roys_largest_root.p_value)\n```\n\nThis will create the following output:\n\n```[text]\nbeta_hat:  [[ 4.3825  2.293   2.8185  0.8995]\n [ 0.6235  1.135  -1.3565 -0.6535]\n [ 1.5535  0.477   1.4415  0.4265]\n [ 2.2055  0.681   2.7335  1.1265]]\nE:  [[38.9562 13.63   24.6246  5.645 ]\n [13.63   16.962   8.1208  4.8084]\n [24.6246  8.1208 27.2226  6.2718]\n [ 5.645   4.8084  6.2718  6.1566]]\nB:  [[ 63.21213333 -19.95266667 165.2484      71.27933333]\n [-19.95266667  11.34493333 -57.2396     -22.93266667]\n [165.2484     -57.2396     437.1028     186.774     ]\n [ 71.27933333 -22.93266667 186.774       80.41333333]]\nH:  [[ 63.21213333 -19.95266667 165.2484      71.27933333]\n [-19.95266667  11.34493333 -57.2396     -22.93266667]\n [165.2484     -57.2396     437.1028     186.774     ]\n [ 71.27933333 -22.93266667 186.774       80.41333333]]\nwilks_lambda:  0.023438630650877965 199.14534354008606 8 288 1.3650058325882981e-112\npillais_trace:  1.191898825041458 53.466488784612224 8.0 290.0 9.74216271945252e-53\nhotelling_lawley_trace:  32.4773202409019 580.5320993061215 8.0 286.0 6.436176201217028e-172\nroys_largest_root:  32.19192919827884 1166.957433437608 4 145 3.42202725324015e-19\n```\n\nWith luck, by now the code above and its results are obvious and self-explanatory.\n\nNote that, since $\\mathbf{M} = \\mathbf{I}$, our $\\mathbf{B}$ and $\\mathbf{H}$ matrices are the same for this example.\n\nAlso note that the $p$-values are given with their full precision \u2014 an hundred and twelve leading zeros in the case of Wilks\u2019s Lambda above. As a general practice, when you report a $p$-value in your analysis, you should indicate it as being less than some arbitrarily small number, such as, \u201cWe find $p < 0.00001$ and therefore reject $H_0$.\u201d If you use code to produce such output, be sure to check for vanishingly small $p$-values and adjust accordingly; MultivariaTeach will report the results of the calculation without adjustment.\n\n### Repeated measures\n\nOne can use MANOVA with an $\\mathbf{M}$ matrix of polynomial contrasts across time to perform an analysis of repeated measures. To construct such a matrix, use something such as the following:\n\n```python\nn = Y.shape[1] # number of contrasts\ndegree = 3 # up to cubic polynomials\nM = orthopolynomial_cotrasts(n, degree)\n```\n\nThe iris data, of course, is not a repeated measures experiment, so performing such a test with the data would not make sense.\n\n### Box\u2019s M test\n\nThe `perform_box_m_test` in MultivariaTeach can perform Box\u2019s M test for the homogeneity of covariance matrices. It takes $\\mathbf{X}$ and $\\mathbf{Y}$ as prepared above and returns a $\\chi^2$ statistic object similar to the $F$ statistic objects returned by the MANOVA test.\n\n### Mauchly\u2019s Test of Sphericity\n\nMauchly\u2019s test is used in repeated measures to test for equal variances among the differences between all possible pairings of the independent variables. To perform the test with MultivariaTeach, you only need supply the $\\mathbf{X}$ and $\\mathbf{Y}$ matrices to the `mauchly` function; it will return the same type of $\\chi^2$ statistic object as Box\u2019s M test. Note that the test requires polynomial contrasts of a degree equal to the number of variables in $\\mathbf{Y}$; since there are no other reasonable options for the $\\mathbf{M}$ matrix used in the computation, the function automatically creates a suitable $\\mathbf{M}$ matrix.\n\n### Greenhouse-Geisser correction\n\nIf Mauchly\u2019s test indicates asphericity, you may wish to perform univariate tests with the Greenhouse-Geisser correction. The correction itself can be calculated with `mt.greenhouse_geisser_correction(Y, M)`, which will return the value of $\\epsilon$ to apply to the univariate tests. To perform the univariate tests, simply \u201cpick apart\u201d your $\\mathbf{Y}$ matrix and analyze each column in a separate test. If you have a great many such columns \u2026 first, this package probably isn\u2019t for you; but, if you insist, a simple loop iterating over the columns should make for cleaner code.\n\n### Additional functions\n\n#### Pooled Covariance\n\nThe function `calculate_pooled_covariance_matrix(X, Y)` will return $S_p$, the pooled covariance matrix used in many of the other calculations.\n\n#### Individual test statistic calculations\n\nFor each of the four main MANOVA test statistics, you can directly provide the $\\mathbf{E}$ and $\\mathbf{H}$ matrices in addition to three or four of the following (depending on the statistic):\n\n* n, the number of observations (rows of data);\n* p, the number of variables (columns in $\\mathbf{Y}$)\n* g, the number of groups (equal to one less than the number of columns of $\\mathbf{X}$)\n* q, the rank of $\\mathbf{C} (\\mathbf{X}^\\intercal \\mathbf{X})^- \\mathbf{C}^\\intercal$.\n\nThese functions would be of most interest if you are supplied not with data to analyze but instead with the above information and asked to calculate the corresponding statistic. However, in such a circumstance, the math represented in the code may well be of more interest.\n\n## Testing\n\nThe `MultivariaTeach` package includes a suite of tests to ensure its functionality. To run the tests, you'll need to have `pytest` installed. If you don't have it installed, you can do so with the following command:\n\n```[bash]\npip install pytest\n```\n\nAfter installing `pytest`, navigate to the directory containing the `MultivariaTeach` package, and run the following command:\n\n```[bash]\npytest MultivariaTeach\n```\n\nThis will execute the included tests and provide you with the results.\n\n## Contributing\n\nImplementation of additional multivariate statistical methods would be most welcome. Please [email](ben@trumpetpower.com) me with suggestions.\n\n## License\n\nThis project is licensed under the ISC License. The full license text can be found in the [LICENSE](./LICENSE) file in the repository.\n\n## Acknowledgments\n\nThanks first and foremost to Dr. Mark Reiser, who has been most generous of his knowledge and experience and patience in helping me to understand multivariate statistics.\n\nThanks also to ChatGPT, who has been a surprisingly good coach and even copilot. Though we've chased each other down rabbit holes, almost every rabbit hole has led to a deeper understanding.\n\nThe math for the MANOVA test follows that specified by [SAS](https://documentation.sas.com/doc/en/pgmsascdc/9.4_3.3/statug/statug_introreg_sect038.htm).\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/Ben-Goren/MultivariaTeach",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "MultivariaTeach",
+            "package_url": "https://pypi.org/project/MultivariaTeach/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/MultivariaTeach/",
+            "project_urls": {
+                "Homepage": "https://github.com/Ben-Goren/MultivariaTeach"
+            },
+            "release_url": "https://pypi.org/project/MultivariaTeach/0.1.6/",
+            "requires_dist": [
+                "numpy (>=1.19.5)",
+                "scipy (>=1.5.0)",
+                "pandas (>=1.2.0)"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "A collection of tools intended for students of multivariate analysis",
+            "version": "0.1.6",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17947296,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "60892ea751ff4657652e7b4527498ae7eea56e5cc35a0b720836e1608193d721",
+                    "md5": "e901ae02d5fcc8710b92232327d91c05",
+                    "sha256": "a2303869bd5d414eff50ea8774819d305d70b236e4218504f7fa0d7beb92cb2d"
+                },
+                "downloads": -1,
+                "filename": "MultivariaTeach-0.1.6-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "e901ae02d5fcc8710b92232327d91c05",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 14244,
+                "upload_time": "2023-05-02T21:32:58",
+                "upload_time_iso_8601": "2023-05-02T21:32:58.251946Z",
+                "url": "https://files.pythonhosted.org/packages/60/89/2ea751ff4657652e7b4527498ae7eea56e5cc35a0b720836e1608193d721/MultivariaTeach-0.1.6-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "213ce0a2a7ca2491d07b6bd6ffee90712c0426117da01be36392c8e03a55d208",
+                    "md5": "249740ba8901a270482344d7e136268d",
+                    "sha256": "d89b845e4d4df85c4f9468a25893cc6d2c167f488565ffbc6d04fdec5a05e969"
+                },
+                "downloads": -1,
+                "filename": "MultivariaTeach-0.1.6.tar.gz",
+                "has_sig": false,
+                "md5_digest": "249740ba8901a270482344d7e136268d",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 13391,
+                "upload_time": "2023-05-02T21:33:02",
+                "upload_time_iso_8601": "2023-05-02T21:33:02.977055Z",
+                "url": "https://files.pythonhosted.org/packages/21/3c/e0a2a7ca2491d07b6bd6ffee90712c0426117da01be36392c8e03a55d208/MultivariaTeach-0.1.6.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

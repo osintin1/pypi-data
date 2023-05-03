@@ -41,7 +41,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17772179,
+        "last_serial": 17947999,
         "urls": [
             {
                 "comment_text": "",
@@ -130,7 +130,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17772179,
+        "last_serial": 17947999,
         "urls": [
             {
                 "comment_text": "",
@@ -324,7 +324,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17772179,
+        "last_serial": 17947999,
         "urls": [
             {
                 "comment_text": "",
@@ -426,7 +426,6 @@
                 "Programming Language :: Python :: 3",
                 "Topic :: Scientific/Engineering :: Mathematics"
             ],
-            "description": "# A Verified DRUP Proof Checker\n\nAs the title suggests, a verified implementation of a checker for propositional unsatisfiability proofs in the  [DRUP format](https://satcompetition.github.io/2022/certificates.html) that is produced by several solvers.\nThe core of the checker is written in [Why3](https://why3.lri.fr/), which is extracted to OCaml, compiled natively, and exported as a C library with Python bindings.\n\n* The checker also supports RAT clauses, so DRAT proofs are also accepted.\n* The current implementation is not optimized, and will be considerably slower than [DRAT-trim](https://github.com/marijnheule/drat-trim) on large proofs (see [performance](#performance) below).\n* Accordingly, the frontend does not accept proofs in binary format.\n\nThe verification can be checked by running `src/librupchecker/rup_pure.mlw` in Why3. \nMost of the verification conditions complete with the `Auto level 0` tactic, and the rest either with a few levels of splitting followed by `Auto 0` or `Auto 1`, or simply with `Auto 2`.\nIt was developed using Why3 1.5.1, Alt-Ergo 2.4.0, Z3 4.8.6, and CVC4 1.8.\nVerification has not been attempted with earlier versions of Why3 or the provers.\n\n## Installation\n\nIf you use a recent Linux distribution on x86_64, you should be able to install the compiled wheel from PyPI:\n```bash\n$ pip install drup\n```\nOtherwise, you need to have OCaml (>= 4.12), Why3 (>= 1.5.1), and Dune (>=2.9.3) installed.\nThe most straightforward way to install these is to use [opam](https://opam.ocaml.org/doc/Install.html), which is available in most package systems, and then install Why3 and Dune (a sufficiently recent version of OCaml should already be installed with Opam): \n```bash\n$ opam install why3 dune\n```\nIf you do not intend to check the verification of the library or develop it further, then you do not need to install Why3's IDE or any of the solvers that it supports.\n\nOnce OCaml and Why3 are installed, make sure that Python `build` is installed:\n```bash\n$ pip install build\n```\nThen, clone this repository, build, and install the package:\n```bash\n$ git clone https://github.com/cmu-transparency/verified_rup.git\n$ cd verified_rup\n$ python -m build\n$ pip install dist/*.whl\n```\n\n## Usage\n\n### Command line interface\n\nThe package provides a command line interface for checking proofs stored in files:\n```bash\n$ drup --help\n\nusage: drup [-h] dimacs drup\n\nChecks DRUP & DRAT proofs against DIMACS source. \nReturns 0 if the proof is valid, -1 if not, or a negative error code if the input is invalid.\n\npositional arguments:\n  dimacs      Path to a DIMACS CNF formula\n  drup        Path to a DRUP/DRAT proof\n\noptions:\n  -h, --help  show this help message and exit\n```\n\n### As a C library\n\nIf you do not intend to use the Python bindings, then you will find the C shared object in the Python package directory:\n```bash\n$(PYTHON_PATH)/site-packages/rup/librupchecker.{so|dll}\n```\nThe C library exposes wrappers around the core checker, which you can declare external in your C code as follows:\n```C\nint check_derivation_from_strings(const char *dimacs, const char *cs);\nint check_from_file(const char *dimacs_path, const char *drup_path);\nint check_from_strings(const char *dimacs, const char *drup);\nint check_step_from_strings(const char *dimacs, const char *c);\n```\nBefore any of these can be called, the library must be initialized with a call to `do_startup` passing the current `argv`, which calls `caml_startup`:\n```C\nint do_startup(char **argv);\n```\nEither function returns `0` if the proof is valid, and `-1` otherwise.\n\n### As a Python module\n\nThe Python bindings expose these same functions, but will call `do_startup` automatically when the package is imported, so there is no need to call it manually.\nIf the arguments given to the Python bindings cannot be opened (in the case of files) or parsed, then they raise `ValueError`.\nIf the proof is valid, then the Python bindings return `True`, and `False` otherwise.\n\nAs described, the package is straightforward to use:\n```python\nimport drup\n\ncnf = \"\"\"\np cnf 4 8\n 1  2 -3 0\n-1 -2  3 0\n 2  3 -4 0\n-2 -3  4 0\n 1  3  4 0\n-1 -3 -4 0\n-1  2  4 0\n 1 -2 -4 0\n\"\"\"\n\npf = \"\"\"\n1 2 0\n1 0\n2 0\n0\n\"\"\"\n\nif drup.check_from_strings(cnf, pf):\n    print(\"Valid\")\nelse:\n    print(\"Invalid\")\n```\n\n## Performance\n\nAt present, the implementation of RUP checking is not optimized, and drop lines are ignored.\nUnit propagation does not take advantage of watched literals, and does not use mutable data structures.\nNonetheless, the performance compares well to that of [DRAT-trim](https://github.com/marijnheule/drat-trim) on small proofs (<200 variables, a few hundred clauses).\n\nWe measure this on random unsatisfiable instances generated by the procedure described in [[1]](#references).\nTo evaluate the performance of DRAT-trim without the overhead of creating and tearing down a new process for each instance, we compiled it into a library with the same `check_from_strings` interface as the C library, and called it using [ctypes](https://docs.python.org/3/library/ctypes.html).\nIn the table below, each configuration is run on 10,000 instances, with proofs generated by [Glucose 4](https://www.labri.fr/perso/lsimon/research/glucose/).\n\n<center>\n\n| # vars | # clauses (avg) | pf len (avg) | `drup (sec, avg)` | `drat-trim (sec, avg)` |\n| ------ | --------------- | ------------ | ----------------- | ---------------------- |\n| 25     | 147.7           | 7.3          | 0.001             | 0.085                  |\n| 50     | 280.5           | 14.2         | 0.006             | 0.179                  |\n| 75     | 413.5           | 26.3         | 0.022             | 0.217                  |\n| 100    | 548.2           | 40.6         | 0.068             | 0.172                  |\n| 150    | 811.8           | 102.7        | 0.407             | 0.326                  |\n| 200    | 1079.5          | 227.9        | 1.916             | 0.292                  |\n\n</center>\n\n### References\n\n[[1]](https://openreview.net/forum?id=HJMC_iA5tm) Daniel Selsam, Matthew Lamm, Benedikt B\u00fcnz, Percy Liang, Leonardo de Moura, David L. Dill. *Learning a SAT Solver from Single-Bit Supervision*. International Conference on Learning Representations (ICLR), 2019.\n\n## Acknowledgements\n\nMany thanks to [Frank Pfenning](http://www.cs.cmu.edu/~fp/), [Joseph Reeves](https://www.cs.cmu.edu/~jereeves/), and [Marijn Huele](https://www.cs.cmu.edu/~mheule/) for the ongoing insightful discussions that led to this project.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -456,7 +455,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17772179,
+        "last_serial": 17947999,
         "urls": [
             {
                 "comment_text": "",
@@ -539,6 +538,270 @@
                 "upload_time": "2023-04-19T14:26:04",
                 "upload_time_iso_8601": "2023-04-19T14:26:04.126172Z",
                 "url": "https://files.pythonhosted.org/packages/33/c0/9c54975c92a839c05634083aee9824746a245c018513e18d2a7fd8c241c7/drup-1.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.2.0": {
+        "info": {
+            "author": "",
+            "author_email": "Matt Fredrikson <mfredrik@cmu.edu>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: MacOS :: MacOS X",
+                "Operating System :: POSIX :: Linux",
+                "Programming Language :: OCaml",
+                "Programming Language :: Python :: 3",
+                "Topic :: Scientific/Engineering :: Mathematics"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "drup",
+            "package_url": "https://pypi.org/project/drup/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/drup/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/cmu-transparency/verified_rup/issues",
+                "Homepage": "https://github.com/cmu-transparency/verified_rup"
+            },
+            "release_url": "https://pypi.org/project/drup/1.2.0/",
+            "requires_dist": null,
+            "requires_python": ">=3.8",
+            "summary": "Checks DRUP proofs against DIMACS source. Extracted from verified Why3 code.",
+            "version": "1.2.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17947999,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "03665e4330fd85a2d551a2f227f50573d3b1a827d25cbb24bfbc3cf851d2a69c",
+                    "md5": "6042b1fd1effed493f0b4197339ca8fb",
+                    "sha256": "61a072cf1c5114e13c0f808b0446ff46559a804301a60b1cb0e25e986d2eca76"
+                },
+                "downloads": -1,
+                "filename": "drup-1.2.0-cp310-cp310-manylinux_2_17_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "6042b1fd1effed493f0b4197339ca8fb",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.8",
+                "size": 1361600,
+                "upload_time": "2023-05-02T22:40:50",
+                "upload_time_iso_8601": "2023-05-02T22:40:50.365841Z",
+                "url": "https://files.pythonhosted.org/packages/03/66/5e4330fd85a2d551a2f227f50573d3b1a827d25cbb24bfbc3cf851d2a69c/drup-1.2.0-cp310-cp310-manylinux_2_17_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "9d8f25a52719294881389bd7d1430d8637d44d6226e3bb0c5ec955fe01afa852",
+                    "md5": "3c95c8b6bed168d65e47596f1fd378b2",
+                    "sha256": "5e018c30784d278bf6cc4346ea37549fa356d060e1e7b4e4ea0bf4c9eef7dfab"
+                },
+                "downloads": -1,
+                "filename": "drup-1.2.0-cp38-cp38-manylinux_2_17_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "3c95c8b6bed168d65e47596f1fd378b2",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.8",
+                "size": 1361694,
+                "upload_time": "2023-05-02T22:40:53",
+                "upload_time_iso_8601": "2023-05-02T22:40:53.452378Z",
+                "url": "https://files.pythonhosted.org/packages/9d/8f/25a52719294881389bd7d1430d8637d44d6226e3bb0c5ec955fe01afa852/drup-1.2.0-cp38-cp38-manylinux_2_17_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "9138d89ffcca3ed08dd54532782f7ed6ea10520d52cb54e368082e6607dcb796",
+                    "md5": "8168faa4555a5317100a70a37cc968ee",
+                    "sha256": "9a23a9101d2afd163538d632527cb847912a404a2efc04364567da8f32222d33"
+                },
+                "downloads": -1,
+                "filename": "drup-1.2.0-cp39-cp39-manylinux_2_17_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "8168faa4555a5317100a70a37cc968ee",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.8",
+                "size": 1361740,
+                "upload_time": "2023-05-02T22:40:55",
+                "upload_time_iso_8601": "2023-05-02T22:40:55.583957Z",
+                "url": "https://files.pythonhosted.org/packages/91/38/d89ffcca3ed08dd54532782f7ed6ea10520d52cb54e368082e6607dcb796/drup-1.2.0-cp39-cp39-manylinux_2_17_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "97bd9b571091644b02d551a79627c55b6007ddffa0a85674ec768ec09846fcd6",
+                    "md5": "22f860d06187812bf35c1c0f9c72cc17",
+                    "sha256": "d088f0954ce41b6e0cf5ed260d345a6aa1aeae875614dec547a19897a7fb19fe"
+                },
+                "downloads": -1,
+                "filename": "drup-1.2.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "22f860d06187812bf35c1c0f9c72cc17",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 1351684,
+                "upload_time": "2023-05-02T22:40:58",
+                "upload_time_iso_8601": "2023-05-02T22:40:58.106101Z",
+                "url": "https://files.pythonhosted.org/packages/97/bd/9b571091644b02d551a79627c55b6007ddffa0a85674ec768ec09846fcd6/drup-1.2.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.2.1": {
+        "info": {
+            "author": "",
+            "author_email": "Matt Fredrikson <mfredrik@cmu.edu>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: MacOS :: MacOS X",
+                "Operating System :: POSIX :: Linux",
+                "Programming Language :: OCaml",
+                "Programming Language :: Python :: 3",
+                "Topic :: Scientific/Engineering :: Mathematics"
+            ],
+            "description": "# A Verified DRUP Proof Checker\n\nAs the title suggests, a verified implementation of a checker for propositional unsatisfiability proofs in the  [DRUP format](https://satcompetition.github.io/2022/certificates.html) that is produced by many solvers.\nThe core of the checker is written in [Why3](https://why3.lri.fr/), which is extracted to OCaml, compiled natively, and exported as a C library with Python bindings.\n\n* The checker also supports RAT clauses, so DRAT proofs are accepted.\n* The current implementation is not optimized, and will be considerably slower than [DRAT-trim](https://github.com/marijnheule/drat-trim) on large proofs (see [performance](#performance) below).\n* Accordingly, the frontend does not accept proofs in binary format.\n\n## Installation\n\nIf you use a recent Linux distribution on x86_64, you should be able to install the compiled wheel from PyPI:\n```bash\n$ pip install drup\n```\nOtherwise, you need to have OCaml (>= 4.12), Ctypes (>=0.20), Why3 (>= 1.5.1), and Dune (>=2.9.3) installed.\nThe most straightforward way to install these is to use [opam](https://opam.ocaml.org/doc/Install.html), which is available in most package systems, and then install Why3 and Dune (a sufficiently recent version of OCaml should already be installed with Opam): \n```bash\n$ opam install why3 dune\n```\nIf you do not intend to check the verification of the library or develop it further, then you do not need to install Why3's IDE or any of the solvers that it supports.\n\nOnce OCaml and Why3 are installed, make sure that Python `build` is installed:\n```bash\n$ pip install build\n```\nThen, clone this repository, build, and install the package:\n```bash\n$ git clone https://github.com/cmu-transparency/verified_rup.git\n$ cd verified_rup\n$ python -m build\n$ pip install dist/*.whl\n```\n\n## Usage\n\n### Command line interface\n\nThe package provides a command line interface for checking proofs stored in files:\n```bash\n$ drup --help\nusage: drup [-h] [-d] [-v] dimacs drup\n\nChecks DRUP & DRAT proofs against DIMACS source. Returns 0 if the proof is valid, -1 if not, or a negative error code if the input is invalid.\n\npositional arguments:\n  dimacs            Path to a DIMACS CNF formula\n  drup              Path to a DRUP/DRAT proof\n\noptional arguments:\n  -h, --help        show this help message and exit\n  -d, --derivation  Check each step, ignore absence of empty clause\n  -v, --verbose     Print detailed information about failed checks\n\nFor more information visit https://github.com/cmu-transparency/verified_rup\n```\n\n### As a Python module\n\nSee the [documentation](https://fairlyaccountable.org/verified_rup/drup.html) for details of the API.\nThe primary function is `drup.check_proof`, or alternatively, `drup.check_derivation` to check each step of the proof, ignoring the absence of an empty clause). There are corresponding convenience functions `check_proof_from_strings` and `check_proof_from_files`, similarly for `check_derivation`.\n\nThe following example uses [CNFgen](https://massimolauria.net/cnfgen/) to generate a PHP instance,\nand [PySAT](https://pysathq.github.io/) to solve it and generate a DRUP proof.\nTo illustrate the verbose output given for failed checks, only the first ten clauses of the proof are checked against the proof.\n\n```python\nimport drup\nimport cnfgen\nfrom pysat.formula import CNF\nfrom pysat.solvers import Solver\n\ndimacs = cnfgen.BinaryPigeonholePrinciple(4, 3).dimacs()\ncnf = CNF(from_string=dimacs).clauses\ng4 = Solver(name='g4', with_proof=True, bootstrap_with=cnf)\ng4.solve()\nproof = [[int(l) for l in c.split(' ')[:-1]] for c in g4.get_proof()]\n\ndrup.check_proof(cnf[:10], proof, verbose=True)\n```\n\nThis gives a `CheckerResult` object with the following information:\n\n```python\nCheckerResult(\n\tOutcome.INVALID, \n\t[], \n\tRupInfo([4, 6, 7, 8], [-4, -6, -7, -8, 3, 5]), \n\tRatInfo(\n\t\t[4, 6, 7, 8], \n\t\t[-4, -3], \n\t\tRupInfo([6, 7, 8, -3], [-6, -7, -8, 5, 3, -4])\n\t)\n)\n```\n\nThe `RupInfo` component relates that RUP verification failed on the first clause of the proof, `4 6 7 8 0`, after propagating the literals `-4, -6, -7, -8, 3, 5`, and failing to find more opposites to propagate.\nLikewise, the `RatInfo` component relates that RAT verification on this clause failed when checking the pivot on clause `-4 -3 0`.\nThe resolvent of these clauses, `6 7 8 -3 0`, failed RUP verification after propagating `-6 -7 -8 5 3 -4`.\n\n## Performance\n\nAt present, the implementation of RUP checking is not optimized, and drop lines are ignored.\nUnit propagation does not take advantage of watched literals, and does not use mutable data structures.\nNonetheless, the performance compares well to that of [DRAT-trim](https://github.com/marijnheule/drat-trim) on small proofs (<200 variables, a few hundred clauses).\n\nWe measure this on random unsatisfiable instances generated by the procedure described in [[1]](#references).\nTo evaluate the performance of DRAT-trim without the overhead of creating and tearing down a new process for each instance, we compiled it into a library with the same `check_from_strings` interface as the C library, and called it using [ctypes](https://docs.python.org/3/library/ctypes.html).\nIn the table below, each configuration is run on 10,000 instances, with proofs generated by [Glucose 4](https://www.labri.fr/perso/lsimon/research/glucose/).\n\n| # vars | # clauses (avg) | pf len (avg) | `drup (sec, avg)` | `drat-trim (sec, avg)` |\n| ------ | --------------- | ------------ | ----------------- | ---------------------- |\n| 25     | 147.7           | 7.3          | 0.001             | 0.085                  |\n| 50     | 280.5           | 14.2         | 0.006             | 0.179                  |\n| 75     | 413.5           | 26.3         | 0.022             | 0.217                  |\n| 100    | 548.2           | 40.6         | 0.068             | 0.172                  |\n| 150    | 811.8           | 102.7        | 0.407             | 0.326                  |\n| 200    | 1079.5          | 227.9        | 1.916             | 0.292                  |\n\n### References\n\n[[1]](https://openreview.net/forum?id=HJMC_iA5tm) Daniel Selsam, Matthew Lamm, Benedikt B\u00fcnz, Percy Liang, Leonardo de Moura, David L. Dill. *Learning a SAT Solver from Single-Bit Supervision*. International Conference on Learning Representations (ICLR), 2019.\n\n## Verification\n\nThe verification can be examined by running `src/librupchecker/rup_pure.mlw` in Why3, or by checking the Why3 session in `src/librupchecker/rup_pure/why3session.xml`. \nThe proof was developed using Why3 1.5.1, Alt-Ergo 2.4.0, Z3 4.8.6, and CVC4 1.8.\nVerification has not been attempted with earlier versions of Why3 or the provers.\n\nThe primary contract on the proof checker is as follows:\n```ocaml\nrequires { no_redundant_clauses cnf /\\ no_trivial_clauses cnf }\nrequires { no_redundant_clauses pf /\\ no_trivial_clauses pf }\nensures { match result with\n\t\t\t| Valid -> valid_proof cnf pf\n\t\t\t| _ -> proof_failure orig result\n\t\t\tend }\n```\nThe bindings used by this library take care of removing redundant and trivial clauses.\nThe `valid_proof` predicate is a straightforward translation of DRAT certification requirements.\nA `proof_failure` result provides additional assurances about the verbose output of the checker.\n```ocaml\npredicate proof_failure (cnf : cnf) (result : result) =\n    match result with\n    | Valid -> false\n    | InvalidEmpty steps rup_info -> rup_failure (steps ++ cnf) rup_info\n    | InvalidStep steps rup_info rat_info -> \n        rup_failure (steps ++ cnf) rup_info /\\ rat_failure (steps ++ cnf) rat_info\n    end\n```\nAn `InvalidEmpty` result indicates all of the listed `steps` are valid, but the empty clause was not derived, as witnessed by the provided `rup_info`.\nThis is only returned when all of the steps in the proof are valid except an empty clause at the end.\nThe `rup_info` component ensures that the empty clause is not RUP, and that the unit chain used to conclude this is exhaustive.\n\n```ocaml\npredicate rup_failure (cnf : cnf) (info : rup_info) =\n    not (rup cnf info.rup_clause) /\\\n    match info.rup_clause with\n    | Nil -> \n        let cnf' = bcp cnf info.chain in\n        is_unit_chain cnf info.chain /\\ \n        forall chain' . is_unit_chain cnf' chain' -> \n                        forall c . mem c (bcp cnf' chain') <-> mem c cnf'\n    | Cons _ _ -> \n        let cnf' = bcp (cnf ++ (negate_clause info.rup_clause)) info.chain in\n        is_unit_chain (cnf ++ (negate_clause info.rup_clause)) info.chain /\\ \n        forall chain' . is_unit_chain cnf' chain' -> \n                        forall c . mem c (bcp cnf' chain') <-> mem c cnf'\n    end\n```\n\nAn `InvalidStep` result indicates that the `steps` are valid up to some non-empty step.\nThe next step in the certificate following `steps` is invalid, as witnessed by the provided `rup_info` and `rat_info`.\nIn addition to the assurances on `rup_info` described above, `rat_info` provides that the identified pivot clause is not RUP.\n\n```ocaml\npredicate rat_failure (cnf : cnf) (info : rat_info) =\n    not (rat cnf info.rat_clause) /\\\n    match info.rat_clause with\n    | Nil -> false\n    | Cons l _ ->\n        mem info.pivot_clause (pivot_clauses cnf l) /\\\n        info.pivot_info.rup_clause = resolve info.rat_clause info.pivot_clause l /\\\n        rup_failure cnf info.pivot_info\n    end\n```\n\nThe derivation checker provides a similar contract, but rather than ensuring `valid_proof` on success, it provides `valid_derivation`.\n\n```ocaml\npredicate valid_derivation (cnf : cnf) (pf : proof) =\n    match pf with\n    | Nil -> true\n    | Cons c cs -> (rup cnf c \\/ rat cnf c) /\\ valid_derivation (Cons c cnf) cs\n    end\n```\n\nThis is the same condition as `valid_proof`, but in the `Nil` case, the checker does not require that the empty clause is not RUP.\n\n## Acknowledgements\n\nMany thanks to [Frank Pfenning](http://www.cs.cmu.edu/~fp/), [Joseph Reeves](https://www.cs.cmu.edu/~jereeves/), and [Marijn Huele](https://www.cs.cmu.edu/~mheule/) for the ongoing insightful discussions that led to this project.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "drup",
+            "package_url": "https://pypi.org/project/drup/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/drup/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/cmu-transparency/verified_rup/issues",
+                "Documentation": "https://fairlyaccountable.org/verified_rup/drup.html",
+                "Homepage": "https://github.com/cmu-transparency/verified_rup"
+            },
+            "release_url": "https://pypi.org/project/drup/1.2.1/",
+            "requires_dist": null,
+            "requires_python": ">=3.8",
+            "summary": "Checks DRUP proofs against DIMACS source. Extracted from verified Why3 code.",
+            "version": "1.2.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17947999,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "42cc6eb6c690998aa5d26e622a258ac05be3a293365eb865f229c406ba6bfe90",
+                    "md5": "4b05ba0a5f91b1d1434abc23a5cf2e43",
+                    "sha256": "a381a12b6b935473225ccb05c9e4cb9f7feb026e80dceb0a4f5482c3a95dad99"
+                },
+                "downloads": -1,
+                "filename": "drup-1.2.1-cp310-cp310-manylinux_2_17_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "4b05ba0a5f91b1d1434abc23a5cf2e43",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.8",
+                "size": 1362608,
+                "upload_time": "2023-05-02T22:46:27",
+                "upload_time_iso_8601": "2023-05-02T22:46:27.948072Z",
+                "url": "https://files.pythonhosted.org/packages/42/cc/6eb6c690998aa5d26e622a258ac05be3a293365eb865f229c406ba6bfe90/drup-1.2.1-cp310-cp310-manylinux_2_17_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "80059922923c934652c3d3e63d2fbbf7f653496693d4a23a2d72f60684ec824f",
+                    "md5": "9fe6138c1f040cee6beada42ffe45368",
+                    "sha256": "0a8e535bcf732cd066398bfaf7ee8955a51ae43218b239e7a09648b7376b14f7"
+                },
+                "downloads": -1,
+                "filename": "drup-1.2.1-cp38-cp38-manylinux_2_17_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "9fe6138c1f040cee6beada42ffe45368",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.8",
+                "size": 1362702,
+                "upload_time": "2023-05-02T22:46:29",
+                "upload_time_iso_8601": "2023-05-02T22:46:29.383267Z",
+                "url": "https://files.pythonhosted.org/packages/80/05/9922923c934652c3d3e63d2fbbf7f653496693d4a23a2d72f60684ec824f/drup-1.2.1-cp38-cp38-manylinux_2_17_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "420e99c4cb1656749a2456bc849dffcc1893a3b80e7a13938769d6d147bff18a",
+                    "md5": "17246f0740f94abc43d9497d1052b9e6",
+                    "sha256": "10e7c8cdc2a704bc999b42d44e44a1d5c7d3edbaf6898ff595a69bf335640159"
+                },
+                "downloads": -1,
+                "filename": "drup-1.2.1-cp39-cp39-manylinux_2_17_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "17246f0740f94abc43d9497d1052b9e6",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.8",
+                "size": 1362750,
+                "upload_time": "2023-05-02T22:46:30",
+                "upload_time_iso_8601": "2023-05-02T22:46:30.866625Z",
+                "url": "https://files.pythonhosted.org/packages/42/0e/99c4cb1656749a2456bc849dffcc1893a3b80e7a13938769d6d147bff18a/drup-1.2.1-cp39-cp39-manylinux_2_17_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d4540d21edbc752f3ae74b7e59cca4ec4748318ba6fc22abb675bdd0440ab299",
+                    "md5": "c89d09ccaef595e17932725bd13128fd",
+                    "sha256": "80c7afaf5b7db2e70cf511b485dcb0bb352b313021093f6b7009067b77a59379"
+                },
+                "downloads": -1,
+                "filename": "drup-1.2.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "c89d09ccaef595e17932725bd13128fd",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 1352844,
+                "upload_time": "2023-05-02T22:46:32",
+                "upload_time_iso_8601": "2023-05-02T22:46:32.907352Z",
+                "url": "https://files.pythonhosted.org/packages/d4/54/0d21edbc752f3ae74b7e59cca4ec4748318ba6fc22abb675bdd0440ab299/drup-1.2.1.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
