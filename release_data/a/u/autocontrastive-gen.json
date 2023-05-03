@@ -1,0 +1,96 @@
+{
+    "0.2.0": {
+        "info": {
+            "author": "IBM Research",
+            "author_email": "ariel.gera1@ibm.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: Apache Software License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Topic :: Scientific/Engineering"
+            ],
+            "description": "# [![version](https://img.shields.io/pypi/v/autocontrastive-gen)](https://pypi.org/project/autocontrastive-gen/)  ![license](https://img.shields.io/github/license/IBM/auto-contrastive-generation)  ![python](https://img.shields.io/badge/python-3.9%20|%203.10-blue)\n# Auto-Contrastive Generation\n\nCode to experiment with **multi-exit** text generation, and to reproduce the **Auto-Contrastive Decoding** experiments from [Gera et al. (2023)](#reference). \n\nUsing this library you can:\n\n1. Run inference on multi-exit generative language models, either using a *specific model exit layer*, or contrasting between model layers with *Auto-Contrastive Decoding*;\n2. Train new multi-exit models, either for language modeling or for a specific task;\n3. Try out new methods and algorithms for combining and contrasting the outputs of different model layers.\n\n\n**Table of contents**\n\n[Quick start](#quick-start)\n\n[Setting the Multi-Exit Configuration](#setting-the-multi-exit-configuration)\n\n[Running language modeling benchmarks](#running-language-modeling-benchmarks)\n\n[Pre-trained model checkpoints](#pre-trained-model-checkpoints)\n\n[Reference](#reference)\n\n[License](#license)\n\n## Quick start\n1. Install the library with `pip install autocontrastive-gen`\n2. Choose your desired [multi-exit parameters](#setting-the-multi-exit-configuration) - which model exit layer(s) do you want to use, and how?\n3. Load a pre-trained multi-exit model and use it however you wish, within your own workflow\n\nFor instance, the following code will initialize the multi-exit [GPT2 model we release](#pre-trained-model-checkpoints) to use Auto-Contrastive Decoding:\n```python\nfrom autocontrastive_gen.modeling.configuration import MultiExitConfiguration\nfrom autocontrastive_gen.modeling.auto_model import AutoMultiExitModel\n\n# initialize a pre-trained multi-exit model to use auto-contrast between layer 24 and layer 12\nmulti_exit_config = MultiExitConfiguration(use_original_head=False, \n                                           contrast_layer_indices=(24, 12))\nmodel = AutoMultiExitModel.from_pretrained(\"IBM/gpt2-medium-multiexit\", multi_exit_config=multi_exit_config)\n```\n\nThen, the initialized model can be used as usual through the `transformers` library. For example, this code will run text generation using the initialized model:\n\n```python\nfrom transformers import AutoTokenizer\n\ntokenizer = AutoTokenizer.from_pretrained(\"IBM/gpt2-medium-multiexit\")\nprompt = tokenizer(\"humpty dumpty sat on\", return_tensors='pt')\ngenerated_ids = model.generate(**prompt, max_new_tokens=15)\nprint(tokenizer.batch_decode(generated_ids))\n```\nSimilarly, you can **train the model** with the `transformers` library just as you would do with any other model.\n\nNote that the model behavior in inference and/or training depends on your [choice of parameters](#setting-the-multi-exit-configuration) when initializing the `MultiExitConfiguration`.\n\n## Setting the Multi-Exit Configuration\nModel behavior is determined by the `MultiExitConfiguration` used to initialize it. Most of the the configuration parameters are related to inference-time text generation behavior, but some are relevant for model training as well. The following parameters can be set:\n\n- `lm_head_layer_indices: Tuple[int, ...]`: the indices of model layers which are connected to language modeling exit heads. As this is a basic characteristic of the model, this parameter only needs to be set *once* for initial pre-training of these exit heads. *Otherwise (e.g., when using one of the [released models](#pre-trained-model-checkpoints)), there is no need to specify this parameter as it is read directly from the model's config file*.\n- `freeze_parameters: bool`: whether to freeze the language model parameters when training the model. You may wish to set this to True if training new exit layers for an existing (single-exit) pre-trained model checkpoint, but the default (`False`) is applicable for most use cases.\n- `use_original_head: bool`: whether to use the original language modeling head of the pre-trained checkpoint for text generation. Setting this parameter to `True` *turns off all special model behavior and ignores the additional exit heads*, and thus also renders the parameters below irrelevant.\n- `output_layer_index: int`: choose a *single* specific model exit for generation instead of the original (top layer) exit head.\n- `contrast_layer_indices: Tuple[Union[int, str], int]`: use an *auto-contrastive generation* setting, contrasting between the two specified exit layers. To perform contrast with the original LM head, pass the string 'original'. For example: `(24, 18)` will perform contrast between the exits at layers 24 and 18, and `('original', 12)` will perform contrast between the original LM head and the head at exit 12.\n- `contrast_function: Callable` *(Advanced)*: enables setting a custom contrast function, that gets logits of next-token predictions from two exit heads (i.e., those specified in `contrast_layer_indices`) and returns a modified set of predictions. By default, the `calculate_contrasted_logits` function is used, which performs the contrast calculation described in [Gera et al. (2023)](#reference).\n\n\n## Running language modeling benchmarks\nFor GPT-family models, it is possible to run benchmarks for a given multi-exit model with the [Language Model Evaluation Harness](https://github.com/EleutherAI/lm-evaluation-harness) library, for different generation settings.\n\nThis is done via `python -m autocontrastive_gen.evaluation.lm_eval_harness.run_lm_eval`, by specifying `--model multi_exit_gpt` and adding the desired [multi-exit configuration settings](#setting-the-multi-exit-configuration) to the `--model_args` runtime argument.\n\n_For example:_\n```powershell\npython -m autocontrastive_gen.evaluation.lm_eval_harness.run_lm_eval \\\n--tasks lambada_openai \\\n--model multi_exit_gpt \\\n--model_args pretrained=IBM/gpt2-medium-multiexit,use_original_head=False,contrast_layer_indices='original;12' \\\n--output_path my_output_path\n```\n_For details on the benchmark tasks available and on additional runtime arguments of the evaluation script, refer to https://github.com/EleutherAI/lm-evaluation-harness#basic-usage._\n\n\n## Pre-trained model checkpoints\nWe release the following model checkpoints:\n- [**ibm/gpt2-medium-multiexit**](https://huggingface.co/ibm/gpt2-medium-multiexit) - identical to the [GPT-2 Medium](https://huggingface.co/gpt2-medium) pre-trained model checkpoint, but with 12 newly-trained linear exit heads.\n- [**ibm/gpt-neo-125m-multiexit**](https://huggingface.co/ibm/gpt-neo-125m-multiexit) - identical to the [GPT Neo 125M](https://huggingface.co/EleutherAI/gpt-neo-125m) pre-trained model checkpoint, but with 6 newly-trained linear exit heads.\n\nThe new heads were trained on the English portion of the [CC-100](https://huggingface.co/datasets/cc100) dataset. For further details, refer to Appendix A of the paper. \n\n## Reference\nAriel Gera, Roni Friedman, Ofir Arviv, Chulaka Gunasekara, Benjamin Sznajder, Noam Slonim and Eyal Shnarch (2023). \n[The Benefits of Bad Advice: Autocontrastive Decoding across Model Layers](https://arxiv.org/abs/2305.01628). ACL 2023.\n\nPlease cite: \n```\n@inproceedings{gera2023autocontrastive,\n  title={The Benefits of Bad Advice: Autocontrastive Decoding across Model Layers},\n  author={Gera, Ariel and Friedman, Roni and Arviv, Ofir and Gunasekara, Chulaka and Sznajder, Benjamin and Slonim, Noam and Shnarch, Eyal},\n  booktitle={Proceedings of the 61st Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)},\n  month={july},\n  address={Toronto, Canada},\n  year={2023}\n}\n```\n\n## License\nThis work is released under the Apache 2.0 license. The full text of the license can be found in [LICENSE](LICENSE).\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/IBM/auto-contrastive-generation",
+            "keywords": "",
+            "license": "Apache License 2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "autocontrastive-gen",
+            "package_url": "https://pypi.org/project/autocontrastive-gen/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/autocontrastive-gen/",
+            "project_urls": {
+                "Homepage": "https://github.com/IBM/auto-contrastive-generation"
+            },
+            "release_url": "https://pypi.org/project/autocontrastive-gen/0.2.0/",
+            "requires_dist": [
+                "numpy (==1.24.2)",
+                "transformers (==4.26)",
+                "pandas (==1.5.3)",
+                "datasets (==2.4.0)",
+                "torch (==1.11.0)",
+                "lm-eval (==0.3.0)"
+            ],
+            "requires_python": ">=3.9",
+            "summary": "Auto-Contrastive Text Generation",
+            "version": "0.2.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17952226,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "119196ac20f5b1056cec7b6ebf483af4d132b401180c3a28acd8e08b366a6e02",
+                    "md5": "9f92ffeeafe9e7ca294484559d6b13e2",
+                    "sha256": "c2b0f4236a4136cc1e63ac48f3d9f25e239061db6c3bbddbb89fa6ec0f553f04"
+                },
+                "downloads": -1,
+                "filename": "autocontrastive_gen-0.2.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "9f92ffeeafe9e7ca294484559d6b13e2",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9",
+                "size": 40568,
+                "upload_time": "2023-05-03T06:32:31",
+                "upload_time_iso_8601": "2023-05-03T06:32:31.458016Z",
+                "url": "https://files.pythonhosted.org/packages/11/91/96ac20f5b1056cec7b6ebf483af4d132b401180c3a28acd8e08b366a6e02/autocontrastive_gen-0.2.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "7dbe9c0f48f0c622cff92e8fd2eb95fbdaf6a73424053bb2d6a4d89e95ac4a8e",
+                    "md5": "9e0c129e6076a1abfb6b6dd7585686af",
+                    "sha256": "4c09b8398c245dd51700e4e08d25483fe1e6bedf556b43f5300abe196aa13e79"
+                },
+                "downloads": -1,
+                "filename": "autocontrastive-gen-0.2.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "9e0c129e6076a1abfb6b6dd7585686af",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9",
+                "size": 28690,
+                "upload_time": "2023-05-03T06:32:33",
+                "upload_time_iso_8601": "2023-05-03T06:32:33.429158Z",
+                "url": "https://files.pythonhosted.org/packages/7d/be/9c0f48f0c622cff92e8fd2eb95fbdaf6a73424053bb2d6a4d89e95ac4a8e/autocontrastive-gen-0.2.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

@@ -37,7 +37,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16870263,
+        "last_serial": 17953749,
         "urls": [
             {
                 "comment_text": "",
@@ -122,7 +122,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16870263,
+        "last_serial": 17953749,
         "urls": [
             {
                 "comment_text": "",
@@ -207,7 +207,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16870263,
+        "last_serial": 17953749,
         "urls": [
             {
                 "comment_text": "",
@@ -292,7 +292,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16870263,
+        "last_serial": 17953749,
         "urls": [
             {
                 "comment_text": "",
@@ -377,7 +377,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16870263,
+        "last_serial": 17953749,
         "urls": [
             {
                 "comment_text": "",
@@ -462,7 +462,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16870263,
+        "last_serial": 17953749,
         "urls": [
             {
                 "comment_text": "",
@@ -517,7 +517,6 @@
             "classifiers": [
                 "Programming Language :: Python :: 3.6"
             ],
-            "description": "# DynamoDB SingleTable\n\nPython DynamoDB interface, specialized in single-table design.\nDynamoDB is high-performance serverless NoSQL, but difficult to disign tables.\n\nSingle-table design needs only single table, and few GSIs (Global Secondary Indexes).\nIt makes effective and easy to manage your whole data models for single service.\n\n## Getting Started\n\n### Install\n\n```\npip install ddb-single\n```\n\n### Init Table\n\n```python\nfrom ddb_single import Table\n\ntable = Table(\n    table_name=\"sample\",\n    endpoint_url=\"http://localhost:8000\",\n)\ntable.init()\n```\n\n### Data Models\n\nEach model has al least 3 keys\n- primary_key ... Hash key for single item. default: `pk: {__model_name__}_{uuid}` \n- seconday_key ... Range key for item. default: `sk: {__model_name__}_item`\n- unique_key ... key to identify the item is the same. Mainly used to update item.\n\nAnd you can set `serch_key` to enable search via GSI \n\n```python\nfrom ddb_single import BaseModel, DBField, FieldType\n\nclass User(BaseModel):\n    __table__=table\n    __model_name__ = \"user\"\n    name = DBField(unique_key=True)\n    email = DBField(search_key=True)\n    age = DBField(type=FieldType.NUMBER, search_key=True)\n    description=DBField()\n```\n\n## Usage\n\nneed \"Qurey\" object for CRUD\n- `query.model(foo).create`\n- `query.model(foo).get`\n- `query.model(foo).search`\n- `query.model(foo).update`\n- `query.model(foo).delete`\n\n```python\nfrom ddb_single import Query\nquery = Query(table)\n```\n\n\n### Create Item\n\nIf the item with same value of `unique_key` already exist, exist item is updated.\n\n```python\nuser = User(name=\"John\", email=\"john@example.com\", description=\"test\")\nquery.model(user).create()\n```\n\nThen, multible items added.\n\n|pk|sk|data|name|email|description|\n|-|-|-|-|-|-|\n|user_xxxx|user_item||John|john@example.com|test|\n|user_xxxx|search_user_name|John|\n|user_xxxx|search_user_email|new-john@example.com|\n\nIn addition to main item (sk=`user_item`), multiple item (sk=`search_{__model_name__}_{field_name}`) added to table.\nThose \"search items\" are used to search\n\nThe GSI `DataSearchIndex` is used to get \"search items\" to extract target's pk.\nThen, `batch_get` items by pk.\n\n|sk = hash|data = range|pk|\n|-|-|-|\n|search_user_name|John|user_xxxx|\n|search_user_email|new-john@example.com|user_xxxx|\n\n### Search Items\n\n```python\nuser = query.model(User).search(User.name.eq(\"John\"))\nprint(user)\n# -> [{\"pk\":\"user_xxxx\", \"sk\":\"user_item\", \"name\":\"John\", \"email\":\"john@example.com\"}]\n```\n\n`pk_only=True` to extract pk without `batch_get`\n\n```python\nuser_pks = query.model(User).search(User.name.eq(\"John\"), pk_only=True)\nprint(user_pks)\n# -> [\"user_xxxx\"]\n```\n\n### Get single item\n\n`get(pk)` to get single item.\n\n```\nuser = query.model(User).get(\"user_xxxx\")\nprint(user)\n# -> {\"pk\":\"user_xxxx\", \"sk\":\"user_item\", \"name\":\"John\", \"email\":\"john@example.com\"}\n```\n\n`get_by_unique` to get item by `unique_key`\n\n```python\nuser = query.model(User).get_by_unique(\"John\")\nprint(user)\n# -> {\"pk\":\"user_xxxx\", \"sk\":\"user_item\", \"name\":\"John\", \"email\":\"john@example.com\"}\n```\n\n`pk_only=True` option in `get_by_unique` to get `primary key` without `get_item`\n\n```python\npk = query.model(User).get_by_unique(\"John\", pk_only=True)\nprint(pk)\n# -> \"user_xxxx\"\n```\n\n### Update Item\n\n```python\nuser = query.model(User).search(User.email.eq(\"john@example.com\"))\nnew_user = User(**user[0])\nnew_user.email = \"new-john@example.com\"\nquery.model(new_user).update()\n```\n\nOr use unique value to detect exist item.\n\n```python\nnew_user = User(name=\"John\", email=\"new-john@example.com\")\nquery.model(new_user).update()\n```\n\nThen, tha value of \"main item\" and \"seach item\" changed\n\n|pk|sk|data|name|email|description|\n|-|-|-|-|-|-|\n|user_xxxx|user_item||John|new-john@example.com|test|\n|user_xxxx|search_user_name|John|\n|user_xxxx|search_user_email|new-john@example.com|\n\n\n### Delete Item\n\n```\nuser = query.model(User).search(User.email.eq(\"new-john@example.com\"))\nquery.model(user[0]).delete()\n```\n\n`primary key` to detect exist item.\n\n```\nquery.model(User).delete_by_pk(\"user_xxxx\")\n```\n\n\nor `unique key`\n\n```\nquery.model(User).delete_by_unique(\"John\")\n```\n\n## Batch Writer\n\n`table.batch_writer()` to create/update/delete multible items\n- `query.model(foo).create(batch=batch)`\n- `query.model(foo).update(batch=batch)`\n- `query.model(foo).delete(batch=batch)`\n\n### Batch Create\n\n```python\nwith table.batch_writer() as batch:\n    for i in range(3):\n        user = User(name=f\"test{i}\", age=i+10)\n        query.model(user).create(batch=batch)\nres = query.model(User).search(User.name.begins_with(\"test\"))\nprint([(r[\"name\"], r[\"age\"]) for r in res])\n# -> [(\"test0\", 10), (\"test1\", 11), (\"test2\", 12)]\n```\n\n### Batch Update\n\n```python\nwith table.batch_writer() as batch:\n    for i in range(3):\n        user = User(name=f\"test{i}\", age=i+20)\n        query.model(user).update(batch=batch)\nres = query.model(User).search(User.name.begins_with(\"test\"))\nprint([(r[\"name\"], r[\"age\"]) for r in res])\n# -> [(\"test0\", 20), (\"test1\", 21), (\"test2\", 22)]\n```\n\n### Batch Delete\n\n```python\npks = query.model(User).search(User.name.begins_with(\"test\"), pk_only=True)\nwith table.batch_writer() as batch:\n    for pk in pks:\n        query.model(user).delete_by_pk(pk, batch=batch)\nres = query.model(User).search(User.name.begins_with(\"test\"))\nprint(res)\n# -> []\n```\n\n\n## Relationship\n\n### Create Model\n\nYou can sat relationns to other models\n`relation=BaseModel` to set relation.\n\n```python\nclass BlogPost(BaseModel):\n    __model_name__ = \"blogpost\"\n    __table__=table\n    name = DBField(unique_key=True)\n    content = DBField()\n    author = DBField(reletion=User)\n```\n\n### Create Item\n\n\n```python\nblogpost = BlogPost(\n    name=\"Hello\",\n    content=\"Hello world\",\n    author=self.user\n)\nquery.model(blogpost).create()\n```\n\nThen, tha value \"reletion item\" added\n\n|pk|sk|data|name|author|content|\n|-|-|-|-|-|-|\n|user_xxxx|user_item||John|||\n|user_xxxx|search_user_name|John|\n|blogpost_xxxx|blogpost_item||Hello|John|Hello world|\n|blogpost_xxxx|search_blogpost_title|Hello|\n|blogpost_xxxx|rel_user_xxxx|author|\n\nIn addition to main item (sk=`blogpost_item`), relation item (sk=`rel_{primary_key}`) added to table. The GSI `DataSearchIndex` is used to get \"relation items\" to extract target's pk.\nThen, `batch_get` items by pk.\n\n|sk = hash|data = range|pk|\n|-|-|-|\n|rel_user_xxxx|author|blogpost_xxxx|\n\n### Search Relations\n\n`get_relation(model=Basemodel)` to search relations\n\n```python\nblogpost = query.model(BlogPost).get_by_unique(\"Hello\")\nblogpost = BlogPost(**blogpost)\n\nuser = query.model(blogpost).get_relation(model=User)\nprint(user)\n# -> [{\"pk\":\"user_xxxx\", \"sk\":\"user_item\", \"name\":\"John\"}]\n```\n\nAlso `get_relation(field=DBField)` to specify field\n\n```python\nuser = query.model(blogpost).get_relation(field=BlogPost.author)\nprint(user)\n# -> [{\"pk\":\"user_xxxx\", \"sk\":\"user_item\", \"name\":\"John\"}]\n```\n\n### Search Reference\n\nIn this library, \"reference\" is antonym to relation\n\n`get_reference(model=Basemodel)` to search items related to the item\n\n```python\nuser = query.model(User).get_by_unique(\"John\")\nuser = User(**blogpost)\n\nblogpost = query.model(blogpost).get_reference(model=BlogPost)\nprint(blogpost)\n# -> [{\"pk\":\"blogpost_xxxx\", \"sk\":\"blogpost_item\", \"name\":\"Hello\"}]\n```\n\nAlso `get_reference(field=DBField)` to specify field\n\n```python\nblogpost = query.model(user).get_reference(field=BlogPost.author)\nprint(blogpost)\n# -> [{\"pk\":\"blogpost_xxxx\", \"sk\":\"blogpost_item\", \"name\":\"Hello\"}]\n```\n\n### Update Relation\n\nIf relation key's value changed, relationship also changed.\n\n\n```python\nnew_user = User(name=\"Michael\")\nblogpost = query.model(BlogPost).get_by_unique(\"Hello\")\nblogpost[\"author\"] = new_user\nblogpost = BlogPost(**blogpost)\n\nquery.model(blogpost).update()\n```\n\nThen, \"reletion item\" changed\n\n|pk|sk|data|name|author|content|\n|-|-|-|-|-|-|\n|user_xxxx|user_item||John|||\n|user_xxxx|search_user_name|John|\n|user_yyyy|user_item||Michael|||\n|user_yyyy|search_user_name|Michael|\n|blogpost_xxxx|blogpost_item||Hello|Michael|Hello world|\n|blogpost_xxxx|search_blogpost_title|Hello|\n|blogpost_xxxx|rel_user_yyyy|author|\n### Delete Relation\n\nIf related item deleted, relationship also deleted\n\n```python\nquery.model(user).delete_by_unique(\"Michael\")\n```\n\nThen, \"reletion item\" deleted.\nBut main item's value is not chenged.\n\n|pk|sk|data|name|author|content|\n|-|-|-|-|-|-|\n|user_xxxx|user_item||John|||\n|user_xxxx|search_user_name|John|\n|blogpost_xxxx|blogpost_item||Hello|Michael|Hello world|\n|blogpost_xxxx|search_blogpost_title|Hello|\n\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -548,7 +547,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16870263,
+        "last_serial": 17953749,
         "urls": [
             {
                 "comment_text": "",
@@ -589,6 +588,262 @@
                 "upload_time": "2023-02-15T12:07:56",
                 "upload_time_iso_8601": "2023-02-15T12:07:56.150046Z",
                 "url": "https://files.pythonhosted.org/packages/31/ce/c4f83d53a4556bdc57080fcfbfd171f8eb71b1e6ca378963edf4f5a9e082/ddb_single-0.3.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.3.5": {
+        "info": {
+            "author": "medaka",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 3.6"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/medaka0213/DynamoDB-SingleTable",
+            "keywords": "aws dynamodb serverless",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "ddb-single",
+            "package_url": "https://pypi.org/project/ddb-single/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/ddb-single/",
+            "project_urls": {
+                "Homepage": "https://github.com/medaka0213/DynamoDB-SingleTable"
+            },
+            "release_url": "https://pypi.org/project/ddb-single/0.3.5/",
+            "requires_dist": [
+                "boto3"
+            ],
+            "requires_python": "",
+            "summary": "Python DynamoDB interface, specialized in single-table design.",
+            "version": "0.3.5",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17953749,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "455e2413f31af7707a9c26cb5c55ebb5da0aea542499b64059a1ba306b21a7d9",
+                    "md5": "8952bdbc07d9cd50a9058926b4a91212",
+                    "sha256": "673f81a01f6db86cec2f5fa9d12278e44935e5f7adec7e5607c0abbcefa53ed4"
+                },
+                "downloads": -1,
+                "filename": "ddb_single-0.3.5-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "8952bdbc07d9cd50a9058926b4a91212",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 14610,
+                "upload_time": "2023-05-03T02:22:20",
+                "upload_time_iso_8601": "2023-05-03T02:22:20.111464Z",
+                "url": "https://files.pythonhosted.org/packages/45/5e/2413f31af7707a9c26cb5c55ebb5da0aea542499b64059a1ba306b21a7d9/ddb_single-0.3.5-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "759a388a2917b92967e4addcb2784c2be25981c7ee3026d487eb114fe6b8f74d",
+                    "md5": "84b5a614c01ad3ac000f071cf390e44e",
+                    "sha256": "4c96203dc413fc6668e94982f7ad8fe17f4abfa9ceefe031bd8e1c6f1cf64827"
+                },
+                "downloads": -1,
+                "filename": "ddb_single-0.3.5.tar.gz",
+                "has_sig": false,
+                "md5_digest": "84b5a614c01ad3ac000f071cf390e44e",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 15282,
+                "upload_time": "2023-05-03T02:22:24",
+                "upload_time_iso_8601": "2023-05-03T02:22:24.371413Z",
+                "url": "https://files.pythonhosted.org/packages/75/9a/388a2917b92967e4addcb2784c2be25981c7ee3026d487eb114fe6b8f74d/ddb_single-0.3.5.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.3.6": {
+        "info": {
+            "author": "medaka",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 3.6"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/medaka0213/DynamoDB-SingleTable",
+            "keywords": "aws dynamodb serverless",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "ddb-single",
+            "package_url": "https://pypi.org/project/ddb-single/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/ddb-single/",
+            "project_urls": {
+                "Homepage": "https://github.com/medaka0213/DynamoDB-SingleTable"
+            },
+            "release_url": "https://pypi.org/project/ddb-single/0.3.6/",
+            "requires_dist": [
+                "boto3"
+            ],
+            "requires_python": "",
+            "summary": "Python DynamoDB interface, specialized in single-table design.",
+            "version": "0.3.6",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17953749,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a1a8e370571dbf0eeb26e83291896222e11ead42bb8ba0554b1b1a2759dfde28",
+                    "md5": "70fbe93e4eae9dea2c43433fc79bd9ad",
+                    "sha256": "179366597fd870b793f2762fbe823568083a766f3c80f42514daced14b424699"
+                },
+                "downloads": -1,
+                "filename": "ddb_single-0.3.6-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "70fbe93e4eae9dea2c43433fc79bd9ad",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 14607,
+                "upload_time": "2023-05-03T02:47:12",
+                "upload_time_iso_8601": "2023-05-03T02:47:12.914830Z",
+                "url": "https://files.pythonhosted.org/packages/a1/a8/e370571dbf0eeb26e83291896222e11ead42bb8ba0554b1b1a2759dfde28/ddb_single-0.3.6-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "7bd1a52e802c99a74f50734b9cb2998060580f8caa8cf5d175f18e9441ea3c0c",
+                    "md5": "94a8fff8f6e2ad89dbc1c5d2e3521b10",
+                    "sha256": "ea827c2ae085ebb417fd5b60ba0f34b4c861fa121d77c057331d8d65caea2203"
+                },
+                "downloads": -1,
+                "filename": "ddb_single-0.3.6.tar.gz",
+                "has_sig": false,
+                "md5_digest": "94a8fff8f6e2ad89dbc1c5d2e3521b10",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 15266,
+                "upload_time": "2023-05-03T02:47:18",
+                "upload_time_iso_8601": "2023-05-03T02:47:18.336184Z",
+                "url": "https://files.pythonhosted.org/packages/7b/d1/a52e802c99a74f50734b9cb2998060580f8caa8cf5d175f18e9441ea3c0c/ddb_single-0.3.6.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.3.7": {
+        "info": {
+            "author": "medaka",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 3.6"
+            ],
+            "description": "# DynamoDB SingleTable\r\n\r\nPython DynamoDB interface, specialized in single-table design.\r\nDynamoDB is high-performance serverless NoSQL, but difficult to disign tables.\r\n\r\nSingle-table design needs only single table, and few GSIs (Global Secondary Indexes).\r\nIt makes effective and easy to manage your whole data models for single service.\r\n\r\n## Getting Started\r\n\r\n### Install\r\n\r\n```\r\npip install ddb-single\r\n```\r\n\r\n### Init Table\r\n\r\n```python\r\nfrom ddb_single import Table\r\n\r\ntable = Table(\r\n    table_name=\"sample\",\r\n    endpoint_url=\"http://localhost:8000\",\r\n)\r\ntable.init()\r\n```\r\n\r\n### Data Models\r\n\r\nEach model has al least 3 keys\r\n- primary_key ... Hash key for single item. default: `pk: {__model_name__}_{uuid}` \r\n- seconday_key ... Range key for item. default: `sk: {__model_name__}_item`\r\n- unique_key ... key to identify the item is the same. Mainly used to update item.\r\n\r\nAnd you can set `serch_key` to enable search via GSI \r\n\r\n```python\r\nfrom ddb_single import BaseModel, DBField, FieldType\r\n\r\nclass User(BaseModel):\r\n    __table__=table\r\n    __model_name__ = \"user\"\r\n    name = DBField(unique_key=True)\r\n    email = DBField(search_key=True)\r\n    age = DBField(type=FieldType.NUMBER, search_key=True)\r\n    description=DBField()\r\n```\r\n\r\n## Usage\r\n\r\nneed \"Qurey\" object for CRUD\r\n- `query.model(foo).create`\r\n- `query.model(foo).get`\r\n- `query.model(foo).search`\r\n- `query.model(foo).update`\r\n- `query.model(foo).delete`\r\n\r\n```python\r\nfrom ddb_single import Query\r\nquery = Query(table)\r\n```\r\n\r\n\r\n### Create Item\r\n\r\nIf the item with same value of `unique_key` already exist, exist item is updated.\r\n\r\n```python\r\nuser = User(name=\"John\", email=\"john@example.com\", description=\"test\")\r\nquery.model(user).create()\r\n```\r\n\r\nThen, multible items added.\r\n\r\n|pk|sk|data|name|email|description|\r\n|-|-|-|-|-|-|\r\n|user_xxxx|user_item||John|john@example.com|test|\r\n|user_xxxx|search_user_name|John|\r\n|user_xxxx|search_user_email|new-john@example.com|\r\n\r\nIn addition to main item (sk=`user_item`), multiple item (sk=`search_{__model_name__}_{field_name}`) added to table.\r\nThose \"search items\" are used to search\r\n\r\nThe GSI `DataSearchIndex` is used to get \"search items\" to extract target's pk.\r\nThen, `batch_get` items by pk.\r\n\r\n|sk = hash|data = range|pk|\r\n|-|-|-|\r\n|search_user_name|John|user_xxxx|\r\n|search_user_email|new-john@example.com|user_xxxx|\r\n\r\n### Search Items\r\n\r\n```python\r\nuser = query.model(User).search(User.name.eq(\"John\"))\r\nprint(user)\r\n# -> [{\"pk\":\"user_xxxx\", \"sk\":\"user_item\", \"name\":\"John\", \"email\":\"john@example.com\"}]\r\n```\r\n\r\n`pk_only=True` to extract pk without `batch_get`\r\n\r\n```python\r\nuser_pks = query.model(User).search(User.name.eq(\"John\"), pk_only=True)\r\nprint(user_pks)\r\n# -> [\"user_xxxx\"]\r\n```\r\n\r\n### Get single item\r\n\r\n`get(pk)` to get single item.\r\n\r\n```\r\nuser = query.model(User).get(\"user_xxxx\")\r\nprint(user)\r\n# -> {\"pk\":\"user_xxxx\", \"sk\":\"user_item\", \"name\":\"John\", \"email\":\"john@example.com\"}\r\n```\r\n\r\n`get_by_unique` to get item by `unique_key`\r\n\r\n```python\r\nuser = query.model(User).get_by_unique(\"John\")\r\nprint(user)\r\n# -> {\"pk\":\"user_xxxx\", \"sk\":\"user_item\", \"name\":\"John\", \"email\":\"john@example.com\"}\r\n```\r\n\r\n`pk_only=True` option in `get_by_unique` to get `primary key` without `get_item`\r\n\r\n```python\r\npk = query.model(User).get_by_unique(\"John\", pk_only=True)\r\nprint(pk)\r\n# -> \"user_xxxx\"\r\n```\r\n\r\n### Update Item\r\n\r\n```python\r\nuser = query.model(User).search(User.email.eq(\"john@example.com\"))\r\nnew_user = User(**user[0])\r\nnew_user.email = \"new-john@example.com\"\r\nquery.model(new_user).update()\r\n```\r\n\r\nOr use unique value to detect exist item.\r\n\r\n```python\r\nnew_user = User(name=\"John\", email=\"new-john@example.com\")\r\nquery.model(new_user).update()\r\n```\r\n\r\nThen, tha value of \"main item\" and \"seach item\" changed\r\n\r\n|pk|sk|data|name|email|description|\r\n|-|-|-|-|-|-|\r\n|user_xxxx|user_item||John|new-john@example.com|test|\r\n|user_xxxx|search_user_name|John|\r\n|user_xxxx|search_user_email|new-john@example.com|\r\n\r\n\r\n### Delete Item\r\n\r\n```\r\nuser = query.model(User).search(User.email.eq(\"new-john@example.com\"))\r\nquery.model(user[0]).delete()\r\n```\r\n\r\n`primary key` to detect exist item.\r\n\r\n```\r\nquery.model(User).delete_by_pk(\"user_xxxx\")\r\n```\r\n\r\n\r\nor `unique key`\r\n\r\n```\r\nquery.model(User).delete_by_unique(\"John\")\r\n```\r\n\r\n## Batch Writer\r\n\r\n`table.batch_writer()` to create/update/delete multible items\r\n- `query.model(foo).create(batch=batch)`\r\n- `query.model(foo).update(batch=batch)`\r\n- `query.model(foo).delete(batch=batch)`\r\n\r\n### Batch Create\r\n\r\n```python\r\nwith table.batch_writer() as batch:\r\n    for i in range(3):\r\n        user = User(name=f\"test{i}\", age=i+10)\r\n        query.model(user).create(batch=batch)\r\nres = query.model(User).search(User.name.begins_with(\"test\"))\r\nprint([(r[\"name\"], r[\"age\"]) for r in res])\r\n# -> [(\"test0\", 10), (\"test1\", 11), (\"test2\", 12)]\r\n```\r\n\r\n### Batch Update\r\n\r\n```python\r\nwith table.batch_writer() as batch:\r\n    for i in range(3):\r\n        user = User(name=f\"test{i}\", age=i+20)\r\n        query.model(user).update(batch=batch)\r\nres = query.model(User).search(User.name.begins_with(\"test\"))\r\nprint([(r[\"name\"], r[\"age\"]) for r in res])\r\n# -> [(\"test0\", 20), (\"test1\", 21), (\"test2\", 22)]\r\n```\r\n\r\n### Batch Delete\r\n\r\n```python\r\npks = query.model(User).search(User.name.begins_with(\"test\"), pk_only=True)\r\nwith table.batch_writer() as batch:\r\n    for pk in pks:\r\n        query.model(user).delete_by_pk(pk, batch=batch)\r\nres = query.model(User).search(User.name.begins_with(\"test\"))\r\nprint(res)\r\n# -> []\r\n```\r\n\r\n\r\n## Relationship\r\n\r\n### Create Model\r\n\r\nYou can sat relationns to other models\r\n`relation=BaseModel` to set relation.\r\n\r\n```python\r\nclass BlogPost(BaseModel):\r\n    __model_name__ = \"blogpost\"\r\n    __table__=table\r\n    name = DBField(unique_key=True)\r\n    content = DBField()\r\n    author = DBField(reletion=User)\r\n```\r\n\r\n### Create Item\r\n\r\n\r\n```python\r\nblogpost = BlogPost(\r\n    name=\"Hello\",\r\n    content=\"Hello world\",\r\n    author=self.user\r\n)\r\nquery.model(blogpost).create()\r\n```\r\n\r\nThen, tha value \"reletion item\" added\r\n\r\n|pk|sk|data|name|author|content|\r\n|-|-|-|-|-|-|\r\n|user_xxxx|user_item||John|||\r\n|user_xxxx|search_user_name|John|\r\n|blogpost_xxxx|blogpost_item||Hello|John|Hello world|\r\n|blogpost_xxxx|search_blogpost_title|Hello|\r\n|blogpost_xxxx|rel_user_xxxx|author|\r\n\r\nIn addition to main item (sk=`blogpost_item`), relation item (sk=`rel_{primary_key}`) added to table. The GSI `DataSearchIndex` is used to get \"relation items\" to extract target's pk.\r\nThen, `batch_get` items by pk.\r\n\r\n|sk = hash|data = range|pk|\r\n|-|-|-|\r\n|rel_user_xxxx|author|blogpost_xxxx|\r\n\r\n### Search Relations\r\n\r\n`get_relation(model=Basemodel)` to search relations\r\n\r\n```python\r\nblogpost = query.model(BlogPost).get_by_unique(\"Hello\")\r\nblogpost = BlogPost(**blogpost)\r\n\r\nuser = query.model(blogpost).get_relation(model=User)\r\nprint(user)\r\n# -> [{\"pk\":\"user_xxxx\", \"sk\":\"user_item\", \"name\":\"John\"}]\r\n```\r\n\r\nAlso `get_relation(field=DBField)` to specify field\r\n\r\n```python\r\nuser = query.model(blogpost).get_relation(field=BlogPost.author)\r\nprint(user)\r\n# -> [{\"pk\":\"user_xxxx\", \"sk\":\"user_item\", \"name\":\"John\"}]\r\n```\r\n\r\n### Search Reference\r\n\r\nIn this library, \"reference\" is antonym to relation\r\n\r\n`get_reference(model=Basemodel)` to search items related to the item\r\n\r\n```python\r\nuser = query.model(User).get_by_unique(\"John\")\r\nuser = User(**blogpost)\r\n\r\nblogpost = query.model(blogpost).get_reference(model=BlogPost)\r\nprint(blogpost)\r\n# -> [{\"pk\":\"blogpost_xxxx\", \"sk\":\"blogpost_item\", \"name\":\"Hello\"}]\r\n```\r\n\r\nAlso `get_reference(field=DBField)` to specify field\r\n\r\n```python\r\nblogpost = query.model(user).get_reference(field=BlogPost.author)\r\nprint(blogpost)\r\n# -> [{\"pk\":\"blogpost_xxxx\", \"sk\":\"blogpost_item\", \"name\":\"Hello\"}]\r\n```\r\n\r\n### Update Relation\r\n\r\nIf relation key's value changed, relationship also changed.\r\n\r\n\r\n```python\r\nnew_user = User(name=\"Michael\")\r\nblogpost = query.model(BlogPost).get_by_unique(\"Hello\")\r\nblogpost[\"author\"] = new_user\r\nblogpost = BlogPost(**blogpost)\r\n\r\nquery.model(blogpost).update()\r\n```\r\n\r\nThen, \"reletion item\" changed\r\n\r\n|pk|sk|data|name|author|content|\r\n|-|-|-|-|-|-|\r\n|user_xxxx|user_item||John|||\r\n|user_xxxx|search_user_name|John|\r\n|user_yyyy|user_item||Michael|||\r\n|user_yyyy|search_user_name|Michael|\r\n|blogpost_xxxx|blogpost_item||Hello|Michael|Hello world|\r\n|blogpost_xxxx|search_blogpost_title|Hello|\r\n|blogpost_xxxx|rel_user_yyyy|author|\r\n### Delete Relation\r\n\r\nIf related item deleted, relationship also deleted\r\n\r\n```python\r\nquery.model(user).delete_by_unique(\"Michael\")\r\n```\r\n\r\nThen, \"reletion item\" deleted.\r\nBut main item's value is not chenged.\r\n\r\n|pk|sk|data|name|author|content|\r\n|-|-|-|-|-|-|\r\n|user_xxxx|user_item||John|||\r\n|user_xxxx|search_user_name|John|\r\n|blogpost_xxxx|blogpost_item||Hello|Michael|Hello world|\r\n|blogpost_xxxx|search_blogpost_title|Hello|\r\n\r\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/medaka0213/DynamoDB-SingleTable",
+            "keywords": "aws dynamodb serverless",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "ddb-single",
+            "package_url": "https://pypi.org/project/ddb-single/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/ddb-single/",
+            "project_urls": {
+                "Homepage": "https://github.com/medaka0213/DynamoDB-SingleTable"
+            },
+            "release_url": "https://pypi.org/project/ddb-single/0.3.7/",
+            "requires_dist": [
+                "boto3"
+            ],
+            "requires_python": "",
+            "summary": "Python DynamoDB interface, specialized in single-table design.",
+            "version": "0.3.7",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17953749,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "1ac117137557721e5978f6f666b54230f2cf0c9df6f2cc496a7289a833dbe5d8",
+                    "md5": "fd7b9bb01b25d5acbf8d72f0b45dcb5f",
+                    "sha256": "56ff446bf25883ace90e0e951d0aa69c644c7a72a2097662f9e301c4ddeb380a"
+                },
+                "downloads": -1,
+                "filename": "ddb_single-0.3.7-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "fd7b9bb01b25d5acbf8d72f0b45dcb5f",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 14644,
+                "upload_time": "2023-05-03T09:10:31",
+                "upload_time_iso_8601": "2023-05-03T09:10:31.305917Z",
+                "url": "https://files.pythonhosted.org/packages/1a/c1/17137557721e5978f6f666b54230f2cf0c9df6f2cc496a7289a833dbe5d8/ddb_single-0.3.7-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5395c0abeec8b27dfd47bcae0dabed568147dd12a918343cf70155ae9cce5378",
+                    "md5": "db95e0201fd066ae08f0e10d3429cbac",
+                    "sha256": "030d411458928c16d7addbbddabcbfdcc4647c2ca47f5d8cca3325e836f144f4"
+                },
+                "downloads": -1,
+                "filename": "ddb_single-0.3.7.tar.gz",
+                "has_sig": false,
+                "md5_digest": "db95e0201fd066ae08f0e10d3429cbac",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 15300,
+                "upload_time": "2023-05-03T09:10:37",
+                "upload_time_iso_8601": "2023-05-03T09:10:37.102222Z",
+                "url": "https://files.pythonhosted.org/packages/53/95/c0abeec8b27dfd47bcae0dabed568147dd12a918343cf70155ae9cce5378/ddb_single-0.3.7.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
