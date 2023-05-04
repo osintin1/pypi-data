@@ -45,7 +45,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17953538,
+        "last_serial": 17957178,
         "urls": [
             {
                 "comment_text": "",
@@ -102,7 +102,6 @@
                 "Operating System :: OS Independent",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "\n\n<a name=\"readme-top\"></a>\n\n[![colab][colab-shield]][colab-url]\n![Release][release-shield]\n[![License][license-shield]][license-url]\n![Commit][commit-shield]\n![Size][size-shield]\n[![Downloads][download-shield]][download-url]\n[![Doi][DOI-shield]][DOI-url]\n\n\n\n\n\n# CASTING \n\n<p align=\"justify\"> A Continuous Action Space Tree search for INverse desiGn (CASTING) Framework and Materials Discovery</p>\n\n\n## Table of Contents\n- [Introduction](#Introduction)\n- [Prerequisites](#prerequisites)\n- [Installation](#installation)\n- [Running the code](#running-the-code)\n- [Optimization of Gold nanocluster](#optimization-of-Gold-nanocluster)\n- [Carbon metastable polymorphs](#carbon-metastable-polymorphs)\n- [Citation](#citation)\n- [License](#license)\n\n\n\n\n\n## Introduction\n\nA pseudocode implementation of CASTING framework ([Paper](https://doi.org/10.48550/arXiv.2212.12106)) for optimization of atomic nanoclusters only. This code uses MCTS (Monte Carlo Tree Search) as base optimizer.<br/> \n<p align=\"justify\">&emsp;&emsp;&emsp;&emsp;Fast and accurate prediction of optimal crystal structure, topology, and microstructures is important for accelerating the design and discovery of new materials. Material properties are strongly correlated to the underlying structure and topology \u2013 inverse design is emerging as a powerful tool to discover new and increasingly complex materials that meet targeted functionalities. CASTING provides a unified framework for fast, scalable and accurate prediction & design of materials.</p>\n\n\n<p align=\"center\"> <a href=\"url\"><img src=\"https://github.com/sbanik2/CASTING/blob/main/figs/MCTS.png?raw=true\" align=\"center\" height=\"500\" width=\"600\" ></a> </p>\n\n\n<p align=\"right\">(<a href=\"#readme-top\">back to top</a>)</p>\n\n## Prerequisites\nThis package requires:\n- [scipy](https://scipy.org/)\n- [LAMMPS](https://www.lammps.org/)\n- [pymatgen](https://pymatgen.org/)\n- [pandas](https://pandas.pydata.org/)\n- [numpy](https://numpy.org/)\n- [networkx](https://networkx.org/)\n- [ase](https://wiki.fysik.dtu.dk/ase/#)\n\n<p align=\"right\">(<a href=\"#readme-top\">back to top</a>)</p>\n\n## Installation\n\n### Manual Installation\n[Install the anaconda package](https://docs.anaconda.com/anaconda/install/). Then, \n```\nconda env create --name CASTING\nconda activate CASTING\ngit clone https://github.com/sbanik2/CASTING.git\npip install -r requirements.txt\npython setup.py install\n```\n\n### Installation with pypi\n\n```\npip install CASTING\n\n```\n***The package requires python lammps binding to run. First, lammps package needs to be downloaded from [LAMMPS download](https://www.lammps.org/download.html) and compiled. The instructions on python integration can be found here [LAMMPS-Python](https://docs.lammps.org/Python_install.html).\n\n<p align=\"right\">(<a href=\"#readme-top\">back to top</a>)</p>\n\n### Running the code\n<p align=\"justify\"> First, all the parameters crystal (constrains), LAMMPS parameters (pair style, pair coefficient etc.) and the perturbation parameter need to be set.  The composition is given for e.g., a Au<2>Al<3> as \"composition\":{\"Au\":2,\"Al:3\"}. In a file (for e.g., RunOpt.py) we define, </p>\n\n\n``` python\nfrom CASTING.utilis import r_datafame,get_lattice\nfrom CASTING.MCTS import MCTS\nfrom CASTING.clusterfun import createRandomData\nfrom CASTING.lammpsEvaluate import LammpsEvaluator\nfrom CASTING.perturb import perturbate\n\n\n# In[6]:\n\nimport random\nimport numpy as np\n\nseed = 12\n\nrandom.seed(seed)\nnp.random.seed(seed)\n\n\n\n# In[9]:\n\n\nr_min = {\"Au-Au\":2}       # minimum allowed interatomic distance\nr_max = {\"Au-Au\":4}      # maximum allowed interatomic distance\nbox_dim = 50                  # box dimension \n\n#--------crystal constrains-----------\n\nconstrains = {\n    \"composition\":{\"Au\":1},\n    \"atoms\":13,\n    \"r_min\":r_datafame(r_min),\n    \"r_max\":r_datafame(r_max),\n    \"lattice\":get_lattice(box_dim),  \n    }\n\n\n\n\n#-------------perturbation------------\n\n\npt = {\n    'max_mutation': 0.05,  # mutation  in fraction of  box length\n}\n\n\n\n#-----------------lammps parameters-------------------\n\nlammps_par = {\n    'constrains':constrains,\n    'pair_style': \"pair_style eam\",\n    'pair_coeff': \"pair_coeff * * Au.eam\"   # Provide full path of potential file here\n}\n    \n```\n\nOnce the parameters are set, the evaluator (LAMMPS calculator) & the perturbator is to be initialized and a structure for root node is created.\n\n ``` python\n\nrootdata = createRandomData(constrains,multiplier= 10)\n\nperturb = perturbate(**pt). perturb\nevaluator = LammpsEvaluator(**lammps_par).evaluate \n\n```\n\nFinally, Call MCTS with all the hyperparameters added. Details of individual hyperparameters for the optimizer can be found here [Paper](https://doi.org/10.48550/arXiv.2212.12106).\n        \n ``` python\n        \nMCTS(\n    rootdata,\n    perturb ,\n    evaluator,\n    niterations=2000,\n    headexpand=10,\n    nexpand=3,\n    nsimulate=3,\n    nplayouts=10,\n    exploreconstant=1,\n    maxdepth=12,\n    a=0,\n    selected_node=0,\n)\n        \n```\n\nRun the code \n\n```\npython RunOpt.py \n```\n\nThe optimization produces a \"dumpfile.dat\" output containing all the crystal parameters and the energy values as the output. To extract the structures in either 'poscar' or 'cif' format, one can use the  'StructureWriter' module.\n\n ``` python\n \nfrom CASTING.writer import StructureWriter\n\nnum_to_write = 10 # number of stuctures to extract\nwriter = StructureWriter(\n                         \"dumpfile.dat\",\n                          outpath=\"structures\",\n                          objfile=\"energy.dat\",\n                          file_format=\"poscar\" # \"poscar\" or \"cif\"\n                          ) \nwriter.write( num_to_write, sort=True) # sort to arrange in increasing order of energy\n \n \n ```\nThis will extract 'num_to_write' number of structures in ascending order of objective. \n\n\n<p align=\"right\">(<a href=\"#readme-top\">back to top</a>)</p>\n\n## Optimization of Gold nanocluster\n\nAn example optimization of Gold (Au) nanocluster is given in \"example\" directory. We have used CASTING to optimize the already known global minima (Sutton-Chen) of 13 atom Au nanocluster (Icosahedral structure).  Details on additional examples can be found in [Paper](https://doi.org/10.48550/arXiv.2212.12106).\n\n<p align=\"center\"> <a href=\"url\"><img src=\"https://github.com/sbanik2/CASTING/blob/main/figs/sutton_chen.gif\" align=\"center\" height=\"200\" width=\"200\" ></a> </p>\n\n<p align=\"right\">(<a href=\"#readme-top\">back to top</a>)</p>\n\n## Carbon metastable polymorphs\n\nWe have also used CASTING to sample metastable polymorphs of Carbon(C). All the structures are then further relaxed with DFT. The unique polymorphs and their corresponding DFT energies have been provided in \u201cC_polymorphs\u201d directory.\n\n<p align=\"center\"> <a href=\"url\"><img src=\"https://github.com/sbanik2/CASTING/blob/main/figs/MetastableC.png\" align=\"center\" height=\"400\" width=\"500\" ></a> </p>\n\n<p align=\"right\">(<a href=\"#readme-top\">back to top</a>)</p>  \n\n## Citation\n```\n@article{banik2022continuous,\n  title={A Continuous Action Space Tree search for INverse desiGn (CASTING) Framework for Materials Discovery},\n  author={Banik, Suvo and Loefller, Troy and Manna, Sukriti and Srinivasan, Srilok and Darancet, Pierre and Chan, Henry and Hexemer, Alexander and Sankaranarayanan, Subramanian KRS},\n  journal={arXiv preprint arXiv:2212.12106},\n  year={2022}\n}\n```\n    \n<p align=\"right\">(<a href=\"#readme-top\">back to top</a>)</p>\n        \n## License\nCASTING is distributed under MIT License. See `LICENSE` for details.\n    \n    \n<p align=\"right\">(<a href=\"#readme-top\">back to top</a>)</p>  \n    \n<!--LINKS -->\n\n[colab-shield]: https://colab.research.google.com/assets/colab-badge.svg\n[colab-url]: https://colab.research.google.com/github/sbanik2/CASTING/blob/main/notebooks/Au_example_Ase.ipynb\n[release-shield]: https://img.shields.io/github/v/release/sbanik2/CASTING\n[license-shield]: https://img.shields.io/github/license/sbanik2/CASTING\n[license-url]: https://github.com/sbanik2/CASTING/blob/main/LICENSE\n[download-shield]: https://static.pepy.tech/badge/casting\n[download-url]: https://pepy.tech/project/casting\n[commit-shield]:https://img.shields.io/github/last-commit/sbanik2/CASTING\n[size-shield]: https://img.shields.io/github/languages/code-size/sbanik2/CASTING\n[DOI-shield]: https://img.shields.io/badge/DOI-doi.org/10.48550/arXiv.2212.12106-red\n[DOI-url]: https://doi.org/10.48550/arXiv.2212.12106\n    \n    \n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -139,7 +138,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17953538,
+        "last_serial": 17957178,
         "urls": [
             {
                 "comment_text": "",
@@ -180,6 +179,101 @@
                 "upload_time": "2023-05-03T08:51:00",
                 "upload_time_iso_8601": "2023-05-03T08:51:00.109924Z",
                 "url": "https://files.pythonhosted.org/packages/52/54/170bf6287dd070034beaa473ab3d2d71b2bbb08eae23f5b744ced130258f/CASTING-0.1.2b0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.3": {
+        "info": {
+            "author": "Suvo Banik",
+            "author_email": "Suvo Banik <sbanik2@uic.edu>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "\n\n<a name=\"readme-top\"></a>\n\n[![colab][colab-shield]][colab-url]\n![Release][release-shield]\n[![License][license-shield]][license-url]\n![Commit][commit-shield]\n![Size][size-shield]\n[![Downloads][download-shield]][download-url]\n[![Doi][DOI-shield]][DOI-url]\n\n\n\n\n\n# CASTING \n\n<p align=\"justify\"> A Continuous Action Space Tree search for INverse desiGn (CASTING) Framework and Materials Discovery</p>\n\n\n## Table of Contents\n- [Introduction](#Introduction)\n- [Prerequisites](#prerequisites)\n- [Installation](#installation)\n- [Running the code](#running-the-code)\n- [Optimization of Gold nanocluster](#optimization-of-Gold-nanocluster)\n- [Carbon metastable polymorphs](#carbon-metastable-polymorphs)\n- [Citation](#citation)\n- [License](#license)\n\n\n\n\n\n## Introduction\n\nA pseudocode implementation of CASTING framework ([Paper](https://doi.org/10.48550/arXiv.2212.12106)) for optimization of atomic nanoclusters only. This code uses MCTS (Monte Carlo Tree Search) as base optimizer.<br/> \n<p align=\"justify\">&emsp;&emsp;&emsp;&emsp;Fast and accurate prediction of optimal crystal structure, topology, and microstructures is important for accelerating the design and discovery of new materials. Material properties are strongly correlated to the underlying structure and topology \u2013 inverse design is emerging as a powerful tool to discover new and increasingly complex materials that meet targeted functionalities. CASTING provides a unified framework for fast, scalable and accurate prediction & design of materials.</p>\n\n\n<p align=\"center\"> <a href=\"url\"><img src=\"https://github.com/sbanik2/CASTING/blob/main/figs/MCTS.png?raw=true\" align=\"center\" height=\"500\" width=\"600\" ></a> </p>\n\n\n<p align=\"right\">(<a href=\"#readme-top\">back to top</a>)</p>\n\n## Prerequisites\nThis package requires:\n- [scipy](https://scipy.org/)\n- [LAMMPS](https://www.lammps.org/)\n- [pymatgen](https://pymatgen.org/)\n- [pandas](https://pandas.pydata.org/)\n- [numpy](https://numpy.org/)\n- [networkx](https://networkx.org/)\n- [ase](https://wiki.fysik.dtu.dk/ase/#)\n\n<p align=\"right\">(<a href=\"#readme-top\">back to top</a>)</p>\n\n## Installation\n\n### Manual Installation\n[Install the anaconda package](https://docs.anaconda.com/anaconda/install/). Then, \n```\nconda env create --name CASTING\nconda activate CASTING\ngit clone https://github.com/sbanik2/CASTING.git\npip install -r requirements.txt\npython setup.py install\n```\n\n### Installation with pypi\n\n```\npip install CASTING\n\n```\n***The package requires python lammps binding to run. First, lammps package needs to be downloaded from [LAMMPS download](https://www.lammps.org/download.html) and compiled. The instructions on python integration can be found here [LAMMPS-Python](https://docs.lammps.org/Python_install.html).\n\n<p align=\"right\">(<a href=\"#readme-top\">back to top</a>)</p>\n\n### Running the code\n<p align=\"justify\"> First, all the parameters crystal (constrains), LAMMPS parameters (pair style, pair coefficient etc.) and the perturbation parameter need to be set.  The composition is given for e.g., a Au<2>Al<3> as \"composition\":{\"Au\":2,\"Al:3\"}. In a file (for e.g., RunOpt.py) we define, </p>\n\n\n``` python\nfrom CASTING.utilis import r_datafame,get_lattice\nfrom CASTING.MCTS import MCTS\nfrom CASTING.clusterfun import createRandomData\nfrom CASTING.lammpsEvaluate import LammpsEvaluator\nfrom CASTING.perturb import perturbate\n\n\n# In[6]:\n\nimport random\nimport numpy as np\n\nseed = 12\n\nrandom.seed(seed)\nnp.random.seed(seed)\n\n\n\n# In[9]:\n\n\nr_min = {\"Au-Au\":2}       # minimum allowed interatomic distance\nr_max = {\"Au-Au\":4}      # maximum allowed interatomic distance\nbox_dim = 50                  # box dimension \n\n#--------crystal constrains-----------\n\nconstrains = {\n    \"composition\":{\"Au\":1},\n    \"atoms\":13,\n    \"r_min\":r_datafame(r_min),\n    \"r_max\":r_datafame(r_max),\n    \"lattice\":get_lattice(box_dim),  \n    }\n\n\n\n\n#-------------perturbation------------\n\n\npt = {\n    'max_mutation': 0.05,  # mutation  in fraction of  box length\n}\n\n\n\n#-----------------lammps parameters-------------------\n\nlammps_par = {\n    'constrains':constrains,\n    'pair_style': \"pair_style eam\",\n    'pair_coeff': \"pair_coeff * * Au.eam\"   # Provide full path of potential file here\n}\n    \n```\n\nOnce the parameters are set, the evaluator (LAMMPS calculator) & the perturbator is to be initialized and a structure for root node is created.\n\n ``` python\n\nrootdata = createRandomData(constrains,multiplier= 10)\n\nperturb = perturbate(**pt). perturb\nevaluator = LammpsEvaluator(**lammps_par).evaluate \n\n```\n\nFinally, Call MCTS with all the hyperparameters added. Details of individual hyperparameters for the optimizer can be found here [Paper](https://doi.org/10.48550/arXiv.2212.12106).\n        \n ``` python\n        \nMCTS(\n    rootdata,\n    perturb ,\n    evaluator,\n    niterations=2000,\n    headexpand=10,\n    nexpand=3,\n    nsimulate=3,\n    nplayouts=10,\n    exploreconstant=1,\n    maxdepth=12,\n    a=0,\n    selected_node=0,\n)\n        \n```\n\nRun the code \n\n```\npython RunOpt.py \n```\n\nThe optimization produces a \"dumpfile.dat\" output containing all the crystal parameters and the energy values as the output. To extract the structures in either 'poscar' or 'cif' format, one can use the  'StructureWriter' module.\n\n ``` python\n \nfrom CASTING.writer import StructureWriter\n\nnum_to_write = 10 # number of stuctures to extract\nwriter = StructureWriter(\n                         \"dumpfile.dat\",\n                          outpath=\"structures\",\n                          objfile=\"energy.dat\",\n                          file_format=\"poscar\" # \"poscar\" or \"cif\"\n                          ) \nwriter.write( num_to_write, sort=True) # sort to arrange in increasing order of energy\n \n \n ```\nThis will extract 'num_to_write' number of structures in ascending order of objective. \n\n\n<p align=\"right\">(<a href=\"#readme-top\">back to top</a>)</p>\n\n## Optimization of Gold nanocluster\n\nAn example optimization of Gold (Au) nanocluster is given in \"example\" directory. We have used CASTING to optimize the already known global minima (Sutton-Chen) of 13 atom Au nanocluster (Icosahedral structure).  Details on additional examples can be found in [Paper](https://doi.org/10.48550/arXiv.2212.12106).\n\n<p align=\"center\"> <a href=\"url\"><img src=\"https://github.com/sbanik2/CASTING/blob/main/figs/sutton_chen.gif\" align=\"center\" height=\"200\" width=\"200\" ></a> </p>\n\n<p align=\"right\">(<a href=\"#readme-top\">back to top</a>)</p>\n\n## Carbon metastable polymorphs\n\nWe have also used CASTING to sample metastable polymorphs of Carbon(C). All the structures are then further relaxed with DFT. The unique polymorphs and their corresponding DFT energies have been provided in \u201cC_polymorphs\u201d directory.\n\n<p align=\"center\"> <a href=\"url\"><img src=\"https://github.com/sbanik2/CASTING/blob/main/figs/MetastableC.png\" align=\"center\" height=\"400\" width=\"500\" ></a> </p>\n\n<p align=\"right\">(<a href=\"#readme-top\">back to top</a>)</p>  \n\n## Citation\n```\n@article{banik2022continuous,\n  title={A Continuous Action Space Tree search for INverse desiGn (CASTING) Framework for Materials Discovery},\n  author={Banik, Suvo and Loefller, Troy and Manna, Sukriti and Srinivasan, Srilok and Darancet, Pierre and Chan, Henry and Hexemer, Alexander and Sankaranarayanan, Subramanian KRS},\n  journal={arXiv preprint arXiv:2212.12106},\n  year={2022}\n}\n```\n    \n<p align=\"right\">(<a href=\"#readme-top\">back to top</a>)</p>\n        \n## License\nCASTING is distributed under MIT License. See `LICENSE` for details.\n    \n    \n<p align=\"right\">(<a href=\"#readme-top\">back to top</a>)</p>  \n    \n<!--LINKS -->\n\n[colab-shield]: https://colab.research.google.com/assets/colab-badge.svg\n[colab-url]: https://colab.research.google.com/github/sbanik2/CASTING/blob/main/notebooks/Au_example_Ase.ipynb\n[release-shield]: https://img.shields.io/github/v/release/sbanik2/CASTING\n[license-shield]: https://img.shields.io/github/license/sbanik2/CASTING\n[license-url]: https://github.com/sbanik2/CASTING/blob/main/LICENSE\n[download-shield]: https://static.pepy.tech/badge/casting\n[download-url]: https://pepy.tech/project/casting\n[commit-shield]:https://img.shields.io/github/last-commit/sbanik2/CASTING\n[size-shield]: https://img.shields.io/github/languages/code-size/sbanik2/CASTING\n[DOI-shield]: https://img.shields.io/badge/DOI-doi.org/10.48550/arXiv.2212.12106-red\n[DOI-url]: https://doi.org/10.48550/arXiv.2212.12106\n    \n    \n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/sbanik2/CASTING",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "CASTING",
+            "package_url": "https://pypi.org/project/CASTING/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/CASTING/",
+            "project_urls": {
+                "Homepage": "https://github.com/sbanik2/CASTING"
+            },
+            "release_url": "https://pypi.org/project/CASTING/0.1.3/",
+            "requires_dist": [
+                "ase (==3.22.1)",
+                "mendeleev (==0.13.1)",
+                "networkx (==2.8.4)",
+                "numpy (==1.24.3)",
+                "pandas (==1.4.4)",
+                "pymatgen (==2023.2.22)",
+                "scipy (==1.9.1)",
+                "tqdm (==4.64.1)"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "A continuous action space tree search for inverse design (CASTING)",
+            "version": "0.1.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17957178,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "30a121b6a93abc65a6e2b5cdf6d351fb373db8f76487d4a464e43f0279e659b5",
+                    "md5": "d9758193e842fcdce1105ce43b56e6d9",
+                    "sha256": "d545df990cd5afa8e298ef5ee9c7e702b99e45c71ca3578af212c8537d3be7b3"
+                },
+                "downloads": -1,
+                "filename": "CASTING-0.1.3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "d9758193e842fcdce1105ce43b56e6d9",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 19945,
+                "upload_time": "2023-05-03T13:44:05",
+                "upload_time_iso_8601": "2023-05-03T13:44:05.707494Z",
+                "url": "https://files.pythonhosted.org/packages/30/a1/21b6a93abc65a6e2b5cdf6d351fb373db8f76487d4a464e43f0279e659b5/CASTING-0.1.3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "8fe42c768af3ce6dc76760b0a76b9fdff649f827e0712da47ac2c9b5fa1fc42a",
+                    "md5": "b4c2f47203bd0771a9204aa18001f544",
+                    "sha256": "782a9002db90d7084cc5ae8f6365e981ec68e98dbe5d5fec5254fbfa66deee42"
+                },
+                "downloads": -1,
+                "filename": "CASTING-0.1.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "b4c2f47203bd0771a9204aa18001f544",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 1864677,
+                "upload_time": "2023-05-03T13:44:08",
+                "upload_time_iso_8601": "2023-05-03T13:44:08.358981Z",
+                "url": "https://files.pythonhosted.org/packages/8f/e4/2c768af3ce6dc76760b0a76b9fdff649f827e0712da47ac2c9b5fa1fc42a/CASTING-0.1.3.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

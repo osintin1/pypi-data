@@ -41,7 +41,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17948465,
+        "last_serial": 17960227,
         "urls": [
             {
                 "comment_text": "",
@@ -97,7 +97,6 @@
                 "License :: OSI Approved :: MIT License",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "# SLurm on vACC (slacc)\n\nIsn't it fun to have a nice GPU in your computer and to experiment left and right? You just write some python scripts\nand then launch them on your machine, wait, repeat. Life is simple and beautiful.\n\nBut then inevitably it happens. You want to launch more scripts, longer scripts, test different parameters... \n\nSo you have to go beg the SLURM gods to assist you. Evil bash scripts start popping up everywhere, requesting resources, launching jobs....\n\nWouldn't it be nice to just abstract that pain away and remain in python land?\n\n## Prerequisites\n\n- Python >=3.9\n\nThat's it.\n\n# How does it work?\n\nThis package provides 2 commands you can use in your CLI: `slaunch` and `sinteract`\n\n## 1. Slurm LAUNCH (slaunch)\n\nThis is a wrapper around SLURM's [sbatch](https://slurm.schedmd.com/sbatch.html) to make it way easier to launch python scripts asynchronously.\n\nLet's say that you wanted to run this locally:\n```shell\npython train.py --lr=0.01\n```\nthen to run the same thing on the VACC you would do:\n```shell\nslaunch dggpu train.py --lr=0.01\n```\n_Voil\u00e1!_ Behind the scenes, the launcher created an sbatch script for you like:\n```bash\n#!/bin/bash\n#SBATCH --time=2-00:00:00\n#SBATCH --account=myproject\n#SBATCH --partition=big-gpu\n#SBATCH --gres=gpu:p100:1\n#SBATCH --mem=8000\n\nconda activate dgenv\npython train.py --lr=0.01\n```\nEven better, it makes it easy to launch parameter sweeps as a job array.\n\n### Basic Usage\n\n> :warning: Before using, you will want to edit the resource configs to suit your needs, as described in the\n> [Resource Configurations](#resource-configurations) section.\n\nIt has the following syntax:\n```\nslaunch [-h] [--runs RUNS] [--argfile ARGFILE] [-d RUNDIR] [-f] RESOURCE SCRIPT [FLAGS...]\n```\nwhere `RESOURCE` is the name of an entry in `config.json` (see [Resource Configurations](#resource-configurations)).\n\nFor example, this:\n```shell\nslaunch dggpu --runs 2 dummy_gpujob.py --epochs=10 --seed 42\n```\nis equivalent to twice running this:\n```shell\npython dummy_gpujob.py --epochs=10 --seed 42\n```\n\nFurthermore, any settings accepted by `sbatch` may be supplied on the command line. These will override the options\nprovided by `config.json`, if given. For example, to add more memory to an existing config:\n```\nslaunch dggpu --mem=64G dummy_gpujob.py\n```\n**NOTE:** The `sbatch` options must be supplied in `--name=value` fashion, with an\nequals sign; `--name value` will *not* parse correctly. For any other options\n(including script flags) you may use either format.\n\n### Run Directory\n\nA recommended way to run jobs is to isolate different experiments to separate folders, so that all the related inputs\nand outputs can be stored in one place. This can be done with the `-d/--rundir` option:\n```shell\nslaunch dggpu -d experiments/my-next-breakthrough train.py --config train-config.yml\n```\nIn this example, all experiments are stored in the corresponding repository, under the `experiments/` folder. The script\nruns in this folder, where it expects to find a `train-config.yml` file. Say the script also generates a\n`trained_models/` folder. After running, the experiment folder will contain:\n```\n__ experiments/my-next-breakthrough/\n  |__ train-config.yml\n  |__ slurm-12345678.out\n  |__ trained_models/\n     |__ model-1000.pth\n     |__ model-2000.pth\n     |__ ...\n```\n\n### Running Job Arrays\n\n`slaunch` can also run a full sweep of jobs as a single job array.\n\n> :warning: **Careful with program outputs when using this method!**\n> For instance, if you are running a program that outputs trained models, you will need to supply each run with a\n> separate output folder so they don't overwrite each other.\n\nYou can run the same exact job N times via `-r/--runs`:\n```shell\nslaunch bdgpu --runs 10 eval.py --lr 0.01 --num-steps 10 --plots\n```\n\nOr you can run a sweep over different configurations, by providing each configuration as a separate line in an\n\"argfile\":\n```shell\nslaunch bdgpu --argfile sweep-args.txt eval.py --plots\n```\nWhere the argfile looks something like this:\n```\n--lr 0.1  --num-steps 10 -o outfile1\n--lr 0.1  --num-steps 15 -o outfile2\n--lr 0.03 --num-steps 10 -o outfile3\n--lr 0.03 --num-steps 15 -o outfile4\n--lr 0.01 --num-steps 10 -o outfile5\n--lr 0.01 --num-steps 15 -o outfile6\n```\n\nIn both cases, these will be launched as a [job array](https://slurm.schedmd.com/job_array.html), making it easier to\ntrack and manage the jobs as a single unit.\n\n## 2. Slurm INTERACTive (sinteract)\n\nThis is a wrapper around `srun` that allows you to easily start an interactive shell on one of the SLURM nodes.  The\nshell you launch will be granted the resources of the [resource config](#resource-configurations) you provide.\n\nExample:\n```shell\nsinteract bdgpu\n```\n\n## [Resource Configurations](config.json)\n\nThe `config.json` file provides a list of pre-defined resource configurations which the user can use to launch their\nSLURM jobs. This is helpful to save sets of `sbatch` or `srun` options that the user uses frequently. **You will want\nto edit these to add your own configurations which are suitable for your common tasks.** However, if you need to change\nminor things like the amount of memory from job to job, you can always adjust that on the command line.\n\nEach entry has the following structure:\n```\n{\n  NAME:\n    ENV\n    RESOURCES\n}\n```\n\n- `NAME`: a unique identifier for the config.\n- `ENV`: specifies how to set up virtual environments, if needed.\n- `RESOURCES`: specifies the options to pass to SLURM.\n\nHere is a concrete example:\n```json\n{\n  \"dggpu\": {\n    \"env\": \"conda activate dgenv\",\n    \"resources\": {\n      \"time\": \"2-00:00:00\",\n      \"partition\": \"big-gpu\",\n      \"cpus-per-task\": 1,\n      \"gres\": \"gpu:v100:1\",\n      \"mem\": \"8000\"\n    }\n  },\n  \"bigcpu\": {\n    \"env\": \"conda activate myenv\",\n    \"device\": \"cpu\",\n    \"resources\": {\n      \"time\": \"1-00:00:00\",\n      \"partition\": \"bluemoon\",\n      \"cpus-per-task\": 1,\n      \"mem\": \"8000\"\n    }\n  }\n}\n```\nA few default configurations are provided as part of the package [config.json](src/slacc/config.json).\n\n:warning: To customize the resources and environment names the launcher scripts look at (increasing priority):\n1. (LOW PRIO) [Defaults](src/slacc/config.json) provided by slacc \n2. (MED PRIO) $HOME/.config/slacc/config.json (User)\n3. (MAX PRIO) Directory containing the job script. (e.g. when launching ~/scratch/agi_net/train.py looks for ~/scratch/agi_net/config.json)\n\nSo use $HOME/.config/slacc/config.json for user wide settings and the job's folders for fine grained settings.\n\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -131,7 +130,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17948465,
+        "last_serial": 17960227,
         "urls": [
             {
                 "comment_text": "",
@@ -172,6 +171,96 @@
                 "upload_time": "2023-05-02T23:48:35",
                 "upload_time_iso_8601": "2023-05-02T23:48:35.021473Z",
                 "url": "https://files.pythonhosted.org/packages/b1/92/28381f7d9b1710697b0ef22ae148318bcc94c0ada1998e63bfc82a1d8523/slacc-1.0.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.0.1": {
+        "info": {
+            "author": "",
+            "author_email": "lfrati <lfrati.github@gmail.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "<p align=\"center\">\n    <img width=\"250\" alt=\"Logo\" src=\"https://user-images.githubusercontent.com/3115640/235985755-b6473e9f-e997-46a4-ac5b-b1333ab35470.png\">\n</p>\n\n# SLurm on vACC (slacc)\n> \"Take it easy and let the VACC work for you.\" - the wise grad\n\nIsn't it fun to have a nice GPU in your computer and to experiment left and right? You just write some python scripts\nand then launch them on your machine, wait, repeat. Life is simple and beautiful.\n\nBut then inevitably it happens. You want to launch more scripts, longer scripts, test different parameters... \n\nSo you have to go beg the SLURM gods to assist you. Evil bash scripts start popping up everywhere, requesting resources, launching jobs....\n\nWouldn't it be nice to just abstract that pain away and remain in python land?\n\n## Prerequisites\n\n- Python >=3.9\n\nThat's it.\n\n## Installation\n### Step 1. Get the thing.\n```bash\npip install slacc\n```\n>Note: as of May 2023 the `spack` software on the VACC doesn't like python 3.10, so it is suggested to install `slacc` in a 3.9 environment\n>If you are using `conda` (recommended) you can use grab an installer for 3.9 from the [miniconda](https://docs.conda.io/en/latest/miniconda.html) page\n>\n><img src=\"https://user-images.githubusercontent.com/3115640/235952021-489cc26a-d153-46be-89d4-3e3500ca1ac1.png\" width=\"600\"/>\n>\n>This will make your conda `base` environment use python 3.9\n>\n>Alternatively you can create an custom environment with `conda create -n <pick_a_name> python=3.9` and run `pip install slacc` in this new environment.\n\n### Step 2. Customize the thing.\nAfter installing `slacc` (it should be quick since there are no dependencies) run \n```bash\nsconfig\n```\nThis will copy the default `config.json` file that ships with `slacc`, to `$HOME/.config/slacc/config.json`.\nFeel free to customize it to your needs, or keep it as it is. The most important thing is to make sure that the conda environments declared in config.json\n```\n{ \n  \"dggpu\":{ \"env\": \"conda activate dgenv\",\n            ...\n}\n```\nmatch the ones available on your system.\n\n# How does it work?\n\nThis package provides 2 main commands you can use in your CLI: `slaunch` and `sinteract` (plus `sconfig` to make a copy default configs)\n\n## 1. Slurm LAUNCH (slaunch)\n\nThis is a wrapper around SLURM's [sbatch](https://slurm.schedmd.com/sbatch.html) to make it way easier to launch python scripts asynchronously.\n\nLet's say that you wanted to run this locally:\n```shell\npython train.py --lr=0.01\n```\nthen to run the same thing on the VACC you would do:\n```shell\nslaunch dggpu train.py --lr=0.01\n```\n_Voil\u00e1!_ Behind the scenes, the launcher created an sbatch script for you like:\n```bash\n#!/bin/bash\n#SBATCH --time=2-00:00:00\n#SBATCH --account=myproject\n#SBATCH --partition=big-gpu\n#SBATCH --gres=gpu:p100:1\n#SBATCH --mem=8000\n\nconda activate dgenv\npython train.py --lr=0.01\n```\nEven better, it makes it easy to launch parameter sweeps as a job array.\n\n### Basic Usage\n\n> :warning: Before using, you will want to edit the resource configs to suit your needs, as described in the\n> [Resource Configurations](#resource-configurations) section.\n\nIt has the following syntax:\n```\nslaunch [-h] [--runs RUNS] [--argfile ARGFILE] [-d RUNDIR] [-f] RESOURCE SCRIPT [FLAGS...]\n```\nwhere `RESOURCE` is the name of an entry in `config.json` (see [Resource Configurations](#resource-configurations)).\n\nFor example, this:\n```shell\nslaunch dggpu --runs 2 dummy_gpujob.py --epochs=10 --seed 42\n```\nis equivalent to twice running this:\n```shell\npython dummy_gpujob.py --epochs=10 --seed 42\n```\n\nFurthermore, any settings accepted by `sbatch` may be supplied on the command line. These will override the options\nprovided by `config.json`, if given. For example, to add more memory to an existing config:\n```\nslaunch dggpu --mem=64G dummy_gpujob.py\n```\n**NOTE:** The `sbatch` options must be supplied in `--name=value` fashion, with an\nequals sign; `--name value` will *not* parse correctly. For any other options\n(including script flags) you may use either format.\n\n### Run Directory\n\nA recommended way to run jobs is to isolate different experiments to separate folders, so that all the related inputs\nand outputs can be stored in one place. This can be done with the `-d/--rundir` option:\n```shell\nslaunch dggpu -d experiments/my-next-breakthrough train.py --config train-config.yml\n```\nIn this example, all experiments are stored in the corresponding repository, under the `experiments/` folder. The script\nruns in this folder, where it expects to find a `train-config.yml` file. Say the script also generates a\n`trained_models/` folder. After running, the experiment folder will contain:\n```\n__ experiments/my-next-breakthrough/\n  |__ train-config.yml\n  |__ slurm-12345678.out\n  |__ trained_models/\n     |__ model-1000.pth\n     |__ model-2000.pth\n     |__ ...\n```\n\n### Running Job Arrays\n\n`slaunch` can also run a full sweep of jobs as a single job array.\n\n> :warning: **Careful with program outputs when using this method!**\n> For instance, if you are running a program that outputs trained models, you will need to supply each run with a\n> separate output folder so they don't overwrite each other.\n\nYou can run the same exact job N times via `-r/--runs`:\n```shell\nslaunch bdgpu --runs 10 eval.py --lr 0.01 --num-steps 10 --plots\n```\n\nOr you can run a sweep over different configurations, by providing each configuration as a separate line in an\n\"argfile\":\n```shell\nslaunch bdgpu --argfile sweep-args.txt eval.py --plots\n```\nWhere the argfile looks something like this:\n```\n--lr 0.1  --num-steps 10 -o outfile1\n--lr 0.1  --num-steps 15 -o outfile2\n--lr 0.03 --num-steps 10 -o outfile3\n--lr 0.03 --num-steps 15 -o outfile4\n--lr 0.01 --num-steps 10 -o outfile5\n--lr 0.01 --num-steps 15 -o outfile6\n```\n\nIn both cases, these will be launched as a [job array](https://slurm.schedmd.com/job_array.html), making it easier to\ntrack and manage the jobs as a single unit.\n\n## 2. Slurm INTERACTive (sinteract)\n\nThis is a wrapper around `srun` that allows you to easily start an interactive shell on one of the SLURM nodes.  The\nshell you launch will be granted the resources of the [resource config](#resource-configurations) you provide.\n\nExample:\n```shell\nsinteract bdgpu\n```\n\n## [Resource Configurations](config.json)\n\nThe `config.json` file provides a list of pre-defined resource configurations which the user can use to launch their\nSLURM jobs. This is helpful to save sets of `sbatch` or `srun` options that the user uses frequently. **You will want\nto edit these to add your own configurations which are suitable for your common tasks.** However, if you need to change\nminor things like the amount of memory from job to job, you can always adjust that on the command line.\n\nEach entry has the following structure:\n```\n{\n  NAME:\n    ENV\n    RESOURCES\n}\n```\n\n- `NAME`: a unique identifier for the config.\n- `ENV`: specifies how to set up virtual environments, if needed.\n- `RESOURCES`: specifies the options to pass to SLURM.\n\nHere is a concrete example:\n```json\n{\n  \"dggpu\": {\n    \"env\": \"conda activate dgenv\",\n    \"resources\": {\n      \"time\": \"2-00:00:00\",\n      \"partition\": \"big-gpu\",\n      \"cpus-per-task\": 1,\n      \"gres\": \"gpu:v100:1\",\n      \"mem\": \"8000\"\n    }\n  },\n  \"bigcpu\": {\n    \"env\": \"conda activate myenv\",\n    \"device\": \"cpu\",\n    \"resources\": {\n      \"time\": \"1-00:00:00\",\n      \"partition\": \"bluemoon\",\n      \"cpus-per-task\": 1,\n      \"mem\": \"8000\"\n    }\n  }\n}\n```\nA few default configurations are provided as part of the package [config.json](src/slacc/config.json).\n\n:warning: There are 3 places where slacc looks for configuration files. If the same resource is defined in multiple places, only the one with highest priority is considered:\n1. (LOW PRIO) [Defaults](src/slacc/config.json) provided by slacc (use this if you are happy with the defaults and don't want to change anything)\n2. (MED PRIO) $HOME/.config/slacc/config.json (use this if you want to create custom configurations that you are planning to re-use)\n3. (MAX PRIO) Directory containing the job script, e.g. when launching ~/scratch/agi_net/train.py looks for ~/scratch/agi_net/config.json (use this if you want each individual run to use a different configuration)\n\n:hammer_and_wrench: Use `sconfig` to copy the default settings to $HOME/.config/slacc/config.json.\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "slurm,hpc",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "slacc",
+            "package_url": "https://pypi.org/project/slacc/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/slacc/",
+            "project_urls": {
+                "Homepage": "https://github.com/lfrati/slacc"
+            },
+            "release_url": "https://pypi.org/project/slacc/1.0.1/",
+            "requires_dist": [
+                "bumpver ; extra == 'dev'",
+                "pip-tools ; extra == 'dev'",
+                "build ; extra == 'dev'",
+                "twine ; extra == 'dev'"
+            ],
+            "requires_python": ">=3.9",
+            "summary": "Easily control SLURM from python on the VACC.",
+            "version": "1.0.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17960227,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "dbb0210177a8d02695615430e4c80e3530d3c014e7cd81c80dd1ee8d2d4d977e",
+                    "md5": "f4280da5c62f6d145edf1f87eb570d05",
+                    "sha256": "96ba966f9080cbe70165c193ec2eea2ea42c738bd373a058aaa24e3b41206d67"
+                },
+                "downloads": -1,
+                "filename": "slacc-1.0.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "f4280da5c62f6d145edf1f87eb570d05",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9",
+                "size": 10464,
+                "upload_time": "2023-05-03T17:12:31",
+                "upload_time_iso_8601": "2023-05-03T17:12:31.341490Z",
+                "url": "https://files.pythonhosted.org/packages/db/b0/210177a8d02695615430e4c80e3530d3c014e7cd81c80dd1ee8d2d4d977e/slacc-1.0.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "0d63add372e9dc71f35f9673be994d2e591458734f61c7b7743a316925b18102",
+                    "md5": "7170f38fa57748f355ee48b98391857c",
+                    "sha256": "15681efb7ae1eecb9091637cdced31ecc6891fc8f80e5326943559785e034cef"
+                },
+                "downloads": -1,
+                "filename": "slacc-1.0.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "7170f38fa57748f355ee48b98391857c",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9",
+                "size": 13187,
+                "upload_time": "2023-05-03T17:12:33",
+                "upload_time_iso_8601": "2023-05-03T17:12:33.534882Z",
+                "url": "https://files.pythonhosted.org/packages/0d/63/add372e9dc71f35f9673be994d2e591458734f61c7b7743a316925b18102/slacc-1.0.1.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

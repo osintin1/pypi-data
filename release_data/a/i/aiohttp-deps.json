@@ -52,7 +52,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17847635,
+        "last_serial": 17964719,
         "urls": [
             {
                 "comment_text": "",
@@ -152,7 +152,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17847635,
+        "last_serial": 17964719,
         "urls": [
             {
                 "comment_text": "",
@@ -252,7 +252,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17847635,
+        "last_serial": 17964719,
         "urls": [
             {
                 "comment_text": "",
@@ -320,7 +320,6 @@
                 "Topic :: System :: Networking",
                 "Typing :: Typed"
             ],
-            "description": "[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/aiohttp-deps?style=for-the-badge)](https://pypi.org/project/aiohttp-deps/)\n[![PyPI](https://img.shields.io/pypi/v/aiohttp-deps?style=for-the-badge)](https://pypi.org/project/aiohttp-deps/)\n[![PyPI - Downloads](https://img.shields.io/pypi/dm/aiohttp-deps?style=for-the-badge)](https://pypistats.org/packages/aiohttp-deps)\n\n# AioHTTP deps\n\n\nThis project was initially created to show the abillities of [taskiq-dependencies](https://github.com/taskiq-python/taskiq-dependencies) project, which is used by [taskiq](https://github.com/taskiq-python/taskiq) to provide you with the best experience of sending distributed tasks.\n\nThis project adds [FastAPI](https://github.com/tiangolo/fastapi)-like dependency injection to your [AioHTTP](https://github.com/aio-libs/aiohttp) application.\n\nTo start using dependency injection, just initialize the injector.\n\n```python\nfrom aiohttp import web\nfrom aiohttp_deps import init as deps_init\n\n\napp = web.Application()\n\n\napp.on_startup.append(deps_init)\n\nweb.run_app(app)\n\n```\n\n\nIf you use mypy, then we have a custom router with propper types.\n\n\n```python\nfrom aiohttp import web\nfrom aiohttp_deps import init as deps_init\nfrom aiohttp_deps import Router\n\nrouter = Router()\n\n\n@router.get(\"/\")\nasync def handler():\n    return web.json_response({})\n\n\napp = web.Application()\n\napp.router.add_routes(router)\n\napp.on_startup.append(deps_init)\n\nweb.run_app(app)\n\n```\n\nAlso, you can nest routers with prefixes,\n\n```python\napi_router = Router()\n\nmemes_router = Router()\n\nmain_router = Router()\n\nmain_router.add_routes(api_router, prefix=\"/api\")\nmain_router.add_routes(memes_router, prefix=\"/memes\")\n```\n\n\n## Default dependencies\n\nBy default this library provides only two injectables. `web.Request` and `web.Application`.\n\n```python\n\nasync def handler(app: web.Application = Depends()): ...\n\nasync def handler2(request: web.Request = Depends()): ...\n\n```\n\nIt's super useful, because you can use these dependencies in\nany other dependency. Here's a more complex example of how you can use this library.\n\n\n```python\nfrom aiohttp_deps import Router, Depends\nfrom aiohttp import web\n\nrouter = Router()\n\n\nasync def get_db_session(app: web.Application = Depends()):\n    async with app[\"db\"] as sess:\n        yield sess\n\n\nclass MyDAO:\n    def __init__(self, session=Depends(get_db_session)):\n        self.session = session\n\n    async def get_objects(self) -> list[object]:\n        return await self.session.execute(\"SELECT 1\")\n\n\n@router.get(\"/\")\nasync def handler(db_session: MyDAO = Depends()):\n    objs = await db_session.get_objects()\n    return web.json_response({\"objects\": objs})\n\n```\n\nIf you do something like this, you would never think about initializing your DAO. You can just inject it and that's it.\n\n\n# Built-in dependencies\n\nThis library also provides you with some default dependencies that can help you in building the best web-service.\n\n## Json\n\nTo parse json, create a pydantic model and add a dependency to your handler.\n\n\n```python\nfrom aiohttp import web\nfrom pydantic import BaseModel\nfrom aiohttp_deps import Router, Json, Depends\n\nrouter = Router()\n\n\nclass UserInfo(BaseModel):\n    name: str\n\n\n@router.post(\"/users\")\nasync def new_data(user: UserInfo = Depends(Json())):\n    return web.json_response({\"user\": user.dict()})\n\n```\n\nThis dependency automatically validates data and send\nerrors if the data doesn't orrelate with schema or body is not a valid json.\n\nIf you want to make this data optional, just mark it as optional.\n\n```python\n@router.post(\"/users\")\nasync def new_data(user: Optional[UserInfo] = Depends(Json())):\n    if user is None:\n        return web.json_response({\"user\": None})\n    return web.json_response({\"user\": user.dict()})\n\n```\n\n## Headers\n\nYou can get and validate headers using `Header` dependency.\n\nLet's try to build simple example for authorization.\n\n```python\nfrom aiohttp_deps import Router, Header, Depends\nfrom aiohttp import web\n\nrouter = Router()\n\n\ndef decode_token(authorization: str = Depends(Header())) -> str:\n    if authorization == \"secret\":\n        # Let's pretend that here we\n        # decode our token.\n        return authorization\n    raise web.HTTPUnauthorized()\n\n\n@router.get(\"/secret_data\")\nasync def new_data(token: str = Depends(decode_token)) -> web.Response:\n    return web.json_response({\"secret\": \"not a secret\"})\n\n```\n\nAs you can see, header name to parse is equal to the\nname of a parameter that introduces Header dependency.\n\nIf you want to use some name that is not allowed in python, or just want to have different names, you can use alias. Like this:\n\n```python\ndef decode_token(auth: str = Depends(Header(alias=\"Authorization\"))) -> str:\n```\n\nHeaders can also be parsed to types. If you want a header to be parsed as int, just add the typehint.\n\n```python\ndef decode_token(meme_id: int = Depends(Header())) -> str:\n```\n\nIf you want to get list of values of one header, use parameter `multiple=True`.\n\n```python\ndef decode_token(meme_id: list[int] = Depends(Header(multiple=True))) -> str:\n\n```\n\nAnd, of course, you can provide this dependency with default value if the value from user cannot be parsed for some reason.\n\n```python\ndef decode_token(meme_id: str = Depends(Header(default=\"not-a-secret\"))) -> str:\n```\n\n\n# Queries\n\nYou can depend on `Query` to get and parse query parameters.\n\n```python\nfrom aiohttp_deps import Router, Query, Depends\nfrom aiohttp import web\n\nrouter = Router()\n\n\n@router.get(\"/shop\")\nasync def shop(item_id: str = Depends(Query())) -> web.Response:\n    return web.json_response({\"id\": item_id})\n\n```\n\nthe name of the parameter is the same as the name of function parameter.\n\nThe Query dependency is acually the same as the Header dependency, so everything about the `Header` dependency also applies to `Query`.\n\n## Views\n\nIf you use views as handlers, please use View class from `aiohttp_deps`, otherwise the magic won't work.\n\n```python\nfrom aiohttp_deps import Router, View, Depends\nfrom aiohttp import web\n\nrouter = Router()\n\n\n@router.view(\"/view\")\nclass MyView(View):\n    async def get(self, app: web.Application = Depends()):\n        return web.json_response({\"app\": str(app)})\n\n```\n\n\n## Forms\n\nNow you can easiy get and validate form data from your request.\nTo make the magic happen, please add `arbitrary_types_allowed` to the config of your model.\n\n\n```python\nfrom pydantic import BaseModel\nfrom aiohttp_deps import Router, Depends, Form\nfrom aiohttp import web\n\nrouter = Router()\n\n\nclass MyForm(BaseModel):\n    id: int\n    file: web.FileField\n\n    class Config:\n        arbitrary_types_allowed = True\n\n\n@router.post(\"/\")\nasync def handler(my_form: MyForm = Depends(Form())):\n    with open(\"my_file\", \"wb\") as f:\n        f.write(my_form.file.file.read())\n    return web.json_response({\"id\": my_form.id})\n\n```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -353,7 +352,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17847635,
+        "last_serial": 17964719,
         "urls": [
             {
                 "comment_text": "",
@@ -394,6 +393,107 @@
                 "upload_time": "2023-04-25T10:55:02",
                 "upload_time_iso_8601": "2023-04-25T10:55:02.370694Z",
                 "url": "https://files.pythonhosted.org/packages/7c/3e/7685881815d431b2a5702a5fa238f12ed5e410c3df8757343c375664eefe/aiohttp_deps-0.1.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.4": {
+        "info": {
+            "author": "Taskiq team",
+            "author_email": "taskiq@no-reply.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "Intended Audience :: Developers",
+                "License :: Other/Proprietary License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: System :: Networking",
+                "Typing :: Typed"
+            ],
+            "description": "[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/aiohttp-deps?style=for-the-badge)](https://pypi.org/project/aiohttp-deps/)\n[![PyPI](https://img.shields.io/pypi/v/aiohttp-deps?style=for-the-badge)](https://pypi.org/project/aiohttp-deps/)\n[![PyPI - Downloads](https://img.shields.io/pypi/dm/aiohttp-deps?style=for-the-badge)](https://pypistats.org/packages/aiohttp-deps)\n\n# AioHTTP deps\n\n\nThis project was initially created to show the abillities of [taskiq-dependencies](https://github.com/taskiq-python/taskiq-dependencies) project, which is used by [taskiq](https://github.com/taskiq-python/taskiq) to provide you with the best experience of sending distributed tasks.\n\nThis project adds [FastAPI](https://github.com/tiangolo/fastapi)-like dependency injection to your [AioHTTP](https://github.com/aio-libs/aiohttp) application.\n\nTo start using dependency injection, just initialize the injector.\n\n```python\nfrom aiohttp import web\nfrom aiohttp_deps import init as deps_init\n\n\napp = web.Application()\n\n\napp.on_startup.append(deps_init)\n\nweb.run_app(app)\n\n```\n\n\nIf you use mypy, then we have a custom router with propper types.\n\n\n```python\nfrom aiohttp import web\nfrom aiohttp_deps import init as deps_init\nfrom aiohttp_deps import Router\n\nrouter = Router()\n\n\n@router.get(\"/\")\nasync def handler():\n    return web.json_response({})\n\n\napp = web.Application()\n\napp.router.add_routes(router)\n\napp.on_startup.append(deps_init)\n\nweb.run_app(app)\n\n```\n\nAlso, you can nest routers with prefixes,\n\n```python\napi_router = Router()\n\nmemes_router = Router()\n\nmain_router = Router()\n\nmain_router.add_routes(api_router, prefix=\"/api\")\nmain_router.add_routes(memes_router, prefix=\"/memes\")\n```\n\n## Swagger\n\nIf you use dependencies in you handlers, we can easily generate swagger for you.\nWe have some limitations:\n1. We don't support string type annotation for detecting required parameters in openapi. Like `a: \"Optional[int]\"`.\n2. We don't have support for 3.10 style Option annotations. E.G. `int | None`\n\nWe will try to fix these limitations later.\n\nTo enable swagger, just add it to your startup.\n\n```python\nfrom aiohttp_deps import init, setup_swagger\n\napp = web.Application()\n\napp.on_startup.extend([init, setup_swagger()])\n```\n\n\n## Default dependencies\n\nBy default this library provides only two injectables. `web.Request` and `web.Application`.\n\n```python\n\nasync def handler(app: web.Application = Depends()): ...\n\nasync def handler2(request: web.Request = Depends()): ...\n\n```\n\nIt's super useful, because you can use these dependencies in\nany other dependency. Here's a more complex example of how you can use this library.\n\n\n```python\nfrom aiohttp_deps import Router, Depends\nfrom aiohttp import web\n\nrouter = Router()\n\n\nasync def get_db_session(app: web.Application = Depends()):\n    async with app[\"db\"] as sess:\n        yield sess\n\n\nclass MyDAO:\n    def __init__(self, session=Depends(get_db_session)):\n        self.session = session\n\n    async def get_objects(self) -> list[object]:\n        return await self.session.execute(\"SELECT 1\")\n\n\n@router.get(\"/\")\nasync def handler(db_session: MyDAO = Depends()):\n    objs = await db_session.get_objects()\n    return web.json_response({\"objects\": objs})\n\n```\n\nIf you do something like this, you would never think about initializing your DAO. You can just inject it and that's it.\n\n\n# Built-in dependencies\n\nThis library also provides you with some default dependencies that can help you in building the best web-service.\n\n## Json\n\nTo parse json, create a pydantic model and add a dependency to your handler.\n\n\n```python\nfrom aiohttp import web\nfrom pydantic import BaseModel\nfrom aiohttp_deps import Router, Json, Depends\n\nrouter = Router()\n\n\nclass UserInfo(BaseModel):\n    name: str\n\n\n@router.post(\"/users\")\nasync def new_data(user: UserInfo = Depends(Json())):\n    return web.json_response({\"user\": user.dict()})\n\n```\n\nThis dependency automatically validates data and send\nerrors if the data doesn't orrelate with schema or body is not a valid json.\n\nIf you want to make this data optional, just mark it as optional.\n\n```python\n@router.post(\"/users\")\nasync def new_data(user: Optional[UserInfo] = Depends(Json())):\n    if user is None:\n        return web.json_response({\"user\": None})\n    return web.json_response({\"user\": user.dict()})\n\n```\n\n## Headers\n\nYou can get and validate headers using `Header` dependency.\n\nLet's try to build simple example for authorization.\n\n```python\nfrom aiohttp_deps import Router, Header, Depends\nfrom aiohttp import web\n\nrouter = Router()\n\n\ndef decode_token(authorization: str = Depends(Header())) -> str:\n    if authorization == \"secret\":\n        # Let's pretend that here we\n        # decode our token.\n        return authorization\n    raise web.HTTPUnauthorized()\n\n\n@router.get(\"/secret_data\")\nasync def new_data(token: str = Depends(decode_token)) -> web.Response:\n    return web.json_response({\"secret\": \"not a secret\"})\n\n```\n\nAs you can see, header name to parse is equal to the\nname of a parameter that introduces Header dependency.\n\nIf you want to use some name that is not allowed in python, or just want to have different names, you can use alias. Like this:\n\n```python\ndef decode_token(auth: str = Depends(Header(alias=\"Authorization\"))) -> str:\n```\n\nHeaders can also be parsed to types. If you want a header to be parsed as int, just add the typehint.\n\n```python\ndef decode_token(meme_id: int = Depends(Header())) -> str:\n```\n\nIf you want to get list of values of one header, use parameter `multiple=True`.\n\n```python\ndef decode_token(meme_id: list[int] = Depends(Header(multiple=True))) -> str:\n\n```\n\nAnd, of course, you can provide this dependency with default value if the value from user cannot be parsed for some reason.\n\n```python\ndef decode_token(meme_id: str = Depends(Header(default=\"not-a-secret\"))) -> str:\n```\n\n\n## Queries\n\nYou can depend on `Query` to get and parse query parameters.\n\n```python\nfrom aiohttp_deps import Router, Query, Depends\nfrom aiohttp import web\n\nrouter = Router()\n\n\n@router.get(\"/shop\")\nasync def shop(item_id: str = Depends(Query())) -> web.Response:\n    return web.json_response({\"id\": item_id})\n\n```\n\nthe name of the parameter is the same as the name of function parameter.\n\nThe Query dependency is acually the same as the Header dependency, so everything about the `Header` dependency also applies to `Query`.\n\n## Views\n\nIf you use views as handlers, please use View class from `aiohttp_deps`, otherwise the magic won't work.\n\n```python\nfrom aiohttp_deps import Router, View, Depends\nfrom aiohttp import web\n\nrouter = Router()\n\n\n@router.view(\"/view\")\nclass MyView(View):\n    async def get(self, app: web.Application = Depends()):\n        return web.json_response({\"app\": str(app)})\n\n```\n\n\n## Forms\n\nNow you can easiy get and validate form data from your request.\nTo make the magic happen, please add `arbitrary_types_allowed` to the config of your model.\n\n\n```python\nfrom pydantic import BaseModel\nfrom aiohttp_deps import Router, Depends, Form\nfrom aiohttp import web\n\nrouter = Router()\n\n\nclass MyForm(BaseModel):\n    id: int\n    file: web.FileField\n\n    class Config:\n        arbitrary_types_allowed = True\n\n\n@router.post(\"/\")\nasync def handler(my_form: MyForm = Depends(Form())):\n    with open(\"my_file\", \"wb\") as f:\n        f.write(my_form.file.file.read())\n    return web.json_response({\"id\": my_form.id})\n\n```\n\n## Path\n\nIf you have path variables, you can also inject them in your handler.\n\n```python\nfrom aiohttp_deps import Router, Path, Depends\nfrom aiohttp import web\n\nrouter = Router()\n\n\n@router.get(\"/view/{var}\")\nasync def my_handler(var: str = Depends(Path())):\n    return web.json_response({\"var\": var})\n\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/taskiq-python/aiohttp-deps",
+            "keywords": "aiohttp,taskiq-dependencies",
+            "license": "LICENSE",
+            "maintainer": "Taskiq team",
+            "maintainer_email": "taskiq@no-reply.com",
+            "name": "aiohttp-deps",
+            "package_url": "https://pypi.org/project/aiohttp-deps/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/aiohttp-deps/",
+            "project_urls": {
+                "Homepage": "https://github.com/taskiq-python/aiohttp-deps"
+            },
+            "release_url": "https://pypi.org/project/aiohttp-deps/0.1.4/",
+            "requires_dist": [
+                "aiohttp (>=3,<4)",
+                "taskiq-dependencies (>=1,<2)",
+                "pydantic (>=1,<2)"
+            ],
+            "requires_python": ">=3.7,<4.0",
+            "summary": "Dependency injection for AioHTTP",
+            "version": "0.1.4",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17964719,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "91f291751c654a95c3a84b2a9935713af2cc806fafbaf04870b2e2ceb7f7e75a",
+                    "md5": "0bc70dba42d73cf0c7f8751af600f2ae",
+                    "sha256": "7f13d3837e3ced4019005186e864566fe3bfc9f91329f0c3e9b40265a63410c7"
+                },
+                "downloads": -1,
+                "filename": "aiohttp_deps-0.1.4-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "0bc70dba42d73cf0c7f8751af600f2ae",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7,<4.0",
+                "size": 12302,
+                "upload_time": "2023-05-04T00:29:00",
+                "upload_time_iso_8601": "2023-05-04T00:29:00.940722Z",
+                "url": "https://files.pythonhosted.org/packages/91/f2/91751c654a95c3a84b2a9935713af2cc806fafbaf04870b2e2ceb7f7e75a/aiohttp_deps-0.1.4-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6dea020b98c0556ec80e077b2e0d9f8993c0483178e22758b39f08dc76630ec3",
+                    "md5": "e8a125db51267090919915e813ca5bff",
+                    "sha256": "8494a5169dc8f9e7a7b5c175e34ecf76977ea5d61f6aaad5f714f8c44b95e29b"
+                },
+                "downloads": -1,
+                "filename": "aiohttp_deps-0.1.4.tar.gz",
+                "has_sig": false,
+                "md5_digest": "e8a125db51267090919915e813ca5bff",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7,<4.0",
+                "size": 12140,
+                "upload_time": "2023-05-04T00:29:02",
+                "upload_time_iso_8601": "2023-05-04T00:29:02.840072Z",
+                "url": "https://files.pythonhosted.org/packages/6d/ea/020b98c0556ec80e077b2e0d9f8993c0483178e22758b39f08dc76630ec3/aiohttp_deps-0.1.4.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
