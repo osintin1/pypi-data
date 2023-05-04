@@ -1,0 +1,105 @@
+{
+    "0.10.2": {
+        "info": {
+            "author": null,
+            "author_email": "Xin Fu <xin@imfing.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 5 - Production/Stable",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Programming Language :: Python :: Implementation :: CPython",
+                "Programming Language :: Python :: Implementation :: PyPy"
+            ],
+            "description": "<p align=\"center\">\n    <img src=\"https://raw.githubusercontent.com/danielfrg/s3contents/main/docs/logo.png\" width=\"450px\">\n</p>\n\n<p align=\"center\">\n    <a href=\"https://pypi.org/project/s3contents/\">\n        <img src=\"https://img.shields.io/pypi/v/mkdocs-jupyter.svg\">\n    </a>\n    <a href=\"https://github.com/danielfrg/s3contents/actions/workflows/test.yml\">\n        <img src=\"https://github.com/danielfrg/s3contents/workflows/test/badge.svg\">\n    </a>\n    <a href=\"https://codecov.io/gh/danielfrg/s3contents?branch=main\">\n        <img src=\"https://codecov.io/gh/danielfrg/s3contents/branch/main/graph/badge.svg\">\n    </a>\n    <a href=\"http://github.com/danielfrg/s3contents/blob/main/LICENSE.txt\">\n        <img src=\"https://img.shields.io/:license-Apache%202-blue.svg\">\n    </a>\n</p>\n\n# S3Contents - Jupyter Notebooks in S3\n\nA transparent, drop-in replacement for Jupyter standard filesystem-backed storage system.\nWith this implementation of a\n[Jupyter Contents Manager](https://jupyter-server.readthedocs.io/en/latest/developers/contents.html)\nyou can save all your notebooks, files and directory structure directly to a\nS3/GCS bucket on AWS/GCP or a self hosted S3 API compatible like [MinIO](http://minio.io).\n\n## Installation\n\n```shell\npip install s3contents\n```\n\nInstall with GCS dependencies:\n\n```shell\npip install s3contents[gcs]\n```\n\n## s3contents vs X\n\nWhile there are some implementations of an S3 Jupyter Content Manager such as\n[s3nb](https://github.com/monetate/s3nb) or [s3drive](https://github.com/stitchfix/s3drive)\ns3contents is the only one tested against new versions of Jupyter.\nIt also supports more authentication methods and Google Cloud Storage.\n\nThis aims to be a fully tested implementation and it's based on [PGContents](https://github.com/quantopian/pgcontents).\n\n## Configuration\n\nCreate a `jupyter_notebook_config.py` file in one of the\n[Jupyter config directories](https://jupyter.readthedocs.io/en/latest/use/jupyter-directories.html#id1)\nfor example: `~/.jupyter/jupyter_notebook_config.py`.\n\n**Jupyter Notebook Classic**: If you plan to use the Classic Jupyter Notebook\ninterface you need to change `ServerApp` to `NotebookApp` for all the examples on this page.\n\n## AWS S3\n\n```python\nfrom s3contents import S3ContentsManager\n\nc = get_config()\n\n# Tell Jupyter to use S3ContentsManager\nc.ServerApp.contents_manager_class = S3ContentsManager\nc.S3ContentsManager.bucket = \"<S3 bucket name>\"\n\n# Fix JupyterLab dialog issues\nc.ServerApp.root_dir = \"\"\n```\n\n### Authentication\n\nAdditionally you can configure multiple authentication methods:\n\nAccess and secret keys:\n\n```python\nc.S3ContentsManager.access_key_id = \"<AWS Access Key ID / IAM Access Key ID>\"\nc.S3ContentsManager.secret_access_key = \"<AWS Secret Access Key / IAM Secret Access Key>\"\n```\n\nSession token:\n\n```python\nc.S3ContentsManager.session_token = \"<AWS Session Token / IAM Session Token>\"\n```\n\n### AWS EC2 role auth setup\n\nIt also possible to use IAM Role-based access to the S3 bucket from an Amazon EC2 instance or AWS resource.\n\nTo do that just leave any authentication options (`access_key_id`, `secret_access_key`) to their default of `None`\nand ensure that the EC2 instance has an IAM role which provides sufficient permissions (read and write) for the bucket.\n\n### Optional settings\n\n```python\n# A prefix in the S3 buckets to use as the root of the Jupyter file system\nc.S3ContentsManager.prefix = \"this/is/a/prefix/on/the/s3/bucket\"\n\n# Server-Side Encryption\nc.S3ContentsManager.sse = \"AES256\"\n\n# Authentication signature version\nc.S3ContentsManager.signature_version = \"s3v4\"\n\n# See AWS key refresh\nc.S3ContentsManager.init_s3_hook = init_function\n```\n\n### AWS key refresh\n\nThe optional `init_s3_hook` configuration can be used to enable AWS key rotation (described [here](https://dev.to/li_chastina/auto-refresh-aws-tokens-using-iam-role-and-boto3-2cjf) and [here](https://www.owenrumney.co.uk/2019/01/15/implementing-refreshingawscredentials-python/)) as follows:\n\n```python\nimport boto3\nimport botocore\nfrom botocore.credentials import RefreshableCredentials\nfrom botocore.session import get_session\nfrom configparser import ConfigParser\n\nfrom s3contents import S3ContentsManager\n\ndef refresh_external_credentials():\n    config = ConfigParser()\n    config.read('/home/jovyan/.aws/credentials')\n    return {\n        \"access_key\": config['default']['aws_access_key_id'],\n        \"secret_key\": config['default']['aws_secret_access_key'],\n        \"token\": config['default']['aws_session_token'],\n        \"expiry_time\": config['default']['aws_expiration']\n    }\n\nsession_credentials = RefreshableCredentials.create_from_metadata(\n        metadata = refresh_external_credentials(),\n        refresh_using = refresh_external_credentials,\n        method = 'custom-refreshing-key-file-reader'\n)\n\ndef make_key_refresh_boto3(this_s3contents_instance):\n    refresh_session =  get_session() # from botocore.session\n    refresh_session._credentials = session_credentials\n    my_s3_session =  boto3.Session(botocore_session=refresh_session)\n    this_s3contents_instance.boto3_session = my_s3_session\n\n# Tell Jupyter to use S3ContentsManager\nc.ServerApp.contents_manager_class = S3ContentsManager\n\nc.S3ContentsManager.init_s3_hook = make_key_refresh_boto3\n```\n\n### MinIO playground example\n\nYou can test this using the [`play.minio.io:9000`](https://play.minio.io:9000) playground:\n\nJust be sure to create the bucket first.\n\n```python\nfrom s3contents import S3ContentsManager\n\nc = get_config()\n\n# Tell Jupyter to use S3ContentsManager\nc.ServerApp.contents_manager_class = S3ContentsManager\nc.S3ContentsManager.access_key_id = \"Q3AM3UQ867SPQQA43P2F\"\nc.S3ContentsManager.secret_access_key = \"zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG\"\nc.S3ContentsManager.endpoint_url = \"https://play.minio.io:9000\"\nc.S3ContentsManager.bucket = \"s3contents-demo\"\nc.S3ContentsManager.prefix = \"notebooks/test\"\n```\n\n## Access local files\n\nTo access local file as well as remote files in S3 you can use [hybridcontents](https://github.com/viaduct-ai/hybridcontents).\n\nInstall it:\n\n```shell\npip install hybridcontents\n```\n\nUse a configuration similar to this:\n\n```python\nfrom s3contents import S3ContentsManager\nfrom hybridcontents import HybridContentsManager\nfrom notebook.services.contents.largefilemanager import LargeFileManager\n\nc = get_config()\n\nc.ServerApp.contents_manager_class = HybridContentsManager\n\nc.HybridContentsManager.manager_classes = {\n    # Associate the root directory with an S3ContentsManager.\n    # This manager will receive all requests that don\"t fall under any of the\n    # other managers.\n    \"\": S3ContentsManager,\n    # Associate /local_directory with a LargeFileManager.\n    \"local_directory\": LargeFileManager,\n}\n\nc.HybridContentsManager.manager_kwargs = {\n    # Args for root S3ContentsManager.\n    \"\": {\n        \"access_key_id\": \"<AWS Access Key ID / IAM Access Key ID>\",\n        \"secret_access_key\": \"<AWS Secret Access Key / IAM Secret Access Key>\",\n        \"bucket\": \"<S3 bucket name>\",\n    },\n    # Args for the LargeFileManager mapped to /local_directory\n    \"local_directory\": {\n        \"root_dir\": \"/Users/danielfrg/Downloads\",\n    },\n}\n```\n\n## GCP - Google Cloud Storage\n\nInstall the extra dependencies with:\n\n```shell\npip install s3contents[gcs]\n```\n\n```python\nfrom s3contents.gcs import GCSContentsManager\n\nc = get_config(\n\nc.ServerApp.contents_manager_class = GCSContentsManager\nc.GCSContentsManager.project = \"<your-project>\"\nc.GCSContentsManager.token = \"~/.config/gcloud/application_default_credentials.json\"\nc.GCSContentsManager.bucket = \"<GCP bucket name>\"\n```\n\nNote that the file `~/.config/gcloud/application_default_credentials.json` assumes\na POSIX system when you did `gcloud init`.\n\n## Other configuration\n\n### File Save Hooks\n\nIf you want to use pre/post file save hooks here are some examples.\n\nA `pre_save_hook` is written in the exact same way as normal, operating on the\nfile in local storage before committing it to the object store.\n\n```python\ndef scrub_output_pre_save(model, **kwargs):\n    \"\"\"\n    Scrub output before saving notebooks\n    \"\"\"\n\n    # only run on notebooks\n    if model[\"type\"] != \"notebook\":\n        return\n\n    # only run on nbformat v4\n    if model[\"content\"][\"nbformat\"] != 4:\n        return\n\n    for cell in model[\"content\"][\"cells\"]:\n        if cell[\"cell_type\"] != \"code\":\n            continue\n        cell[\"outputs\"] = []\n        cell[\"execution_count\"] = None\n\nc.S3ContentsManager.pre_save_hook = scrub_output_pre_save\n```\n\nA `post_save_hook` instead operates on the file in object storage,\nbecause of this it is useful to use the file methods on the `contents_manager`\nfor data manipulation.\nIn addition, one must use the following function signature (unique to `s3contents`):\n\n```python\ndef make_html_post_save(model, s3_path, contents_manager, **kwargs):\n    \"\"\"\n    Convert notebooks to HTML after saving via nbconvert\n    \"\"\"\n    from nbconvert import HTMLExporter\n\n    if model[\"type\"] != \"notebook\":\n        return\n\n    content, _format = contents_manager.fs.read(s3_path, format=\"text\")\n    my_notebook = nbformat.reads(content, as_version=4)\n\n    html_exporter = HTMLExporter()\n    html_exporter.template_name = \"classic\"\n\n    (body, resources) = html_exporter.from_notebook_node(my_notebook)\n\n    base, ext = os.path.splitext(s3_path)\n    contents_manager.fs.write(path=(base + \".html\"), content=body, format=_format)\n\nc.S3ContentsManager.post_save_hook = make_html_post_save\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": null,
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": null,
+            "keywords": "aws,gcs,google cloud storage,jupyter,jupyterlab,minio,notebooks,s3",
+            "license": null,
+            "maintainer": null,
+            "maintainer_email": null,
+            "name": "jupyter-s3contents",
+            "package_url": "https://pypi.org/project/jupyter-s3contents/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/jupyter-s3contents/",
+            "project_urls": {
+                "Documentation": "https://github.com/imfing/jupyter-s3contents#readme",
+                "Issues": "https://github.com/imfing/jupyter-s3contents/issues",
+                "Source": "https://github.com/imfing/jupyter-s3contents"
+            },
+            "release_url": "https://pypi.org/project/jupyter-s3contents/0.10.2/",
+            "requires_dist": [
+                "aiobotocore[boto3]>=1.4.0",
+                "jupyter-server",
+                "nbconvert<8.0,>=6.0",
+                "s3fs>=2021.11.0",
+                "gcsfs>=2021.11.0; extra == 'gcs'",
+                "coverage[toml]; extra == 'test'",
+                "nose; extra == 'test'",
+                "pytest; extra == 'test'",
+                "pytest-cov; extra == 'test'"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "S3 Contents Manager for Jupyter",
+            "version": "0.10.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17972206,
+        "urls": [
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "6cfde4f1388067d56d5cbe45869414985b8b6706d024d626b891bde1b494ffc7",
+                    "md5": "625fca1925a2af4adfe403f8d26ffbc6",
+                    "sha256": "89838e6c8bf83ee063b849679bf27fb25cbdb0d7398b1611c68ed79670d0660e"
+                },
+                "downloads": -1,
+                "filename": "jupyter_s3contents-0.10.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "625fca1925a2af4adfe403f8d26ffbc6",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 30548,
+                "upload_time": "2023-05-04T12:44:11",
+                "upload_time_iso_8601": "2023-05-04T12:44:11.517896Z",
+                "url": "https://files.pythonhosted.org/packages/6c/fd/e4f1388067d56d5cbe45869414985b8b6706d024d626b891bde1b494ffc7/jupyter_s3contents-0.10.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "fc68150756790068adde0d38154223c3603fd2a2efae4fa69aa607e63bfeea2c",
+                    "md5": "8da013472587bbc415ef7121a9b48f89",
+                    "sha256": "c3f1d2a4010a698d61e420c0aa43fcad7b1cf02f996460543a972bbc27ea89ad"
+                },
+                "downloads": -1,
+                "filename": "jupyter_s3contents-0.10.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "8da013472587bbc415ef7121a9b48f89",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 25176,
+                "upload_time": "2023-05-04T12:44:09",
+                "upload_time_iso_8601": "2023-05-04T12:44:09.084362Z",
+                "url": "https://files.pythonhosted.org/packages/fc/68/150756790068adde0d38154223c3603fd2a2efae4fa69aa607e63bfeea2c/jupyter_s3contents-0.10.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
