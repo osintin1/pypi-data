@@ -1,0 +1,128 @@
+{
+    "0.1.0": {
+        "info": {
+            "author": "Pride Kavumba",
+            "author_email": "pkavumba@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Environment :: Web Environment",
+                "Framework :: Django",
+                "Framework :: Django :: 3",
+                "Framework :: Django :: 3.2",
+                "Framework :: Django :: 4",
+                "Framework :: Django :: 4.0",
+                "Framework :: Django :: 4.1",
+                "Framework :: Django :: 4.2",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: Apache Software License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Internet :: WWW/HTTP",
+                "Topic :: Internet :: WWW/HTTP :: Dynamic Content"
+            ],
+            "description": "# Django VectorDB\n\n---\n\nDjango Vector DB is a powerful and flexible toolkit for adding vector search capabilities to your Django applications.\n\nSome reasons you might want to use Django Vector DB:\n\n- Low latency, because you don't need to call an external API.\n- Scalable to a billion vectors with millisecond search results.\n- Fast and accurate search.\n- Native Django integration.\n- Metadata filtering with the full power of the django queryset queries, e.g. `vectordb.filter(metadata__user_id=1).search(\"some text\").only(\"text\")`\n- Automatic syncing between your models and the vector index, simply register the provided signals and you can continue about your day. Vectordb will sync the vector database whenever you create, update or delete an instance.\n- Out of the box support for incremental updates, allowing you to add or update data without rebuilding the entire index.\n- Extensive documentation and support for easy implementation and troubleshooting.\n\n## Requirements\n\n---\n\nDjango VectorDB requires the following:\n\n- Python (3.6, 3.7, 3.8, 3.9, 3.10, 3.11)\n- Django (2.2, 3.0, 3.1, 3.2, 4.0, 4.1)\n- HNSWLib (0.7.0)\n- numpy\n\nWe **highly recommend** and only officially support the latest patch release of\neach Python and Django series.\n\nThe following packages are optional:\n\n- Sentence-Transformers - Add support for converting text into vector embeddings used for similarity search\n- Django Rest Framework - Add API endpoint for VectorDB.\n- django-filter - Add metadata filtering support on the API endpoint.\n\n---\n\n## Installation\n\nInstall using `pip`, it is recommended that you install the optional packages with:\n\n    pip install django-vectordb[standard] # This will install the optional dependencies above.\n\nIf you dont want to install the optional packages you can run:\n\n    pip install django-vectordb\n\nAdd `'django-vectordb'` to your `INSTALLED_APPS` setting.\n\n```python\n    INSTALLED_APPS = [\n        ...\n        'vectordb',\n    ]\n```\n\nRun the migrations to create the `vectordb` table\n\n```bash\n$ ./manage.py migrate\n```\n\nIf you're intending to use the API, you'll probably also want to add vectordb.urls. Add the following to your root `urls.py` file.\n\n```python\n    urlpatterns = [\n        ...\n        path('api/', include('vectordb.urls'))\n    ]\n```\n\nNote: that the URL path can be whatever you want.\n\nThis will expose endpoints for all CRUD actions (`/api/vectordb/`) and searching (`/api/vectordb/search/`).\n\n---\n\n## Example\n\nLets beging with a simple example for blog posts\n\n```python\n\nfrom django.db import models\nUser = get_user_model() #import get_user_model first\n\nclass Post(models.Model):\n    title = models.CharField(max_length=100)\n    description = models.TextField()\n    user = models.ForeignKey(User, on_delete = models.CASCADE)\n\n    def __str__(self):\n        return self.title\n```\n\n### 1. Importing\n\nTo begin working with VectorDB, you'll first need to import it into your project. There are two ways to do this, depending on whether you'd like to use the simple proxy to the vector models manager, `Vector.objects`, or the Vector model directly.\n\n#### Option 1: Import the simple proxy [Recommended]\n\n```python\nfrom vectordb import vectordb\n```\n\n#### Option 2: Import the Vector model directly\n\n```python\nfrom vectordb import get_vectordb_model\n\nVectorModel = get_vectordb_model()\n```\n\nWith either of these imports, you'll have access to all the Django manager functions available on the object. Note that you can run the commands detailed below using `vectordb` or `VectorModel.objects`, whichever you've chosen to import. For the rest of this guide we will use `vectordb`.\n\nNow that you've imported VectorDB, it's time to dive in and explore its powerful features!\n\n### Populating the Vector Database\n\nFirst, let's make a few updates to the model to allow VectorDB to handle most tasks for us: add `get_vectordb_text` and `get_vectordb_metadata` methods.\n\n```python\nfrom django.db import models\nUser = get_user_model()\n\nclass Post(models.Model):\n    title = models.CharField(max_length=100)\n    description = models.TextField()\n    user = models.ForeignKey(User, on_delete=models.CASCADE)\n\n    def __str__(self):\n        return self.title\n\n    def get_vectordb_text(self):\n        # Use title and description for vector search\n        return f\"{self.title} -- {self.description}\"\n\n    def get_vectordb_metadata(self):\n        # Enable filtering by any of these metadata\n        return {\"title\": self.title, \"description\": self.description, \"user_id\": self.user.id, \"model\": \"post\"}\n```\n\nIn an existing project, you can run the `sync_vectordb` management command to add all items to the database.\n\n```bash\n./manage.py sync_vectordb <app_name> <model_name>\n```\n\nFor this example:\n\n```bash\n./manage.py sync_vectordb blog Post\n```\n\n#### Manually adding items to the vector database\n\nVectorDB provides two utility methods for adding items to the database: `vectordb.add_instance` or `vectordb.add_text`. Note that for adding the instance, you need to provide the `get_vectordb_text` and an optional `get_vectordb_metadata` methods.\n\n##### 1. Adding Model Instances\n\n```python\npost1 = models.create(title=\"post1\", description=\"post1 description\", user=user1) # provide valid user\n\n# add to vector database\nvectordb.add_instance(post1)\n```\n\n##### 2. Adding Text to the Model\n\nTo add text to the database, you can use `vectordb.add_text()`:\n\n```python\nvectordb.add_text(text=\"Hello text\", id=3, metadata={\"user_id\": 1})\n```\n\nThe `text` and `id` are required. Additionally, the `id` must be unique, or an error will occur. `metadata` can be `None` or any valid JSON.\n\n### Automatically Syncing Your Model to the vector database\n\nTo enable auto sync, import the following signals and register them with your models:\n\n```python\n# signals.py\nfrom django.db.models.signals import post_save, post_delete\n\nfrom vectordb.sync_signals import (\n    sync_vectordb_on_create_update,\n    sync_vectordb_on_delete,\n)\n\nfrom .models import Post\n\npost_save.connect(\n    sync_vectordb_on_create_update,\n    sender=Post,\n    dispatch_uid=\"update_vector_index_super_unique_id\",\n)\n\npost_delete.connect(\n    sync_vectordb_on_delete,\n    sender=Post,\n    dispatch_uid=\"delete_vector_index_super_unique_id\",\n)\n```\n\nThen import the signals in your `apps.py`\n\n```python\nfrom django.apps import AppConfig\n\n\nclass BlogConfig(AppConfig):\n    default_auto_field = \"django.db.models.BigAutoField\"\n    name = \"blog\"\n\n    def ready(self):\n        import blog.signals\n```\n\nThese signals will sync the vectors when you create and delete instances. Note that signals are not called in bulk create, so you will need to sync manually when using those methods.\n\nEnsure that your models implement the `get_text()` and/or `serialize()` methods for proper syncing.\n\n### Searching\n\nTo search, simply call `vectordb.search()`:\n\n```python\nvectordb.search(\"Some text\", k=10) # k is the maximum number of results you want.\n```\n\nNote: search method returns a query whose results are order from best match. Each item will have the following fields: `id`, `content_object`, `object_id`, `content_type`, `text`, `embedding`, annotated `score`, and a property `vector` that returns the `np.ndarray` representation of the item. Because search gives us a `QuerySet` we can choose the fiels we want to see like sos:\n\n```python\nvectordb.search(\"Some text\", k=10).only('text', 'content_object')\n```\n\nIf `k` is not provided, the default value is 10.\n\n### Filtering\n\nYou can filter on `text` or `metadata` with the full power of Django QuerySet filtering:\n\n```python\n# scope the search to user with an id 1\nvectordb.filter(metadata__user_id=1).search(\"Some text\", k=10)\n\n# example two with more filters\nvectordb.filter(text__icontains=\"Apple\", metadata__title__icontains=\"IPhone\", metadata__description__icontains=\"2023\").search(\"Apple new phone\", k=10)\n```\n\nRefer to the [Django documentation](https://docs.djangoproject.com/en/4.2/topics/db/queries/) on querying the `JSONField` for more information on filtering.\n\n---\n\n## Quickstart\n\nCan't wait to get started? The [quickstart guide][quickstart] is the fastest way to get up and running, and building APIs with REST framework.\n\n---\n\n## Development\n\nClone the repository\n\n```bash\n$ git clone\n```\n\nInstall the app in editable mode with all dev dependencies:\n\n```bash\npip install -e .[dev]\n```\n\nThis command will install the app and its dev dependencies specified in the `setup.cfg` file. The `-e` flag installs the package in editable mode, which means that any changes you make to the app's source code will be reflected immediately without needing to reinstall the package. The `[dev]` part tells `pip` to install the dependencies listed under the \"dev\" section in the `options.extras_require` of the `setup.cfg` file.\n\nRun tests\n\n```bash\npytest\n```\n\nOr\n\n```bash\ntox\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/pkavumba/django-vectordb.git",
+            "keywords": "",
+            "license": "Apache License 2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "django-vectordb",
+            "package_url": "https://pypi.org/project/django-vectordb/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/django-vectordb/",
+            "project_urls": {
+                "Homepage": "https://github.com/pkavumba/django-vectordb.git"
+            },
+            "release_url": "https://pypi.org/project/django-vectordb/0.1.0/",
+            "requires_dist": [
+                "Django (>=3.2)",
+                "hnswlib (>=0.7.0)",
+                "numpy",
+                "tox ; extra == 'dev'",
+                "black ; extra == 'dev'",
+                "django ; extra == 'dev'",
+                "pytest ; extra == 'dev'",
+                "pytest-django ; extra == 'dev'",
+                "sentence-transformers ; extra == 'dev'",
+                "djangorestframework ; extra == 'dev'",
+                "django-filter ; extra == 'dev'",
+                "mkdocs ; extra == 'dev'",
+                "django-stubs ; extra == 'dev'",
+                "pre-commit ; extra == 'dev'",
+                "sentence-transformers ; extra == 'standard'",
+                "djangorestframework ; extra == 'standard'",
+                "django-filter ; extra == 'standard'",
+                "pytest ; extra == 'tests'",
+                "pytest-django ; extra == 'tests'",
+                "sentence-transformers ; extra == 'tests'",
+                "djangorestframework ; extra == 'tests'",
+                "django-filter ; extra == 'tests'"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "Add extremely fast vector search to django with support for filtering and auto-sync through signals. Scalable to a billion vectors.",
+            "version": "0.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17983382,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "68bfd1c638d36930f9ab4dd20a068317180397c492c2c73ffc8144567d101fc8",
+                    "md5": "c42587e5315e3f0ab51aa14077918611",
+                    "sha256": "14e656dba87b8f101271dfcb3b62161bb10161d2ca7d0c0e1c439d6a348476f7"
+                },
+                "downloads": -1,
+                "filename": "django_vectordb-0.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "c42587e5315e3f0ab51aa14077918611",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 29734,
+                "upload_time": "2023-05-05T07:22:27",
+                "upload_time_iso_8601": "2023-05-05T07:22:27.299116Z",
+                "url": "https://files.pythonhosted.org/packages/68/bf/d1c638d36930f9ab4dd20a068317180397c492c2c73ffc8144567d101fc8/django_vectordb-0.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e05adf5240034b20c68db880dac251ec680bc6213356f6c373efcfa4e72e65e0",
+                    "md5": "d0ff985727dfc0fc3990f08abc6663b1",
+                    "sha256": "651c8d8cb319ea6573f9bf406f3ca0469028e06fa35be5dab03e44ff8b496ba4"
+                },
+                "downloads": -1,
+                "filename": "django-vectordb-0.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "d0ff985727dfc0fc3990f08abc6663b1",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 22108,
+                "upload_time": "2023-05-05T07:22:29",
+                "upload_time_iso_8601": "2023-05-05T07:22:29.939232Z",
+                "url": "https://files.pythonhosted.org/packages/e0/5a/df5240034b20c68db880dac251ec680bc6213356f6c373efcfa4e72e65e0/django-vectordb-0.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
