@@ -38,7 +38,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17947293,
+        "last_serial": 17979395,
         "urls": [
             {
                 "comment_text": null,
@@ -124,7 +124,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17947293,
+        "last_serial": 17979395,
         "urls": [
             {
                 "comment_text": null,
@@ -177,7 +177,6 @@
             "author_email": "Spencer Nelson <spencer@spencerwnelson.com>",
             "bugtrack_url": null,
             "classifiers": [],
-            "description": "# quivr\n\nQuivr is a Python library which provides great containers for Arrow data.\n\nQuivr's `Table`s are like DataFrames, but with strict schemas to\nenforce types and expectations. They are backed by the\nhigh-performance Arrow memory model, making them well-suited for\nstreaming IO, RPCs, and serialization/deserialization to Parquet.\n\n## why?\n\nData engineering involves taking analysis code and algorithms which\nwere prototyped, often on pandas DataFrames, and shoring them up for\nproduction use.\n\nWhile DataFrames are great for ad-hoc exploration, visualization, and\nprototyping, they aren't as great for building sturdy applications:\n\n - Loose and dynamic typing makes it difficult to be sure that code is\n   correct without lots of explicit checks of the dataframe's state.\n - Performance of Pandas operations can be unpredictable and have\n   surprising characteristics, which makes it harder to provision\n   resources.\n - DataFrames can use an extremely large amount of memory (typical\n   numbers cited are between 2x and 10x the \"raw\" data's size), and\n   often are forced to copy data in intermediate computations, which\n   poses unnecessarily heavy requirements.\n - The mutability of DataFrames can make debugging difficult and lead\n   to confusing state.\n\nWe don't want to throw everything out, here. Vectorized computations\nare often absolutely necessary for data work. But what if we could\nhave those vectorized computations, but with:\n - Types enforced at runtime, with no dynamically column information.\n - Relatively uniform performance due to a no-copy orientation\n - Immutable data, allowing multiple views at very fast speed\n\nThis is what Quivr's Tables try to provide.\n\n## Installation\n\nCheck out this repo, and `pip install` it.\n\n## Usage\n\nYour main entrypoint to Quivr is through defining classes which\nrepresent your tables. You write a `pyarrow.Schema` as the `schema`\nclass attribute of your class, and Quivr will take care of the rest.\n\n```python\nfrom quivr import TableBase\nimport pyarrow as pa\n\n\nclass Coordinates(TableBase):\n    schema = pa.schema(\n        [\n            pa.field(\"x\", pa.float64()),\n            pa.field(\"y\", pa.float64()),\n            pa.field(\"z\", pa.float64()),\n            pa.field(\"vx\", pa.float64()),\n            pa.field(\"vy\", pa.float64()),\n            pa.field(\"vz\", pa.float64()),\n        ]\n    )\n```\n\nThen, you can construct tables from data:\n\n```python\n\ncoords = Coordinates.from_data(\n    x=np.array([ 1.00760887, -2.06203093,  1.24360546, -1.00131722]),\n    y=np.array([-2.7227298 ,  0.70239707,  2.23125432,  0.37269832]),\n    z=np.array([-0.27148738, -0.31768623, -0.2180482 , -0.02528401]),\n    vx=np.array([ 0.00920172, -0.00570486, -0.00877929, -0.00809866]),\n    vy=np.array([ 0.00297888, -0.00914301,  0.00525891, -0.01119134]),\n    vz=np.array([-0.00160217,  0.00677584,  0.00091095, -0.00140548])\n)\n\n# Sort the table by the z column. This returns a copy.\ncoords_z_sorted = coords.sort_by(\"z\")\n\nprint(len(coords))\n# prints 4\n\n# Access any of the columns as a numpy array with zero copy:\nxs = coords.x.to_numpy()\n\n# Present the table as a pandas DataFrame, with zero copy if possible:\ndf = coords.to_dataframe()\n```\n\n### Embedded definitions and nullable fields\n\nYou can embed one table's definition within another, and you can make fields nullable:\n\n```python\n\nclass AsteroidOrbit(TableBase):\n    schema = pa.schema(\n        [\n            pa.field(\"designation\", pa.string()),\n            pa.field(\"mass\", pa.float64(), nullable=True),\n            pa.field(\"radius\", pa.float64(), nullable=True),\n            Coordinates.as_field(\"coords\"),\n        ]\n    )\n\n# You can construct embedded fields from Arrow StructArrays, which you can get from\n# other Quivr tables using the to_structarray() method with zero copy.\norbits = AsteroidOrbit.from_data(\n    designation=np.array([\"Ceres\", \"Pallas\", \"Vesta\", \"2023 DW\"]),\n    mass=np.array([9.393e20, 2.06e21, 2.59e20, None]),\n    radius=np.array([4.6e6, 2.7e6, 2.6e6, None]),\n    coords=coords.to_structarray(),\n)\n```\n\n### Computing\n\nYou can use the columns of the data to do computations:\n\n```python\nimport pyarrow.compute as pc\n\nmedian_mass = pc.quantile(orbits.mass, q=0.5)\n# median_mass is a pyarrow.Scalar, which you can get the value of with .as_py()\nprint(median_mass.as_py())\n```\n\nThere is a very extensive set of functions available in the\n`pyarrow.compute` package, which you can see\n[here](https://arrow.apache.org/docs/python/compute.html). These\ncomputations will, in general, use all cores available and do\nvectorized computations which are very fast.\n\n### Customizing behavior with methods\n\nBecause Quivr tables are just Python classes, you can customize the\nbehavior of your tables by adding or overriding methods. For example, if you want to add a\nmethod to compute the total mass of the asteroids in the table, you\ncan do so like this:\n\n```python\n\nclass AsteroidOrbit(TableBase):\n    schema = pa.schema(\n        [\n            pa.field(\"designation\", pa.string()),\n            pa.field(\"mass\", pa.float64(), nullable=True),\n            pa.field(\"radius\", pa.float64(), nullable=True),\n            Coordinates.as_field(\"coords\"),\n        ]\n    )\n\n    def total_mass(self):\n        return pc.sum(self.mass)\n\n```\n\nYou can also use this to add \"meta-fields\" which are combinations of other fields. For example:\n\n```python\nclass CoordinateCovariance(TableBase):\n    schema = pa.schema(\n        [\n            # The covariance matrix of the coordinates as a 6x6 matrix (3 positions, 3 velocities)\n            pa.field(\"matrix_values\", pa.list_(pa.float64(), 36)),\n        ]\n    )\n\n    @property\n    def matrix(self):\n        # This is a numpy array of shape (n, 6, 6)\n        return self.matrix_values.to_numpy().reshape(-1, 6, 6)\n\n\nclass AsteroidOrbit(TableBase):\n    schema = pa.schema(\n        [\n            pa.field(\"designation\", pa.string()),\n            pa.field(\"mass\", pa.float64(), nullable=True),\n            pa.field(\"radius\", pa.float64(), nullable=True),\n            Coordinates.as_field(\"coords\"),\n            CoordinateCovariance.as_field(\"covariance\"),\n        ]\n    )\n\n\n\norbits = load_orbits() # Analogous to the example above\n\n# Compute the determinant of the covariance matrix for each asteroid\ndeterminants = np.linalg.det(orbits.covariance.matrix)\n```\n\n\n### Filtering\nYou can also filter by expressions on the data. See [Arrow\ndocumentation](https://arrow.apache.org/docs/python/compute.html) for\nmore details. You can use this to construct a quivr Table using an\nappropriately-schemaed Arrow Table:\n\n```python\n\nbig_orbits = AsteroidOrbit(orbits.table.filter(orbits.table[\"mass\"] > 1e21))\n```\n\nIf you're plucking out rows that match a single value, you can use the\n\"select\" method on the Table:\n\n```python\n# Get the orbit of Ceres\nceres_orbit = orbits.select(\"designation\", \"Ceres\")\n```\n\n#### Indexes for Fast Lookups\n\nIf you're going to be doing a lot of lookups on a particular column,\nit can be useful to create an index for that column. You can do using\nthe `quivr.StringIndex` class to build an index for string values:\n\n```python\n# Build an index for the designation column\ndesignation_index = quivr.StringIndex(orbits, \"designation\")\n\n# Get the orbit of Ceres\nceres_orbit = designation_index.lookup(\"Ceres\")\n```\n\nThe `lookup` method on the StringIndex returns Quivr Tables, or None\nif there is no match. Keep in mind that the returned tables might have\nmultiple rows if there are multiple matches.\n\n_TODO: Add numeric and time-based indexes._\n\n### Serialization\n\n#### Feather\nFeather is a fast, zero-copy serialization format for Arrow tables. It\ncan be used for interprocess communication, or for working with data\non disk via memory mapping.\n\n```python\norbits.to_feather(\"orbits.feather\")\n\norbits_roundtripped = AsteroidOrbit.from_feather(\"orbits.feather\")\n\n# use memory mapping to work with a large file without copying it into memory\norbits_mmap = AsteroidOrbit.from_feather(\"orbits.feather\", memory_map=True)\n```\n\n\n#### Parquet\n\nYou can serialize your tables to Parquet files, and read them back:\n\n```python\norbits.to_parquet(\"orbits.parquet\")\n\norbits_roundtripped = AsteroidOrbit.from_parquet(\"orbits.parquet\")\n```\n\nSee the [Arrow\ndocumentation](https://arrow.apache.org/docs/python/parquet.html) for\nmore details on the Parquet format used.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": null,
@@ -211,7 +210,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17947293,
+        "last_serial": 17979395,
         "urls": [
             {
                 "comment_text": null,
@@ -252,6 +251,93 @@
                 "upload_time": "2023-05-02T21:31:17",
                 "upload_time_iso_8601": "2023-05-02T21:31:17.178364Z",
                 "url": "https://files.pythonhosted.org/packages/d4/a8/7159e16b5337bbf3009b25eb79bc98500e0ad47006bbf41a82d9b3212c77/quivr-0.1.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.0": {
+        "info": {
+            "author": null,
+            "author_email": "Spencer Nelson <spencer@spencerwnelson.com>",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "# quivr\n\nQuivr is a Python library which provides great containers for Arrow data.\n\nQuivr's `Table`s are like DataFrames, but with strict schemas to\nenforce types and expectations. They are backed by the\nhigh-performance Arrow memory model, making them well-suited for\nstreaming IO, RPCs, and serialization/deserialization to Parquet.\n\n## why?\n\nData engineering involves taking analysis code and algorithms which\nwere prototyped, often on pandas DataFrames, and shoring them up for\nproduction use.\n\nWhile DataFrames are great for ad-hoc exploration, visualization, and\nprototyping, they aren't as great for building sturdy applications:\n\n - Loose and dynamic typing makes it difficult to be sure that code is\n   correct without lots of explicit checks of the dataframe's state.\n - Performance of Pandas operations can be unpredictable and have\n   surprising characteristics, which makes it harder to provision\n   resources.\n - DataFrames can use an extremely large amount of memory (typical\n   numbers cited are between 2x and 10x the \"raw\" data's size), and\n   often are forced to copy data in intermediate computations, which\n   poses unnecessarily heavy requirements.\n - The mutability of DataFrames can make debugging difficult and lead\n   to confusing state.\n\nWe don't want to throw everything out, here. Vectorized computations\nare often absolutely necessary for data work. But what if we could\nhave those vectorized computations, but with:\n - Types enforced at runtime, with no dynamically column information.\n - Relatively uniform performance due to a no-copy orientation\n - Immutable data, allowing multiple views at very fast speed\n\nThis is what Quivr's Tables try to provide.\n\n## Installation\n\nCheck out this repo, and `pip install` it.\n\n## Usage\n\nYour main entrypoint to Quivr is through defining classes which\nrepresent your tables. You write a subclass of quivr.Table, annotating\nit with Fields that describe the data you're working with, and quivr\nwill handle the rest.\n\n```python\nfrom quivr import Table, Float64Field\nimport pyarrow as pa\n\n\nclass Coordinates(TableBase):\n\tx = Float64Field()\n\ty = Float64Field()\n\tz = Float64Field()\n\tvx = Float64Field()\n\tvy = Float64Field()\n\tvz = Float64Field()\n```\n\nThen, you can construct tables from data:\n\n```python\n\ncoords = Coordinates.from_data(\n    x=np.array([ 1.00760887, -2.06203093,  1.24360546, -1.00131722]),\n    y=np.array([-2.7227298 ,  0.70239707,  2.23125432,  0.37269832]),\n    z=np.array([-0.27148738, -0.31768623, -0.2180482 , -0.02528401]),\n    vx=np.array([ 0.00920172, -0.00570486, -0.00877929, -0.00809866]),\n    vy=np.array([ 0.00297888, -0.00914301,  0.00525891, -0.01119134]),\n    vz=np.array([-0.00160217,  0.00677584,  0.00091095, -0.00140548])\n)\n\n# Sort the table by the z column. This returns a copy.\ncoords_z_sorted = coords.sort_by(\"z\")\n\nprint(len(coords))\n# prints 4\n\n# Access any of the columns as a numpy array with zero copy:\nxs = coords.x.to_numpy()\n\n# Present the table as a pandas DataFrame, with zero copy if possible:\ndf = coords.to_dataframe()\n```\n\n### Embedded definitions and nullable fields\n\nYou can embed one table's definition within another, and you can make fields nullable:\n\n```python\n\nclass AsteroidOrbit(TableBase):\n\tdesignation = StringField()\n\tmass = Float64Field(nullable=True)\n\tradius = Float64Field(nullable=True)\n\tcoords = Coordinates.as_field()\n\n# You can construct embedded fields from Arrow StructArrays, which you can get from\n# other Quivr tables using the to_structarray() method with zero copy.\norbits = AsteroidOrbit.from_data(\n    designation=np.array([\"Ceres\", \"Pallas\", \"Vesta\", \"2023 DW\"]),\n    mass=np.array([9.393e20, 2.06e21, 2.59e20, None]),\n    radius=np.array([4.6e6, 2.7e6, 2.6e6, None]),\n    coords=coords.to_structarray(),\n)\n```\n\n### Computing\n\n#### Using Numpy\nWhen you reference columns, you'll get numpy arrays which you can use to do computations:\n\n```python\nimport numpy as np\n\nprint(np.quantile(orbits.mass + 10, 0.5)\n```\n\n\n#### Using pyarrow.compute\n\nYou can also use access columns of the data as Arrow Arrays to do\ncomputations using the Pyarrow compute kernels:\n\n```python\nimport pyarrow.compute as pc\n\nmedian_mass = pc.quantile(pc.add(orbits.column(mass, as_numpy=False), 10), q=0.5)\n# median_mass is a pyarrow.Scalar, which you can get the value of with .as_py()\nprint(median_mass.as_py())\n```\n\nThere is a very extensive set of functions available in the\n`pyarrow.compute` package, which you can see\n[here](https://arrow.apache.org/docs/python/compute.html). These\ncomputations will, in general, use all cores available and do\nvectorized computations which are very fast.\n\n### Customizing behavior with methods\n\nBecause Quivr tables are just Python classes, you can customize the\nbehavior of your tables by adding or overriding methods. For example, if you want to add a\nmethod to compute the total mass of the asteroids in the table, you\ncan do so like this:\n\n```python\n\nclass AsteroidOrbit(TableBase):\n\tdesignation = StringField()\n\tmass = Float64Field(nullable=True)\n\tradius = Float64Field(nullable=True)\n\tcoords = Coordinates.as_field()\n\n    def total_mass(self):\n        return pc.sum(self.mass)\n\n```\n\nYou can also use this to add \"meta-fields\" which are combinations of other fields. For example:\n\n```python\nclass CoordinateCovariance(TableBase):\n\tmatrix_values = ListField(pa.float64(), 36)\n\n    @property\n    def matrix(self):\n        # This is a numpy array of shape (n, 6, 6)\n        return self.matrix_values.to_numpy().reshape(-1, 6, 6)\n\n\nclass AsteroidOrbit(TableBase):\n\tdesignation = StringField()\n\tmass = Float64Field(nullable=True)\n\tradius = Float64Field(nullable=True)\n\tcoords = Coordinates.as_field()\n\tcovariance = CoordinateCovariance.as_field()\n\norbits = load_orbits() # Analogous to the example above\n\n# Compute the determinant of the covariance matrix for each asteroid\ndeterminants = np.linalg.det(orbits.covariance.matrix)\n```\n\n\n### Filtering\nYou can also filter by expressions on the data. See [Arrow\ndocumentation](https://arrow.apache.org/docs/python/compute.html) for\nmore details. You can use this to construct a quivr Table using an\nappropriately-schemaed Arrow Table:\n\n```python\n\nbig_orbits = AsteroidOrbit(orbits.table.filter(orbits.table[\"mass\"] > 1e21))\n```\n\nIf you're plucking out rows that match a single value, you can use the\n\"select\" method on the Table:\n\n```python\n# Get the orbit of Ceres\nceres_orbit = orbits.select(\"designation\", \"Ceres\")\n```\n\n#### Indexes for Fast Lookups\n\nIf you're going to be doing a lot of lookups on a particular column,\nit can be useful to create an index for that column. You can do using\nthe `quivr.StringIndex` class to build an index for string values:\n\n```python\n# Build an index for the designation column\ndesignation_index = quivr.StringIndex(orbits, \"designation\")\n\n# Get the orbit of Ceres\nceres_orbit = designation_index.lookup(\"Ceres\")\n```\n\nThe `lookup` method on the StringIndex returns Quivr Tables, or None\nif there is no match. Keep in mind that the returned tables might have\nmultiple rows if there are multiple matches.\n\n_TODO: Add numeric and time-based indexes._\n\n### Serialization\n\n#### Feather\nFeather is a fast, zero-copy serialization format for Arrow tables. It\ncan be used for interprocess communication, or for working with data\non disk via memory mapping.\n\n```python\norbits.to_feather(\"orbits.feather\")\n\norbits_roundtripped = AsteroidOrbit.from_feather(\"orbits.feather\")\n\n# use memory mapping to work with a large file without copying it into memory\norbits_mmap = AsteroidOrbit.from_feather(\"orbits.feather\", memory_map=True)\n```\n\n\n#### Parquet\n\nYou can serialize your tables to Parquet files, and read them back:\n\n```python\norbits.to_parquet(\"orbits.parquet\")\n\norbits_roundtripped = AsteroidOrbit.from_parquet(\"orbits.parquet\")\n```\n\nSee the [Arrow\ndocumentation](https://arrow.apache.org/docs/python/parquet.html) for\nmore details on the Parquet format used.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": null,
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": null,
+            "keywords": null,
+            "license": null,
+            "maintainer": null,
+            "maintainer_email": null,
+            "name": "quivr",
+            "package_url": "https://pypi.org/project/quivr/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/quivr/",
+            "project_urls": {
+                "Source": "https://github.com/spenczar/quivr"
+            },
+            "release_url": "https://pypi.org/project/quivr/0.2.0/",
+            "requires_dist": [
+                "mmh3",
+                "numpy",
+                "pandas",
+                "pyarrow"
+            ],
+            "requires_python": ">=3.11",
+            "summary": "Container library for working with tabular Arrow data",
+            "version": "0.2.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17979395,
+        "urls": [
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "734e13989d404afb33ed190b8673ec5e9048bc3a336a3026eb0aafcede136322",
+                    "md5": "8451db6cdb87d3a38538dc0e382df223",
+                    "sha256": "3b3c62f031e106568acbcc65d35f3db6183a59ce03933bac0e7bb17b164e8203"
+                },
+                "downloads": -1,
+                "filename": "quivr-0.2.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "8451db6cdb87d3a38538dc0e382df223",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.11",
+                "size": 33007,
+                "upload_time": "2023-05-05T00:03:35",
+                "upload_time_iso_8601": "2023-05-05T00:03:35.061206Z",
+                "url": "https://files.pythonhosted.org/packages/73/4e/13989d404afb33ed190b8673ec5e9048bc3a336a3026eb0aafcede136322/quivr-0.2.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "402e02ecef8d2dcb6b93b255962964cff93202e821fdd2e546a0f60b2c64dec3",
+                    "md5": "49f8187a656f0556d992ac3f3d4c8bc8",
+                    "sha256": "3427933db74b0ca8e58e504838728b7b5fcc7da072aed4d27fc4865fe8b5f5c1"
+                },
+                "downloads": -1,
+                "filename": "quivr-0.2.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "49f8187a656f0556d992ac3f3d4c8bc8",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.11",
+                "size": 19335,
+                "upload_time": "2023-05-05T00:03:37",
+                "upload_time_iso_8601": "2023-05-05T00:03:37.535132Z",
+                "url": "https://files.pythonhosted.org/packages/40/2e/02ecef8d2dcb6b93b255962964cff93202e821fdd2e546a0f60b2c64dec3/quivr-0.2.0.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

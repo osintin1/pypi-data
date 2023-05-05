@@ -1,0 +1,94 @@
+{
+    "0.1.0": {
+        "info": {
+            "author": "Tung Nguyen",
+            "author_email": "tongueroo@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: Apache Software License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.11"
+            ],
+            "description": "# Google Cloud Function SSL Rotator Tool\n\nThis tool allows you to use Google cloud function to rotate a regional SSL cert for a regional Google target https proxy.\n\nNote: This tool only supports regional google ssl certs and regional google target https proxies.\n\n## Overview\n\nYou'll upload cert files to the configured GCS bucket, and it'll use the cert files to create a google ssl create and update the target https proxy. For clarity, here are the steps:\n\n1. Upload your SSL cert files to your GCS Bucket, IE: cert1.key and cert1.crt\n2. The Cloud function listens to the upload event.\n3. Function creates a self-managed Google SSL Certificate with the same name as the uploaded file. IE: cert1\n4. Function updates the target https proxy with the new cert.\n\n## Notes\n\n* The `GOOGLE_PROJECT` env variable must be set for this script to work.\n* The Google Cloud Function is written in Python and uses purely the Google Cloud SDK. It does not use `gcloud`. This allows it to run on a Google Cloud Function.\n* The tool comes with the `google-ssl deploy` command to deploy the function to Google Cloud functions. It creates the necessary resources, like an IAM service account with required permissions. While the Google Cloud Function itself does not require gcloud, some parts of the deploy command do rely on the `gcloud` cli. Note: There was an attempt to use the pure Google Cloud SDK, but it proved unsatisfactory. The SDK does not document deployment well, and the interface was too complex at the time.\n* The tool also provides the ability to test locally. This helps speed up debugging, development, and testing.\n* The tool provides a message explaining what it will do with a \"Are you sure?\" prompt. To bypass the message and prompt, use the `-y' option.\n\n## Structure\n\nHere's a suggested GCS bucket structure.\n\n    gcs://$BUCKET/certs/$DOMAIN/\n\nHere's an example with files uploaded.\n\n    gcs://my-bucket/certs/example.com/proxies.txt\n    gcs://my-bucket/certs/example.com/cert-name-1.key\n    gcs://my-bucket/certs/example.com/cert-name-1.crt\n\nConsiderations:\n\n* The cert name will be the name of the google ssl certification record that shows up with `gcloud compute ssl-certificates list`. Google ssl certificates need to be unique per Google project.\n* The `.key` and `.crt` files and `proxies.txt` must exist before the script will create the google ssl certificate and continue on. Otherwise the script exits early with a message in the logs.\n* Only a `.key` and `.crt` files will trigger a target https proxy update.\n\n## proxies.txt\n\nThere needs to be a `proxies.txt` file in the same GCS folder. The `proxies.txt` lists target https proxies to be updated. This is because the only useful information passed to the cloud function in the received `cloud_event` object is the bucket name and filename path. So a `proxies.txt` contains a list of target proxie. If the `proxies.txt` does not exist, the script logs a message.\n\nThis file should be a list of target https proxies separated by newlines. Here's a `gcloud` command to help you grab a list to work with. You should remove most entries and only keep the proxies you want to update.\n\n    gcloud compute target-https-proxies list --format json | jq -r '.[].name'\n\n## Development Setup\n\nFor development, it is recommended to use Python virtualenv to set up the requirements. Here's a cheatsheet.\n\n    virtualenv -p python3 .venv\n    source .venv/bin/activate\n\n## Install\n\nInstall the google-ssl tool.\n\n    pip install --editable .\n\nThis installs the `google-ssl` command.\n\nNote: The `pip install --editable .` creates a shim that points to your local folder of the tool. This means any code edits you make are reflected without having to reinstall unless you move the folder. TLDR: You only have to install once.\n\nAlternatively, if you have poetry installed. You can run\n\n    poetry install\n\nSee poetry site for detailed install docs: https://python-poetry.org/docs/#installation\n\n## CLI Help Intro\n\nCLI help:\n\n    google-ssl\n    google-ssl --help\n    google-ssl deploy --help\n    google-ssl rotate --help\n\nYou can also call the tool directly with python without installing the shim.\n\n    python google_ssl/cli.py\n    python google_ssl/cli.py --help\n    python google_ssl/cli.py deploy --help\n    python google_ssl/cli.py rotate --help\n\nThe shim makes the interface more user friendly, though and can be run from any location, not just the google-ssl project folder.\n\n## Deploy\n\nDeploy the code to google cloud functions.\n\n    google-ssl deploy --bucket my-bucket\n\nThis simply uses [gcloud functions deploy](https://cloud.google.com/sdk/gcloud/reference/functions/deploy) to package up the code and deploy it to Google Cloud functions. The google function name is called `google-ssl-rotator` by default. It can be set with the `GS_FUNCTION_NAME` env var.\n\n## Local Testing\n\nThis can be useful before deploying code to Google Cloud Functions.\n\nCopy a `proxies.txt` file with a list of target https proxies you want to be updated and the SSL cert files you want to be used to create the Self-managed Google SSL Cert. Replace `CERT_NAME` with your own value. The cert name needs to be unique across the entire Google project.\n\n    CERT_NAME=cert-name-1\n    gsutil cp proxies.txt gs://my-bucket/certs/example.com/proxies.txt\n    gsutil cp $CERT_NAME.key gs://my-bucket/certs/example.com/$CERT_NAME.key\n    gsutil cp $CERT_NAME.crt gs://my-bucket/certs/example.com/$CERT_NAME.crt\n\nThe files must exist on the GCS bucket before running the next command: `rotate`.\n\nThe `rotate` command \"triggers\" the ssl cert update logic and downloads the cert files from the GCS bucket. It performs the **same** logic that the google cloud function performs. You're just manually triggering it for rapid testing and development.\n\n    google-ssl rotate --bucket my-bucket --name certs/example.com/name.key\n\nThe nice thing about local testing is that you see the logs immediately in the same terminal.\n\nYou can also provide a `--proxies` option to specify which target https proxies to update. In this case, the `proxies.txt` is not downloaded and used. Example:\n\n    google-ssl rotate --bucket my-bucket --name certs/example.com/name.key --proxies demo-target-https-proxy-dev\n\n## Remote Testing: Cloud Function\n\nYou can build a test payload using the Google Cloud Function console **Testing** tab. Replace the `name` and `bucket` with some test values that exist in the GCS bucket.\n\n```json\n{\n  \"name\": \"certs/dev.example.com/test1.key\",\n  \"bucket\": \"certs-bucket-dev\",\n  \"contentType\": \"application/json\",\n  \"metageneration\": \"1\",\n  \"timeCreated\": \"2020-04-23T07:38:57.230Z\",\n  \"updated\": \"2020-04-23T07:38:57.230Z\"\n}\n```\n\nIt will display a `curl` command you can use in the Cloud Shell to test. It will return an \"OK\" http body response. Check the **Logs** tab to verify that it worked.\n\nLast but not least, use gcloud to check that the google ssl cert was created and target https proxy was updated. Here's a cheatsheet with useful example commands:\n\n    gcloud compute ssl-certificates list\n    # useful to confirm certs are regional\n    gcloud compute ssl-certificates list --format json | jq '.[].selfLink'\n    gcloud compute ssl-certificates describe test1 --region us-central1\n    gcloud compute target-https-proxies describe demo-target-https-proxy-dev --region us-central1 | yq '.sslCertificates'\n\nThe tool also shows a hint/tip with similar check commands upon completion.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/boltops-tools/google-ssl",
+            "keywords": "",
+            "license": "Apache-2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "google-ssl",
+            "package_url": "https://pypi.org/project/google-ssl/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/google-ssl/",
+            "project_urls": {
+                "Homepage": "https://github.com/boltops-tools/google-ssl"
+            },
+            "release_url": "https://pypi.org/project/google-ssl/0.1.0/",
+            "requires_dist": [
+                "functions-framework (>=3,<4)",
+                "google-cloud-compute (>=1,<2)",
+                "google-cloud-storage (>=2,<3)",
+                "google-api-python-client (>=2,<3)",
+                "click (>=8,<9)"
+            ],
+            "requires_python": ">=3.11,<4.0",
+            "summary": "Google Cloud Function SSL Cert Rotator tool",
+            "version": "0.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17979146,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "75784772c48b5cd8cae5d4956d5aa8c858dab1565765e1fbe18bb537098e4be9",
+                    "md5": "475316ac69f2f37f7923a6117caf05ac",
+                    "sha256": "327208c4e790d6ab534e0a41f21b4ed5bf2a86fe4f3b275047db3c6fc64da99f"
+                },
+                "downloads": -1,
+                "filename": "google_ssl-0.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "475316ac69f2f37f7923a6117caf05ac",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.11,<4.0",
+                "size": 10760,
+                "upload_time": "2023-05-04T23:23:50",
+                "upload_time_iso_8601": "2023-05-04T23:23:50.670619Z",
+                "url": "https://files.pythonhosted.org/packages/75/78/4772c48b5cd8cae5d4956d5aa8c858dab1565765e1fbe18bb537098e4be9/google_ssl-0.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "59b68b3f6e5f0426a12f0d0bbd33fd19681ca521746165c071ddbf0748dffb9a",
+                    "md5": "2962edc5454c3ce760fc8d179d2458d2",
+                    "sha256": "6b9886873a65479889ede054b4927c0d4e1aaaacd2d0385c02add94b52a9e7aa"
+                },
+                "downloads": -1,
+                "filename": "google_ssl-0.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "2962edc5454c3ce760fc8d179d2458d2",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.11,<4.0",
+                "size": 11167,
+                "upload_time": "2023-05-04T23:23:51",
+                "upload_time_iso_8601": "2023-05-04T23:23:51.936755Z",
+                "url": "https://files.pythonhosted.org/packages/59/b6/8b3f6e5f0426a12f0d0bbd33fd19681ca521746165c071ddbf0748dffb9a/google_ssl-0.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

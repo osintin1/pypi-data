@@ -51,7 +51,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17972316,
+        "last_serial": 17973281,
         "urls": [
             {
                 "comment_text": "",
@@ -150,7 +150,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17972316,
+        "last_serial": 17973281,
         "urls": [
             {
                 "comment_text": "",
@@ -215,7 +215,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "# DCEF - Data Cleaning Exploration Framework\nWe all know how awkward it is to clean data in jupyter notebooks.  Multiple cells of exploratory work, trying different transforms, looking up different transforms, adhoc functions that work in one notebook and have to be either copied/pasta-ed to the next notebook, or rewritten from scratch.  Data Cleaning Explorationg Framework  (DCEF) makes all of that better by providing a visual UI for common cleaning operations AND emitting python code that performs the transformation. Specifically, the DCEF is a tool built to interactively explore, clean, and transform pandas dataframes.\n\n![Data Cleaning Exploration Framework Screenshot](static/images/dcf-jupyter.png)\n\n\n## Installation\n\nIf using JupyterLab, `dcef` requires JupyterLab version 3 or higher.\n\nYou can install `dcef` using `pip`\n\nUsing `pip`:\n\n```bash\npip install dcef\n```\n\n## Documentation\n\nTo get started with using DCEF, check out the full documentation:\n\nhttps://dcef.readthedocs.io/\n\n\n# Using DCEF\n\nin a jupyter lab notebook just add the following to a cell\n\n```python\nfrom dcef.dcef_widget import DCEFWidget\nDCEFWidget(df=df)  #df being the dataframe you want to explore\n``` \nand you will see the UI for DCEF\n\n\n## Using commands\n\nAt the core DCEF commands operate on columns.  You must first click on a cell (not a header) in the top pane to select a column.\n\nNext you must click on a command like `dropcol`, `fillna`, or `groupby` to create a new command\n\nAfter creating a new command, you will see that command in the commands list, now you must edit the details of a command.  Select the command by clicking on the bottom cell.\n\nAt this point you can either delete the command by clicking the `X` button or change command parameters.\n\n## Writing your own commands\n\nBuiltin commands are found in [all_transforms.py](dcef/all_transforms.py)\n\n### Simple example\nHere is a simple example command\n```python\nclass DropCol(Command):\n    command_default = [s('dropcol'), s('df'), \"col\"]\n    command_pattern = [None]\n\n    @staticmethod \n    def transform(df, col):\n        df.drop(col, axis=1, inplace=True)\n        return df\n\n    @staticmethod \n    def transform_to_py(df, col):\n        return \"    df.drop('%s', axis=1, inplace=True)\" % col\n```\n`command_default` is the base configuration of the command when first added, `s('dropcol')` is a special notation for the function name.  `s('df')` is a symbol notation for the dataframe argument (see LISP section for details).  `\"col\"` is a placeholder for the selected column.\n\nsince `dropcol` does not take any extra arguments, `command_pattern` is `[None]`\n```python\n    def transform(df, col):\n        df.drop(col, axis=1, inplace=True)\n        return df\n```\nThis `transform` is the function that manipulates the dataframe.  For `dropcol` we take two arguments, the dataframe, and the column name.\n\n```python\n    def transform_to_py(df, col):\n        return \"    df.drop('%s', axis=1, inplace=True)\" % col\n```\n`transform_to_py` emits equivalent python code for this transform.  Code is indented 4 space for use in a function.\n\n### Complex example\n```python\nclass GroupBy(Transform):\n    command_default = [s(\"groupby\"), s('df'), 'col', {}]\n    command_pattern = [[3, 'colMap', 'colEnum', ['null', 'sum', 'mean', 'median', 'count']]]\n    @staticmethod \n    def transform(df, col, col_spec):\n        grps = df.groupby(col)\n        df_contents = {}\n        for k, v in col_spec.items():\n            if v == \"sum\":\n                df_contents[k] = grps[k].apply(lambda x: x.sum())\n            elif v == \"mean\":\n                df_contents[k] = grps[k].apply(lambda x: x.mean())\n            elif v == \"median\":\n                df_contents[k] = grps[k].apply(lambda x: x.median())\n            elif v == \"count\":\n                df_contents[k] = grps[k].apply(lambda x: x.count())\n        return pd.DataFrame(df_contents)\n```\nThe `GroupBy` command is complex.  it takes a 3rd argument of `col_spec`.  `col_spec` is an argument of type `colEnum`.  A `colEnum` argument tells the UI to display a table with all column names, and a drop down box of enum options.\n\nIn this case each column can have an operation of either `sum`, `mean`, `median`, or `count` applied to it.\n\nNote also the leading `3` in the `command_pattern`.  That is telling the UI that these are the specs for the 3rd element of the command.  Eventually commands will be able to have multiple configured arguments.\n\n### Argument types\nArguments can currently be configured as \n\n* `integer` - allowing an integer input\n* `enum` - allowing a strict set of options, returned as a string to the transform\n* `colEnum` - allowing a strict set of options per column, returned as a dictionary keyed on column with values of enum options\n\n\n## Order of Operations for data cleaning\nThe ideal order of operations is as follows\n\n* Column level fixes\n  * drop (remove this column)\n  * fillna (fill NaN/None with a value)\n  * safe int (convert a colum to integers where possible, and nan everywhere else)\n  * OneHotEncoding ( create multiple boolean columns from the possible values of this column )\n  * MakeCategorical ( change the values of string to a Categorical Data type)\n  * Quantize\n* DataFrame transformations\nthese transforms largely keep the shape of the data the same\n\n  * Resample\n  * ManyColdDecoding (the opposite of OneHotEncoding, take multiple boolean columns and transform into a single categorical\n  * Index shift (add a column with the value from previous row's column)\n* Dataframe transformations 2\nThese result in a single new dataframe with a vastly different shape\n  * Stack/Unstack columns\n  * GroupBy (with UI for sellect group by function for each column)\n* DataFrame transformations 2\nThese transforms emit multiple DataFrames\n  * Relational extract (extract one or more columns into a second dataframe that can be joined back to a foreign key column)\n  * Split on column (emit separate dataframes for each value of a categorical, no shape editting)\n* DataFrame combination\n  * concat (concatenate multiple dataframes, with UI affordances to assure a similar shape)\n  * join (join two dataframes on a key, with UI affordances)\n\nDCEF can only work on a single input dataframe shape at a time.  Any newly created columns are visible on output, but not available for manipulation in the same DCEF Cell.\n\n\n# Components\n* a rich table widget that is embeddable into applications and in the jupyter notebook.\n* A UI for selecting and trying transforms interactively\n* An output table widget showing the transformed dataframe\n\n\n# What works now, what's coming\n\n## Exists now\n  * React frontend app\n    * Displays a datatframe\n\t* Simple UI for column level functions\n\t* Shows generated python code\n\t* Shows transformed data frame\n  * DCEF server\n    * Serves up dataframes for use by frontend\n\t* responds to dcef commands\n\t* shows generated python code\n  * Developer User experience\n\t* define DCEF commands in python onloy\n  * DCEF Intepreter\n    * Based on Peter Norvig's lispy.py, a simple syntax that is easy for the frontend to generate (no parens, just JSON arrays)\n  * DCEF core (actual transforms supported)\n    * dropcol\n\t* fillna\n\t* one hot\n\t* safe int\n\t* GroupBy\n\n## Next major features\n  * Jupyter Notebook widget\n    * embed the same UI from the frontend into a jupyter notebook shell\n\t* No need to fire up a separate server, commands sent via ipywidgets.comms\n\t* Add a \"send generated python to next cell\" function\n  * React frontend app\n    * Styling\n\t  * Server only, some UI for DataFrame selection\n    * Pre filtering concept (only operate on first 1000 rows, some sample of all rows)\n\t* DataFrame joining UI\n\t* Summary statistics tab for incoming dataframe\n\t* Multi index columns\n\t* DateTimeIndex support\n  * DCEF core\n\t* MakeCategorical\n\t* Quantize\n\t* Resample\n\t* ManyColdDecoding\n\t* IndexShift\n\t* Computed\n\t* Stack/Unstack\n\t* RelationalExtract\n\t* Split\n\t* concat\n\t* join\n\t\n\n\n\n## Development installation\n\nFor a development installation:\n\n```bash\ngit clone https://github.com/paddymul/dcef.git\ncd dcef\nconda install ipywidgets=8 jupyterlab\npip install -ve .\n```\n\nEnabling development install for Jupyter notebook:\n\n\nEnabling development install for JupyterLab:\n\n```bash\njupyter labextension develop . --overwrite\n```\n\nNote for developers: the `--symlink` argument on Linux or OS X allows one to modify the JavaScript code in-place. This feature is not available with Windows.\n`\n\n## Contributions\n\nWe :heart: contributions.\n\nHave you had a good experience with this project? Why not share some love and contribute code, or just let us know about any issues you had with it?\n\nWe welcome issue reports [here](../../issues); be sure to choose the proper issue template for your issue, so that we can be sure you're providing the necessary information.\n\nBefore sending a [Pull Request](../../pulls), please make sure you read our\n\n\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -250,7 +249,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17972316,
+        "last_serial": 17973281,
         "urls": [
             {
                 "comment_text": "",
@@ -291,6 +290,205 @@
                 "upload_time": "2023-05-04T12:54:19",
                 "upload_time_iso_8601": "2023-05-04T12:54:19.618612Z",
                 "url": "https://files.pythonhosted.org/packages/a2/7d/db935ca5218e52c20f227aa811e9f096cf3329b7e80dcaa5c1c9d0a45541/buckaroo-0.2.7.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.8": {
+        "info": {
+            "author": "Paddy Mullen",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Framework :: Jupyter",
+                "Intended Audience :: Developers",
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: BSD License",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "IPython,Jupyter,Widgets,pandas",
+            "license": "Copyright (c) 2019 Bloomberg All rights reserved.  Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:  1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.  2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.  3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "buckaroo",
+            "package_url": "https://pypi.org/project/buckaroo/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/buckaroo/",
+            "project_urls": {
+                "Homepage": "https://github.com/paddymul/buckaroo"
+            },
+            "release_url": "https://pypi.org/project/buckaroo/0.2.8/",
+            "requires_dist": [
+                "ipywidgets<9,>=7.6.0",
+                "nbval>=0.9; extra == 'test'",
+                "pandas<=1.3.5; extra == 'test'",
+                "pytest-cov>=3; extra == 'test'",
+                "pytest>=6; extra == 'test'"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "Buckaroo - GUI Data wrangling for pandas",
+            "version": "0.2.8",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17973281,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2f0bdf87563eaca73eadec2b9fd8f46f4c357250e9f61c21d67b40100764d687",
+                    "md5": "d80aa06002e403b1ad633735af3ea5fc",
+                    "sha256": "f6f0d3e7cb2021e14497abbeb054e3fbe18f3b42945b257a78382c6143c2547c"
+                },
+                "downloads": -1,
+                "filename": "buckaroo-0.2.8-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "d80aa06002e403b1ad633735af3ea5fc",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 1563439,
+                "upload_time": "2023-05-04T13:48:23",
+                "upload_time_iso_8601": "2023-05-04T13:48:23.711321Z",
+                "url": "https://files.pythonhosted.org/packages/2f/0b/df87563eaca73eadec2b9fd8f46f4c357250e9f61c21d67b40100764d687/buckaroo-0.2.8-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e0bddd0ad418428cbedf9018b379a44936f403b687d74bf8fb4ca4949dbeac0f",
+                    "md5": "fbf99efff56ae6334db00728d98118a7",
+                    "sha256": "dbe6c7b9cb9e0fa614a4d46b792381e102839d535414c1a579b40c4f8c08edcc"
+                },
+                "downloads": -1,
+                "filename": "buckaroo-0.2.8.tar.gz",
+                "has_sig": false,
+                "md5_digest": "fbf99efff56ae6334db00728d98118a7",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 2196754,
+                "upload_time": "2023-05-04T13:48:29",
+                "upload_time_iso_8601": "2023-05-04T13:48:29.081963Z",
+                "url": "https://files.pythonhosted.org/packages/e0/bd/dd0ad418428cbedf9018b379a44936f403b687d74bf8fb4ca4949dbeac0f/buckaroo-0.2.8.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.9": {
+        "info": {
+            "author": "Paddy Mullen",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Framework :: Jupyter",
+                "Intended Audience :: Developers",
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: BSD License",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# Buckaroo - The Data Wrangling Assistant\nWe all know how awkward it is to clean data in jupyter notebooks.  Multiple cells of exploratory work, trying different transforms, looking up different transforms, adhoc functions that work in one notebook and have to be either copied/pasta-ed to the next notebook, or rewritten from scratch.  Buckaro makes all of that better by providing a visual UI for common cleaning operations AND emitting python code that performs the transformation. Specifically, the Buckaroo is a tool built to interactively explore, clean, and transform pandas dataframes.\n\n![Buckaroo Screenshot](static/images/dcf-jupyter.png)\n\n\n## Installation\n\nIf using JupyterLab, `buckaroo` requires JupyterLab version 3 or higher.\n\nYou can install `buckaroo` using `pip`\n\nUsing `pip`:\n\n```bash\npip install buckaroo\n```\n\n## Documentation\n\nTo get started with using Buckaroo, check out the full documentation:\n\nhttps://buckaroo.readthedocs.io/\n\n\n# Using Buckaroo\n\nin a jupyter lab notebook just add the following to a cell\n\n```python\nfrom buckaroo.buckaroo_widget import BuckarooWidget\nBuckarooWidget(df=df)  #df being the dataframe you want to explore\n``` \nand you will see the UI for Buckaroo\n\n\n## Using commands\n\nAt the core Buckaroo commands operate on columns.  You must first click on a cell (not a header) in the top pane to select a column.\n\nNext you must click on a command like `dropcol`, `fillna`, or `groupby` to create a new command\n\nAfter creating a new command, you will see that command in the commands list, now you must edit the details of a command.  Select the command by clicking on the bottom cell.\n\nAt this point you can either delete the command by clicking the `X` button or change command parameters.\n\n## Writing your own commands\n\nBuiltin commands are found in [all_transforms.py](buckaroo/all_transforms.py)\n\n### Simple example\nHere is a simple example command\n```python\nclass DropCol(Command):\n    command_default = [s('dropcol'), s('df'), \"col\"]\n    command_pattern = [None]\n\n    @staticmethod \n    def transform(df, col):\n        df.drop(col, axis=1, inplace=True)\n        return df\n\n    @staticmethod \n    def transform_to_py(df, col):\n        return \"    df.drop('%s', axis=1, inplace=True)\" % col\n```\n`command_default` is the base configuration of the command when first added, `s('dropcol')` is a special notation for the function name.  `s('df')` is a symbol notation for the dataframe argument (see LISP section for details).  `\"col\"` is a placeholder for the selected column.\n\nsince `dropcol` does not take any extra arguments, `command_pattern` is `[None]`\n```python\n    def transform(df, col):\n        df.drop(col, axis=1, inplace=True)\n        return df\n```\nThis `transform` is the function that manipulates the dataframe.  For `dropcol` we take two arguments, the dataframe, and the column name.\n\n```python\n    def transform_to_py(df, col):\n        return \"    df.drop('%s', axis=1, inplace=True)\" % col\n```\n`transform_to_py` emits equivalent python code for this transform.  Code is indented 4 space for use in a function.\n\n### Complex example\n```python\nclass GroupBy(Transform):\n    command_default = [s(\"groupby\"), s('df'), 'col', {}]\n    command_pattern = [[3, 'colMap', 'colEnum', ['null', 'sum', 'mean', 'median', 'count']]]\n    @staticmethod \n    def transform(df, col, col_spec):\n        grps = df.groupby(col)\n        df_contents = {}\n        for k, v in col_spec.items():\n            if v == \"sum\":\n                df_contents[k] = grps[k].apply(lambda x: x.sum())\n            elif v == \"mean\":\n                df_contents[k] = grps[k].apply(lambda x: x.mean())\n            elif v == \"median\":\n                df_contents[k] = grps[k].apply(lambda x: x.median())\n            elif v == \"count\":\n                df_contents[k] = grps[k].apply(lambda x: x.count())\n        return pd.DataFrame(df_contents)\n```\nThe `GroupBy` command is complex.  it takes a 3rd argument of `col_spec`.  `col_spec` is an argument of type `colEnum`.  A `colEnum` argument tells the UI to display a table with all column names, and a drop down box of enum options.\n\nIn this case each column can have an operation of either `sum`, `mean`, `median`, or `count` applied to it.\n\nNote also the leading `3` in the `command_pattern`.  That is telling the UI that these are the specs for the 3rd element of the command.  Eventually commands will be able to have multiple configured arguments.\n\n### Argument types\nArguments can currently be configured as \n\n* `integer` - allowing an integer input\n* `enum` - allowing a strict set of options, returned as a string to the transform\n* `colEnum` - allowing a strict set of options per column, returned as a dictionary keyed on column with values of enum options\n\n\n## Order of Operations for data cleaning\nThe ideal order of operations is as follows\n\n* Column level fixes\n  * drop (remove this column)\n  * fillna (fill NaN/None with a value)\n  * safe int (convert a colum to integers where possible, and nan everywhere else)\n  * OneHotEncoding ( create multiple boolean columns from the possible values of this column )\n  * MakeCategorical ( change the values of string to a Categorical Data type)\n  * Quantize\n* DataFrame transformations\nthese transforms largely keep the shape of the data the same\n\n  * Resample\n  * ManyColdDecoding (the opposite of OneHotEncoding, take multiple boolean columns and transform into a single categorical\n  * Index shift (add a column with the value from previous row's column)\n* Dataframe transformations 2\nThese result in a single new dataframe with a vastly different shape\n  * Stack/Unstack columns\n  * GroupBy (with UI for sellect group by function for each column)\n* DataFrame transformations 2\nThese transforms emit multiple DataFrames\n  * Relational extract (extract one or more columns into a second dataframe that can be joined back to a foreign key column)\n  * Split on column (emit separate dataframes for each value of a categorical, no shape editting)\n* DataFrame combination\n  * concat (concatenate multiple dataframes, with UI affordances to assure a similar shape)\n  * join (join two dataframes on a key, with UI affordances)\n\nBuckaroo can only work on a single input dataframe shape at a time.  Any newly created columns are visible on output, but not available for manipulation in the same Buckaroo Cell.\n\n\n# Components\n* a rich table widget that is embeddable into applications and in the jupyter notebook.\n* A UI for selecting and trying transforms interactively\n* An output table widget showing the transformed dataframe\n\n\n# What works now, what's coming\n\n## Exists now\n  * React frontend app\n    * Displays a datatframe\n\t* Simple UI for column level functions\n\t* Shows generated python code\n\t* Shows transformed data frame\n  * Buckaroo server\n    * Serves up dataframes for use by frontend\n\t* responds to buckaroo commands\n\t* shows generated python code\n  * Developer User experience\n\t* define Buckaroo commands in python onloy\n  * Buckaroo Intepreter\n    * Based on Peter Norvig's lispy.py, a simple syntax that is easy for the frontend to generate (no parens, just JSON arrays)\n  * Buckaroo core (actual transforms supported)\n    * dropcol\n\t* fillna\n\t* one hot\n\t* safe int\n\t* GroupBy\n\n## Next major features\n  * Jupyter Notebook widget\n    * embed the same UI from the frontend into a jupyter notebook shell\n\t* No need to fire up a separate server, commands sent via ipywidgets.comms\n\t* Add a \"send generated python to next cell\" function\n  * React frontend app\n    * Styling\n\t  * Server only, some UI for DataFrame selection\n    * Pre filtering concept (only operate on first 1000 rows, some sample of all rows)\n\t* DataFrame joining UI\n\t* Summary statistics tab for incoming dataframe\n\t* Multi index columns\n\t* DateTimeIndex support\n  * Buckaroo core\n\t* MakeCategorical\n\t* Quantize\n\t* Resample\n\t* ManyColdDecoding\n\t* IndexShift\n\t* Computed\n\t* Stack/Unstack\n\t* RelationalExtract\n\t* Split\n\t* concat\n\t* join\n\t\n\n\n\n## Development installation\n\nFor a development installation:\n\n```bash\ngit clone https://github.com/paddymul/buckaroo.git\ncd buckaroo\nconda install ipywidgets=8 jupyterlab\npip install -ve .\n```\n\nEnabling development install for Jupyter notebook:\n\n\nEnabling development install for JupyterLab:\n\n```bash\njupyter labextension develop . --overwrite\n```\n\nNote for developers: the `--symlink` argument on Linux or OS X allows one to modify the JavaScript code in-place. This feature is not available with Windows.\n`\n\n## Contributions\n\nWe :heart: contributions.\n\nHave you had a good experience with this project? Why not share some love and contribute code, or just let us know about any issues you had with it?\n\nWe welcome issue reports [here](../../issues); be sure to choose the proper issue template for your issue, so that we can be sure you're providing the necessary information.\n\nBefore sending a [Pull Request](../../pulls), please make sure you read our\n\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "IPython,Jupyter,Widgets,pandas",
+            "license": "Copyright (c) 2019 Bloomberg All rights reserved.  Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:  1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.  2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.  3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "buckaroo",
+            "package_url": "https://pypi.org/project/buckaroo/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/buckaroo/",
+            "project_urls": {
+                "Homepage": "https://github.com/paddymul/buckaroo"
+            },
+            "release_url": "https://pypi.org/project/buckaroo/0.2.9/",
+            "requires_dist": [
+                "ipywidgets<9,>=7.6.0",
+                "nbval>=0.9; extra == 'test'",
+                "pandas<=1.3.5; extra == 'test'",
+                "pytest-cov>=3; extra == 'test'",
+                "pytest>=6; extra == 'test'"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "Buckaroo - GUI Data wrangling for pandas",
+            "version": "0.2.9",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17973281,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "181ce33be1c28b9dda4f8c8f7d04473d382893b7edbf872e15a083e55279849f",
+                    "md5": "682d7285baf8b0353082eac9054d2f54",
+                    "sha256": "d8a167c04d4ca25236f65d404e1d5088b879e42c17a50de6d55957b03551c87f"
+                },
+                "downloads": -1,
+                "filename": "buckaroo-0.2.9-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "682d7285baf8b0353082eac9054d2f54",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 1563923,
+                "upload_time": "2023-05-04T14:14:31",
+                "upload_time_iso_8601": "2023-05-04T14:14:31.709916Z",
+                "url": "https://files.pythonhosted.org/packages/18/1c/e33be1c28b9dda4f8c8f7d04473d382893b7edbf872e15a083e55279849f/buckaroo-0.2.9-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "9684e347965dfc657820719f277082cdc35565ae1247668658d5f644deeb009c",
+                    "md5": "be36559298becb105f444b969e2d4719",
+                    "sha256": "f75bb675c6ed73ab628283c53687d527e3c5ec576c4e0ab6ff5d02b8c43749b1"
+                },
+                "downloads": -1,
+                "filename": "buckaroo-0.2.9.tar.gz",
+                "has_sig": false,
+                "md5_digest": "be36559298becb105f444b969e2d4719",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 2197058,
+                "upload_time": "2023-05-04T14:14:37",
+                "upload_time_iso_8601": "2023-05-04T14:14:37.792953Z",
+                "url": "https://files.pythonhosted.org/packages/96/84/e347965dfc657820719f277082cdc35565ae1247668658d5f644deeb009c/buckaroo-0.2.9.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

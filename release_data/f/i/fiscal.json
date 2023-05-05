@@ -37,7 +37,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16785387,
+        "last_serial": 17977681,
         "urls": [
             {
                 "comment_text": "",
@@ -122,7 +122,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16785387,
+        "last_serial": 17977681,
         "urls": [
             {
                 "comment_text": "",
@@ -179,7 +179,6 @@
                 "Programming Language :: Python :: 3",
                 "Programming Language :: Python :: 3.11"
             ],
-            "description": "# Fiscal\n## A simple, systematic tax liability calculator\n\nFiscal is a simple, systematic tax calculator with soft-coded rate bands.  Specifically, Fiscal aims to side-step the commonly-seen behaviour of using 'if' statements in tax calculators, and relying on hard-coded tax bands. \n\n### Fiscal, broken down\n\nThere are two key elements to Fiscal.\n\n1) Bands - a stream of pairwise tuples (a threshold, a percentage) with an 'allocator'. The allocator dictates the manner in which taxable amounts are allocated between the threshold element of each band - the two predominant forms of allocator are provided:\n    - 'step', which reflects the most common allocation; and \n    - 'slab', which represents taxes for which the sole applicable rate is determined by the taxable amount (as in old stamp duty and early SDLT).\n\n2) Liabilities - a calculation of liability stored in a 'breakdown' - a three-element tuple made up of: \n    - the amount allocated to the band;\n    - the percentage referable to that band; and\n    - the product of the amount and the percentage.\n\n## Allocators - examples\nTo draw an example from Stamp Duty Land Tax (SDLT), a land transfer tax in England (and previously throughout the UK).\n\n### SDLT - stepped calculation\n\nThe applicable bands for a commercial transaction were, after 17 March 2017, as follows:\n\n| Threshold | Percentage |\n|-----------|------------|\n| \u00a3150,000  | 0%         |\n| \u00a3100,000  | 2%         |\n| Surplus   | 5%         |\n\nThis can be represented by a band as follows:\n\n``` python-console\nstepped_bands = SteppedBands(((150_000, 0),(100_000, 2),(\"Infinity\", 5)))\n```\n\n\nThe bands are allocated on the step basis, so \u00a31m would be allocated as follows:\n\n| Threshold | Percentage | Liability |\n|-----------|------------|-----------|\n| \u00a3150,000  | 0%         | \u00a30        |\n| \u00a3100,000  | 2%         | \u00a32,000    |\n| \u00a3750,000  | 5%         | \u00a337,500   |\n\n``` python-console\nallocation = stepped_bands.allocate(1_000_000)\nassert allocation == (\n    (Decimal(\"150000\"), Decimal(\"0\")),\n    (Decimal(\"100000\"), Decimal(\"2\")),\n    (Decimal(\"750000\"), Decimal(\"5\")),\n) # True\n\n```\n\n\nThe allocation is intended to be called within an instance of the Liability object.\n\n\n### SDLT - slabbed calculation\n\nPrior to 17 March 2017, the applicable SDLT rates for a commercial transaction were as follows:\n\n| Threshold | Percentage |\n|-----------|------------|\n| \u00a3150,000  | 0%         |\n| \u00a3100,000  | 1%         |\n| \u00a3250,000  | 3%         |\n| Surplus   | 4%         |\n\nThe bands were allocated on the 'slab' basis. This means that the taxable amount is compared with the __cumulative__ thresholds, which are as follows:\n\n| Cumulative Threshold | Percentage |\n|----------------------|------------|\n| \u00a3150,000             | 0%         |\n| \u00a3250,000             | 1%         |\n| \u00a3500,000             | 3%         |\n| Surplus              | 4%         |\n\nThe first cumulative threshold to equal or exceed the taxable amount determines the applicable percentage.  So where the taxable amount was \u00a3200,000, the applicable percentage was **1%**.\n\n| Cumulative Threshold | Amount   | Percentage |\n|----------------------|----------|------------|\n| \u00a3150,000             |          | 0%         |\n| \u00a3250,000             | \u00a3200,000 | 1%         |\n| \u00a3500,000             |          | 3%         |\n| Surplus              |          | 4%         |\n\nWhere the taxable amount was \u00a3300,000, the applicable percentage was **3%**.\n\n| Cumulative Threshold | Amount   | Percentage |\n|----------------------|----------|------------|\n| \u00a3150,000             |          | 0%         |\n| \u00a3250,000             |          | 1%         |\n| \u00a3500,000             | \u00a3300,000 | 3%         |\n| Surplus              |          | 4%         |\n\nThresholds were inclusive, so where the taxable amount was \u00a3500,000, the applicable percentage was still **3%**.\n\n| Cumulative Threshold | Amount   | Percentage |\n|----------------------|----------|------------|\n| \u00a3150,000             |          | 0%         |\n| \u00a3250,000             |          | 1%         |\n| \u00a3500,000             | \u00a3500,000 | 3%         |\n| Surplus              |          | 4%         |\n\nBut where the taxable amount was \u00a3500,001, the applicable percentage was **4%**.\n\n| Cumulative Threshold | Amount   | Percentage |\n|----------------------|----------|------------|\n| \u00a3150,000             |          | 0%         |\n| \u00a3250,000             |          | 1%         |\n| \u00a3500,000             |          | 3%         |\n| Surplus              | \u00a3500,001 | 4%         |\n\n## Liabilities - examples\n\nLiabilities represent the calculation the follows the allocation of a taxable amount into the correct bands. \n\nThose liabilities are then aggregated into a total liability.\nSo by way of example, if calculating the current (9 February 2022) SDLT liability (non-residential property) for a \u00a31m sum, the steps would be as follows.\n\n``` python-console\nbands = SteppedBands((150_000, 0),(100_000, 2),(\"Infinity\", 5))\nliab = Liability(bands=bands, amount=1_000_000)\n```\nThe breakdown of liability would look as below:\n\n``` python-console\nassert liab.breakdown == (\n        (Decimal(\"150000\"), Decimal(\"0\"), Decimal(\"0\")),\n        (Decimal(\"100000\"), Decimal(\"2\"), Decimal(\"2000\")),\n        (Decimal(\"750000\"), Decimal(\"5\"), Decimal(\"37500\")),\n    ) # True\nassert liab.total == Decimal(\"39500\") # True\n```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -208,7 +207,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16785387,
+        "last_serial": 17977681,
         "urls": [
             {
                 "comment_text": "",
@@ -249,6 +248,94 @@
                 "upload_time": "2023-02-10T07:48:36",
                 "upload_time_iso_8601": "2023-02-10T07:48:36.069841Z",
                 "url": "https://files.pythonhosted.org/packages/6a/72/12a594830c82362e2d1c1d6da6e700247a1d6f0416b48f8111f1f1159e31/fiscal-0.2.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.3": {
+        "info": {
+            "author": "Chris Nyland",
+            "author_email": "chris.nyland@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: BSD License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.11"
+            ],
+            "description": "# Fiscal\n## A simple, systematic tax liability calculator\n\nFiscal is a simple, systematic tax calculator with soft-coded rate bands.  Specifically, Fiscal aims to side-step the commonly-seen behaviour of using 'if' statements in tax calculators, and relying on hard-coded tax bands. \n\n### Fiscal, broken down\n\nThere are two key elements to Fiscal.\n\n1) Bands - a stream of pairwise tuples (a threshold, a percentage) with an 'allocator'. The allocator dictates the manner in which taxable amounts are allocated between the threshold element of each band - the two predominant forms of allocator are provided:\n    - 'step', which reflects the most common allocation; and \n    - 'slab', which represents taxes for which the sole applicable rate is determined by the taxable amount (as in old stamp duty and early SDLT).\n\n2) Liabilities - a calculation of liability stored in a 'breakdown' - a three-element tuple made up of: \n    - the amount allocated to the band;\n    - the percentage referable to that band; and\n    - the product of the amount and the percentage.\n\n## Allocators - examples\nTo draw an example from Stamp Duty Land Tax (SDLT), a land transfer tax in England (and previously throughout the UK).\n\n### SDLT - stepped calculation\n\nThe applicable bands for a commercial transaction were, after 17 March 2017, as follows:\n\n| Threshold | Percentage |\n|-----------|------------|\n| \u00a3150,000  | 0%         |\n| \u00a3100,000  | 2%         |\n| Surplus   | 5%         |\n\nThis can be represented by a band as follows:\n\n``` python-console\nstepped_bands = SteppedBands(((150_000, 0),(100_000, 2),(\"Infinity\", 5)))\n```\n\n\nThe bands are allocated on the step basis, so \u00a31m would be allocated as follows:\n\n| Threshold | Percentage | Liability |\n|-----------|------------|-----------|\n| \u00a3150,000  | 0%         | \u00a30        |\n| \u00a3100,000  | 2%         | \u00a32,000    |\n| \u00a3750,000  | 5%         | \u00a337,500   |\n\n``` python-console\nallocation = stepped_bands.allocate(1_000_000)\nassert allocation == (\n    (Decimal(\"150000\"), Decimal(\"0\")),\n    (Decimal(\"100000\"), Decimal(\"2\")),\n    (Decimal(\"750000\"), Decimal(\"5\")),\n) # True\n\n```\n\n\nThe allocation is intended to be called within an instance of the Liability object.\n\n\n### SDLT - slabbed calculation\n\nPrior to 17 March 2017, the applicable SDLT rates for a commercial transaction were as follows:\n\n| Threshold | Percentage |\n|-----------|------------|\n| \u00a3150,000  | 0%         |\n| \u00a3100,000  | 1%         |\n| \u00a3250,000  | 3%         |\n| Surplus   | 4%         |\n\nThe bands were allocated on the 'slab' basis. This means that the taxable amount is compared with the __cumulative__ thresholds, which are as follows:\n\n| Cumulative Threshold | Percentage |\n|----------------------|------------|\n| \u00a3150,000             | 0%         |\n| \u00a3250,000             | 1%         |\n| \u00a3500,000             | 3%         |\n| Surplus              | 4%         |\n\nThe first cumulative threshold to equal or exceed the taxable amount determines the applicable percentage.  So where the taxable amount was \u00a3200,000, the applicable percentage was **1%**.\n\n| Cumulative Threshold | Amount   | Percentage |\n|----------------------|----------|------------|\n| \u00a3150,000             |          | 0%         |\n| \u00a3250,000             | \u00a3200,000 | 1%         |\n| \u00a3500,000             |          | 3%         |\n| Surplus              |          | 4%         |\n\nWhere the taxable amount was \u00a3300,000, the applicable percentage was **3%**.\n\n| Cumulative Threshold | Amount   | Percentage |\n|----------------------|----------|------------|\n| \u00a3150,000             |          | 0%         |\n| \u00a3250,000             |          | 1%         |\n| \u00a3500,000             | \u00a3300,000 | 3%         |\n| Surplus              |          | 4%         |\n\nThresholds were inclusive, so where the taxable amount was \u00a3500,000, the applicable percentage was still **3%**.\n\n| Cumulative Threshold | Amount   | Percentage |\n|----------------------|----------|------------|\n| \u00a3150,000             |          | 0%         |\n| \u00a3250,000             |          | 1%         |\n| \u00a3500,000             | \u00a3500,000 | 3%         |\n| Surplus              |          | 4%         |\n\nBut where the taxable amount was \u00a3500,001, the applicable percentage was **4%**.\n\n| Cumulative Threshold | Amount   | Percentage |\n|----------------------|----------|------------|\n| \u00a3150,000             |          | 0%         |\n| \u00a3250,000             |          | 1%         |\n| \u00a3500,000             |          | 3%         |\n| Surplus              | \u00a3500,001 | 4%         |\n\n## Liabilities - examples\n\nLiabilities represent the calculation the follows the allocation of a taxable amount into the correct bands. \n\nThose liabilities are then aggregated into a total liability.\nSo by way of example, if calculating the current (9 February 2022) SDLT liability (non-residential property) for a \u00a31m sum, the steps would be as follows.\n\n``` python-console\nbands = SteppedBands((150_000, 0),(100_000, 2),(\"Infinity\", 5))\nliab = Liability(bands=bands, amount=1_000_000)\n```\nThe breakdown of liability would look as below:\n\n``` python-console\nassert liab.breakdown == (\n        (Decimal(\"150000\"), Decimal(\"0\"), Decimal(\"0\")),\n        (Decimal(\"100000\"), Decimal(\"2\"), Decimal(\"2000\")),\n        (Decimal(\"750000\"), Decimal(\"5\"), Decimal(\"37500\")),\n    ) # True\nassert liab.total == Decimal(\"39500\") # True\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/nylnd/fiscal",
+            "keywords": "",
+            "license": "BSD-3-Clause",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "fiscal",
+            "package_url": "https://pypi.org/project/fiscal/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/fiscal/",
+            "project_urls": {
+                "Homepage": "https://github.com/nylnd/fiscal"
+            },
+            "release_url": "https://pypi.org/project/fiscal/0.2.3/",
+            "requires_dist": [
+                "pytest (>=7.2.0,<8.0.0)"
+            ],
+            "requires_python": ">=3.11,<4.0",
+            "summary": "",
+            "version": "0.2.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17977681,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ba228598305d3cc923e0a8d942534e60f1d2ca7cbfbc45306d57c2a0c11c0cd8",
+                    "md5": "d4482f0e0d60e36b3fac6154fcce414d",
+                    "sha256": "353ed2a2edc73606797b43f4847858aa193591dba5384dc9e32b50236b949ce1"
+                },
+                "downloads": -1,
+                "filename": "fiscal-0.2.3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "d4482f0e0d60e36b3fac6154fcce414d",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.11,<4.0",
+                "size": 6054,
+                "upload_time": "2023-05-04T20:38:05",
+                "upload_time_iso_8601": "2023-05-04T20:38:05.632177Z",
+                "url": "https://files.pythonhosted.org/packages/ba/22/8598305d3cc923e0a8d942534e60f1d2ca7cbfbc45306d57c2a0c11c0cd8/fiscal-0.2.3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2a34fc82a18c3240bcdf5344c2f0d7883c4de85d4714eafd9a19a2a474e479ad",
+                    "md5": "47cad51b89c80582bb1f5b9f4493cd3e",
+                    "sha256": "24ed6bda79ea3f32c3f79cbc33e6af69febec52b5d0a720c7e4e409c2ee3ae72"
+                },
+                "downloads": -1,
+                "filename": "fiscal-0.2.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "47cad51b89c80582bb1f5b9f4493cd3e",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.11,<4.0",
+                "size": 5411,
+                "upload_time": "2023-05-04T20:38:07",
+                "upload_time_iso_8601": "2023-05-04T20:38:07.583763Z",
+                "url": "https://files.pythonhosted.org/packages/2a/34/fc82a18c3240bcdf5344c2f0d7883c4de85d4714eafd9a19a2a474e479ad/fiscal-0.2.3.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

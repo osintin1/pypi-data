@@ -50,7 +50,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17745307,
+        "last_serial": 17977240,
         "urls": [
             {
                 "comment_text": "",
@@ -148,7 +148,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17745307,
+        "last_serial": 17977240,
         "urls": [
             {
                 "comment_text": "",
@@ -247,7 +247,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17745307,
+        "last_serial": 17977240,
         "urls": [
             {
                 "comment_text": "",
@@ -308,7 +308,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "# AutoPlugin\n\nAutoPlugin is a Python package that makes it easy to convert Python functions into [ChatGPT plugins](https://openai.com/blog/chatgpt-plugins). With just a couple lines of code, you can:\n- Automatically create an OpenAPI spec with custom endpoints for your registered Python functions, telling ChatGPT how to use it. Pull endpoint descriptions from the function docstring or generate them automatically with the OpenAI API.\n- Generate the `ai-plugin.json` file to register your plugin with ChatGPT.\n- Launch a local server that can be used by ChatGPT for development.\n\n## Installation\n\nTo install AutoPlugin, simply run the following command:\n\n```bash\npip install autoplugin\n```\n\nTo install with the ability to generate endpoint descriptions for the OpenAPI specification automatically from source code, install with\n\n```bash\npip install 'autoplugin[gen]'\n```\n\n## Basic Usage\nTo get started with AutoPlugin, follow these steps:\n\n1. Import the necessary functions from AutoPlugin:\n```python\nfrom autoplugin import register, generate, launch, get_app\n```\n\n2. Create an app instance, backed by FastAPI:\n```python\napp = get_app()\n```\n\n3. Use the register decorator to register your functions as API endpoints.\nAutoPlugin will automatically generate descriptions if needed.\n```python\n@register(app, methods=[\"GET\"])\nasync def get_order(name: str) -> str:\n    order = await get_order_from_db(name)\n    return f\"Order for {name}: {order}\"\n# Generated description: \"Retrieves an order from the database for a given name.\"\n```\n\n4. Generate the necessary files (`openapi.yaml` and `ai-plugin.json`) for your ChatGPT plugin.\nOptionally, specify `out_dir` to change where they're saved to:\n```python\n# generated files saved to `.well-known/` directory\ngenerate(app, name=\"Example\", description=\"Plugin to add numbers or greet users\")\n```\n\n5. Launch the server. Optionally, specify `host` and `port`:\n```python\nlaunch(app)  # API hosted at localhost:8000\n```\n\n6. Follow the [instructions](https://platform.openai.com/docs/plugins/getting-started/running-a-plugin) to run a custom plugin:\n- On ChatGPT, make a new chat.\n- Under \"Models\" select \"Plugins\"\n- In the Plugins dropdown, select \"Plugin store\"\n- Click \"Develop your own plugin\"\n- Enter the URL you're running the server at (\"localhost:8000\" by default) and hit enter.\n- Click \"Install localhost plugin\" \n\n\n## Example\n\nHere's a complete example that demonstrates how to use AutoPlugin to create API endpoints for two functions, `hello` and `add`.\nIt also generates the `openapi.yaml` and `ai-plugin.json` files, by default in the `.well-known` directory. :\n```python\nfrom autoplugin.autoplugin import register, generate, launch, get_app\n\napp = get_app()\n\n@register(app, methods=[\"GET\", \"POST\"])\nasync def hello(name: str, age: int = 5) -> str:\n    return f\"Hello, {name}! Age {age}.\"\n\n@register(app, methods=[\"GET\"])\nasync def add(a: int, b: int) -> int:\n    \"\"\" Adds two numbers \"\"\"\n    return a + b\n\n\n# Generate the necessary files\ngenerate(app, name=\"Example\", description=\"Plugin to add numbers or greet users\")\n\n# Launch the server\nlaunch(app)\n```\n\nThis example creates a FastAPI server with two endpoints, `/hello` and `/add`, that can be accessed using GET or POST requests.\nAutoPlugin will use the docstring for the OpenAPI description of `/add` and generate an automatic description for `/hello` by passing the source code of the function to OpenAI's API.\n\n## The `@register` Decorator\nThe `@register` decorator is used as follows:\n```python\n@register(app: FastAPI,\n            methods: List[str],                     # which HTTP methods to support\n            description: Optional[str],             # if provided, used as is\n            generate_description: Optional[bool])   # whether to autogenerate a description\ndef my_func(...):\n    ...\n```\nAutoPlugin generates function descriptions in the OpenAPI spec so that ChatGPT knows how to use your endpoints. There are a few keyword arguments to customize the behavior of this generation\nBy default, the description is fetched from the docstring. If there's no docstring, or if you specify `generate_description=True`, AutoPlugin will generate one automatically from OpenAI's API (requires the LangChain package and setting the `OPENAI_API_KEY` environment variable).\nFinally, you can override the description generation behavior by specifying a description (e.g. if the docstring contains extra information not needed in the OpenAPI description) in the `description` keyword argument.\n\n\n## The `generate` Function\nThe `generate` function has the following signature:\n```python\ndef generate(app: FastAPI, out_dir: str=\".well-known\", **kwargs):\n```\nThe `out_dir` keyword argument determines where the `ai-plugin.json` and `openapi.yaml` files are saved upon generation.\n\nAll other keyword arguments are used to customize fields of the [plugin manifest file](https://platform.openai.com/docs/plugins/getting-started/plugin-manifest).\nThe `name` keyword argument can be used for convenience to update both `name_for_human` and `name_for_model` at once. Same for `description`. In a future update, these can be automatically generated to further streamline the deployment process. Keep in mind the [best practices](https://platform.openai.com/docs/plugins/getting-started/writing-descriptions) for descriptions.\n\n\n## Testing\nAutoPlugin also provides a `testing_server` utility (courtesy of [florimondmanca](https://github.com/encode/uvicorn/issues/742#issuecomment-674411676)) for testing your endpoints. Here's an example of how you can use it to test the `/hello` and `/add` endpoints from the example above:\n```python\nfrom autoplugin.testing import testing_server\nfrom os.path import join\nimport requests\n\ndef test_api():\n    host = \"127.0.0.1\"\n    port = 8000\n    server, base_url = testing_server(host=host, port=port, app_file=\"path/to/example.py\", app_var=\"app\")\n\n    with server.run_in_thread():\n        # Server is started. Do your tests here.\n        response = requests.post(join(base_url, \"hello\"), json={\"name\": \"John Doe\", \"age\": 31})\n        assert response.json() == {\"result\": \"Hello, John Doe! Age 31.\"}\n\n        response = requests.get(join(base_url, \"hello\"), params={\"name\": \"Jane Smith\"})\n        assert response.json() == {\"result\": \"Hello, Jane Smith! Age 5.\"}\n\n        response = requests.get(join(base_url, \"add\"), params={\"a\": 6, \"b\": 8})\n        assert response.json() == {\"result\": 14}\n        # Server will be stopped.\n\ntest_api()\n```\n\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -347,7 +346,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17745307,
+        "last_serial": 17977240,
         "urls": [
             {
                 "comment_text": "",
@@ -388,6 +387,207 @@
                 "upload_time": "2023-04-17T22:42:52",
                 "upload_time_iso_8601": "2023-04-17T22:42:52.829232Z",
                 "url": "https://files.pythonhosted.org/packages/4b/73/1410afd29ab36a64f6ac98cfa2d39787bd3fd9ebec603d9484a969e673fe/autoplugin-0.1.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.4": {
+        "info": {
+            "author": "Suvansh Sanjeev",
+            "author_email": "suvansh@brilliantly.ai",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "License :: OSI Approved :: BSD License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/suvansh/autoplugin",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "autoplugin",
+            "package_url": "https://pypi.org/project/autoplugin/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/autoplugin/",
+            "project_urls": {
+                "Blog": "https://brilliantly.ai/blog/autoplugin",
+                "Documentation": "https://github.com/suvansh/AutoPlugin/blob/main/README.md",
+                "Homepage": "https://github.com/suvansh/autoplugin",
+                "Source": "https://github.com/suvansh/autoplugin/",
+                "Tracker": "https://github.com/suvansh/autoplugin/issues"
+            },
+            "release_url": "https://pypi.org/project/autoplugin/0.1.4/",
+            "requires_dist": [
+                "fastapi",
+                "pydantic",
+                "uvicorn",
+                "requests",
+                "PyYAML",
+                "langchain ; extra == 'gen'"
+            ],
+            "requires_python": "",
+            "summary": "Create ChatGPT plugins from Python code",
+            "version": "0.1.4",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17977240,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c924a34a6f8e08089848b79ac4a02ecf9904df84b1b1d52e52812808a8686c6a",
+                    "md5": "19c9bd0d015f307cf776d37c67f27683",
+                    "sha256": "6ada22128f5cf56f2a1257e37cc25641a358f292563c6543895c1b0105fb708c"
+                },
+                "downloads": -1,
+                "filename": "autoplugin-0.1.4-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "19c9bd0d015f307cf776d37c67f27683",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 9258,
+                "upload_time": "2023-05-04T18:50:39",
+                "upload_time_iso_8601": "2023-05-04T18:50:39.065410Z",
+                "url": "https://files.pythonhosted.org/packages/c9/24/a34a6f8e08089848b79ac4a02ecf9904df84b1b1d52e52812808a8686c6a/autoplugin-0.1.4-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2360aaaad9beea50d3e5f8f662f65c7c676c5f8edd55cd1e70781f8f9f0d46ac",
+                    "md5": "0065ef093164b2089a0bfc43113f182e",
+                    "sha256": "ac5f8762fd7b36fe7b2769f5f51efb5cf214ab67392f5f6c88c26051304cb658"
+                },
+                "downloads": -1,
+                "filename": "autoplugin-0.1.4.tar.gz",
+                "has_sig": false,
+                "md5_digest": "0065ef093164b2089a0bfc43113f182e",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 8654,
+                "upload_time": "2023-05-04T18:50:41",
+                "upload_time_iso_8601": "2023-05-04T18:50:41.648465Z",
+                "url": "https://files.pythonhosted.org/packages/23/60/aaaad9beea50d3e5f8f662f65c7c676c5f8edd55cd1e70781f8f9f0d46ac/autoplugin-0.1.4.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.5": {
+        "info": {
+            "author": "Suvansh Sanjeev",
+            "author_email": "suvansh@brilliantly.ai",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "License :: OSI Approved :: BSD License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# AutoPlugin\n\nAutoPlugin is a Python package that makes it easy to convert Python functions into [ChatGPT plugins](https://openai.com/blog/chatgpt-plugins). With just a couple lines of code, you can:\n- Automatically create an OpenAPI spec with custom endpoints for your registered Python functions, telling ChatGPT how to use it. Pull endpoint descriptions from the function docstring or generate them automatically with the OpenAI API.\n- Generate the `ai-plugin.json` file to register your plugin with ChatGPT.\n- Launch a local server that can be used by ChatGPT for development.\n\n## Installation\n\nTo install AutoPlugin, simply run the following command:\n\n```bash\npip install autoplugin\n```\n\nTo install with the ability to generate endpoint descriptions for the OpenAPI specification automatically from source code, install with\n\n```bash\npip install 'autoplugin[gen]'\n```\n\n## Basic Usage\nTo get started with AutoPlugin, follow these steps:\n\n1. Import the necessary functions from AutoPlugin:\n```python\nfrom autoplugin import register, generate, launch, get_app\n```\n\n2. Create an app instance, backed by FastAPI:\n```python\napp = get_app()\n```\n\n3. Use the register decorator to register your functions as API endpoints.\nAutoPlugin will automatically generate descriptions if needed.\n```python\n@register(app, methods=[\"GET\"])\nasync def get_order(name: str) -> str:\n    order = await get_order_from_db(name)\n    return f\"Order for {name}: {order}\"\n# Generated description: \"Retrieves an order from the database for a given name.\"\n```\n\n4. Generate the necessary files (`openapi.yaml` and `ai-plugin.json`) for your ChatGPT plugin.\nOptionally, specify `out_dir` to change where they're saved to,\nor set `overwrite_openapi_spec=False` or `overwrite_plugin_spec=False` to avoid overwriting the respective files.\n```python\n# generated files saved to `.well-known/` directory\ngenerate(app, name=\"Example\", description=\"Plugin to add numbers or greet users\")\n```\n\n5. Launch the server. Optionally, specify `host` and `port`:\n```python\nlaunch(app)  # API hosted at localhost:8000\n```\n\n6. Follow the [instructions](https://platform.openai.com/docs/plugins/getting-started/running-a-plugin) to run a custom plugin:\n- On ChatGPT, make a new chat.\n- Under \"Models\" select \"Plugins\"\n- In the Plugins dropdown, select \"Plugin store\"\n- Click \"Develop your own plugin\"\n- Enter the URL you're running the server at (\"localhost:8000\" by default) and hit enter.\n- Click \"Install localhost plugin\" \n\n\n## Example\n\nHere's a complete example that demonstrates how to use AutoPlugin to create API endpoints for two functions, `hello` and `add`.\nIt also generates the `openapi.yaml` and `ai-plugin.json` files, by default in the `.well-known` directory. :\n```python\nfrom autoplugin.autoplugin import register, generate, launch, get_app\n\napp = get_app()\n\n@register(app, methods=[\"GET\", \"POST\"])\nasync def hello(name: str, age: int = 5) -> str:\n    return f\"Hello, {name}! Age {age}.\"\n\n@register(app, methods=[\"GET\"])\nasync def add(a: int, b: int) -> int:\n    \"\"\" Adds two numbers \"\"\"\n    return a + b\n\n\n# Generate the necessary files\ngenerate(app, name=\"Example\", description=\"Plugin to add numbers or greet users\")\n\n# Launch the server\nlaunch(app)\n```\n\nThis example creates a FastAPI server with two endpoints, `/hello` and `/add`, that can be accessed using GET or POST requests.\nAutoPlugin will use the docstring for the OpenAPI description of `/add` and generate an automatic description for `/hello` by passing the source code of the function to OpenAI's API.\n\n\n## Docs \n\n### The\u00a0`@register`\u00a0Decorator\n\nThe\u00a0`@register`\u00a0decorator is used as follows:\n\n```python\n@register(app: FastAPI,\n            methods: List[str],                     # which HTTP methods to support\n            description: Optional[str],             # if provided, used as is\n            generate_description: Optional[bool])   # whether to autogenerate a description\ndef my_func(...):\n    ...\n```\n\nAutoPlugin generates function descriptions in the OpenAPI spec so that ChatGPT knows how to use your endpoints. There are a few arguments to customize the behavior of this generation.\n\n- `app`: Your FastAPI application. AutoPlugin provides a `get_app` function that includes CORSMiddleware for testing convenience (allows all origins by default).\n- `methods`: A list of HTTP methods to be supported (e.g. \u201dGET\u201d, POST\u201d)\n- `description`: If provided, overrides everything else and is used directly as the endpoint description for the OpenAPI spec\n- `generate_description`: If set to `True`, AutoPlugin will generate one automatically from OpenAI's API (requires the LangChain package and setting the\u00a0`OPENAI_API_KEY`\u00a0environment variable).\n\nBy default (if neither `description` nor `generate_description` are provided), the description is fetched from the docstring. If there's no docstring, AutoPlugin falls back to generating one automatically.\n\n\n### The\u00a0`generate`\u00a0Function\n\nThe `generate` function has the following signature:\n\n```python\ndef generate(app: FastAPI, version=\"v1\", out_dir=\".well-known\",\n             overwrite_plugin_spec=True, overwrite_openapi_spec=True,\n             name=\"\", description=\"\",\n             **kwargs)\n```\n\n- `app`: Your FastAPI application again.\n- `version=\"v1\"`: What version number to pass to both the plugin and OpenAPI specs.\n- `out_dir=\".well-known\"`: The directory to save both files to.\n- `overwrite_plugin_spec=True`: If set to False, does not overwrite `ai-plugin.json` if it already exists.\n- `overwrite_openapi_spec=True`: If set to False, does not overwrite `openapi.yaml` if it already exists.\n- `name=\"\"`: If specified, used for both `name_for_human` and `name_for_model`.\n- `description=\"\"`: If specified, used for both `description_for_human` and `description_for_model`. Keep in mind the [best practices](https://platform.openai.com/docs/plugins/getting-started/writing-descriptions) for descriptions.\n- `**kwargs`: All other keyword arguments are passed on to `ai-plugin.json` directly. See the full list of possible options [here](https://platform.openai.com/docs/plugins/getting-started/plugin-manifest).\n\n\n### The `launch` Function\n\nThe `launch` function has the following signature:\n\n```python\ndef launch(app: FastAPI, host=\"127.0.0.1\", port=8000):\n```\n\n- `app`: Still your FastAPI application.\n- `host=\"127.0.0.1\"`: the host to launch the server on\n- `port=8000`: the port to launch the server on\n\n\n### Testing\nAutoPlugin also provides a `testing_server` utility (courtesy of [florimondmanca](https://github.com/encode/uvicorn/issues/742#issuecomment-674411676)) for testing your endpoints. Here's an example of how you can use it to test the `/hello` and `/add` endpoints from the example above:\n```python\nfrom autoplugin.testing import testing_server\nfrom os.path import join\nimport requests\n\ndef test_api():\n    host = \"127.0.0.1\"\n    port = 8000\n    server, base_url = testing_server(host=host, port=port, app_file=\"path/to/example.py\", app_var=\"app\")\n\n    with server.run_in_thread():\n        # Server is started. Do your tests here.\n        response = requests.post(join(base_url, \"hello\"), json={\"name\": \"John Doe\", \"age\": 31})\n        assert response.json() == {\"result\": \"Hello, John Doe! Age 31.\"}\n\n        response = requests.get(join(base_url, \"hello\"), params={\"name\": \"Jane Smith\"})\n        assert response.json() == {\"result\": \"Hello, Jane Smith! Age 5.\"}\n\n        response = requests.get(join(base_url, \"add\"), params={\"a\": 6, \"b\": 8})\n        assert response.json() == {\"result\": 14}\n        # Server will be stopped.\n\ntest_api()\n```\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/suvansh/autoplugin",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "autoplugin",
+            "package_url": "https://pypi.org/project/autoplugin/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/autoplugin/",
+            "project_urls": {
+                "Blog": "https://brilliantly.ai/blog/autoplugin",
+                "Documentation": "https://github.com/suvansh/AutoPlugin/blob/main/README.md",
+                "Homepage": "https://github.com/suvansh/autoplugin",
+                "Source": "https://github.com/suvansh/autoplugin/",
+                "Tracker": "https://github.com/suvansh/autoplugin/issues"
+            },
+            "release_url": "https://pypi.org/project/autoplugin/0.1.5/",
+            "requires_dist": [
+                "fastapi",
+                "pydantic",
+                "uvicorn",
+                "requests",
+                "PyYAML",
+                "langchain ; extra == 'gen'"
+            ],
+            "requires_python": "",
+            "summary": "Create ChatGPT plugins from Python code",
+            "version": "0.1.5",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17977240,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6931dc85f340300b40bbe9f913a6ec5425ab047b13abcaf40fa216f3529fe8e4",
+                    "md5": "d137a9034cd788d3bf2967736d45c1bf",
+                    "sha256": "76ef9b927b79ad9b44f335595e3c7712ef4aad684366ba19bad5b526b67f61d7"
+                },
+                "downloads": -1,
+                "filename": "autoplugin-0.1.5-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "d137a9034cd788d3bf2967736d45c1bf",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 9535,
+                "upload_time": "2023-05-04T19:56:56",
+                "upload_time_iso_8601": "2023-05-04T19:56:56.097587Z",
+                "url": "https://files.pythonhosted.org/packages/69/31/dc85f340300b40bbe9f913a6ec5425ab047b13abcaf40fa216f3529fe8e4/autoplugin-0.1.5-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e178c910c18d6721284a65660c3a06a1c52ede51c19f2099b0d0fa3429e5d79a",
+                    "md5": "eed48d45ef018fb19d0d1ba75e8a41fc",
+                    "sha256": "f6849ca34b0214d0a7531caa7ed639a7ddeed5a199013166ee4b40c52d7388df"
+                },
+                "downloads": -1,
+                "filename": "autoplugin-0.1.5.tar.gz",
+                "has_sig": false,
+                "md5_digest": "eed48d45ef018fb19d0d1ba75e8a41fc",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 10871,
+                "upload_time": "2023-05-04T19:56:58",
+                "upload_time_iso_8601": "2023-05-04T19:56:58.717849Z",
+                "url": "https://files.pythonhosted.org/packages/e1/78/c910c18d6721284a65660c3a06a1c52ede51c19f2099b0d0fa3429e5d79a/autoplugin-0.1.5.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
