@@ -1,0 +1,96 @@
+{
+    "0.4.0b0": {
+        "info": {
+            "author": "Byron J. Smith",
+            "author_email": "me@byronjsmith.com",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "# StrainFacts\n\nStrainFacts is a \"strain deconvolution\" tool, which infers both strain\ngenotypes and their relative abundance across samples directly from\nmetagenotype data.\n\nA \"metagenotype\" for a particular species in a particular sample is an\nmultidimensional array\ncounting the number of reads (from shotgun metagenomic sequencing, usually)\nthat contained a particular allele at\npolymorphic sites in that species's genome.\nMetagenotypes from multiple (maybe _many_) samples stacked together form\nthe main input data-type analyzed by StrainFacts.\n\n#### Citation\n\nFor detailed information, check out the paper:\n\n> B.J. Smith, X. Li, Z.J. Shi, A. Abate, K.S. Pollard.\nScalable microbial strain inference in metagenomic data using StrainFacts.\n_Frontiers in Bioinformatics_ (2022)\ndoi:[10.3389/fbinf.2022.867386](https://doi.org/10.3389/fbinf.2022.867386)\n\n\n## Installation\n\nThe simplest possible installation directly from GitHub\n\n```\npip install git+https://github.com/bsmith89/StrainFacts.git#egg=sfacts\n```\n\nHowever, installing [as a conda environment](#with-conda) (described below) is\nprobably the more robust option.\n\nInstalling PyTorch/Pyro with GPU support may be more challenging.\nConsider using a Docker/Singularity container like\n[this one](https://hub.docker.com/r/bsmith89/sfacts_dev), which has many of the\nnecessary prerequisites (but excluding StrainFacts itself).\n\n## Examples\n\nShort vignettes explaining how to use StrainFacts for data processing,\nvisualization, and evaluation are provided as Jupyter Notebooks:\n\n- [`examples/simulate_data.ipynb`](https://byronjsmith.com/StrainFacts/simulate_data.html)\n- [`examples/filter_data.ipynb`](https://byronjsmith.com/StrainFacts/filter_data.html)\n- [`examples/fit_metagenotype.ipynb`](https://byronjsmith.com/StrainFacts/fit_metagenotype.html)\n- [`examples/fit_metagenotype_advanced.ipynb`](https://byronjsmith.com/StrainFacts/fit_metagenotype_advanced.html)\n- [`examples/evaluate_simulation_fit.ipynb`](https://byronjsmith.com/StrainFacts/evaluate_simulation_fit.html)\n\n## Usage\n\n(**NOTE**: All of the files described in those notebooks and the usage\nexamples below can be built automatically with Make\ne.g. try running: `make examples/sim.filt.fit.world.nc`.)\n\n### Get help\n\nGet CLI help:\n\n```\nsfacts --help  # List subcommands\nsfacts fit --help  # Subcommand specific CLI usage\n```\n\n### Fit a model to metagenotype data\n\nFit metagenotype data with 15 strains and default everything:\n\n```\nsfacts fit \\\n    --verbose \\\n    --num-strains 15 \\\n    --random-seed 0 \\\n    sim.filt.mgen.nc sim.filt.fit.world.nc\n```\n\nFor the manuscript, StrainFacts was run with the following hyperparameters set\nexplicitly:\n\n```\nsfacts fit -m ssdd3_with_error  \\\n    --verbose --device cpu \\\n    --precision 32 \\\n    --random-seed 0 \\\n    --strains-per-sample 0.3 \\\n    --num-positions 5000 \\\n    --hyperparameters gamma_hyper=1e-10 \\\n    --hyperparameters pi_hyper=0.3 \\\n    --hyperparameters rho_hyper=0.5 \\\n    --hyperparameters alpha_hyper_mean=10.0 \\\n    --hyperparameters alpha_hyper_scale=1e-06 \\\n    --anneal-hyperparameters gamma_hyper=1.0 \\\n    --anneal-hyperparameters rho_hyper=5.0 \\\n    --anneal-hyperparameters pi_hyper=1.0 \\\n    --anneal-steps 10000 --anneal-wait 2000 \\\n    --optimizer-learning-rate 0.05 \\\n    --min-optimizer-learning-rate 1e-06 \\\n    --max-iter 1_000_000 --lag1 50 --lag2 100 \\\n    examples/sim.filt.mgen.nc examples/sim.filt.fit.world.nc\n```\n\nIn addition, values for `--strains-per-sample`/`--num-strains`, `--num-positions`, `--precision`, `--random-seed`, `--device` and\ninput/output files were as described in [the paper](#citation).\n\n### Data Formats\n\nIntermediate files generated\nby StrainFacts use a NetCDF-based file format, and harness the\n[xarray library](https://docs.xarray.dev/en/stable/) for reading and writing[^why-netcdf].\nSuch files include input metagenotypes (suggested file extension `*.mgen.nc`),\nas well as more complex collections of both latent and observed variables\naligned over their strain/sample/position axes (`*.world.nc`).\nAll of these files are designed to be loaded and worked with using the `sfacts`\nPython library[^netcdf].\n\n[^why-netcdf]: This has benefits for both computational and programmer efficiency.\n[^netcdf]: It should be fairly straight-forward to load these NetCDF formatted\nfiles in other programming environments, but this has not been tested.\n\nFor users who prefer to interact with StrainFacts via the command-line\ninterface (CLI) and plain-text files,\nscripts are provided as subcommands to convert metagenotype TSVs to this format\n(see `sfacts load --metagenotype`).\nas well as to export key parameter estimates after fitting (see `sfacts dump`).\n\nFor example, to export tab-delimited relative abundance and genotypes tables\nfrom `examples/sim.filt.fit.world.nc`:\n\n```\nsfacts dump examples/sim.filt.fit.world.nc \\\n    --genotype examples/sim.filt.fit.geno.tsv \\\n    --community examples/sim.filt.fit.comm.tsv\n```\n\n```\nhead sim.filt.fit.refit.geno.tsv sim.filt.fit.refit.comm.tsv\n\n# OUTPUT:\n#\n# ==> sim.filt.fit.refit.geno.tsv <==\n# strain\tposition\tgenotypes\n# 0\t0\t0.046489883\n# 0\t1\t0.038462497\n# 0\t2\t9.877303e-07\n# 0\t3\t7.4534853e-07\n# 0\t4\t0.9227885\n# 0\t5\t0.99933404\n# 0\t6\t0.9999933\n# 0\t7\t0.9999994\n# 0\t8\t2.3873392e-06\n# \n# ==> sim.filt.fit.refit.comm.tsv <==\n# sample\tstrain\tcommunities\n# 0\t0\t0.00062094553\n# 0\t1\t0.00034649053\n# 0\t2\t0.00017691542\n# 0\t3\t0.00060282537\n# 0\t4\t0.000553946\n# 0\t5\t0.0006001372\n# 0\t6\t0.00032402115\n# 0\t7\t0.6081786\n# 0\t8\t0.00042524032\n```\n\n## See Also\n\n### Alternative deconvolution tools:\n\n- [Strain Finder](https://github.com/cssmillie/StrainFinder)\n- [ConStrains](https://bitbucket.org/luo-chengwei/constrains/src/master/)\n- [MixtureS](http://www.cs.ucf.edu/~xiaoman/mixtureS/)\n- [DESMAN](https://github.com/chrisquince/DESMAN)\n- [PStrain](https://github.com/wshuai294/PStrain)\n\nStrain Finder is the most similar to StrainFacts, and works well for reasonably\nsized data. However, it can be very slow as the number of strains and samples\ngets large.\n\n### Metagenotypers\n\n- [GT-Pro](https://github.com/zjshi/gt-pro)\n- [MIDAS / IGGtools](https://github.com/czbiohub/iggtools)\n- [StrainPhlan](https://github.com/biobakery/metaphlan)\n\nGT-Pro is the preferred metagenotyper for StrainFacts.\nWhile other metagenotypers will also work\n(e.g. MIDAS or StrainPhlan assuming their outputs are formatted correctly),\nonly bi-allelic and core genome SNP sites are currently supported.\n\n### UHGG\n\nGT-Pro is based on the\n[UHGG v1.0](http://ftp.ebi.ac.uk/pub/databases/metagenomics/mgnify_genomes/human-gut/v1.0/)\nspecies reference database.\nThis is a subset of the recently updated \n[MGnify / UHGG v2.0](https://www.ebi.ac.uk/metagenomics/genome-catalogues/human-gut-v2-0)\ndatabase.\nThe MGnify website provides a convenient way to browse this reference.\n\n## How to Hack on StrainFacts\n\n### Editable Installation\n\nFirst, clone the repository:\n\n```\ngit clone https://github.com/bsmith89/StrainFacts.git\ncd StrainFacts\n```\n\nIf you want to modify the example notebooks, configure the clean/smudge filter:\n\n`make .git_init`\n\nThen install with either conda or pip:\n\n#### With `conda`\n\nBuild the environment:\n\n```\nconda env create -n sfacts-dev -f envs/sfacts-dev.yaml\n# Also see `make .conda` to run this command automatically.\nconda activate sfacts-dev\n```\n\nThis includes an embedded `pip install --editable` for StrainFacts from the\ncloned repo.\n\n\n#### With `pip`\n\n```\npip install -r requirements.pip\npip install -e .\n```\n\n### Integration Testing\n\n```\nmake clean\nmake test\n```\n\nThis runs a complex workflow, including\n\n- simulation\n- data conversion\n- model fitting\n- genotype refitting\n- evaluation of estimates against the simulated ground-truth\n\n### Prototyping in Jupyter\n\n```\nmake start_jupyter\n```\n\n## TODO\n\n- [x] A script for converting GT-Pro output TSVs to StrainFacts input data\n- [x] A script for extracting estimates from StrainFacts files to TSVs\n- [x] Complete installation instructions, as well as a robust artifact for\n      running StrainFacts on various platforms (e.g. a Dockerfile or Conda\n      environment specification)\n- [x] Example data with a tutorial/vignette for running StrainFacts and\n      interpreting the output.\n    - [x] Simple example fitting a metagenotype\n    - [x] Flesh out the example with an explanation of all of the steps.\n    - [ ] ~~Example data from SRA with a GT-Pro step, instead of simulated~~\n    - [x] Update README/Makefile/Examples to match new CLI interfaces.\n- [x] The parameters selected for use in this paper (which we have found to be\n      applicable across a range of datasets) will be set as the default.\n    - Caveat: All of the hyperparameter annealing parameters should still be set by the user\n- [x] We will document some useful approaches for hyperparameter tuning.\n- [x] Improve the CLI documentation.\n    - [ ] Explicit blurb about how to run the model as in the paper\n    - [ ] Model description strings.\n- [ ] Refactor for the best looking code\n    - [x] De-pluralize core datatypes (community not communities)\n    - [x] Remove unused CLI apps/workflows/plotting code\n    - [x] Use Python `logging` module instead of shoe-string `info()` function.\n    - [ ] Drop stale code in `sfacts.data`, `sfacts.evaluation`, and `sfacts.plot`\n    - [ ] Simplify the model structure decorator.\n    - [ ] Fix mismatch between 'gamma'/'pi' and 'genotype'/'community'. (Probably just change variable names in the model, yeah?)\n    - [x] Move choice of strain numbers for fit and init apps to a set of helper functions.\n    - [ ] Refactor CLI app architecture to be more intuitive.\n- [ ] Memoization of expensive calculations on wrapped Datasets and DataArrays.\n- [ ] Better tools for model selection (e.g. more evaluation scores based on only\n      metagenotypes and fits)\n- [ ] Split out metagenotype/community/genotype handling to its own package:\n      `mgtp` and make this a StrainFacts dependency.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "http://github.com/bsmith89/StrainFacts",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "StrainFacts",
+            "package_url": "https://pypi.org/project/StrainFacts/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/StrainFacts/",
+            "project_urls": {
+                "Homepage": "http://github.com/bsmith89/StrainFacts"
+            },
+            "release_url": "https://pypi.org/project/StrainFacts/0.4.0b0/",
+            "requires_dist": [
+                "torch (>=1.0)",
+                "pyro-ppl (>=1.8)",
+                "xarray (>=2022.0)",
+                "netcdf4 (>=1.0)",
+                "pandas (>=1.0)",
+                "matplotlib (>=3.0)",
+                "numpy (>=1.0)",
+                "scipy (>=1.0)",
+                "tqdm (>=4.0)",
+                "scikit-learn (>=1.0)",
+                "seaborn (>=0.12)"
+            ],
+            "requires_python": "",
+            "summary": "Factorize metagenotypes to infer strains and their abundances",
+            "version": "0.4.0b0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17993922,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "28e26d43add01be827fe7c11292992259123d53b4539e3e9de9a8148ff804a8d",
+                    "md5": "4bccf7039697064a45fa58ebc14dc06c",
+                    "sha256": "9460ca986189981d93bc68b4668e6f57ec2f6a0ee26a30f5f0f4c14bcb2955e6"
+                },
+                "downloads": -1,
+                "filename": "StrainFacts-0.4.0b0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "4bccf7039697064a45fa58ebc14dc06c",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 53034,
+                "upload_time": "2023-05-05T23:10:32",
+                "upload_time_iso_8601": "2023-05-05T23:10:32.663223Z",
+                "url": "https://files.pythonhosted.org/packages/28/e2/6d43add01be827fe7c11292992259123d53b4539e3e9de9a8148ff804a8d/StrainFacts-0.4.0b0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f77b15a6b219f9f9048d93015f5e39ecd7945a9c7d702c3d4ecf4c9e55d46116",
+                    "md5": "a347751f6015346d3def2db8fd5a0058",
+                    "sha256": "fe639a99aed0489daf716533750707ef88d45ea2f7a14d11a5139b74350c543c"
+                },
+                "downloads": -1,
+                "filename": "StrainFacts-0.4.0b0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "a347751f6015346d3def2db8fd5a0058",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 41841,
+                "upload_time": "2023-05-05T23:10:35",
+                "upload_time_iso_8601": "2023-05-05T23:10:35.246064Z",
+                "url": "https://files.pythonhosted.org/packages/f7/7b/15a6b219f9f9048d93015f5e39ecd7945a9c7d702c3d4ecf4c9e55d46116/StrainFacts-0.4.0b0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

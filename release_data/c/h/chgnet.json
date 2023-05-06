@@ -1,0 +1,75 @@
+{
+    "0.1.2": {
+        "info": {
+            "author": "",
+            "author_email": "Bowen Deng <bowendeng@berkeley.edu>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Scientific/Engineering :: Artificial Intelligence",
+                "Topic :: Scientific/Engineering :: Chemistry",
+                "Topic :: Scientific/Engineering :: Physics"
+            ],
+            "description": "<h1 align=\"center\">CHGNet</h1>\n\n<h4 align=\"center\">\n\n[![Tests](https://github.com/CederGroupHub/chgnet/actions/workflows/test.yml/badge.svg)](https://github.com/CederGroupHub/chgnet/actions/workflows/test.yml)\n[![Linting](https://github.com/CederGroupHub/chgnet/actions/workflows/lint.yml/badge.svg)](https://github.com/CederGroupHub/chgnet/actions/workflows/lint.yml)\n[![Codacy Badge](https://app.codacy.com/project/badge/Coverage/e3bdcea0382a495d96408e4f84408e85)](https://app.codacy.com/gh/CederGroupHub/chgnet/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_coverage)\n[![arXiv](https://img.shields.io/badge/arXiv-2302.14231-blue)](https://arxiv.org/abs/2302.14231)\n![GitHub repo size](https://img.shields.io/github/repo-size/CederGroupHub/chgnet)\n[![PyPI](https://img.shields.io/pypi/v/chgnet?logo=pypi&logoColor=white)](https://pypi.org/project/chgnet?logo=pypi&logoColor=white)\n</h4>\n\nA pretrained universal neural network potential for\n**charge**-informed atomistic modeling\n![chgnet](chgnet-logo.png)\n**C**rystal **H**amiltonian **G**raph neural **Net**work is pretrained on the GGA/GGA+U static and relaxation trajectories from Materials Project,\na comprehensive dataset consisting of 1.5 Million structures from 146k compounds spanning the whole periodic table.\n\nCHGNet highlights its ability to study electron interactions and charge distribution\nin atomistic modeling with near DFT accuracy. The charge inference is realized by regularizing the atom features with\nDFT magnetic moments, which carry rich information about both local ionic environments and charge distribution.\n\n## Example notebooks\n\n| Notebooks                                                                                                                | Links&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;                                                                                                     | Descriptions                                                                                                                        |\n| ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |\n| [**Using CHGNet**](https://github.com/CederGroupHub/chgnet/blob/main/examples/CHGNet_examples.ipynb)                     | [![Open in Google Colab]](https://colab.research.google.com/github/CederGroupHub/chgnet/blob/main/examples/CHGNet_examples.ipynb)             | Examples for loading pre-trained CHGNet, predicting energy, force, stress, magmom as well as running structure optimization and MD. |\n| [**Tuning CHGNet**](https://github.com/CederGroupHub/chgnet/blob/main/examples/fine_tuning.ipynb)                        | [![Open in Google Colab]](https://colab.research.google.com/github/CederGroupHub/chgnet/blob/main/examples/fine_tuning.ipynb)                 | Examples of fine tuning the pretrained CHGNet to your system of interest.                                                           |\n| [**Visualize Relaxation**](https://github.com/CederGroupHub/chgnet/blob/main/examples/crystaltoolkit_relax_viewer.ipynb) | [![Open in Google Colab]](https://colab.research.google.com/github/CederGroupHub/chgnet/blob/main/examples/crystaltoolkit_relax_viewer.ipynb) | Crystal Toolkit that visualizes atom positions, energies and forces of a structure during CHGNet relaxation.                        |\n\n[Open in Google Colab]: https://colab.research.google.com/assets/colab-badge.svg\n\n## Installation\n\nCHGnet is not on PyPI yet. We plan to publish it as a package once the API has matured. For now, please install `chgnet` from source:\n\n```sh\npip install -U git+https://github.com/CederGroupHub/chgnet\n```\n\nor for an editable source install from a local clone:\n\n```sh\ngit clone https://github.com/CederGroupHub/chgnet\npip install -e ./chgnet\n```\n\n## Usage\n\n### Direct Inference (Static Calculation)\n\nPretrained `CHGNet` can predict the energy (eV/atom), force (eV/A), stress (GPa) and\nmagmom ($\\mu_B$) of a given structure.\n\n```python\nfrom chgnet.model.model import CHGNet\nfrom pymatgen.core import Structure\n\nchgnet = CHGNet.load()\nstructure = Structure.from_file('examples/o-LiMnO2_unit.cif')\nprediction = chgnet.predict_structure(structure)\nfor key in (\"energy\", \"forces\", \"stress\", \"magmom\"):\n    print(f\"CHGNet-predicted {key}={prediction[key[0]]}\\n\")\n```\n\n### Molecular Dynamics\n\nCharge-informed molecular dynamics can be simulated with pretrained `CHGNet` through `ASE` environment\n\n```python\nfrom chgnet.model.model import CHGNet\nfrom chgnet.model.dynamics import MolecularDynamics\nfrom pymatgen.core import Structure\n\nstructure = Structure.from_file(\"examples/o-LiMnO2_unit.cif\")\nchgnet = CHGNet.load()\n\nmd = MolecularDynamics(\n    atoms=structure,\n    model=chgnet,\n    ensemble=\"nvt\",\n    compressibility_au=1.6,\n    temperature=1000,  # in K\n    timestep=2,  # in femto-seconds\n    trajectory=\"md_out.traj\",\n    logfile=\"md_out.log\",\n    loginterval=100,\n    use_device=\"cpu\",  # use 'cuda' for faster MD\n)\nmd.run(50)  # run a 0.1 ps MD simulation\n```\n\nVisualize the magnetic moments after the MD run\n\n```python\nfrom ase.io.trajectory import Trajectory\nfrom pymatgen.io.ase import AseAtomsAdaptor\nfrom chgnet.utils.utils import solve_charge_by_mag\n\ntraj = Trajectory(\"md_out.traj\")\nmag = traj[-1].get_magnetic_moments()\n\n# get the non-charge-decorated structure\nstructure = AseAtomsAdaptor.get_structure(traj[-1])\nprint(structure)\n\n# get the charge-decorated structure\nstruct_with_chg = solve_charge_by_mag(structure)\nprint(struct_with_chg)\n```\n\n### Structure Optimization\n\n`CHGNet` can perform fast structure optimization and provide site-wise magnetic moments. This makes it ideal for pre-relaxation and\n`MAGMOM` initialization in spin-polarized DFT.\n\n```python\nfrom chgnet.model import StructOptimizer\n\nrelaxer = StructOptimizer()\nresult = relaxer.relax(structure)\nprint(\"CHGNet relaxed structure\", result[\"final_structure\"])\n```\n\n### Model Training / Fine-tune\n\nFine-tuning will help achieve better accuracy if a high-precision study is desired. To train/tune a `CHGNet`, you need to define your data in a\npytorch `Dataset` object. The example datasets are provided in `data/dataset.py`\n\n```python\nfrom chgnet.data.dataset import StructureData, get_train_val_test_loader\nfrom chgnet.trainer import Trainer\n\ndataset = StructureData(\n    structures=list_of_structures,\n    energies=list_of_energies,\n    forces=list_of_forces,\n    stresses=list_of_stresses,\n    magmoms=list_of_magmoms,\n)\ntrain_loader, val_loader, test_loader = get_train_val_test_loader(\n    dataset, batch_size=32, train_ratio=0.9, val_ratio=0.05\n)\ntrainer = Trainer(\n    model=chgnet,\n    targets=\"efsm\",\n    optimizer=\"Adam\",\n    criterion=\"MSE\",\n    learning_rate=1e-2,\n    epochs=50,\n    use_device=\"cuda\",\n)\n\ntrainer.train(train_loader, val_loader, test_loader)\n```\n\n### Note\n\n1. The energy used for training should be energy/atom if you're fine-tuning the pretrained `CHGNet`.\n2. The pretrained dataset of `CHGNet` comes from GGA+U DFT with [`MaterialsProject2020Compatibility`](https://github.com/materialsproject/pymatgen/blob/v2023.2.28/pymatgen/entries/compatibility.py#L826-L1102).\nThe parameter for VASP is described in [`MPRelaxSet`](https://github.com/materialsproject/pymatgen/blob/v2023.2.28/pymatgen/io/vasp/sets.py#L862-L879).\nIf you're fine-tuning with [`MPRelaxSet`](https://github.com/materialsproject/pymatgen/blob/v2023.2.28/pymatgen/io/vasp/sets.py#L862-L879), it is recommended to apply the [`MP2020`](https://github.com/materialsproject/pymatgen/blob/v2023.2.28/pymatgen/entries/compatibility.py#L826-L1102)\ncompatibility to your energy labels so that they're consistent with the pretrained dataset.\n3. If you're fine-tuning to functionals other than GGA, we recommend you refit the [`AtomRef`](https://github.com/CederGroupHub/chgnet/blob/main/chgnet/model/composition_model.py).\n4. `CHGNet` stress is in unit GPa, and the unit conversion has already been included in\n[`dataset.py`](https://github.com/CederGroupHub/chgnet/blob/main/chgnet/data/dataset.py). So `VASP` stress can be directly fed to `StructureData`\n5. To save time from graph conversion step for each training, we recommend you use [`GraphData`](https://github.com/CederGroupHub/chgnet/blob/main/chgnet/data/dataset.py) defined in\n[`dataset.py`](https://github.com/CederGroupHub/chgnet/blob/main/chgnet/data/dataset.py), which reads graphs directly from saved directory. To create saved graphs,\nsee [`examples/make_graphs.py`](https://github.com/CederGroupHub/chgnet/blob/main/examples/make_graphs.py).\n6. Apple\u2019s Metal Performance Shaders `MPS` is currently disabled until a stable version of `pytorch` for `MPS` is released.\n\n## Reference\n\nlink to our paper:\n<https://doi.org/10.48550/arXiv.2302.14231>\n\nPlease cite the following:\n\n```bib\n@article{deng2023_chgnet,\n  title={{CHGNet: Pretrained universal neural network potential for charge-informed atomistic modeling}},\n  author={Deng, Bowen and Zhong, Peichen and Jun, KyuJung and Han, Kevin and Bartel, Christopher J and Ceder, Gerbrand},\n  journal={arXiv preprint arXiv:2302.14231},\n  year={2023},\n  url = {https://arxiv.org/abs/2302.14231}\n}\n```\n\n## Development & Bugs\n\n`CHGNet` is under active development, if you encounter any bugs in installation and usage,\nplease open an [issue](https://github.com/CederGroupHub/chgnet/issues). We appreciate your contributions!\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "Modified BSD",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "chgnet",
+            "package_url": "https://pypi.org/project/chgnet/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/chgnet/",
+            "project_urls": {
+                "Package": "https://pypi.org/project/chgnet",
+                "Source": "https://github.com/CederGroupHub/chgnet"
+            },
+            "release_url": "https://pypi.org/project/chgnet/0.1.2/",
+            "requires_dist": null,
+            "requires_python": ">=3.8",
+            "summary": "Pretrained Universal Neural Network Potential for Charge-informed Atomistic Modeling",
+            "version": "0.1.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17993478,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "decc73dc81f75b09245878d571f1a6ef5a6f29880e0418c3281e477203b9fc28",
+                    "md5": "ff1e0dcea0996587b999586cd2d612fc",
+                    "sha256": "036c138ba71218635e2eb974fc385f70872292e8690c5accca123a64be890507"
+                },
+                "downloads": -1,
+                "filename": "chgnet-0.1.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "ff1e0dcea0996587b999586cd2d612fc",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 4310813,
+                "upload_time": "2023-05-05T22:12:39",
+                "upload_time_iso_8601": "2023-05-05T22:12:39.486099Z",
+                "url": "https://files.pythonhosted.org/packages/de/cc/73dc81f75b09245878d571f1a6ef5a6f29880e0418c3281e477203b9fc28/chgnet-0.1.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

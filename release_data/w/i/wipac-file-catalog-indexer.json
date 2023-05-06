@@ -54,7 +54,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17370903,
+        "last_serial": 17991075,
         "urls": [
             {
                 "comment_text": "",
@@ -156,7 +156,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17370903,
+        "last_serial": 17991075,
         "urls": [
             {
                 "comment_text": "",
@@ -258,7 +258,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17370903,
+        "last_serial": 17991075,
         "urls": [
             {
                 "comment_text": "",
@@ -360,7 +360,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17370903,
+        "last_serial": 17991075,
         "urls": [
             {
                 "comment_text": "",
@@ -462,7 +462,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17370903,
+        "last_serial": 17991075,
         "urls": [
             {
                 "comment_text": "",
@@ -564,7 +564,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17370903,
+        "last_serial": 17991075,
         "urls": [
             {
                 "comment_text": "",
@@ -666,7 +666,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17370903,
+        "last_serial": 17991075,
         "urls": [
             {
                 "comment_text": "",
@@ -726,7 +726,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "<!--- Top of README Badges (automated) --->\n[![PyPI](https://img.shields.io/pypi/v/wipac-file-catalog-indexer)](https://pypi.org/project/wipac-file-catalog-indexer/) [![GitHub release (latest by date including pre-releases)](https://img.shields.io/github/v/release/WIPACrepo/file-catalog-indexer?include_prereleases)](https://github.com/WIPACrepo/file-catalog-indexer/) [![PyPI - License](https://img.shields.io/pypi/l/wipac-file-catalog-indexer)](https://github.com/WIPACrepo/file-catalog-indexer/blob/master/LICENSE) [![Lines of code](https://img.shields.io/tokei/lines/github/WIPACrepo/file-catalog-indexer)](https://github.com/WIPACrepo/file-catalog-indexer/) [![GitHub issues](https://img.shields.io/github/issues/WIPACrepo/file-catalog-indexer)](https://github.com/WIPACrepo/file-catalog-indexer/issues?q=is%3Aissue+sort%3Aupdated-desc+is%3Aopen) [![GitHub pull requests](https://img.shields.io/github/issues-pr/WIPACrepo/file-catalog-indexer)](https://github.com/WIPACrepo/file-catalog-indexer/pulls?q=is%3Apr+sort%3Aupdated-desc+is%3Aopen) \n<!--- End of README Badges (automated) --->\n# file-catalog-indexer\nIndexing package and scripts for the File Catalog\n\n## How To\n\n### API\n#### `from indexer.index import index`\n- The flagship indexing function\n- Find files rooted at given path(s), compute their metadata, and upload it to File Catalog\n- Configurable for multi-processing (default: 1 process) and recursive file-traversing (default: on)\n- Internally communicates asynchronously with File Catalog\n- Note: Symbolic links are never followed.\n- Note: `index()` runs the current event loop (`asyncio.get_event_loop().run_until_complete()`)\n- Ex:\n```python\nindex(\n\tindex_config,  # see config.py for a description of the fields in these typed dictionaries\n\toauth_config,\n\trest_config\n)\n```\n\n#### `from indexer.index import index_file`\n- Compute metadata of a single file, and upload it to File Catalog, i.e. index one file\n- Single-processed, single-threaded\n```python\nawait index_file(\n    filepath='/data/exp/IceCube/2018/filtered/level2/0820/Run00131410_74/Level2_IC86.2018_data_Run00131410_Subrun00000000_00000172.i3.zst',\n    manager=MetadataManager(...),\n    fc_rc=RestClient(...),\n)\n```\n\n#### `from indexer.index import index_paths`\n- A wrapper around `index_file()` which indexes multiple files, and returns any nested sub-directories\n- Single-processed, single-threaded\n- Note: Symbolic links are never followed.\n```python\nsub_dirs = await index_paths(\n    paths=['/data/exp/IceCube/2018/filtered/level2/0820', '/data/exp/IceCube/2018/filtered/level2/0825'],\n    manager=MetadataManager(...),\n    fc_rc=RestClient(...),\n)\n```\n\n#### `from indexer.metadata_manager import MetadataManager`\n- The internal brain of the Indexer. This has minimal guardrails, does not communicate to File Catalog, and does not traverse file directory tree.\n- Metadata is produced for an individual file, at a time.\n- Ex:\n```python\nmanager = MetadataManager(...)  # caches connections & directory info, manages metadata collection\nmetadata_file = manager.new_file(filepath)  # returns an instance (computationally light)\nmetadata = metadata_file.generate()  # returns a dict (computationally intense)\n ```\n\n### Scripts\n##### `python -m indexer.index`\n- A command-line alternative to using `from indexer.index import index`\n- Use with `-h` to see usage.\n- Note: Symbolic links are never followed.\n\n##### `python -m indexer.generate`\n- Like `python -m indexer.index`, but prints (using `pprint`) the metadata instead of posting to File Catalog.\n- Simply, uses file-traversing logic around calls to `indexer.metadata_manager.MetadataManager`\n- Note: Symbolic links are never followed.\n\n##### `python -m indexer.delocate`\n- Find files rooted at given path(s); for each, remove the matching location entry from its File Catalog record.\n- Note: Symbolic links are never followed.\n\n## .i3 File Processing-Level Detection and Embedded Filename-Metadata Extraction\nRegex is used heavily to detect the processing level of a `.i3` file, and extract any embedded metadata in the filename. The exact process depends on the type of data:\n\n### Real Data (`/data/exp/*`)\nThis is a two-stage process (see `MetadataManager._new_file_real()`):\n1. Processing-Level Detection (Base Pattern Screening)\n\t- The filename is applied to multiple generic patterns to detect if it is L2, PFFilt, PFDST, or PFRaw\n\t- If the filename does not trigger a match, *only basic metadata is collected* (`logical_name`, `checksum`, `file_size`, `locations`, and `create_date`)\n2. Embedded Filename-Metadata Extraction\n\t- After the processing level is known, the filename is parsed using one of (possibly) several tokenizing regex patterns for the best match (greedy matching)\n\t- If the filename does not trigger a match, *the function will raise an exception (script will exit).* This probably indicates that a new pattern needs to be added to the list.\n\t\t+ see `indexer.metadata.real.filename_patterns`\n\n### Simulation Data (`/data/sim/*`)\nThis is a three-stage process (see `MetadataManager._new_file_simulation()`):\n1. Base Pattern Screening\n\t- The filename is checked for `.i3` file extensions: `.i3`, `.i3.gz`, `.i3.bz2`, `.i3.zst`\n\t- If the filename does not trigger a match, *only basic metadata is collected* (`logical_name`, `checksum`, `file_size`, `locations`, and `create_date`)\n\t\t+ there are a couple hard-coded \"anti-patterns\" used for rejecting known false-positives (see code)\n2. Embedded Filename-Metadata Extraction\n\t- The filename is parsed using one of MANY (around a thousand) tokenizing regex patterns for the best match (greedy matching)\n\t- If the filename does not trigger a match, *the function will raise an exception (script will exit).* This probably indicates that a new pattern needs to be added to the list.\n\t\t+ see `indexer.metadata.sim.filename_patterns`\n3. Processing-Level Detection\n\t- The filename is parsed for substrings corresponding to a processing level\n\t\t+ see `DataSimI3FileMetadata.figure_processing_level()`\n\t- If there is no match, `processing_level` will be set to `None`, since the processing level is less important for simulation data.\n\n\n## Metadata Schema\nSee:\n- [Google Doc](https://docs.google.com/document/d/14SanUWiYEbgarElt0YXSn_2We-rwT-ePO5Fg7rrM9lw/edit?usp=sharing)\n- [File Catalog Types](https://github.com/WIPACrepo/file_catalog/blob/master/file_catalog/schema/types.py)\n\n\n## Warnings\n\n### Re-indexing Files is Tricky (Two Scenarios)\n1. Indexing files that have not changed locations is okay--this probably means that the rest of the metadata has also not changed. A guardrail query will check if the file exists in the FC with that `locations` entry, and will not process the file further.\n2. HOWEVER, don't point the indexer at restored files (of the same file-version)--those that had their initial `locations` entry removed (ie. removed from WIPAC, then moved back). Unlike re-indexing an unchanged file, this file will be *fully locally processed* (opened, read, and check-summed) before encountering the checksum-conflict then aborting. These files will be skipped (not sent to FC), unless you use `--patch` *(replaces the `locations` list, wholesale)*, which is **DANGEROUS**.\n\t- Example Conflict: It's possible a file-version exists in FC after initial guardrails\n\t\t1. file was at WIPAC & indexed\n\t\t2. then moved to NERSC (`location` added) & deleted from WIPAC (`location` removed)\n\t\t3. file was brought back to WIPAC\n\t\t4. now is being re-indexed at WIPAC\n\t\t5. CONFLICT -> has the same `logical_name`+`checksum.sha512` but differing `locations`\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "https://pypi.org/project/wipac-file-catalog-indexer/",
@@ -785,7 +784,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17370903,
+        "last_serial": 17991075,
         "urls": [
             {
                 "comment_text": "",
@@ -826,6 +825,125 @@
                 "upload_time": "2023-03-20T23:30:42",
                 "upload_time_iso_8601": "2023-03-20T23:30:42.793314Z",
                 "url": "https://files.pythonhosted.org/packages/82/00/c92c0dd3e58fb88abe93685114d466df3d591a687d5202341fa27404028d/wipac-file-catalog-indexer-2.0.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "2.0.1": {
+        "info": {
+            "author": "WIPAC Developers",
+            "author_email": "developers@icecube.wisc.edu",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 5 - Production/Stable",
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "<!--- Top of README Badges (automated) --->\n[![PyPI](https://img.shields.io/pypi/v/wipac-file-catalog-indexer)](https://pypi.org/project/wipac-file-catalog-indexer/) [![GitHub release (latest by date including pre-releases)](https://img.shields.io/github/v/release/WIPACrepo/file-catalog-indexer?include_prereleases)](https://github.com/WIPACrepo/file-catalog-indexer/) [![PyPI - License](https://img.shields.io/pypi/l/wipac-file-catalog-indexer)](https://github.com/WIPACrepo/file-catalog-indexer/blob/master/LICENSE) [![Lines of code](https://img.shields.io/tokei/lines/github/WIPACrepo/file-catalog-indexer)](https://github.com/WIPACrepo/file-catalog-indexer/) [![GitHub issues](https://img.shields.io/github/issues/WIPACrepo/file-catalog-indexer)](https://github.com/WIPACrepo/file-catalog-indexer/issues?q=is%3Aissue+sort%3Aupdated-desc+is%3Aopen) [![GitHub pull requests](https://img.shields.io/github/issues-pr/WIPACrepo/file-catalog-indexer)](https://github.com/WIPACrepo/file-catalog-indexer/pulls?q=is%3Apr+sort%3Aupdated-desc+is%3Aopen) \n<!--- End of README Badges (automated) --->\n# file-catalog-indexer\nIndexing package and scripts for the File Catalog\n\n## How To\n\n### API\n#### `from indexer.index import index`\n- The flagship indexing function\n- Find files rooted at given path(s), compute their metadata, and upload it to File Catalog\n- Configurable for multi-processing (default: 1 process) and recursive file-traversing (default: on)\n- Internally communicates asynchronously with File Catalog\n- Note: Symbolic links are never followed.\n- Note: `index()` runs the current event loop (`asyncio.get_event_loop().run_until_complete()`)\n- Ex:\n```python\nindex(\n\tindex_config,  # see config.py for a description of the fields in these typed dictionaries\n\toauth_config,\n\trest_config\n)\n```\n\n#### `from indexer.index import index_file`\n- Compute metadata of a single file, and upload it to File Catalog, i.e. index one file\n- Single-processed, single-threaded\n```python\nawait index_file(\n    filepath='/data/exp/IceCube/2018/filtered/level2/0820/Run00131410_74/Level2_IC86.2018_data_Run00131410_Subrun00000000_00000172.i3.zst',\n    manager=MetadataManager(...),\n    fc_rc=RestClient(...),\n)\n```\n\n#### `from indexer.index import index_paths`\n- A wrapper around `index_file()` which indexes multiple files, and returns any nested sub-directories\n- Single-processed, single-threaded\n- Note: Symbolic links are never followed.\n```python\nsub_dirs = await index_paths(\n    paths=['/data/exp/IceCube/2018/filtered/level2/0820', '/data/exp/IceCube/2018/filtered/level2/0825'],\n    manager=MetadataManager(...),\n    fc_rc=RestClient(...),\n)\n```\n\n#### `from indexer.metadata_manager import MetadataManager`\n- The internal brain of the Indexer. This has minimal guardrails, does not communicate to File Catalog, and does not traverse file directory tree.\n- Metadata is produced for an individual file, at a time.\n- Ex:\n```python\nmanager = MetadataManager(...)  # caches connections & directory info, manages metadata collection\nmetadata_file = manager.new_file(filepath)  # returns an instance (computationally light)\nmetadata = metadata_file.generate()  # returns a dict (computationally intense)\n ```\n\n### Scripts\n##### `python -m indexer.index`\n- A command-line alternative to using `from indexer.index import index`\n- Use with `-h` to see usage.\n- Note: Symbolic links are never followed.\n\n##### `python -m indexer.generate`\n- Like `python -m indexer.index`, but prints (using `pprint`) the metadata instead of posting to File Catalog.\n- Simply, uses file-traversing logic around calls to `indexer.metadata_manager.MetadataManager`\n- Note: Symbolic links are never followed.\n\n##### `python -m indexer.delocate`\n- Find files rooted at given path(s); for each, remove the matching location entry from its File Catalog record.\n- Note: Symbolic links are never followed.\n\n## .i3 File Processing-Level Detection and Embedded Filename-Metadata Extraction\nRegex is used heavily to detect the processing level of a `.i3` file, and extract any embedded metadata in the filename. The exact process depends on the type of data:\n\n### Real Data (`/data/exp/*`)\nThis is a two-stage process (see `MetadataManager._new_file_real()`):\n1. Processing-Level Detection (Base Pattern Screening)\n\t- The filename is applied to multiple generic patterns to detect if it is L2, PFFilt, PFDST, or PFRaw\n\t- If the filename does not trigger a match, *only basic metadata is collected* (`logical_name`, `checksum`, `file_size`, `locations`, and `create_date`)\n2. Embedded Filename-Metadata Extraction\n\t- After the processing level is known, the filename is parsed using one of (possibly) several tokenizing regex patterns for the best match (greedy matching)\n\t- If the filename does not trigger a match, *the function will raise an exception (script will exit).* This probably indicates that a new pattern needs to be added to the list.\n\t\t+ see `indexer.metadata.real.filename_patterns`\n\n### Simulation Data (`/data/sim/*`)\nThis is a three-stage process (see `MetadataManager._new_file_simulation()`):\n1. Base Pattern Screening\n\t- The filename is checked for `.i3` file extensions: `.i3`, `.i3.gz`, `.i3.bz2`, `.i3.zst`\n\t- If the filename does not trigger a match, *only basic metadata is collected* (`logical_name`, `checksum`, `file_size`, `locations`, and `create_date`)\n\t\t+ there are a couple hard-coded \"anti-patterns\" used for rejecting known false-positives (see code)\n2. Embedded Filename-Metadata Extraction\n\t- The filename is parsed using one of MANY (around a thousand) tokenizing regex patterns for the best match (greedy matching)\n\t- If the filename does not trigger a match, *the function will raise an exception (script will exit).* This probably indicates that a new pattern needs to be added to the list.\n\t\t+ see `indexer.metadata.sim.filename_patterns`\n3. Processing-Level Detection\n\t- The filename is parsed for substrings corresponding to a processing level\n\t\t+ see `DataSimI3FileMetadata.figure_processing_level()`\n\t- If there is no match, `processing_level` will be set to `None`, since the processing level is less important for simulation data.\n\n\n## Metadata Schema\nSee:\n- [Google Doc](https://docs.google.com/document/d/14SanUWiYEbgarElt0YXSn_2We-rwT-ePO5Fg7rrM9lw/edit?usp=sharing)\n- [File Catalog Types](https://github.com/WIPACrepo/file_catalog/blob/master/file_catalog/schema/types.py)\n\n\n## Warnings\n\n### Re-indexing Files is Tricky (Two Scenarios)\n1. Indexing files that have not changed locations is okay--this probably means that the rest of the metadata has also not changed. A guardrail query will check if the file exists in the FC with that `locations` entry, and will not process the file further.\n2. HOWEVER, don't point the indexer at restored files (of the same file-version)--those that had their initial `locations` entry removed (ie. removed from WIPAC, then moved back). Unlike re-indexing an unchanged file, this file will be *fully locally processed* (opened, read, and check-summed) before encountering the checksum-conflict then aborting. These files will be skipped (not sent to FC), unless you use `--patch` *(replaces the `locations` list, wholesale)*, which is **DANGEROUS**.\n\t- Example Conflict: It's possible a file-version exists in FC after initial guardrails\n\t\t1. file was at WIPAC & indexed\n\t\t2. then moved to NERSC (`location` added) & deleted from WIPAC (`location` removed)\n\t\t3. file was brought back to WIPAC\n\t\t4. now is being re-indexed at WIPAC\n\t\t5. CONFLICT -> has the same `logical_name`+`checksum.sha512` but differing `locations`\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "https://pypi.org/project/wipac-file-catalog-indexer/",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/WIPACrepo/file-catalog-indexer",
+            "keywords": "indexer,metadata,data,warehouse,archive,L2,PFDST,PFFilt,PFRaw,i3,simulation,File,Catalog,iceprod,WIPAC,IceCube",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "wipac-file-catalog-indexer",
+            "package_url": "https://pypi.org/project/wipac-file-catalog-indexer/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/wipac-file-catalog-indexer/",
+            "project_urls": {
+                "Download": "https://pypi.org/project/wipac-file-catalog-indexer/",
+                "Homepage": "https://github.com/WIPACrepo/file-catalog-indexer",
+                "Source": "https://github.com/WIPACrepo/file-catalog-indexer",
+                "Tracker": "https://github.com/WIPACrepo/file-catalog-indexer/issues"
+            },
+            "release_url": "https://pypi.org/project/wipac-file-catalog-indexer/2.0.1/",
+            "requires_dist": [
+                "PyMySQL",
+                "bitmath",
+                "iceprod",
+                "more-itertools",
+                "requests",
+                "requests-futures",
+                "requests-toolbelt",
+                "typing-extensions",
+                "wipac-file-catalog",
+                "wipac-rest-tools",
+                "xmltodict",
+                "coloredlogs ; extra == 'dev'",
+                "flake8 ; extra == 'dev'",
+                "mypy ; extra == 'dev'",
+                "natsort ; extra == 'dev'",
+                "pycycle ; extra == 'dev'",
+                "pytest ; extra == 'dev'",
+                "pytest-asyncio ; extra == 'dev'",
+                "pytest-cov ; extra == 'dev'",
+                "pytest-mock ; extra == 'dev'",
+                "requests ; extra == 'dev'",
+                "requests-mock ; extra == 'dev'",
+                "ruff ; extra == 'dev'",
+                "types-PyMySQL ; extra == 'dev'",
+                "types-PyYAML ; extra == 'dev'",
+                "types-requests ; extra == 'dev'"
+            ],
+            "requires_python": "<3.12,>=3.8",
+            "summary": "Indexing package and scripts for the File Catalog",
+            "version": "2.0.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17991075,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5b28318ec6516c12f67cd0d1579d8fec4f64e7ae5c158b1854f6f6c004f34fc8",
+                    "md5": "d1f580bc9cef3a662a6c02f28679fb45",
+                    "sha256": "19ae166bb64118ce81adbcecf4c08e6f37be4e6755e4f42392d28d6ad6c18998"
+                },
+                "downloads": -1,
+                "filename": "wipac_file_catalog_indexer-2.0.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "d1f580bc9cef3a662a6c02f28679fb45",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": "<3.12,>=3.8",
+                "size": 92202,
+                "upload_time": "2023-05-05T18:02:18",
+                "upload_time_iso_8601": "2023-05-05T18:02:18.398871Z",
+                "url": "https://files.pythonhosted.org/packages/5b/28/318ec6516c12f67cd0d1579d8fec4f64e7ae5c158b1854f6f6c004f34fc8/wipac_file_catalog_indexer-2.0.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ea229701550828a67eabb88774c9b708e9d1751291f37a7cf9889abb5c65ba2b",
+                    "md5": "090cca444006254603703aeb6dfdfcfc",
+                    "sha256": "47d474a6ffc64de05725129077e650e0f6c9effb308a4595f9a5ab4be1cb379d"
+                },
+                "downloads": -1,
+                "filename": "wipac-file-catalog-indexer-2.0.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "090cca444006254603703aeb6dfdfcfc",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": "<3.12,>=3.8",
+                "size": 75717,
+                "upload_time": "2023-05-05T18:02:20",
+                "upload_time_iso_8601": "2023-05-05T18:02:20.350980Z",
+                "url": "https://files.pythonhosted.org/packages/ea/22/9701550828a67eabb88774c9b708e9d1751291f37a7cf9889abb5c65ba2b/wipac-file-catalog-indexer-2.0.1.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

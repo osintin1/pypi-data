@@ -1,0 +1,91 @@
+{
+    "0.0.1": {
+        "info": {
+            "author": "",
+            "author_email": "Jiseob Kim <justjest@gmail.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# Hypod: A dataclass-based hyperparameter managing system\n\n## Overview\nDeep learning models are often composed of multiple networks, where each of the networks is composed of multiple layers, and the class of each layer or its hyperparameters differ by experiments. `Hypod` simplifies managing this complex hierarchy of hyperparameters utilizing the built-in `dataclass`.\n\nThe `dataclass` derives the following benefits.\n* Defining a group of hyperaparameters is easy with **type annotation** support.\n* Creating it is easy with the auto-defined `__init__`.\n* Many IDE's (e.g., PyCharm, VSCode) support \"jump to the definition\".\n\nHowever, difficulties for using it \"as-is\" in hyperparameter-managing are:\n* Handling nested dataclasses is not so good.\n* Parsing the strings or sys.argv to create a dataclass is not natively supported.\n* Switching between multiple child dataclasses using a simple \"tag\" is cumbersome.\n\n`Hypod` will handle all these difficulties for you with following advantages.\n* Fast, lightweight implementation using the built-in `dataclass` and descriptors\n* Minimal dependency\n* Type-checking (based on annotation)\n* Parsing a stringified object or YAML to create the corresponding nested dataclass\n* Ability to auto-make the corresponding module (e.g., layer, network), when defined as an inner class of that module.\n\n### Comparison with other packages\n* [Hydra](https://github.com/facebookresearch/hydra): Hydra is a popular package with the same purpose. Its _structured config_ mode allows defining a config with `dataclass` as well. However, Hydra converts a config into `DictConfig` object (from another package `omegaconf`) even when it is originally defined with `dataclass`. Thus, all the operations (modifying, getting values, merging) are done with `DictConfig` and this brings the following drawbacks compared to Hypod, which uses `dataclass` object all the time.\n  * `DictConfig` is not type annotated.\n  * \"Go to the definition\" in IDE cannot be done with `DictConfig`.\n  * Inheritance strcuture of configs cannot be checked.\n  * Complex value interpolation is difficult or impossible to implement. In Hypod `dataclass`, it can be done using built-in `__post_init__()` function (see `examples/advanced_usage.py`).\n\n\n### Etymology\nHypod stands for **\"A Pot of Hyperparameters, or A Hyperparameters-Pot\"**. You can put various Hyperparameters in a Pot and mix them with others as you wish.\n\n## Quick start\n### Install the package\n`pip install hypod`\n\n### Basic Usage\n\n```python\nfrom dataclasses import dataclass\nfrom hypod import hypod\n\n\n@dataclass\n@hypod\nclass LayerHP:\n  in_features: int\n  out_features: int\n  init_scale: float = 0.9\n\n\n@dataclass\n@hypod\nclass NetworkHP:\n  num_layers: int\n  layer_hp: LayerHP\n\n\nif __name__ == \"__main__\":\n  # Hypod can be created in the same manner as dataclass.\n  net_hp1 = NetworkHP(num_layers=3, layer_hp=LayerHP(64, 32))\n  print(net_hp1)\n  # Hypod can be also created from parsing stringified objects.\n  net_hp2 = NetworkHP(num_layers=\"3\", layer_hp=LayerHP(\"64\", 32))\n  print(net_hp2)\n  # Hypod class itself can be also created from a dictionary.\n  net_hp3 = NetworkHP(num_layers=3, layer_hp=dict(in_features=64, out_features=32))\n  print(net_hp3)\n\n```\n\n### Command-line Usage\nWith the Hypod classes defined the same as above, define the main function as follows.\n\n```python\n# main.py\nfrom hypod import hypod_main\n\n\n@hypod_main()  # parses sys.argv to construct the hypod in the first argument, `net_hp`\ndef main(net_hp: NetworkHP):\n  print(net_hp)\n\n\nif __name__ == \"__main__\":\n  main()\n```\nThen, in the command-line type as follows to obtain the same results as before.\n`python main.py num_layers=3 layer_hp.in_features=64 layer_hp.out_features=32`\n\n\n### Inheritance\nHypod can be subclassed with a **tag**.\n\n```python\nfrom dataclasses import dataclass\n\nfrom hypod import hypod\n\n\n@dataclass\n@hypod\nclass Data:\n  path: str\n  batch_size: int = 4\n\n\n@dataclass\n@hypod\nclass FFHQData(Data, tag=\"ffhq\"):\n  path: str = \"/path/to/FFHQ\"\n  meta: str = \"Flicker-Faces HQ Data, containing 70k images\"\n\n\n@dataclass\n@hypod\nclass FFHQDataLargeBatch(FFHQData, tag=\"ffhq_lg\"):\n  batch_size: int = 16\n\n\n@dataclass\n@hypod\nclass Model:\n  data: Data\n  net: NetworkHP\n\n\nif __name__ == \"__main__\":\n  model_with_ffhq = Model(\n    data=\"ffhq\", net=NetworkHP(num_layers=3, layer_hp=LayerHP(64, 32)),\n  )\n  print(model_with_ffhq)\n\n  model_with_ffhq_lg = Model(\n    data=dict(_tag=\"ffhq_lg\"),  # Also can be created from dict with \"_tag\" key.\n    net=NetworkHP(num_layers=3, layer_hp=LayerHP(64, 32)),\n  )\n  print(model_with_ffhq_lg)\n\n  model_with_cifar10 = Model(\n    data=dict(path=\"/path/to/cifar10\"),\n    net=NetworkHP(num_layers=3, layer_hp=LayerHP(64, 32)),\n  )\n  print(model_with_cifar10)\n```\n\n### Command-line Usage with Inheritance\nWith the Hypod classes defined the same as above, define the main function as follows.\n\n```python\n# main.py\nfrom hypod import hypod_main\n\n\n@hypod_main()  # parses sys.argv to construct the hypod in the first argument, `net_hp`\ndef main(model: Model):\n  print(model)\n\n\nif __name__ == \"__main__\":\n  main()\n```\nThen, in the command-line type as follows to obtain the same results as before.\n`python main.py model.data=ffhq model.net.num_layers=3 model.net.layer_hp.in_features=64 model.net.layer_hp.out_features=32`\nI.e., tag can be fed in the CLI as the root argument.\n\n### Advanced Usage (Value Interpolation)\n* Please refer to `advanced_usage.py` in the `examples` directory.\n* Please note that manually updating the fields of a Hypod object is prohibited. You should always use [`replace`](https://docs.python.org/3/library/dataclasses.html#dataclasses.replace) which will automatically call `__post_init__()` to correctly process the value interpolation.\n\n\n\n### FAQ\n* (Q) When creating Hypod from dict, how does it know which hypod to create? \n  * (A) Via type annotation.\n* (Q) Is `typing.Union` supported? \n  * (A) Yes. But when it is a union of `str` or `dict`, there are ambiguities in parsing the stringified objects. A warning or an error will be raised in this case.\n* (Q) Does tag-based creation still work when `typing.Union` is used?\n  * (A) Yes. The tag search will be done over all the types in the union.\n* (Q) Are `typing.List` or other generic types supported?\n  * (A) Yes.\n* (Q) How can I use value interpolation?\n  * (A) `dataclass` provides `__post_init__()` function where you can define a .\n* (Q) Why not using `typing.dataclass_transform()` in implementing Hypod?\n  * (A) Because requirement of Python>=3.11 is too strict for now.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "hyperparameter,dataclass,command-line",
+            "license": "MIT License  Copyright (c) 2023 Jiseob Kim  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.  THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "hypod",
+            "package_url": "https://pypi.org/project/hypod/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/hypod/",
+            "project_urls": {
+                "repository": "https://github.com/delta-func/hypod"
+            },
+            "release_url": "https://pypi.org/project/hypod/0.0.1/",
+            "requires_dist": [
+                "typeguard (==3.*)",
+                "pyyaml"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "Hypod: A dataclass-based hyperparameter managing system",
+            "version": "0.0.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17994469,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "080e12ec368373c7001a0177c5159d0100e43e726d6e6601eacbc0b621c7efd8",
+                    "md5": "b2727b6b3bf7afe922f76ff57a858edc",
+                    "sha256": "a71e2c69371e49dc84c14b06e518e3bafc1f74d65a5caeada708036c29de88e7"
+                },
+                "downloads": -1,
+                "filename": "hypod-0.0.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "b2727b6b3bf7afe922f76ff57a858edc",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 10149,
+                "upload_time": "2023-05-06T00:27:53",
+                "upload_time_iso_8601": "2023-05-06T00:27:53.127078Z",
+                "url": "https://files.pythonhosted.org/packages/08/0e/12ec368373c7001a0177c5159d0100e43e726d6e6601eacbc0b621c7efd8/hypod-0.0.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "cf53a3b8d852f96d36346e5cdd0d9e8924b5653af3569b16f9542cad7b169c54",
+                    "md5": "5326b44749cfc6ff3cce723989157907",
+                    "sha256": "2b2207033e0ce30562b478f69af80031a6454f2383eb4c80532fea42835ef9e1"
+                },
+                "downloads": -1,
+                "filename": "hypod-0.0.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "5326b44749cfc6ff3cce723989157907",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 11820,
+                "upload_time": "2023-05-06T00:27:56",
+                "upload_time_iso_8601": "2023-05-06T00:27:56.240352Z",
+                "url": "https://files.pythonhosted.org/packages/cf/53/a3b8d852f96d36346e5cdd0d9e8924b5653af3569b16f9542cad7b169c54/hypod-0.0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
