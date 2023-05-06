@@ -38,7 +38,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17966306,
+        "last_serial": 17996929,
         "urls": [
             {
                 "comment_text": "",
@@ -127,7 +127,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17966306,
+        "last_serial": 17996929,
         "urls": [
             {
                 "comment_text": "",
@@ -184,7 +184,6 @@
                 "Operating System :: OS Independent",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "# serial_packets_py\nPython implementations of the Serial Packets protocol.\n\nWORK IN PROGRESS, NOT READY FOR PUBLIC RELEASE.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -217,7 +216,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17966306,
+        "last_serial": 17996929,
         "urls": [
             {
                 "comment_text": "",
@@ -258,6 +257,96 @@
                 "upload_time": "2023-05-04T01:44:40",
                 "upload_time_iso_8601": "2023-05-04T01:44:40.663397Z",
                 "url": "https://files.pythonhosted.org/packages/ee/7d/cd6b9a9c4bc27d26cd2e72ef4e79262e1652b9f610e0e6b80f06192cbb46/serial_packets-0.0.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.4": {
+        "info": {
+            "author": "",
+            "author_email": "Zapta <zapta@zapta.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: CC0 1.0 Universal (CC0 1.0) Public Domain Dedication",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# Python Serial Packets\n\nPython implementations of the Serial Packets protocol.\n\nAS OF MAY 2023, THIS IS WORK IN PROGRESS, NOT READY YET FOR PUBLIC RELEASE.\n\n* PYPI: <https://pypi.org/project/serial-packets/>\n* Github: <https://github.com/zapta/serial_packets_py>\n\n## Protocol Description\n\nThe Serial Packets protocol provides packet based point-to-point serial transport for communication between devices. For example, it can be used for communication between an Arduino device and a PC, where the PC controls the device and the device sends data in real time back to the PC. The protocol is symmetrical and both sides to the communication   have the same capabilities with no designation of master/slave at the transport level.\n\n### Highlights\n\n* Protocol is packet oriented, saving the need to implement framing in the application.\n* The protocol is Efficient with low per-packet overhead, and requires minimal computation and memory.\n* The protocol is symmetrical, and both sides can initiate or response to interactions.\n* The protocol is full duplex, and works independently on each direction.\n* The protocol support endpoint addressing to simplify routing of messages within the application.\n* The protocol supports both one way and two way request/response interactions.\n* Each packet is verified with a 16 bits CRC.\n* The protocol uses the HDLC byte stuffing algorithm which allow to resync on next frame despite communication errors.\n* The wire representation is intuitive which simplifies debugging.\n* The protocol is connectionless and stateless, though application can implement the notion of connection and state at their layer..\n\n### Commands\n\nCommands are round-trip interactions where one node send a 'command' packet and the other node sends back 'response' packet that references the original command packet. Commands are useful to control a device and to retrieve information by polling the device using a RPC like\nAPI.\n\nThe following tables lists the fields of command request and response  packets, before converting to wire representation as explained later:\n\n#### Command packet\n\n| Field     | Size [bytes] | Source   | Description                                            |\n| :-------- | :----------- | :------- | :----------------------------------------------------- |\n| PACKET_TYPE      | 1            | Auto     | The value 0x01                                         |\n| CMD_ID    | 4            | Auto     | A unique command id for response matching. Big Endian. |\n| END_POINT | 1            | **User** | The target endpoint of this command.                   |\n| DATA      | 0 to 1024    | **User** | Command data.                                          |\n| CRC       | 2            | Auto     | Packet CRC. Big endian.                                |\n\n#### Response packet\n\n| Field  | Size [bytes] | Source   | Description                                 |\n| :----- | :----------- | :------- | :------------------------------------------ |\n| PACKET_TYPE   | 1            | Auto     | The value 0x02                              |\n| CMD_ID | 4            | Auto     | The ID of the original command. Big Endian. |\n| STATUS | 1            | **User** | Response status.                            |\n| DATA   | 0 to 1024    | **User** | Response data.                              |\n| CRC    | 2            | Auto     | Packet CRC. Big endian.                     |\n\n#### Sending a command\n\nThe SerialPacketsClient class provides two methods for sending commands.\n*send_command_future(...)* for sending using a future that provides the response and *send_command_blocking(...)* which is a convenience method that blocks internally on the future.\n\nFuture base command sending:\n\n```python\nclient = SerialPacketsClient(\"COM1\", my_command_async_callback, my_message_async_callback,  my_event_async_callback)\nis_connected = await client.connect()\nassert(is_connected)\n\ncmd_endpoint = 20\ncmd_data = bytearray([0x01, 0x02, 0x03])\nfuture =  client.send_command_future(cmd_endpoint, cmd_data, timeout=0.2)\n\n# Sometime later\nstatus, data = await future\n```\n\nBlocking style command sending:\n\n```python\nclient = SerialPacketsClient(\"COM1\", my_command_async_callback, my_message_async_callback, my_event_async_callback)\nis_connected = await client.connect()\nassert(is_connected)\n\ncmd_endpoint = 20\ncmd_data = bytearray([0x01, 0x02, 0x03])\nrx_status, rx_data = await client.send_command_blocking(cmd_endpoint, cmd_data, timeout=0.2)\n```\n\n#### Receiving a command\n\nIncoming commands are received via a callback function that is passed to the SerialPacketsClient when it's created. The callback is an async function that receives the target endpoint and the data of the command and returns the status and data of the response. The client maintains a pool of asyncio workers tasks that serves incoming packets such it's processing one command doesn't block reception of new commands,and command execution can be performed in parallel. If the command is not handled, the callback function should return an empty response with the status UNHANDLED.value.\n\n```python\nasync def my_command_async_callback(endpoint: int, data: bytearray) -> Tuple[int, bytearray]:\n    logger.info(f\"Received command: [%d] %s\", endpoint, data.hex(sep=' '))\n    if (endpoint == 20):\n        return handle_command_endpoint_20(data)\n    # Add here handling of other end points.\n    return (PacketStatus.UNHANDLED.value, bytearray())\n\ndef handle_command_endpoint_20(data: bytearray) -> Tuple[int, bytearray]:\n    status, response_data = (PacketStatus.OK.value, bytearray([1, 2, 3, 4]))\n    logger.info(f\"Command response: [%d] %s\", status, response_data.hex(sep=' '))\n    return (status, response_data)\n\nclient = SerialPacketsClient(args.port, my_command_async_callback, my)message_async_callback, my_event_async_callback)\nis_connected = await client.connect()\nassert(is_connected)\n```\n\n### Messages\n\nMessages are a simpler case of a commands with no response. They are useful for periodic notifications, for example for data reporting, and have lower overhead than commands.\n\n#### Message packet\n\n| Field     | Size [bytes] | Source   | Description                          |\n| :-------- | :----------- | :------- | :----------------------------------- |\n| PACKET_TYPE      | 1            | Auto     | The value 0x03                       |\n| END_POINT | 1            | **User** | The target endpoint of this command. |\n| DATA      | 0 to 1024    | **User** | Command data.                        |\n| CRC       | 2            | Auto     | Packet CRC. Big endian.              |\n\n#### Sending a message\n\nThe *SerialPacketsClient* class provides a method for sending a command. The method is non blocking and merely queues the message for sending.\ntwo methods for sending commands.\n\n```python\nclient = SerialPacketsClient(\"COM1\", my_command_async_callback my_event_async_callback)\nis_connected = await client.connect()\nassert(is_connected)\n...\nmsg_endpoint = 20\nmsg_data = bytearray([0x01, 0x02, 0x03])\nclient.send_message(msg_endpoint, msg_data)\n```\n\n#### Receiving a message\n\nIncoming messages are received via a callback function that is passed to the SerialPacketsClient when it's created. The callback is an async function that receives the target endpoint and the data of the message and returns no value.\n\n```python\nasync def my_message_async_callback(endpoint: int, data: bytearray) -> Tuple[int, bytearray]:\n    logger.info(f\"Received message: [%d] %s\", endpoint, data.hex(sep=' '))\n\nclient = SerialPacketsClient(args.port, my_command_async_callback, my_message_async_callback, my_event_async_callback)\nis_connected = await client.connect()\nassert(is_connected)\n```\n\n## Events\n\nThe SerialPacketsClient signals the application about certain events via an events callback that the use pass to it upon initialization.\n\n```python\nasync def my_event_async_callback(event: PacketsEvent) -> None:\n    logger.info(\"Event %s: %s\", event.event_type(), event.description())\n    logger.info(\"%s event\", event)\n\nclient = SerialPacketsClient(args.port, my_command_async_callback, my_message_async_callback, my_event_async_callback)\nis_connected = await client.connect()\nassert(is_connected)\n```\n\n```python\n```\n\nAs of May 2023 only a couple of events are supported.  \n\n```python\nclass PacketsEventType(Enum):\n    CONNECTED = 1\n    DISCONNECTED = 2\n```\n\n## Wire representation\n\n### Packet flag byte\n\nThe Serial Packets protocol uses packet flags similar to the HDLC protocol, with the special flag byte 0x7E inserted in the serial stream to mark packet ends. A flag byte is always inserted immediately after the\nlast byte of each packet, and also optionally just before the first byte of packets, if the interval from the previous packet was longer than a certain time period.\n\n### Byte stuffing\n\nTo make the flag byte 0x7E unique in the serial stream, the Serial Packet uses 'byte stuffing' borrowed from the HDLC protocol. This allows the protocol to resync on next packet boundary, in case of line errors. This byte stuffing is done using the escape byte 0X7D\n\n| Packet byte | Wire bytes | Comments            |\n| :---------- | :--------- | :------------------ |\n| 0x7E        | 0x7D, 0x5E | Escaped flag byte   |\n| 0x7D        | 0x7D, 0x5D | Escaped escape byte |\n| Other bytes | No change  | The common case     |\n\n## Status codes\n\nThe Serial Packets protocol uses 1 byte status codes where 0x00 indicates success and all other values indicate errors. These status codes are used in the command responses, and optionally also by the implementation API for other reasons.\n\nAs of May 2023, these are the predefined status codes. For the updated list, look at the *serial_packets.packets.PacketStatus* enum.\n\n| Status Value | Status name      | Comments                             |\n| :----------- | :--------------- | :----------------------------------- |\n| 0            | OK               | The only non error status.           |\n| 1            | GENERAL_ERROR    | Unspecified error.                   |\n| 2            | TIMEOUT          | A request timed out.                 |\n| 3            | UNHANDLED        | No handler for this command.         |\n| 4            | INVALID_ARGUMENT | Invalid argument value in a request. |\n| 5            | LENGTH_ERROR     | Data has invalid length.             |\n| 6            | OUT_OF_RANGE     | A more specific invalid argument.    |\n| 7 - 99       | Reserved         | For future protocol definitions.     |\n| 100-255      | Custom           | For user's application specific use. |\n\n## Endpoints\n\nEndpoints represent the destinations of commands and messages on the receiving node and allows the application to distinguish between command and message types. End points are identified by a single byte, where the values 0-199 are available for the application, and the values 200-255 are reserved for future expansions of the protocol.\n\n## Data\n\nCommands, responses and messages pass  data which is a sequence of zero to 1024 bytes. These bytes are opaque to the protocol which treat them as a blob. It's up to the application to determine the semantic of these bytes and to encode and decode them as needed.\n\n## Application Example\n\nThe repository contains and example with two main programs that communicate between them via serial port. One program called 'master' periodically sends a command and waits for a response and the other one called 'slave' sends a message periodically. To run the example, use two USB/Serial adapters and connect the TX of the first to the RX of the second and vice versa. Also, make sure to connect the gwo grounds. Then run each of the two program, providing the respective port in the command line. Make sure to replace the serial port ids in the example below with the actual port id of your system.\n\n<https://github.com/zapta/serial_packets_py/tree/main/src/examples>\n\nRunning the master:\n\n```python\npython -u  master.py --port=\"COM21\" \n```\n\nRunning the slave (in another shell, or another computer):\n\n```python\npython -u  slave.py --port=\"COM22\" \n```\n\n## FAQ\n\n**Q**: What other Serial Packets implementations are available?\n\nA: This Python implementation is the first. As of May 2023, we are actively developing an Arduino implementation.\n\n---\n\n**Q**: What platforms are supported by this Python implementation?\n\nA: The package is implemented using the [pyserial-asyncio](https://pypi.org/project/pyserial-asyncio/) package which as of May 2023 supports Max OSX, Windows, and Linux.\n\n---\n\n**Q**: Can I contribute new implementations?\n\nA: Of course. We would love to list your implementation here.\n\n---\n\n**Q**: Can I contribute fixes and protocol extensions?\n\nA: Of course. Please feel free to contact us on github.\n\n---\n\n**Q**: Why asyncio based implementation, doesn't it complicate things?\n\nA: Asyncio may make simple programs more complicated but it allows for more responsive programs with efficient parallel I/O.\n\n---\n\n**Q**: Do you plan to provide also cross platform APIs for data serialization/deserialization?\n\nA: This is a good idea, but we are not working on it as of May 2023. We would any recommendations or implementations of such a portable API.\n\n---\n\n**Q**: Is there a serial sniffer for the Serial Packets protocol?\n\nA: Note at the moment, but if you will implement one, we would love to a reference it here. It can be implemented for example with a Python program or with an Arduino sketch.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "serial-packets",
+            "package_url": "https://pypi.org/project/serial-packets/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/serial-packets/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/zapta/serial_packets_py/issues",
+                "Homepage": "https://github.com/zapta/serial_packets_py"
+            },
+            "release_url": "https://pypi.org/project/serial-packets/0.0.4/",
+            "requires_dist": [
+                "pyserial-asyncio>=0.6.0",
+                "pythoncrc>=1.21.0"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "A Python impelementation of the Serial Packets protocol",
+            "version": "0.0.4",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 17996929,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "683f9e9bd8c791014d12ec8ebb3554868592e72982c18d41695ea3bc851abfab",
+                    "md5": "8a8f2ac4db8eb94e27330b7ef35b6888",
+                    "sha256": "c88caa23c28e8dc5bef9275d56421189c5ca287fb68cbc6ba5aabd0172557cb8"
+                },
+                "downloads": -1,
+                "filename": "serial_packets-0.0.4-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "8a8f2ac4db8eb94e27330b7ef35b6888",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 17653,
+                "upload_time": "2023-05-06T04:38:07",
+                "upload_time_iso_8601": "2023-05-06T04:38:07.904041Z",
+                "url": "https://files.pythonhosted.org/packages/68/3f/9e9bd8c791014d12ec8ebb3554868592e72982c18d41695ea3bc851abfab/serial_packets-0.0.4-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2d0788b7ae1224b9fe26c3434b8356e62ed2a891bede2e25d767376b604c24be",
+                    "md5": "250cdd9f17910b86e8d9dcde07fc3101",
+                    "sha256": "41719738079bb3b6a73a80e0a1c52fbef5b71f35eb6dca543a2a78af7cfe41cc"
+                },
+                "downloads": -1,
+                "filename": "serial_packets-0.0.4.tar.gz",
+                "has_sig": false,
+                "md5_digest": "250cdd9f17910b86e8d9dcde07fc3101",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 15267,
+                "upload_time": "2023-05-06T04:38:10",
+                "upload_time_iso_8601": "2023-05-06T04:38:10.399190Z",
+                "url": "https://files.pythonhosted.org/packages/2d/07/88b7ae1224b9fe26c3434b8356e62ed2a891bede2e25d767376b604c24be/serial_packets-0.0.4.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
