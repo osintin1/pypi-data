@@ -1,0 +1,98 @@
+{
+    "1.0": {
+        "info": {
+            "author": "astarivi",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Environment :: Web Environment",
+                "Framework :: Django",
+                "Framework :: Django :: 3.0",
+                "Framework :: Django :: 4.0",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3 :: Only",
+                "Topic :: Internet :: WWW/HTTP",
+                "Topic :: Internet :: WWW/HTTP :: Dynamic Content"
+            ],
+            "description": "# Django Cross-Database Field\n\n### THIS IS AN EXPERIMENTAL PROJECT, USE AT YOUR OWN RISK\n\nExperimental Django model field that communicates with remote (same instance Django) databases. Ideal for read-only data\nfetching applications, such as fetching a user profile. \n\nAs this is an experimental project, do your own research, try it, test it, and if you deem it good and stable enough\nfor your use case, adopt it. Any kind of feedback, like confirming if it works with certain versions of Django, is\ngreatly appreciated.\n\nBest (or only) used with multi-database Django configurations. Check \nhttps://docs.djangoproject.com/en/4.2/topics/db/multi-db/ for more details.\n\n# Getting started\n\n1. Add `cross_database_field` to your INSTALLED_APPS.\n\n```python\nINSTALLED_APPS = [\n    ...,\n    'cross_database_field'\n]\n```\n\n2. Import, then add the field to the desired model.\n\n```python\nfrom django.db import models\n\n# Import it\nfrom cross_database_field.fields import CrossDatabaseField, CrossDatabaseCapableModel\n\n\nclass YourRemoteModelInAnotherDatabase(models.Model):\n    your_remote_field = models.CharField(max_length=100)\n\n    \nclass YourModel(models.Model):\n    your_field = models.CharField(max_length=100)\n    # Use it\n    cross_field = CrossDatabaseField(\n        to=\"your_project.models.YourRemoteModelInAnotherDatabase\",\n        remote_db=\"your_remote_database\"\n    )\n\n# Maybe inherit from CrossDatabaseCapableModel for extra QoL features\n# Check the \"Models\" section below for more information about CrossDatabaseCapableModel\nclass YourEvenBetterModel(CrossDatabaseCapableModel):\n    your_field = models.CharField(max_length=100)\n    # Use it\n    cross_field = CrossDatabaseField(\n        to=\"your_project.models.YourRemoteModelInAnotherDatabase\",\n        remote_db=\"your_remote_database\"\n    )\n```\n\n3. Make migrations and apply them.\n\n# Exported modules\n\n## Fields\n\n### `Common arguments`\n\nThese are positional arguments used by all fields listed below.\n\n- `to` = Full path to the remote model, as a string, ex: `\"your_project.models.YourRemoteModelInAnotherDatabase\"`\n- `remote_db` = Name of the database, as declared in Django settings file, ex: `\"default\"`\n\n### `cross_database_field.fields.CrossDatabaseField`\n\nCross-database field for remote models with a numeric primary key. You most likely have to use this field, as the\ndefault PK field in Django is a BigInteger.\n\n- Remote primary key: Numeric (Any Integer type, *no decimals*)\n- Locally stored as: BigInteger\n\n### `cross_database_field.fields.UUIDCrossDatabaseField`\n\nCross-database field for remote models with a UUID primary key. This field is not standard, as models with a UUID PK\nare uncommon, and mostly unpractical.\n\n- Remote primary key: UUIDField\n- Locally stored as: UUID if database capable, else, string or hex.\n\n## Models\n\n### `cross_database_field.fields.CrossDatabaseCapableModel`\n\nAbstract model meant to be used together with cross-database fields. This abstract model is meant to simplify the\nmanipulation of models containing cross-database fields. This is done by allowing to circumvent some of the limitations listed above.\n\nThis model will circumvent the following limitations: \n\n- The first limitation, by overriding the save logic.\n- The second limitation, by overriding the save logic and fetching the remote model.\n\nTo use this model, inherit from the right class in your model declaration. Like so:\n\n```python\nfrom django.db import models\n\n# Import it\nfrom cross_database_field.fields import CrossDatabaseField, CrossDatabaseCapableModel\n\n\nclass YourRemoteModelInAnotherDatabase(models.Model):\n    your_remote_field = models.CharField(max_length=100)\n\n    \n# Inherit CrossDatabaseCapableModel instead of models.Model\nclass YourModel(CrossDatabaseCapableModel):\n    your_field = models.CharField(max_length=100)\n    cross_field = CrossDatabaseField(\n        to=\"your_project.models.YourRemoteModelInAnotherDatabase\",\n        remote_db=\"your_remote_database\"\n    )\n```\n\nKeep in mind, inheriting from this model is only beneficial when your own model contains a cross-database field. Else,\nit will do nothing.\n\n# Everything else\n\n## Usage recommendations\n\nWhile the remote model contained in the cross-database field can be modified and saved independently of the original model,\nthis may lead to unexpected results. Make sure to test thoroughly if you're going this route.\n\nJust as common Django models, the models contained within the cross-database fields are not guaranteed to be up-to-date.\nTo get the latest model representation from database, try instantiating the parent model once again.\n\n## TODO\n\n- Further testing of all use cases and conditions the field may be exposed to.\n- Testing for Python and Django versions compatibility.\n- Support deletion signals (or any other way) to handle remote model deletion.\n- Write a helper tool to ease migrations to, and from, cross-database fields.\n\n## Limitations\n\n1. Models containing a cross-database field cannot be saved after they have been instantiated, as the cross-database \nfields will contain the remote model when instantiated. To solve this, assign the field to the PK of the containing model,\nex: `model_instance.cross_field = model_instance.cross_field.pk`\n2. After dealing with the first limitation, model instances will not contain the remote model anymore, and will contain\nthe PK value going forward. To solve this, instantiate the field again after saving, ex:\n`model_instance = YourModel.objects.get(pk=model_instance.pk)`\n3. Currently, there's no way to implement remote deletion logic, such as Django's \"CASCADE\". When the remote model the \ncross-database field is pointing to is deleted, the field will return `None` in code instances, and will default\nto empty in forms, but the database will still contain the deleted remote model PK value until saved again. Furthermore,\nthat means that cross-database fields will return `None` for two cases; if they're empty, or if the remote model has \nbeen deleted.\n\nCheck the `Exported Modules` section, `Models` subsection above for an easy way to work around some of these limitations.\n\n## Migration\n\nIf you're using an in-house solution to fetch from remote database models, such as storing the PK of a remote model as\na value in a field, migrating to cross-database fields should be easy, as these fields store the same basic\ninformation in the database, just as you're already doing, but provide extra business logic for ease of use.\n\nIf you're migrating away from cross-database fields, you may find the PK of the remote models in your database, as\nmentioned before.\n\nWriting, or modifying a Django migration file should be enough for both cases, and should move your data along safely.",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT License  Copyright (c) 2023 astarivi (astarivi@aol.com)  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.  THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "django-remote-field",
+            "package_url": "https://pypi.org/project/django-remote-field/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/django-remote-field/",
+            "project_urls": {
+                "Bug Tracker": "https://gitlab.com/astarivi/django-cross-database-field/-/issues",
+                "Homepage": "https://gitlab.com/astarivi/django-cross-database-field"
+            },
+            "release_url": "https://pypi.org/project/django-remote-field/1.0/",
+            "requires_dist": null,
+            "requires_python": ">=3.6",
+            "summary": "A custom Django Field with remote database model fetching capabilities",
+            "version": "1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18003657,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "67a042cc7e11dc11436c82c419f82644f6dd325b6749ac6267d00bfaf6a4d706",
+                    "md5": "948caba713ede90cd03d02baab09c7a3",
+                    "sha256": "2242bfee6b397c691caf742deccc7d3a85491c30b88e31ce90797029daefad73"
+                },
+                "downloads": -1,
+                "filename": "django_remote_field-1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "948caba713ede90cd03d02baab09c7a3",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.6",
+                "size": 10250,
+                "upload_time": "2023-05-07T01:46:40",
+                "upload_time_iso_8601": "2023-05-07T01:46:40.942590Z",
+                "url": "https://files.pythonhosted.org/packages/67/a0/42cc7e11dc11436c82c419f82644f6dd325b6749ac6267d00bfaf6a4d706/django_remote_field-1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a4a60a56960a79eb408cd3128560efee56fef75e72a95a2372b0c68df3f8f079",
+                    "md5": "868f4ff238ee8e9a21a1196af0c44673",
+                    "sha256": "15abdc25b5e8b129070eecfcb103e055fa6c676ef11e0cf2eaf01188aff579f7"
+                },
+                "downloads": -1,
+                "filename": "django_remote_field-1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "868f4ff238ee8e9a21a1196af0c44673",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.6",
+                "size": 7696,
+                "upload_time": "2023-05-07T01:46:44",
+                "upload_time_iso_8601": "2023-05-07T01:46:44.599961Z",
+                "url": "https://files.pythonhosted.org/packages/a4/a6/0a56960a79eb408cd3128560efee56fef75e72a95a2372b0c68df3f8f079/django_remote_field-1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
