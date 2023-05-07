@@ -38,7 +38,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17928429,
+        "last_serial": 18003111,
         "urls": [
             {
                 "comment_text": "",
@@ -132,7 +132,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17928429,
+        "last_serial": 18003111,
         "urls": [
             {
                 "comment_text": "",
@@ -195,7 +195,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "# HyperLight\n\n> Hypernetworks in Pytorch made easy\n\n[![PyTorch](https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?style=flat&amp;logo=PyTorch&amp;logoColor=white)](https://pytorch.org)\n[![Supported Python Versions](https://img.shields.io/pypi/pyversions/hyperlight)](https://pypi.org/project/hyperlight/) \n[![PyPI version](https://badge.fury.io/py/hyperlight.svg)](https://badge.fury.io/py/hyperlight)\n[![Downloads](https://pepy.tech/badge/hyperlight)](https://pepy.tech/project/hyperlight)\n[![license](https://img.shields.io/github/license/JJGO/hyperlight.svg)](https://github.com/JJGO/hyperlight/blob/main/LICENSE)\n\n## TL;DR\n\nHyperLight is a Pytorch library designed to make implementing hypernetwork models easy and painless.\nWhat sets HyperLight apart from other hypernetwork implementations:\n\n- **Bring your own architecture** \u2013 HyperLight lets you reuse your existing model code.\n- **Principled Parametrizations and Initializations** \u2013 Default networks can have unstable training dynamics, HyperLight has good defaults that lead to improved training [1].\n- **Work with pretrained models** \u2013 Pretrained weights can be used as part of the hypernetwork initialization.\n- **Seemless Composability** \u2013 It's hypernets all the way down! You can hypernetize hypernet models without issue.\n- **_Pytorch-nic_ API design** \u2013 Parameters are not treated as inputs to layers, preventing lots of code rewriting from happening.\n<!-- - **Easy weight reuse** \u2013 Once a model has its weights set, it can be used many times. -->\n\n[1] [Non-Proportional Parametrizations for Stable Hypernetwork Learning](https://arxiv.org/abs/2304.07645)\n\n## Installation\n\nHyperLight can be installed via `pip`. For the **stable** version:\n\n```shell\npip install hyperlight\n```\n\nOr for the **latest** version:\n\n```shell\npip install git+https://github.com/JJGO/hyperlight.git\n```\n\nYou can also **manually** install it by cloning it, installing dependencias and adding it to your `PYTHONPATH`:\n\n\n```shell\ngit clone https://github.com/JJGO/hyperlight\npython -m pip install -r ./hyperlight/requirements.txt # only dependency is PyTorch\n\n# Put this on your .bashrc/.zshrc\nexport PYTHONPATH=\"$PYTHONPATH:/path/to/hyperlight)\"\n```\n\n\n## Getting Started\n\nThe main advantage of HyperLight is that it allows to easily reuse existing networks without having to redo the model code.\n\nFor example, here's how we can write a Bayesian Neural Hypernetwork for the resnet18 architecture.\n\n```python\nfrom torchvision.models import resnet18\nfrom hyperlight import hypernetize, Hypernet, find_modules_of_type\n\n# First we instantiate the main network and\n# hyperparametrize all convolutional weights\nmainnet = resnet18()\nmodules = find_modules_of_type(mainnet, [nn.Conv2d])\n\n# Replace nn.Parameter objects with ExternalParameters\nmainnet = hypernetize(mainnet, modules=modules)\n\n# Now, we get the spec of the weights we need to predict\nparameter_shapes = mainnet.external_shapes()\n\n# We can predict these shapes any way we want,\n# but hyperlight provides hypernetwork models\nhyperparam_shape = {'h': (10,)} # 10-dim input\nhypernet = Hypernet(\n    input_shapes=hyperparam_shape,\n    output_shapes=parameter_shapes,\n    hidden_sizes=[16,64,128],\n)\n\n# Now, instead of model(input) we first predict the main network weights\nparameters = hypernet(h=hyperpameter_input)\n\n# and then use the main network\nwith mainnet.using_externals(parameters):\n    # within this context manager, the weights are accesible\n    prediction = mainnet(input)\n\n    # after this point, weights are removed\n```\n\nWe can also wrap this into `nn.Module` to pair-up the hypernet with the main network and have a nicer API\n\n```python\n\nclass HyperResNet18(nn.Module):\n\n    def __init__(self,\n        hypernet_layers: List[]\n        ):\n        super().__init__()\n        mainnet = resnet18()\n        modules = find_modules_of_type(mainnet, [nn.Conv2d])\n        mainnet = hypernetize(mainnet, modules=modules)\n\n        hypernet = Hypernet(\n            input_shapes={'h': (10,)},\n            output_shapes=parameter_shapes,\n            layer_sizes=[16,64,128],\n        )\n\n    def forward(self, input, hyper_input):\n        parameters = hypernet(h=hyper_input)\n\n        with mainnet.using_externals(parameters):\n            prediction = mainnet(input)\n\n        return input\n```\n\n\nHyperLight let us reuse the pretrained weights by setting them as independent weights\n\n\n```python\n\nclass HyperResNet18(nn.Module):\n\n    def __init__(self,\n        hypernet_layers: List[]\n        ):\n        super().__init__()\n        # Load pretrained weights\n        mainnet = resnet18(pretrained=True)\n        modules = find_modules_of_type(mainnet, [nn.Conv2d])\n        mainnet, weights = hypernetize(mainnet, modules=modules, return_values=True)\n\n        # Construct from existing\n        hypernet = Hypernet.from_existing(\n            weights, # The weights encode shape and intialization\n            input_shapes={'h': (10,)},\n            output_shapes=parameter_shapes,\n            layer_sizes=[16,64,128],\n        )\n\n    def forward(self, input, hyper_input):\n        parameters = hypernet(h=hyper_input)\n\n        with mainnet.using_externals(parameters):\n            prediction = mainnet(input)\n\n        return input\n```\n\n## Tutorial\n\n### Concepts\n\nIn Hyperlight there are a few new concepts:\n\n- `HyperModule` - Specialized `nn.Module` objects that can hold both regular parameters\nand `ExternalParameters` to be predicted by a external hypernetwork.\n- `ExternalParameter` - `nn.Parameter` replacements that only stores the required shape of the\nexternalized parameter. Parameter data can be set and reset with the hypernetwork predictions.\n- `HyperNetwork` - `nn.Module` that predicts a main network parameters for a given input\n\n### Defining a `HyperModule` with `ExternalParameter`s\n\nHere is an example of how we can define a hypernetized Linear layer. We need to make sure to\ndefine the `ExternalParameter` properties with their correct shapes\n\n```python\nimport torch.nn.functional as F\nfrom hyperlight import HyperModule, ExternalParameter\n\nclass HyperLinear(HyperModule):\n    \"\"\"Layer that implements a nn.Linear layer but with external parameters\n    that will be predicted by a external hypernetwork\"\"\"\n\n    in_features: int\n    out_features: int\n\n    def __init__(self, in_features: int, out_features: int, bias: bool = True) -> None:\n        super().__init__()\n        assert isinstance(in_features, int) and isinstance(out_features, int)\n        self.in_features = in_features\n        self.out_features = out_features\n        self.weight = ExternalParameter(shape=(out_features, in_features))\n        if bias:\n            self.bias = ExternalParameter(shape=(out_features,))\n        else:\n            self.bias = None\n\n    def forward(self, input: Tensor) -> Tensor:\n        return F.linear(input, self.weight, self.bias)\n```\n\nOnce defined, we can make use of this module in the following way\n\n\n```python\n>>> layer = HyperLinear(in_features=8, out_features=16)\n>>> layer.external_shapes()\n{'weight': (16, 8), 'bias': (16,)}\n>>> x = torch.zeros(1, 8)\n\n# Layer cannot be used until weights are set\n>>> layer(x)\n[...]\nAttributeError: Uninitialized External Parameter, please set the value first\n\n# We need to set the external weights first\n>>> layer.set_externals(weight=torch.rand(size=(16,8)), bias=torch.zeros((16,)))\n>>> layer(x).shape\ntorch.Size([1, 16])\n\n# Once we are done, we reset the external parameter values\n>>> layer.reset_externals()\n```\n\nAlternatively, we can use the `using_externals` contextmanager that will set and reset\nthe parameters accordingly\n\n```python\nparams(weight=torch.rand(size=(16,8)), bias=torch.zeros((16,)))\nwith layer.using_externals(params):\n    y = layer(x)\n```\n\n### Dynamically hypernetizing modules\n\nHyperLight supports **dynamic** HyperModule creation using the `hypernetize` helper.\nWe need to specify what parameters we want to remove fromt the module and convert to\n`ExternalParameter` objects.\n\n```python\n>>> from torch import nn\n>>> from hyperlight import hypernetize, hypernetize_single\n\n>>> layer = nn.Linear(in_features=8, out_features=16)\n>>> layer = hypernetize(layer, parameters=[layer.weight, layer.bias])\n>>> layer\nHypernetizedLinear()\n>>> layer.external_shapes()\n{'weight': (16, 8), 'bias': (16,)}\n```\n\n`hypernetize` is recursive, and supports entire modules being specified\n\n\n```python\n>>> model = nn.Sequential(OrderedDict({\n    'conv': nn.Conv2d(3,128,3),\n    'norm': nn.BatchNorm2d(128),\n    'relu': nn.ReLU(),\n    'pool': nn.AdaptiveAvgPool2d((1,1)),\n    'out': nn.Linear(128, 10)\n}))\n\n>>> model = hypernetize(model, modules=[model.conv, model.out])\n>>>  model.external_shapes()\n{'conv.weight': (128, 3, 3, 3),\n 'conv.bias': (128,),\n 'out.weight': (10, 128),\n 'out.bias': (10,)}\n```\n\n### Finding modules and parameters\n\nAdditionally, Hyperlight provides several routines to recursively search for parameters and modules to feed\ninto `hypernetize`:\n\n- `find_modules_of_type(model, module_types)` \u2013 To find modules from a certain type,\ne.g. `nn.Linear` or `nn.Conv2d`\n- `find_modules_from_patterns(model, globs=None, regex=None)` \u2013 To find modules matching\nspecific patterns usingglobs, e.g. `*.conv`; or regexes `e.g. layer[1-3].*conv`\n- `find_parameters_from_patterns(model, globs=None, regex=None)` \u2013 To find parameter\nmatching specific patterns.\n\nSome examples on a ResNet18 architecture:\n\n```python\n>>> from torchvision.models import resnet18\n>>> from hyperlight import find_modules_of_type\n>>> model = resnet18()\n# All convolutions\n>>> find_modules_of_type(model, [nn.Conv2d])\n{'conv1': Conv2d(3, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False),\n 'layer1.0.conv1': Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),\n 'layer1.0.conv2': Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),\n ...\n\n# First convolution of every ResNet block\n>>> find_modules_from_patterns(model, regex=['^layer\\d.0.conv1'])\n{'layer1.0.conv1': Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),\n 'layer2.0.conv1': Conv2d(64, 128, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False),\n 'layer3.0.conv1': Conv2d(128, 256, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False),\n 'layer4.0.conv1': Conv2d(256, 512, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)}\n\n# Getting just the convolutional weights of the first block (no biases)\n>>> find_parameters_from_patterns(model, globs=['layer1*conv*.weight']).keys()\ndict_keys(['layer1.0.conv2.weight', 'layer1.0.conv1.weight', 'layer1.1.conv1.weight', 'layer1.1.conv2.weight'])\n```\n\n\n## Citation\n\nIf you find our work or any of our materials useful, please cite our paper:\n\n```\n@article{ortiz2023nonproportional,\n  title={Non-Proportional Parametrizations for Stable Hypernetwork Learning},\n  author={Jose Javier Gonzalez Ortiz and John Guttag and Adrian Dalca},\n  year={2023},\n  journal={arXiv:2304.07645},\n}\n```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -227,7 +226,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17928429,
+        "last_serial": 18003111,
         "urls": [
             {
                 "comment_text": "",
@@ -268,6 +267,195 @@
                 "upload_time": "2023-05-01T15:55:07",
                 "upload_time_iso_8601": "2023-05-01T15:55:07.854094Z",
                 "url": "https://files.pythonhosted.org/packages/1e/d9/925eb2392b20c58a967a90feb2c290c94ae504ac1bff62dd0f8597d063d7/hyperlight-0.0.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.4": {
+        "info": {
+            "author": "Jose Javier Gonzalez Ortiz",
+            "author_email": "josejg@mit.edu",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Intended Audience :: Developers",
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: Apache Software License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/JJGO/hyperlight",
+            "keywords": "hyperlight,pytorch,hypernetworks,deep learning",
+            "license": "Apache-2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "hyperlight",
+            "package_url": "https://pypi.org/project/hyperlight/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/hyperlight/",
+            "project_urls": {
+                "Documentation": "https://github.com/JJGO/hyperlight",
+                "Homepage": "https://github.com/JJGO/hyperlight"
+            },
+            "release_url": "https://pypi.org/project/hyperlight/0.0.4/",
+            "requires_dist": [
+                "torch (>=1.10,<3)"
+            ],
+            "requires_python": ">=3.7,<4.0",
+            "summary": "Hyperlight is a Pytorch hypernetwork framework with a streamlined API",
+            "version": "0.0.4",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18003111,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5470678e10785a720b181e33404c8eae972e843ce473cadf3b37c0a326b0e5a4",
+                    "md5": "86a48af31078085fc11dc9ca9af2845f",
+                    "sha256": "93e4ba11d883d07d7eb2fad267806cbc320c00e9635d33f34631b18288651c98"
+                },
+                "downloads": -1,
+                "filename": "hyperlight-0.0.4-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "86a48af31078085fc11dc9ca9af2845f",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7,<4.0",
+                "size": 23939,
+                "upload_time": "2023-05-06T20:42:57",
+                "upload_time_iso_8601": "2023-05-06T20:42:57.623648Z",
+                "url": "https://files.pythonhosted.org/packages/54/70/678e10785a720b181e33404c8eae972e843ce473cadf3b37c0a326b0e5a4/hyperlight-0.0.4-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6ac9b5a11f48be362bbf584f4c5328ea7761588c564e21e754596234053189a3",
+                    "md5": "58d9e31a4afc3c504165551ad6c29e63",
+                    "sha256": "3b7966f1ad4012fd74e3fdbb146ffc5615a685d6d2e78b80522eea5d641ff976"
+                },
+                "downloads": -1,
+                "filename": "hyperlight-0.0.4.tar.gz",
+                "has_sig": false,
+                "md5_digest": "58d9e31a4afc3c504165551ad6c29e63",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7,<4.0",
+                "size": 24014,
+                "upload_time": "2023-05-06T20:42:58",
+                "upload_time_iso_8601": "2023-05-06T20:42:58.881978Z",
+                "url": "https://files.pythonhosted.org/packages/6a/c9/b5a11f48be362bbf584f4c5328ea7761588c564e21e754596234053189a3/hyperlight-0.0.4.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.5": {
+        "info": {
+            "author": "Jose Javier Gonzalez Ortiz",
+            "author_email": "josejg@mit.edu",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Intended Audience :: Developers",
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: Apache Software License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# HyperLight\n\n_Hypernetworks in Pytorch made easy_\n\n[![PyTorch](https://img.shields.io/badge/PyTorch-%23EE4C2C.svg?style=flat&amp;logo=PyTorch&amp;logoColor=white)](https://pytorch.org)\n[![Supported Python Versions](https://img.shields.io/pypi/pyversions/hyperlight)](https://pypi.org/project/hyperlight/) \n[![PyPI version](https://badge.fury.io/py/hyperlight.svg)](https://badge.fury.io/py/hyperlight)\n[![Downloads](https://pepy.tech/badge/hyperlight)](https://pepy.tech/project/hyperlight)\n[![license](https://img.shields.io/github/license/JJGO/hyperlight.svg)](https://github.com/JJGO/hyperlight/blob/main/LICENSE)\n\n\n## TL;DR\n\nHyperLight is a Pytorch library designed to make implementing hypernetwork models easy and painless.\nWhat sets HyperLight apart from other hypernetwork implementations:\n\n- **Bring your own architecture** \u2013 Reuse your existing model code.\n- **Principled Parametrizations and Initializations** \u2013 Default networks can have unstable training dynamics, HyperLight has good defaults that lead to improved training [1].\n- **Work with pretrained models** \u2013 Use pretrained weights as part of the hypernetwork initialization.\n- **Seamless Composability** \u2013 It's hypernets all the way down! Hypernetize hypernet models without issue.\n- **_Pytorch-nic_ API design** \u2013 Parameters are treated as an attribute of the layer, preventing the need for rewriting PyTorch modules.\n<!-- - **Easy weight reuse** \u2013 Once a model has its weights set, it can be used many times. -->\n<br>\n<img src=\"https://raw.githubusercontent.com/JJGO/hyperlight/assets/hyperlight-diagram.png\" alt=\"Image\" style=\"max-width: 100px;\">\n\n[1] [Non-Proportional Parametrizations for Stable Hypernetwork Learning](https://arxiv.org/abs/2304.07645)\n\n## Installation\n\nTo install the **stable** version of HyperLight via `pip`:\n\n```shell\npip install hyperlight\n```\n\nOr for the **latest** version:\n\n```shell\npip install git+https://github.com/JJGO/hyperlight.git\n```\n\nFor the **manual** install:\n\n\n```shell\n# clone it\ngit clone https://github.com/JJGO/hyperlight\n\n# install dependencies\npython -m pip install -r ./hyperlight/requirements.txt # only dependency is PyTorch\n\n# add this to your .bashrc/.zshrc\nexport PYTHONPATH=\"$PYTHONPATH:/path/to/hyperlight)\"\n```\n\n\n## Getting Started\n\nThe main advantage of HyperLight is that it allows to easily reuse existing networks without having to redo the model code.\n\nFor example, here's a Bayesian Neural Hypernetwork for the resnet18 architecture:\n\n```python\nfrom torchvision.models import resnet18\nimport hyperlight as hl\n\n# First, instantiate the main network and\n# hyperparametrize all convolutional weights\nmainnet = resnet18()\nmodules = hl.find_modules_of_type(mainnet, [nn.Conv2d])\n\n# Replace nn.Parameter objects with ExternalParameters\nmainnet = hl.hypernetize(mainnet, modules=modules)\n\n# Get the spec of the weights we need to predict\nparameter_shapes = mainnet.external_shapes()\n\n# We can predict these shapes any way we want,\n# but hyperlight provides hypernetwork models\nhyperparam_shape = {'h': (10,)} # 10-dim input\nhypernet = hl.Hypernet(\n    input_shapes=hyperparam_shape,\n    output_shapes=parameter_shapes,\n    hidden_sizes=[16,64,128],\n)\n\n# Now, instead of model(input) we first predict the main network weights\nparameters = hl.hypernet(h=hyperpameter_input)\n\n# and then use the main network\nwith mainnet.using_externals(parameters):\n    # Within this context manager, the weights are accessible\n    prediction = mainnet(input)\n\n    # After this point, weights are removed\n```\n\nWe can also wrap this into `nn.Module` to pair-up the hypernet with the main network and have a nicer API:\n\n```python\n\nclass HyperResNet18(nn.Module):\n\n    def __init__(self,\n        hypernet_layers: List[]\n        ):\n        super().__init__()\n        mainnet = resnet18()\n        modules = hl.find_modules_of_type(mainnet, [nn.Conv2d])\n        self.mainnet = hl.hypernetize(mainnet, modules=modules)\n\n        self.hypernet = hl.Hypernet(\n            input_shapes={'h': (10,)},\n            output_shapes=parameter_shapes,\n            layer_sizes=[16,64,128],\n        )\n\n    def forward(self, input, hyper_input):\n        parameters = self.hypernet(h=hyper_input)\n\n        with self.mainnet.using_externals(parameters):\n            prediction = self.mainnet(input)\n\n        return input\n```\n\n\nWith HyperLight, we can reuse the pretrained weights by setting them as independent weights:\n\n\n```python\n\nclass HyperResNet18(nn.Module):\n\n    def __init__(self,\n        hypernet_layers: List[]\n        ):\n        super().__init__()\n        # Load pretrained weights\n        mainnet = resnet18(pretrained=True)\n        modules = hl.find_modules_of_type(mainnet, [nn.Conv2d])\n        self.mainnet, weights = hl.hypernetize(mainnet, modules=modules, return_values=True)\n\n        # Construct from existing\n        self.hypernet = hl.Hypernet.from_existing(\n            weights, # weights encode shape and initialization\n            input_shapes={'h': (10,)},\n            output_shapes=parameter_shapes,\n            layer_sizes=[16,64,128],\n        )\n\n    def forward(self, input, hyper_input):\n        parameters = self.hypernet(h=hyper_input)\n\n        with self.mainnet.using_externals(parameters):\n            prediction = self.mainnet(input)\n\n        return input\n```\n\n## Tutorial\n\n### Concepts\n\nHyperLight introduces a few new concepts:\n\n- `HyperModule` \u2013 A specialized `nn.Module` object that can hold both regular parameters\nand `ExternalParameters` to be predicted by an external hypernetwork.\n- `ExternalParameter` \u2013 `nn.Parameter` replacement that only stores the required shape of the\nexternalized parameter. Parameter data can be set and reset with the hypernetwork predictions.\n- `HyperNetwork` \u2013 `nn.Module` that predicts a main network parameters for a given input.\n\n### Defining a `HyperModule` with `ExternalParameter`s\n\nHere is an example of how we define a hypernetized Linear layer. We need to make sure to\ndefine the `ExternalParameter` properties with their correct shapes.\n\n```python\nimport torch.nn.functional as F\nimport hyperlight as hl\n\nclass HyperLinear(hl.HyperModule):\n    \"\"\"Implementation of a nn.Linear layer but with external parameters\n    that will be predicted by an external hypernetwork\"\"\"\n\n    in_features: int\n    out_features: int\n\n    def __init__(self, in_features: int, out_features: int, bias: bool = True) -> None:\n        super().__init__()\n        assert isinstance(in_features, int) and isinstance(out_features, int)\n        self.in_features = in_features\n        self.out_features = out_features\n        self.weight = hl.ExternalParameter(shape=(out_features, in_features))\n        if bias:\n            self.bias = hl.ExternalParameter(shape=(out_features,))\n        else:\n            self.bias = None\n\n    def forward(self, input: Tensor) -> Tensor:\n        return F.linear(input, self.weight, self.bias)\n```\n\nOnce defined, we can make use of this module as follows:\n\n\n```python\n>>> layer = HyperLinear(in_features=8, out_features=16)\n>>> layer.external_shapes()\n{'weight': (16, 8), 'bias': (16,)}\n>>> x = torch.zeros(1, 8)\n\n# We need to set the weights before using the layer\n>>> layer(x)\n[...]\nAttributeError: Uninitialized External Parameter, please set the value first\n\n# Initialize the external weights\n>>> layer.set_externals(weight=torch.rand(size=(16,8)), bias=torch.zeros((16,)))\n>>> layer(x).shape\ntorch.Size([1, 16])\n\n# Once we are done, we reset the external parameter values\n>>> layer.reset_externals()\n```\n\nAlternatively, we can use the `using_externals` contextmanager that will set and reset\nthe parameters accordingly:\n\n```python\nparams(weight=torch.rand(size=(16,8)), bias=torch.zeros((16,)))\nwith layer.using_externals(params):\n    y = layer(x)\n```\n\n### Dynamically hypernetizing modules\n\nHyperLight supports **dynamic** HyperModule creation using the `hypernetize` helper.\nWe need to specify which parameters we want to remove from the module and convert to\n`ExternalParameter` objects:\n\n```python\n>>> from torch import nn\n>>> import hyperlight as hl\n\n>>> layer = nn.Linear(in_features=8, out_features=16)\n>>> layer = hl.hypernetize(layer, parameters=[layer.weight, layer.bias])\n>>> layer\nHypernetizedLinear()\n>>> layer.external_shapes()\n{'weight': (16, 8), 'bias': (16,)}\n```\n\n`hypernetize` is recursive, and supports entire modules being specified:\n\n\n```python\n>>> model = nn.Sequential(OrderedDict({\n    'conv': nn.Conv2d(3,128,3),\n    'norm': nn.BatchNorm2d(128),\n    'relu': nn.ReLU(),\n    'pool': nn.AdaptiveAvgPool2d((1,1)),\n    'out': nn.Linear(128, 10)\n}))\n\n>>> model = hl.hypernetize(model, modules=[model.conv, model.out])\n>>>  model.external_shapes()\n{'conv.weight': (128, 3, 3, 3),\n 'conv.bias': (128,),\n 'out.weight': (10, 128),\n 'out.bias': (10,)}\n```\n\n### Finding modules and parameters\n\nIn addition, HyperLight provides several routines to recursively search for parameters and modules to feed into `hypernetize`:\n\n- `find_modules_of_type(model, module_types)` \u2013 Find modules of a certain type,\ne.g. `nn.Linear` or `nn.Conv2d`\n- `find_modules_from_patterns(model, globs=None, regex=None)` \u2013 Find modules that match\nspecific patterns using globs, e.g. `*.conv`; or regexes, e.g. `layer[1-3].*conv`\n- `find_parameters_from_patterns(model, globs=None, regex=None)` \u2013 Find parameters\nthat match specific patterns.\n\nSome examples on a ResNet18 architecture:\n\n```python\n>>> from torchvision.models import resnet18\n>>> import hyperlight as hl\n>>> model = resnet18()\n\n# Find all convolutions\n>>> hl.find_modules_of_type(model, [nn.Conv2d])\n{'conv1': Conv2d(3, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False),\n 'layer1.0.conv1': Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),\n 'layer1.0.conv2': Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),\n ...\n\n# Find the first convolution of each ResNet block\n>>> hl.find_modules_from_patterns(model, regex=['^layer\\d.0.conv1'])\n{'layer1.0.conv1': Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False),\n 'layer2.0.conv1': Conv2d(64, 128, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False),\n 'layer3.0.conv1': Conv2d(128, 256, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False),\n 'layer4.0.conv1': Conv2d(256, 512, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)}\n\n# Get only the convolutional weights of the first block (no biases)\n>>> hl.find_parameters_from_patterns(model, globs=['layer1*conv*.weight']).keys()\ndict_keys(['layer1.0.conv2.weight', 'layer1.0.conv1.weight', 'layer1.1.conv1.weight', 'layer1.1.conv2.weight'])\n```\n\n### Other methods\n\nHyperLight goes beyond hypernetworks and helps implement other Deep Learning techniques related to hypernetworks.\n\nAs an example, the following code implements [FiLM](https://arxiv.org/pdf/1709.07871.pdf). Instead of having to modify\nour entire forward pass to keep track of the $\\gamma$ and $\\beta$ coefficients, we can have HyperLight handle that for us:\n\n\n```python\n\nimport hyperlight as hl\n\nclass FiLM(hl.HyperModule):\n\n    def __init__(self,\n        n_features: int\n    ):\n        super().__init__()\n        self.n_features = n_features\n        self.gamma = hl.ExternalParameter((n_features,))\n        self.beta = hl.ExternalParameter((n_features,))\n\n    def forward(self, x):\n        return self.gamma * x + self.beta\n\n\nclass CNNwithFiLM(hl.HyperModule):\n    def __init__(self):\n        super().__init__()\n        self.layers = nn.Sequential([\n            nn.Conv2d(3,64,kernel_size=3,padding=1),\n            FiLM(64),\n            nn.LeakyReLU(),\n            nn.BatchNorm2d(64)\n            nn.Conv2d(64,128,kernel_size=3,padding=1),\n            FiLM(128),\n            nn.LeakyReLU(),\n            nn.BatchNorm2d(128)\n            nn.Conv2d(128,256,kernel_size=3,padding=1),\n            FiLM(256),\n            nn.LeakyReLU(),\n            nn.BatchNorm2d(256)\n            nn.AdaptiveAvgPool2d((1,1)),\n        ])\n\ndef FiLM_Model(nn.Module):\n    def __init__(self, embedding_size):\n        self.main = CNNwithFiLM()\n        self.aux = hl.Hypernet(\n            input_shapes={'film_input': (embedding_size,)},\n            output_shapes=self.main.external_shapes(),\n            hidden_sizes=[],\n        )\n\n    def forward(self, input, conditioning):\n        params = self.aux(film_input=conditioning)\n        with self.main.using_externals(params):\n            return self.main(input)\n```\n\n\n## Citation\n\nIf you find our work or any of our materials useful, please cite our paper:\n\n```\n@article{ortiz2023nonproportional,\n  title={Non-Proportional Parametrizations for Stable Hypernetwork Learning},\n  author={Jose Javier Gonzalez Ortiz and John Guttag and Adrian Dalca},\n  year={2023},\n  journal={arXiv:2304.07645},\n}\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/JJGO/hyperlight",
+            "keywords": "hyperlight,pytorch,hypernetworks,deep learning",
+            "license": "Apache-2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "hyperlight",
+            "package_url": "https://pypi.org/project/hyperlight/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/hyperlight/",
+            "project_urls": {
+                "Documentation": "https://github.com/JJGO/hyperlight",
+                "Homepage": "https://github.com/JJGO/hyperlight"
+            },
+            "release_url": "https://pypi.org/project/hyperlight/0.0.5/",
+            "requires_dist": [
+                "torch (>=1.10,<3)"
+            ],
+            "requires_python": ">=3.7,<4.0",
+            "summary": "Hyperlight is a Pytorch hypernetwork framework with a streamlined API",
+            "version": "0.0.5",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18003111,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "52c0278e2f45878c0bb138dd9bd172844c2bd845022779db8d5f843aaf97e1dd",
+                    "md5": "3e8ab1bd8c245d7c892fa8bff65cfb76",
+                    "sha256": "1851b367ce165242b86b8d5646e28dd3659b29d41a6be2d617dc6bcb1fbbdbb2"
+                },
+                "downloads": -1,
+                "filename": "hyperlight-0.0.5-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "3e8ab1bd8c245d7c892fa8bff65cfb76",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7,<4.0",
+                "size": 23938,
+                "upload_time": "2023-05-07T00:15:34",
+                "upload_time_iso_8601": "2023-05-07T00:15:34.919899Z",
+                "url": "https://files.pythonhosted.org/packages/52/c0/278e2f45878c0bb138dd9bd172844c2bd845022779db8d5f843aaf97e1dd/hyperlight-0.0.5-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "026514bbf21b81d553139176e32f515df19a8154575c5b9b36d13b971552e0d4",
+                    "md5": "fd58db09d7f6aab4947665f9daad3566",
+                    "sha256": "e5930f413f6af769ad7053bbc7d8904d771b758e449e3a996a44878df87a9354"
+                },
+                "downloads": -1,
+                "filename": "hyperlight-0.0.5.tar.gz",
+                "has_sig": false,
+                "md5_digest": "fd58db09d7f6aab4947665f9daad3566",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7,<4.0",
+                "size": 24012,
+                "upload_time": "2023-05-07T00:15:36",
+                "upload_time_iso_8601": "2023-05-07T00:15:36.776505Z",
+                "url": "https://files.pythonhosted.org/packages/02/65/14bbf21b81d553139176e32f515df19a8154575c5b9b36d13b971552e0d4/hyperlight-0.0.5.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
