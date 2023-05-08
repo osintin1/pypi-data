@@ -46,7 +46,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17999707,
+        "last_serial": 18008126,
         "urls": [
             {
                 "comment_text": "",
@@ -142,7 +142,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17999707,
+        "last_serial": 18008126,
         "urls": [
             {
                 "comment_text": "",
@@ -199,7 +199,6 @@
                 "Operating System :: OS Independent",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "# Subgraph Retrieval Toolkit\n\n[![PyPi](https://img.shields.io/pypi/v/srtk)](https://pypi.org/project/srtk/)\n[![Documentation Status](https://readthedocs.org/projects/srtk/badge/?version=latest)](https://srtk.readthedocs.io/en/latest/?badge=latest)\n[![PytestStatus](https://github.com/happen2me/subgraph-retrieval-wikidata/actions/workflows/pytest.yml/badge.svg)](https://github.com/happen2me/subgraph-retrieval-toolkit/actions/workflows/pytest.yml)\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)\n\nRetrieve subgraphs on Wikidata. The method is based on this [retrieval work](https://github.com/RUCKBReasoning/SubgraphRetrievalKBQA) for Freebase.\n\n## Prerequisite\n\n### Install SRTK\n```bash\npip install srtk\n```\n\n### Wikidata\n\n#### Deploy a Wikidata endpoint locally\nWe use [qEndpoint](https://github.com/the-qa-company/qEndpoint) to spin up a Wikidata endpoint that\ncontains a [Wikidata Truthy](https://www.wikidata.org/wiki/Wikidata:Database_download#RDF_dumps) dump.\n\n- Download\n\n    ```bash\n    sudo docker run -p 1234:1234 --name qendpoint-wikidata qacompany/qendpoint-wikidata\n    ```\n\n- Run\n\n    ```bash\n    sudo docker start  qendpoint-wikidata\n    ```\n- Add Wikidata prefixes support\n\n    ```bash\n    wget https://raw.githubusercontent.com/the-qa-company/qEndpoint/master/wikibase/prefixes.sparql\n    sudo docker cp prefixes.sparql qendpoint-wikidata:/app/qendpoint && rm prefixes.sparql\n    ```\n\nAlternatively, you can also use an [online Wikidata endpoint](https://query.wikidata.org), e.g. `https://query.wikidata.org/sparql`\n\n\n#### Deploy a REL endpoint for entity linking (only necessary for end-to-end inference)\n\nPlease refer to this tutorial for REL endpoint deployment: [End-to-End Entity Linking](https://rel.readthedocs.io/en/latest/tutorials/e2e_entity_linking/)\n\n### Freebase\n\n#### Deploy a Freebase endpoint locally\n\nPlease refer to [dki-lab/Freebase-Setup](https://github.com/dki-lab/Freebase-Setup) for the setup.\n\n```bash\n# Download setup script\ngit clone https://github.com/dki-lab/Freebase-Setup.git && cd Freebase-Setup\n# Download virtuoso binary\nwget https://kumisystems.dl.sourceforge.net/project/virtuoso/virtuoso/7.2.5/virtuoso-opensource.x86_64-generic_glibc25-linux-gnu.tar.gz\ntar -zxvf virtuoso-opensource.x86_64-generic_glibc25-linux-gnu.tar.gz && rm virtuoso-opensource.x86_64-generic_glibc25-linux-gnu.tar.gz\n# Replace the virtuoso path in virtuoso.py\nsed -i 's/\\/home\\/dki_lab\\/tools\\/virtuoso\\/virtuoso-opensource/\\.\\/virtuoso-opensource/g' virtuoso.py\n# Download Freebase dump\nwget https://www.dropbox.com/s/q38g0fwx1a3lz8q/virtuoso_db.zip\nunzip virtuoso_db.zip && rm virtuoso_db.zip\n# Start virtuoso\npython3 virtuoso.py start 3001 -d virtuoso_db\n```\n\n\n## Retrieve subgraphs with a trained scorer\n```bash\nsrtk retrieve --sparql-endpoint WIKIDATA_ENDPOINT \\\n    -kg wikidata\n    --scorer-model-path path/to/scorer \\\n    --input data/ground.jsonl \\\n    --output-path data/subgraph.jsonl \\\n    --beam-width 10\n```\n\nThe `scorer-model-path` argument can be any huggingface pretrained encoder model. If it is a local\npath, please ensure the tokenizer is also saved along with the model.\n\n## Visualize retrieved subgraph\n```bash\nsrtk visualize --sparql-endpoint WIKIDATA_ENDPOINT \\\n    --knowledge-graph wikidata \\\n    --input data/subgraph.jsonl \\\n    --output-dir ./htmls/\n```\n\n## Train a scorer\nA scorer is the model used to navigate the expanding path. At each expanding step, relations scored higher with scorer are picked as relations for the next hop.\n\nThe score is based on the embedding similarity of the to-be-expanded relation with the query (question + previous expanding path).\n\nThe model is trained in a distant supervised learning fashion. Given the question entities and the answer entities, the model uses the shortest paths along them as the supervision signal.\n\n### Preprocess a dataset\n1. prepare training samples where question entities and answer entities are know.\n\n    The training data should be saved in a jsonl file (e.g. `data/grounded.jsonl`). Each training sample should come with the following format:\n    \n    ```json\n    {\n      \"id\": \"sample-id\",\n      \"question\": \"Which universities did Barack Obama graduate from?\",\n      \"question_entities\": [\n        \"Q76\"\n      ],\n      \"answer_entities\": [\n        \"Q49122\",\n        \"Q1346110\",\n        \"Q4569677\"\n      ]\n    }\n    ```\n2. Preprocess the samples with `srtk preprocess` command.\n\n    ```bash\n    srtk preprocess --sparql-endpoint WIKIDATA_ENDPOINT \\\n        -kg wikidata \\\n        --input-file data/grounded.jsonl \\\n        --output-dir data/retrieved --metric jaccard\n    ```\n\n    Under the hood, it does four things:\n\n    1. Find the shortest paths between the question entities and the answer entities.\n    2. Score the searched paths with Jaccard scores with the answers.\n    3. Negative sampling. At each expanding step, the negative samples are those false relations connected to the tracked entities.\n    4. Generate training dataset as a jsonl file.\n\n\n\n### Train a sentence encoder\n\nThe scorer should be initialized from a pretrained encoder model from huggingface hub. Here I used `intfloat/e5-small`, which is a checkpoint of the BERT model.\n\n```bash\nsrtk train --data-file data/train.jsonl \\\n    --model-name-or-path intfloat/e5-small \\\n    --save-model-path artifacts/scorer\n```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -239,7 +238,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17999707,
+        "last_serial": 18008126,
         "urls": [
             {
                 "comment_text": "",
@@ -280,6 +279,103 @@
                 "upload_time": "2023-05-06T12:50:33",
                 "upload_time_iso_8601": "2023-05-06T12:50:33.294536Z",
                 "url": "https://files.pythonhosted.org/packages/0e/c2/30065070edc3e3d8ca940d30cd06deea694aea6290e51a68f3a1d13d43a4/srtk-0.0.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.4": {
+        "info": {
+            "author": "",
+            "author_email": "Yuanchun Shen <y.c.shen@tum.de>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# SRTK: Subgraph Retrieval Toolkit\n\n[![PyPi](https://img.shields.io/pypi/v/srtk)](https://pypi.org/project/srtk/)\n[![Documentation Status](https://readthedocs.org/projects/srtk/badge/?version=latest)](https://srtk.readthedocs.io/en/latest/?badge=latest)\n[![PytestStatus](https://github.com/happen2me/subgraph-retrieval-wikidata/actions/workflows/pytest.yml/badge.svg)](https://github.com/happen2me/subgraph-retrieval-toolkit/actions/workflows/pytest.yml)\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)\n[![DOI](https://zenodo.org/badge/622648166.svg)](https://zenodo.org/badge/latestdoi/622648166)\n\n\n**SRTK** is a toolkit for semantic-relevant subgraph retrieval from large-scale knowledge graphs. It currently supports Wikidata, Freebase and DBPedia.\n\nA minimum walkthrough of the retrieve process:\n\n![retrieve example](examples/srtk_retrieve.svg)\n\n<img width=\"400rem\" src=\"https://i.imgur.com/jG7nZuo.png\" alt=\"Visualized subgraph\"/>\n\n## Prerequisite\n\n### Installations\n\n```bash\npip install srtk\n```\n\n### Local Deployment of Knowledge Graphs\n\n- [Setup Wikidata locally](https://srtk.readthedocs.io/en/latest/setup_wikidata.html)\n- [Setup Freebase locally](https://srtk.readthedocs.io/en/latest/setup_freebase.html)\n\n## Usage\n\nThere are mainly five subcommands of SRTK, which covers the whole pipeline of subgraph retrieval.\n\nFor retrieval:\n\n- `srtk link`: Link entity mentions in texts to a knowledge graph. Currently Wikidata and DBPedia are supported out of the box.\n- `srtk retrieve`: Retrieve semantic-relevant subgraphs from a knowledge graph with a trained retriever. It can also be used to evaluate a trained retriever.\n- `srtk visualize`: Visualize retrieved subgraphs using a graph visualization tool.\n\nFor training a retriever:\n\n- `srtk preprocess`: Preprocess a dataset for training a subgraph retrieval model.\n- `srtk train`: Train a subgraph retrieval model on a preprocessed dataset.\n\n\nUse `srtk [subcommand] --help` to see the detailed usage of each subcommand.\n\n## Walkthrough\n\n### Retrieve Subgraphs\n\n#### Retrieve subgraphs with a trained scorer\n\n```bash\nsrtk retrieve [-h] -i INPUT -o OUTPUT [-e SPARQL_ENDPOINT] -kg {freebase,wikidata}\n              -m SCORER_MODEL_PATH [--beam-width BEAM_WIDTH] [--max-depth MAX_DEPTH]\n              [--evaluate] [--include-qualifiers]\n```\n\nThe `scorer-model-path` argument can be any huggingface pretrained encoder model. If it is a local\npath, please ensure the tokenizer is also saved along with the model.\n\n#### Visualize retrieved subgraph\n\n```bash\nsrtk visualize [-h] -i INPUT -o OUTPUT_DIR [-e SPARQL_ENDPOINT]\n               [-kg {wikidata,freebase}] [--max-output MAX_OUTPUT]\n```\n\n### Train a Retriever\n\nA scorer is the model used to navigate the expanding path. At each expanding step, relations scored higher with scorer are picked as relations for the next hop.\n\nThe score is based on the embedding similarity of the to-be-expanded relation with the query (question + previous expanding path).\n\nThe model is trained in a distant supervised learning fashion. Given the question entities and the answer entities, the model uses the shortest paths along them as the supervision signal.\n\n#### Preprocess a dataset\n\n1. prepare training samples where question entities and answer entities are know.\n\n    The training data should be saved in a jsonl file (e.g. `data/grounded.jsonl`). Each training sample should come with the following format:\n    \n    ```json\n    {\n      \"id\": \"sample-id\",\n      \"question\": \"Which universities did Barack Obama graduate from?\",\n      \"question_entities\": [\n        \"Q76\"\n      ],\n      \"answer_entities\": [\n        \"Q49122\",\n        \"Q1346110\",\n        \"Q4569677\"\n      ]\n    }\n    ```\n2. Preprocess the samples with `srtk preprocess` command.\n\n    ```bash\n    srtk preprocess [-h] -i INPUT -o OUTPUT [--intermediate-dir INTERMEDIATE_DIR]\n                    -e SPARQL_ENDPOINT -kg {wikidata,freebase} [--search-path]\n                    [--metric {jaccard,recall}] [--num-negative NUM_NEGATIVE]\n                    [--positive-threshold POSITIVE_THRESHOLD]\n    ```\n\n    Under the hood, it does four things:\n\n    1. Find the shortest paths between the question entities and the answer entities.\n    2. Score the searched paths with Jaccard scores with the answers.\n    3. Negative sampling. At each expanding step, the negative samples are those false relations connected to the tracked entities.\n    4. Generate training dataset as a jsonl file.\n\n#### Train a sentence encoder\n\nThe scorer should be initialized from a pretrained encoder model from huggingface hub. Here I used `intfloat/e5-small`, which is a checkpoint of the BERT model.\n\n```bash\nsrtk train --data-file data/train.jsonl \\\n    --model-name-or-path intfloat/e5-small \\\n    --save-model-path artifacts/scorer\n```\n\n## Tutorials\n\n- [End-to-end Subgraph Retrieval](https://github.com/happen2me/subgraph-retrieval-toolkit/blob/main/tutorials/2.end_to_end_subgraph_retrieval.ipynb)\n- [Train a Retriever on Wikidata with Weak Supervision](https://github.com/happen2me/subgraph-retrieval-toolkit/blob/main/tutorials/3.weak_train_wikidata.ipynb)\n- [Train a Retriever on Freebase with Weak Supervision](https://github.com/happen2me/subgraph-retrieval-toolkit/blob/main/tutorials/4.weak_train_freebase.ipynb)\n- [Supervised Training with Wikidata Simple Questions](https://github.com/happen2me/subgraph-retrieval-toolkit/blob/main/tutorials/5.supervised_train_wikidata.ipynb)\n- [Extend SRTK to other Knowledge Graphs](https://github.com/happen2me/subgraph-retrieval-toolkit/blob/main/tutorials/6.extend_to_new_kg.ipynb)\n\n## License\n\nThis project is licensed under the terms of the MIT license.",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "srtk",
+            "package_url": "https://pypi.org/project/srtk/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/srtk/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/happen2me/subgraph-retrieval-toolkit/issues",
+                "Homepage": "https://github.com/happen2me/subgraph-retrieval-toolkit"
+            },
+            "release_url": "https://pypi.org/project/srtk/0.0.4/",
+            "requires_dist": [
+                "beautifulsoup4",
+                "datasets",
+                "lightning",
+                "pyvis",
+                "sparqlwrapper",
+                "srsly",
+                "tqdm",
+                "transformers",
+                "wikimapper"
+            ],
+            "requires_python": ">=3.6",
+            "summary": "A toolkit for semantic-relevant subgraph retrieval from large-scale knowledge graphs.",
+            "version": "0.0.4",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18008126,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "aefdec90adb5825c75d82f24c4288873c337bb7c10a51cb96478c2d410b69f38",
+                    "md5": "8c13412e3b097ac05191b6871fbcb19d",
+                    "sha256": "0f0b99f086c36c7e3d55c0fe01faf9c8c04d138260345948b7e2a610b9e5ca08"
+                },
+                "downloads": -1,
+                "filename": "srtk-0.0.4-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "8c13412e3b097ac05191b6871fbcb19d",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.6",
+                "size": 41150,
+                "upload_time": "2023-05-07T16:05:17",
+                "upload_time_iso_8601": "2023-05-07T16:05:17.065796Z",
+                "url": "https://files.pythonhosted.org/packages/ae/fd/ec90adb5825c75d82f24c4288873c337bb7c10a51cb96478c2d410b69f38/srtk-0.0.4-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "855d816b34427b89f73eca7dce3eb3045b979058bdc84a912fe1e1f72d921604",
+                    "md5": "83d19f6a8d286a2822eb977455e49398",
+                    "sha256": "e4d5beb10dc32d48b9e62c016c8820d3958aa4592cb8b5cbcc45862fcd4099a7"
+                },
+                "downloads": -1,
+                "filename": "srtk-0.0.4.tar.gz",
+                "has_sig": false,
+                "md5_digest": "83d19f6a8d286a2822eb977455e49398",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.6",
+                "size": 146615,
+                "upload_time": "2023-05-07T16:05:19",
+                "upload_time_iso_8601": "2023-05-07T16:05:19.221824Z",
+                "url": "https://files.pythonhosted.org/packages/85/5d/816b34427b89f73eca7dce3eb3045b979058bdc84a912fe1e1f72d921604/srtk-0.0.4.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
