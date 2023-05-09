@@ -1,0 +1,96 @@
+{
+    "0.1.9": {
+        "info": {
+            "author": null,
+            "author_email": "Virantha Ekanayake <virantha@gmail.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: Apache Software License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# Welcome to CircuitBrew\n\nCircuitBrew provides a framework for building SPICE-based circuits and generating test vectors \nfor arbitrarily complex transistor-based circuits directly in Python.  \n\n* Free and open-source software: ASL2 license\n* Blog: <http://virantha.com/category/projects/circuitbrew>\n* Documentation: <http://virantha.github.io/circuitbrew>\n* Source: <https://github.com/virantha/circuitbrew>\n\nSome notable features of CircuitBrew over a schematic capture tool or a Domain\nSpecific Language based circuit design tool:  \n\n1. **Built-in test vector generation**: With most other tools, I end up needing\nto build a behavioral model in a high-level language like Python to\ngenerate test vectors.  CircuitBrew provides the hooks to build the model inline with the\ncircuit description, and uses a built-in event simulator to generate expected vectors.\n\n2. **Simplicity**: Schematic capture for complex digital circuit *design* can be\ntedious. And learning/re-learning a circuit design DSL creates a lot of\noverhead, especially when you want to jump in quickly and prototype a custom circuit. Here, \nsubckts are just Python classes, and ports are just init args; all the power of Python is\navailable to assemble complex digital circuits at the transistor level.\n\n3. **Ease of maintenance**: Extending a circuit design DSL, as SPICE models\nevolve and become more complex, becomes incredibly time-consuming, especially\nwhen the original tool authors have moved on from the code base.  Everything\nhere is built on standard Python features, and should be easily extensible.\n\nThe examples below show SPICE files emitted for the open-source SkyWater 130nm PDK, to avoid \nrevealing any proprietary data, but I generally use this in my own work for advanced 7nm\nand smaller-node foundries.\n\n## Installation\n\n``` sh\n\n    $ pip install circuitbrew\n\n```\n## Usage\nPlease see the [usage guide](usage/). \n\n## Disclaimer\n\nThe software is distributed on an \"AS IS\" BASIS, WITHOUT\nWARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n\n## Simple example\nHere's a simple inverter implemented directly in Python:\n\n### Inverter in Python\n``` py\nclass Inv(Module):\n    inp = InputPort()\n    out = OutputPort()\n\n    p = SupplyPort()\n\n    def build(self):\n        vdd, gnd = self.p.vdd, self.p.gnd\n        self.pup = Pfet(g=self.inp, d=vdd, s=self.out, b=vdd)\n        self.ndn = Nfet(g=self.inp, d=self.out, s=gnd, b=gnd)\n        self.finalize()\n\nclass Main(Module):\n\n    def build(self):\n        self.inv = Inv('myinv')\n        self.finalize()\n```\n\n### SPICE for a simple inverter\nCircuitBrew directly emits SPICE from this:\n\n``` spice \n.subckt Main \nxmyinv inp_0 out_1 p_2 p_3 Inv\n.ends\n\n.subckt Inv inp out p.gnd p.vdd\nxmn0 out inp p.gnd p.gnd sky130_fd_pr__nfet_01v8_lvt w=1.0 l=0.5\nxmp0 p.vdd inp out p.vdd sky130_fd_pr__pfet_01v8_lvt w=1.0 l=0.5\n.ends\n\nxmain Main\n```\n\n## More complex example with test vector generation\nHere's a more complex example that generates a simulation harness with test vector\ngeneration and digital checking of outputs.  We generate random values that get\nfed into the inverter, and verify them on the output in the SPICE sim.  CircuitBrew\ncontains custom Verilog-A modules that can handle driving and checking values digitally\ninside an analog hspice simulation.\n\n### Python for simulation/verification of an Inverter\n``` py\nclass Inv(Module):\n    inp = InputPort()\n    out = OutputPort()\n\n    p = SupplyPort()\n\n    def build(self):\n        vdd, gnd = self.p.vdd, self.p.gnd\n        self.pup = Pfet(g=self.inp, d=vdd, s=self.out, b=vdd)\n        self.ndn = Nfet(g=self.inp, d=self.out, s=gnd, b=gnd)\n        self.finalize()\n\n    async def sim(self):\n        while True:\n            val = await self.inp.recv()\n            await self.out.send(1-val)\n    \nclass Main(Module):\n\n    def build(self):\n        self.supply = Supply('vdd', self.sim_setup['voltage'], )\n        p = self.supply.p\n        vdd, gnd = p.vdd, p.gnd\n        self.inv = Inv('myinv', p=p)\n\n        self.clk_gen = VerilogClock('clk', freq=750e3, enable=vdd)\n        src_clk = self.clk_gen.clk\n\n        self.clk_buc = VerilogClock('clk2', freq=750e3, offset='100p', enable=vdd)\n        sample_clk = self.clk_buc.clk\n\n        self.src = VerilogSrc('src', [randint(0,1) for i in range(10)], \n                            d=self.inv.inp, clk=src_clk, _reset=vdd)\n\n        self.bucket = VerilogBucket(name='buc', clk=sample_clk, _reset=vdd, d=self.inv.out)\n        self.finalize()\n```\n\n### Generated SPICE with test bench\n\n``` spice\n.subckt Main \nxbuc sample_clk p.vdd d_0 VerilogBucket_0\nxclk2 p.vdd sample_clk VerilogClock freq=750000.0 offset=100p\nxclk p.vdd src_clk VerilogClock freq=750000.0 offset=0\nxmyinv inp_1 d_0 gnd p.vdd Inv\nxsrc src_clk p.vdd inp_1 VerilogSrc_0\nxvdd gnd p.vdd Supply\n.ends\n\n.subckt Supply p.gnd p.vdd\nVvdd_vss p.gnd 0 0.0\nVvdd_vdd p.vdd 0 1.8\n.ends\n\n.subckt Inv inp out p.gnd p.vdd\nxmn0 out inp p.gnd p.gnd sky130_fd_pr__nfet_01v8_lvt w=1.0 l=0.5\nxmp0 p.vdd inp out p.vdd sky130_fd_pr__pfet_01v8_lvt w=1.0 l=0.5\n.ends\n\n.hdl hspice_clk.va\n.hdl template_0_hspice_src.va\n.hdl template_0_hspice_bucket.va\n\nxmain Main\n```\n\n\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": null,
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": null,
+            "keywords": "circuits,spice",
+            "license": null,
+            "maintainer": null,
+            "maintainer_email": null,
+            "name": "circuitbrew",
+            "package_url": "https://pypi.org/project/circuitbrew/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/circuitbrew/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/virantha/circuitbrew/issues",
+                "Homepage": "https://virantha.github.io/circuitbrew",
+                "Repository": "https://github.com/virantha/circuitbrew"
+            },
+            "release_url": "https://pypi.org/project/circuitbrew/0.1.9/",
+            "requires_dist": [
+                "curio>=1.6",
+                "docopt-ng",
+                "mako",
+                "pyyaml>=6.0",
+                "schema"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "Build SPICE circuits and simulation environments using Python",
+            "version": "0.1.9",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18020058,
+        "urls": [
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "729703f47671d88ef452ec157aa1c0b3791fd8a5915fc599e2f7b5e8f418e38d",
+                    "md5": "6f8edc50d507f62df38935543a9b0090",
+                    "sha256": "1447342045c1833c25514884a5bb0aaea4f2e7f9582cfdeed6c9e5fae7dbc54c"
+                },
+                "downloads": -1,
+                "filename": "circuitbrew-0.1.9-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "6f8edc50d507f62df38935543a9b0090",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 65436,
+                "upload_time": "2023-05-08T17:29:14",
+                "upload_time_iso_8601": "2023-05-08T17:29:14.252134Z",
+                "url": "https://files.pythonhosted.org/packages/72/97/03f47671d88ef452ec157aa1c0b3791fd8a5915fc599e2f7b5e8f418e38d/circuitbrew-0.1.9-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "3fdacad5ad8e9b07bfd183add5b0756d1f04376a5a92337c5dc6f727a30cb89b",
+                    "md5": "619430e25e290cd419ee97202ce6737f",
+                    "sha256": "6eb5ed7d1eb1ef52ff8ddc2d5850068f8411ce5fc7c011f6ba73b7591161127d"
+                },
+                "downloads": -1,
+                "filename": "circuitbrew-0.1.9.tar.gz",
+                "has_sig": false,
+                "md5_digest": "619430e25e290cd419ee97202ce6737f",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 4166781,
+                "upload_time": "2023-05-08T17:29:17",
+                "upload_time_iso_8601": "2023-05-08T17:29:17.984762Z",
+                "url": "https://files.pythonhosted.org/packages/3f/da/cad5ad8e9b07bfd183add5b0756d1f04376a5a92337c5dc6f727a30cb89b/circuitbrew-0.1.9.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

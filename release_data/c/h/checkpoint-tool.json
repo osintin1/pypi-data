@@ -44,7 +44,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17936635,
+        "last_serial": 18024869,
         "urls": [
             {
                 "comment_text": "",
@@ -136,7 +136,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17936635,
+        "last_serial": 18024869,
         "urls": [
             {
                 "comment_text": "",
@@ -228,7 +228,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17936635,
+        "last_serial": 18024869,
         "urls": [
             {
                 "comment_text": "",
@@ -320,7 +320,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17936635,
+        "last_serial": 18024869,
         "urls": [
             {
                 "comment_text": "",
@@ -412,7 +412,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17936635,
+        "last_serial": 18024869,
         "urls": [
             {
                 "comment_text": "",
@@ -505,7 +505,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17936635,
+        "last_serial": 18024869,
         "urls": [
             {
                 "comment_text": "",
@@ -598,7 +598,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17936635,
+        "last_serial": 18024869,
         "urls": [
             {
                 "comment_text": "",
@@ -692,7 +692,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17936635,
+        "last_serial": 18024869,
         "urls": [
             {
                 "comment_text": "",
@@ -751,7 +751,6 @@
                 "Programming Language :: Python :: 3.11",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "# Checkpoint-tool\n\nA lightweight workflow management tool written in pure Python.\n\nInternally, it depends on `DiskCache`, `cloudpickle` `networkx` and `concurrent.futures`.\n\n\n## Installation\n\n```\npip install checkpoint-tool\n```\n\n## Usage\n\n### Basic usage\n\nCreate task with decorators:\n```python\nfrom checkpoint import task, requires\n\n# Mark a function as task\n@task\ndef choose(n: int, k: int):\n    if 0 < k < n:\n        # Mark dependencies on other tasks;\n        # The return values of these tasks are passed as the arguments.\n        @requires(choose(n - 1, k - 1))\n        @requires(choose(n - 1, k)) \n        def __(prev1: int, prev2: int) -> int:\n            # Main computation\n            return prev1 + prev2\n    elif k == 0 or k == n:\n        # Dependency can change according to the task parameters (`n` and `k`).\n        # Here, we need no dependency to compute `choose(n, 1)` or `choose(n, n)`.\n        def __() -> int:\n            return 1\n    else:\n        raise ValueError(f'{(n, k)}')\n\n    # Return function that produces a value instead of the value itself.\n    return __\n\n# Build the task graph to compute `choose(6, 3)`\n# and greedily consume it with `concurrent.futures.ProcessPoolExecutor`\n# (i.e., as parallel as possible).\n# The cache is stored at `{$CP_CACHE_DIR:-./.cache}/checkpoint/{module_name}.{function_name}/...`\n# and reused whenever available.\nans = choose(6, 3).run()\n```\n\n### Deleting cache\n\nIt is possible to selectively discard cache: \n```python\n# After some modificaiton of `choose(3, 3)`,\n# selectively discard the cache corresponding to the modification.\nchoose(3, 3).clear()\n\n# `ans` is recomputed tracing back to the computation of `choose(3, 3)`.\nans = choose(6, 3).run()\n\n# Delete all the cache associated with `choose`,\n# equivalent to `rm -r {$CP_CACHE_DIR:-./.cache}/checkpoint/{module_name}.choose`.\nchoose.clear()            \n```\n\n### Advanced IO\n\nMore complex inputs can be passed as long as it is JSON serializable:\n```python\n@task\ndef f1(**param1):\n    ...\n\n@task\ndef f2(**param2):\n    ...\n\n@task\ndef f3(json_params):\n    @requires(f1(**json_params['param1']))\n    @requires(f2(**json_params['param2']))\n    def __(obj1, obj2):\n        ...\n    return __\n\nresult = f3({'param1': { ... }, 'param2': { ... }}).run()\n```\n\nEven more complex inputs can be passed as `task`s:\n```python\nfrom checkpoint import Task\n\nDataset = ...  # Some complex data structure\nModel = ...    # Some complex data structure\n\n@task\ndef load_dataset():\n    def __() -> Dataset:\n        ...\n    return __\n\n@task\ndef train_model(dataset_task: Task[Dataset]):\n    @requires(dataset_task)\n    def __(dataset) -> Model:\n        ...\n    return __\n    \n@task\ndef score_model(dataset_task: Task[Dataset], model_task: Task[Model]):\n    @requires(dataset_task)\n    @requires(model_task)\n    def __(dataset, model) -> float:\n        ...\n    return __\n\n\ndataset_task = load_dataset()\nmodel_task = train_model(dataset)\nscore_task = score_model(dataset, model)\nprint(score_task.run())\n```\n\nTask dependencies can be specified with lists and dicts:\n```python\n@task\ndef summarize_scores(scores_tasks: dict[str, Task[float]]):\n\n    @requires(score_tasks)\n    def __(score_dict):\n        ...\n    return __\n```\n\nLarge outputs can be stored with compression via `zlib`:\n```python\n@task(compress_level=-1)\ndef large_output_task():\n    ...\n```\n\n### Data directories\n\nUse `TaskDirectory` to create a fresh directory dedicated to each task. The contents of the directory are cleared at each task call and persist until the task is `clear`ed.\n```python\nfrom pathlib import Path\nfrom checkpoint import TaskDirectory\n\n@task\ndef train_model(...):\n\n    # Passing a new directory at\n    # `{$CP_CACHE_DIR:-./.cache}/checkpoint/{module_name}.{function_name}/data/{cryptic_task_id}`\n    @requires(TaskDirectory())\n    def __(path: Path) -> str:\n        ...\n        model_path = str(path / 'model.bin')\n        model.save(model_path)\n        return model_path\n\n    return __\n```\n\n### Execution policy configuration\n\nOne can control the task execution with `concurrent.futures.Executor` class:\n```python\nfrom concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor\n\n@task\ndef my_task():\n    ...\n\n# Limit the number of parallel workers\nmy_task().run(executor=ProcessPoolExecutor(max_workers=2))\n\n# Thread-based parallelism\nmy_task().run(executor=ThreadPoolExecutor())\n```\n\nOne can also control the concurrency at a task/queue level:\n```python\n# Task-level concurrency limit\nmy_task().run(rate_limit={my_task.queue: 2})\n\n# Queue-level concurrency limit\n@task(queue='gpu')\ndef task_using_gpu():\n    ...\n\n@task(queue='gpu')\ndef another_task_using_gpu():\n    ...\n\n# ...\nsome_downstream_task.run(rate_limit={'gpu': 1})\n\n```\n\n### Commandline tool\nWe can use checkpoint-tool from commandline like `python -m checkpoint path/to/taskfile.py`, where `taskfile.py` defines the `main` task as follows:\n```python\n# taskfile.py\n\n@task\ndef main():\n    ...\n```\nThe command runs the `main` task and stores the cache right next to `taskfile.py` as `.cache/checkpoint/...`.\nPlease refer to `python -m checkpoint --help` for more info.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -787,7 +786,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17936635,
+        "last_serial": 18024869,
         "urls": [
             {
                 "comment_text": "",
@@ -828,6 +827,477 @@
                 "upload_time": "2023-05-02T05:53:26",
                 "upload_time_iso_8601": "2023-05-02T05:53:26.591630Z",
                 "url": "https://files.pythonhosted.org/packages/01/8f/2c0f3432345afb00736be9b9f01b61e64c8969ab497244dac6c700ea2d7d/checkpoint_tool-0.6.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.7.0": {
+        "info": {
+            "author": "Kohei Miyaguchi",
+            "author_email": "koheimiyaguchi@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/koheimiya/checkpoint",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "checkpoint-tool",
+            "package_url": "https://pypi.org/project/checkpoint-tool/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/checkpoint-tool/",
+            "project_urls": {
+                "Homepage": "https://github.com/koheimiya/checkpoint",
+                "Repository": "https://github.com/koheimiya/checkpoint"
+            },
+            "release_url": "https://pypi.org/project/checkpoint-tool/0.7.0/",
+            "requires_dist": [
+                "typing-extensions (>=4.5.0,<5.0.0)",
+                "diskcache (>=5.6.1,<6.0.0)",
+                "cloudpickle (>=2.2.1,<3.0.0)",
+                "networkx (>=3.1,<4.0)",
+                "click (>=8.1.3,<9.0.0)"
+            ],
+            "requires_python": ">=3.9,<4.0",
+            "summary": "A lightweight workflow management tool written in pure Python",
+            "version": "0.7.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18024869,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "9cfc452cf4670d2757671a6b6ccaf06d5acbb2342655ec7b79c4cbf0ea3eb814",
+                    "md5": "af3317290fe1022e04a1bc720f6bd13b",
+                    "sha256": "f363a2297758913e8bc9d6b7fa89d5d1f4f798d8e51c2cca01acb9db41a85c07"
+                },
+                "downloads": -1,
+                "filename": "checkpoint_tool-0.7.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "af3317290fe1022e04a1bc720f6bd13b",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9,<4.0",
+                "size": 19498,
+                "upload_time": "2023-05-08T16:32:22",
+                "upload_time_iso_8601": "2023-05-08T16:32:22.157573Z",
+                "url": "https://files.pythonhosted.org/packages/9c/fc/452cf4670d2757671a6b6ccaf06d5acbb2342655ec7b79c4cbf0ea3eb814/checkpoint_tool-0.7.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e1bead79bda3f82a629c2ec165cfcbb3c001b6fe1d977c8641a53a864aea8476",
+                    "md5": "e41179bb85a36a07248d38349d262ef6",
+                    "sha256": "7346c70036888ef8edbb56e0daa36afeca04f5df8ed538e6953f9784dd4b4f49"
+                },
+                "downloads": -1,
+                "filename": "checkpoint_tool-0.7.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "e41179bb85a36a07248d38349d262ef6",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9,<4.0",
+                "size": 15711,
+                "upload_time": "2023-05-08T16:32:24",
+                "upload_time_iso_8601": "2023-05-08T16:32:24.655777Z",
+                "url": "https://files.pythonhosted.org/packages/e1/be/ad79bda3f82a629c2ec165cfcbb3c001b6fe1d977c8641a53a864aea8476/checkpoint_tool-0.7.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.7.1": {
+        "info": {
+            "author": "Kohei Miyaguchi",
+            "author_email": "koheimiyaguchi@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/koheimiya/checkpoint",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "checkpoint-tool",
+            "package_url": "https://pypi.org/project/checkpoint-tool/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/checkpoint-tool/",
+            "project_urls": {
+                "Homepage": "https://github.com/koheimiya/checkpoint",
+                "Repository": "https://github.com/koheimiya/checkpoint"
+            },
+            "release_url": "https://pypi.org/project/checkpoint-tool/0.7.1/",
+            "requires_dist": [
+                "typing-extensions (>=4.5.0,<5.0.0)",
+                "diskcache (>=5.6.1,<6.0.0)",
+                "cloudpickle (>=2.2.1,<3.0.0)",
+                "networkx (>=3.1,<4.0)",
+                "click (>=8.1.3,<9.0.0)"
+            ],
+            "requires_python": ">=3.9,<4.0",
+            "summary": "A lightweight workflow management tool written in pure Python",
+            "version": "0.7.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18024869,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "bb0f603b775b6cbf283676916c039847e162d0fd1331d3822d80166f8bf19152",
+                    "md5": "41da1574d6f5db30f85b0a88a59fe93e",
+                    "sha256": "985f086c8c250108d8bcd8c389f56ae155a956628c51d2354561ea439d774e67"
+                },
+                "downloads": -1,
+                "filename": "checkpoint_tool-0.7.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "41da1574d6f5db30f85b0a88a59fe93e",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9,<4.0",
+                "size": 19526,
+                "upload_time": "2023-05-08T16:43:21",
+                "upload_time_iso_8601": "2023-05-08T16:43:21.339553Z",
+                "url": "https://files.pythonhosted.org/packages/bb/0f/603b775b6cbf283676916c039847e162d0fd1331d3822d80166f8bf19152/checkpoint_tool-0.7.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "df7682ff0a69bb9e4c79584829ab792e94275f1725ab2fedab33890070ac700b",
+                    "md5": "7ad94bd33b90adb7116da008f12ae15b",
+                    "sha256": "d5cae1a977deaf8cee6ea3da7c398b5f3b9a688683abbe32fcc82fce373f72b1"
+                },
+                "downloads": -1,
+                "filename": "checkpoint_tool-0.7.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "7ad94bd33b90adb7116da008f12ae15b",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9,<4.0",
+                "size": 15751,
+                "upload_time": "2023-05-08T16:43:22",
+                "upload_time_iso_8601": "2023-05-08T16:43:22.965647Z",
+                "url": "https://files.pythonhosted.org/packages/df/76/82ff0a69bb9e4c79584829ab792e94275f1725ab2fedab33890070ac700b/checkpoint_tool-0.7.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.7.2": {
+        "info": {
+            "author": "Kohei Miyaguchi",
+            "author_email": "koheimiyaguchi@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/koheimiya/checkpoint",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "checkpoint-tool",
+            "package_url": "https://pypi.org/project/checkpoint-tool/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/checkpoint-tool/",
+            "project_urls": {
+                "Homepage": "https://github.com/koheimiya/checkpoint",
+                "Repository": "https://github.com/koheimiya/checkpoint"
+            },
+            "release_url": "https://pypi.org/project/checkpoint-tool/0.7.2/",
+            "requires_dist": [
+                "typing-extensions (>=4.5.0,<5.0.0)",
+                "diskcache (>=5.6.1,<6.0.0)",
+                "cloudpickle (>=2.2.1,<3.0.0)",
+                "networkx (>=3.1,<4.0)",
+                "click (>=8.1.3,<9.0.0)"
+            ],
+            "requires_python": ">=3.9,<4.0",
+            "summary": "A lightweight workflow management tool written in pure Python",
+            "version": "0.7.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18024869,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "fb84394f7321aa29709cca9ace506cf894a4cae3ca9f1c2f87eb885395cb8745",
+                    "md5": "a105aad9f7090f2eb65a5766632b7e95",
+                    "sha256": "6928f46d56e9b8278c7a018b574683b889d29f11a3524b9146adae1e22816546"
+                },
+                "downloads": -1,
+                "filename": "checkpoint_tool-0.7.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "a105aad9f7090f2eb65a5766632b7e95",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9,<4.0",
+                "size": 19719,
+                "upload_time": "2023-05-09T01:00:01",
+                "upload_time_iso_8601": "2023-05-09T01:00:01.411366Z",
+                "url": "https://files.pythonhosted.org/packages/fb/84/394f7321aa29709cca9ace506cf894a4cae3ca9f1c2f87eb885395cb8745/checkpoint_tool-0.7.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ebe6359bb6fc4eecbf358da0c31ae3f861a57a613dc0f51d269bf4535ef6bfb1",
+                    "md5": "a439fd934272cc205d5cf2089829c051",
+                    "sha256": "58a1a59ee48f2fc2716d37aada8edb61b35cb604c809381d97ffb612f56a39c2"
+                },
+                "downloads": -1,
+                "filename": "checkpoint_tool-0.7.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "a439fd934272cc205d5cf2089829c051",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9,<4.0",
+                "size": 16032,
+                "upload_time": "2023-05-09T01:00:03",
+                "upload_time_iso_8601": "2023-05-09T01:00:03.329868Z",
+                "url": "https://files.pythonhosted.org/packages/eb/e6/359bb6fc4eecbf358da0c31ae3f861a57a613dc0f51d269bf4535ef6bfb1/checkpoint_tool-0.7.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.7.3": {
+        "info": {
+            "author": "Kohei Miyaguchi",
+            "author_email": "koheimiyaguchi@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/koheimiya/checkpoint",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "checkpoint-tool",
+            "package_url": "https://pypi.org/project/checkpoint-tool/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/checkpoint-tool/",
+            "project_urls": {
+                "Homepage": "https://github.com/koheimiya/checkpoint",
+                "Repository": "https://github.com/koheimiya/checkpoint"
+            },
+            "release_url": "https://pypi.org/project/checkpoint-tool/0.7.3/",
+            "requires_dist": [
+                "typing-extensions (>=4.5.0,<5.0.0)",
+                "diskcache (>=5.6.1,<6.0.0)",
+                "cloudpickle (>=2.2.1,<3.0.0)",
+                "networkx (>=3.1,<4.0)",
+                "click (>=8.1.3,<9.0.0)"
+            ],
+            "requires_python": ">=3.9,<4.0",
+            "summary": "A lightweight workflow management tool written in pure Python",
+            "version": "0.7.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18024869,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2d43aed876225b9a59814521c66850340e196e8198f47bd6c9fde6fdd1c8f6c4",
+                    "md5": "f7a053c5d1fb8af74db79d73702ee940",
+                    "sha256": "008099c9b2e76e41d559dddca30dff7dfb24fc03ad5d2db301f27e739c1903a3"
+                },
+                "downloads": -1,
+                "filename": "checkpoint_tool-0.7.3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "f7a053c5d1fb8af74db79d73702ee940",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9,<4.0",
+                "size": 13153,
+                "upload_time": "2023-05-09T01:07:46",
+                "upload_time_iso_8601": "2023-05-09T01:07:46.996622Z",
+                "url": "https://files.pythonhosted.org/packages/2d/43/aed876225b9a59814521c66850340e196e8198f47bd6c9fde6fdd1c8f6c4/checkpoint_tool-0.7.3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f90a6394f7c94ff38801a030e66044abec3fffe24d8c1f16aed25787f6ad36dd",
+                    "md5": "d612f05a2e855fd7197521a923433be6",
+                    "sha256": "d1a81fd6eb5535b1380650c4a07c00242f167d63c584b30d938d36a4e10111d0"
+                },
+                "downloads": -1,
+                "filename": "checkpoint_tool-0.7.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "d612f05a2e855fd7197521a923433be6",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9,<4.0",
+                "size": 13246,
+                "upload_time": "2023-05-09T01:07:49",
+                "upload_time_iso_8601": "2023-05-09T01:07:49.519510Z",
+                "url": "https://files.pythonhosted.org/packages/f9/0a/6394f7c94ff38801a030e66044abec3fffe24d8c1f16aed25787f6ad36dd/checkpoint_tool-0.7.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.7.4": {
+        "info": {
+            "author": "Kohei Miyaguchi",
+            "author_email": "koheimiyaguchi@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# Checkpoint-tool\n\nA lightweight workflow building/execution/management tool written in pure Python.\n\nInternally, it depends on `DiskCache`, `cloudpickle` `networkx` and `concurrent.futures`.\n\n\n## Installation\n\n```\npip install checkpoint-tool\n```\n\n## Usage\n\n### Basic usage\n\nWorkflow is a directed acyclic graph (DAG) of tasks, and task is a unit of work represented with a class.\nHere is an example.\n```python\nfrom checkpoint import Task, Req, Requires, Const\n\n# Define a task and **its entire upstream workflow** with a class definition.\n# Inheriting `Task` is necesary, as it takes care of all the work storing and reusing the result and tracking the dependencies.\n# `infer_task_type` decorator helps the type checker to infer the types of the task class. (optional)\n@infer_task_type\nclass Choose(Task):\n    \"\"\" Compute the binomial coefficient. \"\"\"\n    # Inside a task, we first declare the values that must be computed upstream with the descriptor `Req`.\n    # In this example, `Choose(n, k)` depends on `Choose(n - 1, k - 1)` and `Choose(n - 1, k)`,\n    # so it requires two `int` values.\n    # Either the type annotation `Requires[...]` or the assignment `= Req()` may be omitted.\n    prev1: Requires[int] = Req()\n    prev2: Requires[int] = Req()\n\n    def build_task(self, n: int, k: int):\n        # The prerequisite tasks and the other instance attributes are prepared here.\n        # It thus recursively defines all the tasks we need to run this task,\n        # i.e., the entire upstream workflow.\n\n        if 0 < k < n:\n            self.prev1 = Choose(n - 1, k - 1)\n            self.prev2 = Choose(n - 1, k)\n        elif k == 0 or k == n:\n            # We can just pass a value to a requirement slot directly without running tasks.\n            self.prev1 = Const(0)\n            self.prev2 = Const(1)\n        else:\n            raise ValueError(f'{(n, k)}')\n\n    def run_task(self) -> int:\n        # Here we define the main computation of the task,\n        # which is delayed until it is necessary.\n\n        # The return values of the prerequisite tasks are accessible via the descriptors:\n        return self.prev1 + self.prev2\n\n# To run the task as well as upstream workflow, use the `run_graph()` method.\nans = Choose(6, 3).run_graph()  # `ans` should be 6 Choose 3, which is 20.\n\n# It greedily executes all the necessary tasks as parallel as possible\n# and then spits out the return value of the task on which we call `run_graph()`.\n# The return values of the intermediate tasks are cached at\n# `{$CP_CACHE_DIR:-./.cache}/checkpoint/{module_name}.{task_name}/...`\n# and reused on the fly whenever possible.\n```\n\n### Deleting cache\n\nIt is possible to selectively discard cache: \n```python\n# After some modificaiton of `Choose(3, 3)`,\n# selectively discard the cache corresponding to the modification.\nChoose(3, 3).clear_task()\n\n# `ans` is recomputed tracing back to the computation of `Choose(3, 3)`.\nans = Choose(6, 3).run_graph()\n\n# Delete all the cache associated with `Choose`,\n# equivalent to `rm -r {$CP_CACHE_DIR:-./.cache}/checkpoint/{module_name}.Choose`.\nChoose.clear_all_tasks()            \n```\n\n### Limitations of Task I/O\n\nThe arguments of the `init` method can be anything JSON serializable:\n```python\nclass T1(Task):\n    def build_task(self, **param1):\n        ...\n    ...\n\nclass T2(Task):\n    def build_task(self, **param2):\n        ...\n    ...\n\nclass T3(Task):\n    x1 = Req()\n    x2 = Req()\n\n    def build_task(self, json_params):\n        self.x1 = T1(**json_params['param1'])\n        self.x2 = T2(**json_params['param2'])\n\n    def run_task(self):\n        ...\n\nresult = T3({'param1': { ... }, 'param2': { ... }}).run_graph()\n```\n\nOtherwise they can be passed via `Task` and `Req`:\n```python\nDataset = ...  # Some complex data structure\nModel = ...    # Some complex data structure\n\nclass LoadDataset(Task):\n    def build_task(self):\n        pass\n\n    def run_task(self) -> Dataset:\n        ...\n\nclass TrainModel(Task):\n    dataset: Requires[Datset]\n\n    def build_task(self, dataset_task: Task[Dataset]):\n        self.dataset = dataset_task\n\n    def run_task(self) -> Model:\n        ...\n    \nclass ScoreModel(Task):\n    dataset: Requires[Datset]\n    model: Requires[Model]\n\n    def build_task(self, dataset_task: Task[Dataset], model_task: Task[Model]):\n        self.dataset = dataset_task\n        self.model = model_task\n\n    def run_task(self) -> float:\n        ...\n\n\ndataset_task = LoadDataset()\nmodel_task = TrainModel(dataset)\nscore_task = ScoreModel(dataset, model)\nprint(score_task.run_graph()\n```\n\n`Req` accepts a list/dict of tasks and automatically unfolds it.\n```python\nfrom checkpoint import RequiresDict\n\n\nclass SummarizeScores(Task):\n    scores: RequiresDict[str, float] = Req()  # Again, type annotation or assignment may be omitted.\n\n    def build_task(self, task_dict: dict[str, Task[float]]):\n        self.scores = task_dict\n\n    def run_task(self) -> float:\n        return sum(self.scores.values()) / len(self.scores)  # We have access to the dict of the results.\n```\n\nThe output of the `main` method should be serializable with `cloudpickle`.\nLarge outputs can be stored with compression via `zlib`:\n```python\nclass LargeOutputTask(Task, compress_level=-1):\n    ...\n```\n\n### Data directories\n\nUse `DataPath(name)` to get a fresh path dedicated to each task.\nThe parent directory is automatically created at\n`{$CP_CACHE_DIR:-./.cache}/checkpoint/{module_name}.{task_name}/data/{cryptic_task_id}`\nand the contents of the directory are cleared at each task call and persist until the task is cleared.\n```python\nfrom checkpoint import DataPath\n\nclass TrainModel(Task):\n    model_path = DataPath('model.bin')\n    ...\n\n    def run_task(self) -> str:\n        ...\n        model.save(self.model_path)  # Gives `Path('.../model.bin')`\n        return self.model_path\n```\n\n### Execution policy configuration\n\nOne can control the task execution with `concurrent.futures.Executor` class:\n```python\nfrom concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor\n\nclass MyTask(Task):\n    ...\n\n# Limit the number of parallel workers\nMyTask().run_graph(executor=ProcessPoolExecutor(max_workers=2))\n\n# Thread-based parallelism\nMyTask().run_graph(executor=ThreadPoolExecutor())\n```\n\nOne can also control the concurrency at a task/channel level:\n```python\nclass TaskUsingGPU(Task, channel='<gpu>'):\n    ...\n\nclass AnotherTaskUsingGPU(Task, channel=['<gpu>', '<memory>']):\n    ...\n\n# Queue-level concurrency control\nSomeDownstreamTask().run_graph(rate_limits={'<gpu>': 1})\nSomeDownstreamTask().run_graph(rate_limits={'<memory>': 1})\n\n# Task-level concurrency control\nSomeDownstreamTask().run_graph(rate_limits={TaskUsingGPU.task_config.name: 1})\n\n```\n\n### Commandline tool\nWe can use checkpoint-tool from commandline like `python -m checkpoint.app path/to/taskfile.py`, where `taskfile.py` defines the `main` task as follows:\n```python\n# taskfile.py\n\nclass Main(Task):\n    ...\n```\nThe command runs the `Main()` task and stores the cache right next to `taskfile.py` as `.cache/checkpoint/...`.\nPlease refer to `python -m checkpoint.app --help` for more info.\n\n\n\n## TODO\n - [ ] Loader-based serialization\n - [ ] Simple visualizers\n    - [ ] Task-wise progressbar\n    - [ ] Graph visualizer\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/koheimiya/checkpoint",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "checkpoint-tool",
+            "package_url": "https://pypi.org/project/checkpoint-tool/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/checkpoint-tool/",
+            "project_urls": {
+                "Homepage": "https://github.com/koheimiya/checkpoint",
+                "Repository": "https://github.com/koheimiya/checkpoint"
+            },
+            "release_url": "https://pypi.org/project/checkpoint-tool/0.7.4/",
+            "requires_dist": [
+                "typing-extensions (>=4.5.0,<5.0.0)",
+                "diskcache (>=5.6.1,<6.0.0)",
+                "cloudpickle (>=2.2.1,<3.0.0)",
+                "networkx (>=3.1,<4.0)",
+                "click (>=8.1.3,<9.0.0)"
+            ],
+            "requires_python": ">=3.9,<4.0",
+            "summary": "A lightweight workflow management tool written in pure Python",
+            "version": "0.7.4",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18024869,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e5c9b9b1be1823797a583e37f898b194b53a0706e617c7fc013bba670ea5f9d7",
+                    "md5": "0007e289252296a551df7c5039b43ef5",
+                    "sha256": "b82a93a66c2ff312d5e4096d0e9151c07219cd02b50813efef374c1d3cb704da"
+                },
+                "downloads": -1,
+                "filename": "checkpoint_tool-0.7.4-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "0007e289252296a551df7c5039b43ef5",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9,<4.0",
+                "size": 13248,
+                "upload_time": "2023-05-09T01:22:50",
+                "upload_time_iso_8601": "2023-05-09T01:22:50.305175Z",
+                "url": "https://files.pythonhosted.org/packages/e5/c9/b9b1be1823797a583e37f898b194b53a0706e617c7fc013bba670ea5f9d7/checkpoint_tool-0.7.4-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3644d626129c9d9e4edb4bcbca105add6d0e8a41e7e6758928a332fd6d4dde65",
+                    "md5": "2269cd646ba8613cd8e5d75c1c2586ef",
+                    "sha256": "f9c34e52d9658c2f0b87666370718ea3e9efd25ca5983fb3f741011c645d9a0d"
+                },
+                "downloads": -1,
+                "filename": "checkpoint_tool-0.7.4.tar.gz",
+                "has_sig": false,
+                "md5_digest": "2269cd646ba8613cd8e5d75c1c2586ef",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9,<4.0",
+                "size": 13342,
+                "upload_time": "2023-05-09T01:22:53",
+                "upload_time_iso_8601": "2023-05-09T01:22:53.454845Z",
+                "url": "https://files.pythonhosted.org/packages/36/44/d626129c9d9e4edb4bcbca105add6d0e8a41e7e6758928a332fd6d4dde65/checkpoint_tool-0.7.4.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

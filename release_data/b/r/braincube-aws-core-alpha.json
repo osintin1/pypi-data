@@ -49,7 +49,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18015715,
+        "last_serial": 18017848,
         "urls": [
             {
                 "comment_text": "",
@@ -146,7 +146,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18015715,
+        "last_serial": 18017848,
         "urls": [
             {
                 "comment_text": "",
@@ -243,7 +243,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18015715,
+        "last_serial": 18017848,
         "urls": [
             {
                 "comment_text": "",
@@ -340,7 +340,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18015715,
+        "last_serial": 18017848,
         "urls": [
             {
                 "comment_text": "",
@@ -437,7 +437,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18015715,
+        "last_serial": 18017848,
         "urls": [
             {
                 "comment_text": "",
@@ -530,7 +530,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18015715,
+        "last_serial": 18017848,
         "urls": [
             {
                 "comment_text": "",
@@ -591,7 +591,6 @@
                 "Programming Language :: Python :: 3.11",
                 "Topic :: Software Development :: Libraries :: Python Modules"
             ],
-            "description": "# braincube-aws-core\n\nMicroframework for Python AWS lambdas.\n\n[![Language](https://img.shields.io/badge/language-Python-blue.svg)](https://www.python.org/)\n[![pypi](https://img.shields.io/pypi/v/braincube-aws-core-alpha.svg)](https://pypi.org/project/braincube-aws-core-alpha/)\n[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)\n\n## Installation\n\n```bash\npip install braincube-aws-core-alpha\n```\n\n## Built With\n\n- [asyncpg](https://github.com/MagicStack/asyncpg) - A fast PostgreSQL Database Client Library for Python/asyncio.\n- [pydantic](https://github.com/pydantic/pydantic) - Data validation using Python type hints.\n- [pypika](https://github.com/kayak/pypika) - Python Query Builder.\n\n### Application Controllers Example\n\n```python\nimport asyncio\n\nfrom http import HTTPStatus\n\nfrom core.rest.data import HTTPRequest, HTTPResponse\nfrom core.rest.app_module import AppModule\nfrom core.rest.app_controller import AppController\n\nfrom pydantic import BaseModel\n\n\nclass AccountDto(BaseModel):\n    id: int\n    iban: str\n    bban: str\n\n\n_accounts = [\n    AccountDto(1, \"EUR27100777770209299700\", \"EURC12345612345678\"),\n    AccountDto(2, \"GR27100777770209299700\", \"GRC12345612345678\"),\n]\n\napp = AppController(\"/accounts\")\n\n\n@app.get(\"/{id}\")\nasync def get_account(request: HTTPRequest) -> HTTPResponse:\n    account = next((a for a in _accounts if a.id == request.path_parameters[\"id\"]), None)\n    return HTTPResponse(HTTPStatus.OK if account else HTTPStatus.NO_CONTENT, account)\n\n\n@app.post()\nasync def create_account(request: HTTPRequest[AccountDto]) -> HTTPResponse:\n    return HTTPResponse(HTTPStatus.OK)\n\n\nloop = asyncio.get_event_loop()\n\nmodule = AppModule([app])\n\n\ndef main(event, context):\n    return loop.run_until_complete(module.serve(event, context))\n```\n\n### Dependency Injection Example\n\n```python\nfrom core.di.injector import inject\nfrom core.dal.postgres_connection import get_pool, Pool\n\n\n@inject(\"data_warehouse_pool\")\nasync def provide_warehouse_pool() -> Pool:\n    return await get_pool()\n\n\n@inject(qualifier=\"pool:data_warehouse_pool\")\nclass BankService:\n\n    def __init__(self, pool: Pool):\n        self._pool = pool\n```\n\n### Postgres Repository Example\n\n```python\nfrom core.rest.data import HTTPRequest\nfrom core.utils.data import Order, OrderType\nfrom core.dal.data import Key, Schema, Column, Relation, SimpleColumn, JoinType, JoinThrough, StatementField\nfrom core.dal.postgres_connection import get_pool, Pool\nfrom core.dal.postgres_repository import PostgresRepository\n\n# schema definition\nequities = Schema(\n    table=\"equities\",\n    alias=\"e\",\n    primary_key=[\"id\"],\n    order=[Order(type=OrderType.asc, alias=\"name\")],\n    statement_fields=[\n        StatementField(alias=\"isTypeOne\",\n                       statement=\"CASE WHEN e.type = 1 then True else False END\",\n                       relations_aliases=[])\n    ],\n    columns=[\n        Column(name=\"id\", updatable=False, insertable=False),\n        Column(name=\"name\"),\n        Column(name=\"type\"),\n        Column(name=\"issuer_id\", alias=\"issuerId\"),\n        Column(name=\"industry_sector\", alias=\"industrySector\"),\n        Column(name=\"isin\"),\n        Column(name=\"reference\"),\n        Column(name=\"bloomberg_code\", alias=\"bloombergCode\"),\n        Column(name=\"market_symbol\", alias=\"marketSymbol\"),\n        Column(name=\"currency\"),\n        Column(name=\"country\", ),\n        Column(name=\"min_amount\", alias=\"minAmount\"),\n    ],\n    relations=[\n        Relation(\n            table=\"parties\",\n            alias=\"p\",\n            force_join=False,\n            columns=[\n                SimpleColumn(name=\"name\"),\n                SimpleColumn(name=\"short_name\", alias=\"shortName\"),\n            ],\n            join_type=JoinType.left,\n            through=JoinThrough(from_column_name=\"issuer_id\", to_column_name=\"id\")\n        )\n    ]\n)\n\n\n# repository definition\nclass EquitiesRepo(PostgresRepository):\n\n    def __init__(self, pool: Pool):\n        super().__init__(pool, equities)\n\n\n# repository usage\n\nrequest = HTTPRequest()\n\nrepo = EquitiesRepo(await get_pool())\n\nawait repo.find_by_id(key=Key(request.path_parameters[\"id\"]), aliases=request.query_parameters.fields)\n\nawait repo.exists_by_id(key=Key(\"9448a57b-f686-4935-b152-566baab712db\"))\n\nawait repo.find_one(\n    aliases=request.query_parameters.fields,\n    conditions=request.query_parameters.conditions,\n    order=request.query_parameters.order)\n\nawait repo.find_all(\n    aliases=request.query_parameters.fields,\n    conditions=request.query_parameters.conditions,\n    order=request.query_parameters.order)\n\nawait repo.find_all_by_id([\n    Key(\"9448a57b-f686-4935-b152-566baab712db\"),\n    Key(\"43c8ec37-9a59-44eb-be90-def391ba2f02\")],\n    aliases=request.query_parameters.fields,\n    order=request.query_parameters.order)\n\nawait repo.find_all_page(\n    aliases=request.query_parameters.fields,\n    conditions=request.query_parameters.conditions,\n    page=request.query_parameters.page,\n    order=request.query_parameters.order)\n\nawait repo.insert(\n    data={\n        \"name\": \"Bursa de Valori Bucuresti SA\",\n        \"type\": 1,\n        \"industrySector\": 40,\n        \"isin\": \"ROBVBAACNOR0\",\n        \"bloombergCode\": \"BBG000BBWMC5\",\n        \"marketSymbol\": \"BVB RO Equity\",\n        \"currency\": \"RON\",\n        \"country\": \"RO\",\n    })\n\nawait repo.insert_bulk(\n    aliases=[\"name\", \"type\", \"industrySector\", \"isin\", \"bloombergCode\", \"marketSymbol\", \"currency\", \"country\"],\n    data=[\n        [\"Bursa de Valori Bucuresti SA\", 1, 40, \"ROBVBAACNOR0\", \"BBG000BBWMC5\", \"BVB RO Equity\", \"RON\", \"RO\"],\n        [\"Citigroup Inc\", 1, 40, \"US1729674242\", \"BBG000FY4S11\", \"C US Equity\", \"USD\", \"US\"],\n        [\"Coca-Cola HBC AG\", 1, 49, \"CH0198251305\", \"BBG004HJV2T1\", \"EEE GA Equity\", \"EUR\", \"GR\"],\n    ]\n)\n\nawait repo.update(\n    data={\n        \"type\": 1,\n        \"isin\": 40,\n    },\n    conditions=request.query_parameters.conditions,\n    returning_aliases=request.query_parameters.fields)\n\nawait repo.update_by_id(\n    Key(\"9448a57b-f686-4935-b152-566baab712db\"),\n    data={\n        \"type\": 1,\n        \"isin\": 40,\n    }, returning_aliases=[])\n\nawait repo.delete(\n    conditions=request.query_parameters.conditions,\n    returning_aliases=[\"id\", \"name\", \"type\"])\n\nawait repo.delete_by_id(\n    Key(\"9448a57b-f686-4935-b152-566baab712db\"),\n    returning_aliases=[\"id\", \"name\", \"type\"])\n\nawait repo.fetch_raw(\"SELECT * FROM equities WHERE type = $1 and isin = $2\", [1, \"TREEGYO00017\"])\n\nawait repo.fetch_one_raw(\"SELECT * FROM equities WHERE id = $1\", [\"2b67122a-f47e-41b1-b7f7-53be5ca381a0\"])\n\nawait repo.execute_raw(\"DELETE FROM equities WHERE id = $1\", [\"2b67122a-f47e-41b1-b7f7-53be5ca381a0\"])\n```\n\n### Query params format\n\n```\nfields=name, type, industrySector, isin, bloombergCode, parties_name, parties_shortName\n\ntype=1\nisin=range(40, 49)\nid=any(9448a57b-f686-4935-b152-566baab712db, 43c8ec37-9a59-44eb-be90-def391ba2f02)\n\npage_no=1\npage_size=50\ntop_size=50\norder=name, id DESC\n```\n\n### Local Development Requirements\n\nTo use the SAM CLI, you need the following tools.\n\n* [SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-install.html)\n* [Python 3](https://www.python.org/downloads/)\n* [Docker](https://hub.docker.com/search/?type=edition&offering=community)\n\n### Run server locally\n\n```bash\n# open ssh tunel\nsudo sh ssh_tunnel_Analog_JBox.sh\n# apply code changes to docker image\nsam-api$ sam build\n# start server locally on http://127.0.0.1:3000\nsam-api$ sam local start-api --warm-containers EAGER\n# or run function locally using event.json as parameter\nsam-api$ sam local invoke ApiFunction --event events/event.json\n```\n\n### Deploy to AWS\n\n```bash\nsam build --use-container\nsam deploy --guided --profile analog_user --region eu-west-1\n```\n\n### Build and deploy new package version using twine\n\n```bash\npython3 -m pip install --upgrade pip\npython3 -m pip install --upgrade build\npython3 -m pip install --upgrade twine\n```\n\n```bash\npython3 -m build\ntwine upload --skip-existing dist/*\n```\n\n### Resources\n\n* [SAM template.yml](https://github.com/aws/serverless-application-model/blob/master/docs/internals/generated_resources.rst)\n* [asyncpg driver](https://magicstack.github.io/asyncpg/current/)\n* [PyPika query builder](https://pypika.readthedocs.io/en/latest/)\n* [Pydantic](https://docs.pydantic.dev/)\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -624,7 +623,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18015715,
+        "last_serial": 18017848,
         "urls": [
             {
                 "comment_text": "",
@@ -665,6 +664,193 @@
                 "upload_time": "2023-05-08T10:41:47",
                 "upload_time_iso_8601": "2023-05-08T10:41:47.143490Z",
                 "url": "https://files.pythonhosted.org/packages/ef/97/13fe8ce08f97738ccbc562ea8f9b9da12e71e7ccd3c8adb68f87262cfa85/braincube-aws-core-alpha-0.0.20.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.21": {
+        "info": {
+            "author": "Braincube",
+            "author_email": "v.boudis@braincube.gr",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Topic :: Software Development :: Libraries :: Python Modules"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://bitbucket.org/braincube-common/core-aws.git",
+            "keywords": "python,amazon,aws,lambda,routing,dal,injection",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "braincube-aws-core-alpha",
+            "package_url": "https://pypi.org/project/braincube-aws-core-alpha/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/braincube-aws-core-alpha/",
+            "project_urls": {
+                "Homepage": "https://bitbucket.org/braincube-common/core-aws.git"
+            },
+            "release_url": "https://pypi.org/project/braincube-aws-core-alpha/0.0.21/",
+            "requires_dist": [
+                "asyncpg (==0.27.0)",
+                "pypika (==0.48.9)",
+                "pydantic (==1.10.7)"
+            ],
+            "requires_python": "<4,>=3.10",
+            "summary": "Microframework for python aws lambdas",
+            "version": "0.0.21",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18017848,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "49e4f55bf777a3ea59a4bea91404cb3a32a8977aff6798186db196a07b96fe92",
+                    "md5": "67e9af89575d2934a81f98918c697d9d",
+                    "sha256": "1c7fcd4a9fd91c2ef94c02ceccec94d46104ae8cb5d2f3501a9af3c16c2c052f"
+                },
+                "downloads": -1,
+                "filename": "braincube_aws_core_alpha-0.0.21-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "67e9af89575d2934a81f98918c697d9d",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": "<4,>=3.10",
+                "size": 19178,
+                "upload_time": "2023-05-08T13:09:48",
+                "upload_time_iso_8601": "2023-05-08T13:09:48.142773Z",
+                "url": "https://files.pythonhosted.org/packages/49/e4/f55bf777a3ea59a4bea91404cb3a32a8977aff6798186db196a07b96fe92/braincube_aws_core_alpha-0.0.21-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "890df33e0a241e906c5382e2d1f5eef9967ec6ddbc0bcf24065cc4b41489dde8",
+                    "md5": "b9eb012ed2dcf2b81c2aec5d19d51b7c",
+                    "sha256": "81becc470cc70a9ac01f5d3c9a28296507b2f8bb574c4bee23169a66c06550ea"
+                },
+                "downloads": -1,
+                "filename": "braincube-aws-core-alpha-0.0.21.tar.gz",
+                "has_sig": false,
+                "md5_digest": "b9eb012ed2dcf2b81c2aec5d19d51b7c",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": "<4,>=3.10",
+                "size": 16252,
+                "upload_time": "2023-05-08T13:09:51",
+                "upload_time_iso_8601": "2023-05-08T13:09:51.759016Z",
+                "url": "https://files.pythonhosted.org/packages/89/0d/f33e0a241e906c5382e2d1f5eef9967ec6ddbc0bcf24065cc4b41489dde8/braincube-aws-core-alpha-0.0.21.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.22": {
+        "info": {
+            "author": "Braincube",
+            "author_email": "v.boudis@braincube.gr",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Topic :: Software Development :: Libraries :: Python Modules"
+            ],
+            "description": "# braincube-aws-core\n\nMicroframework for Python AWS lambdas.\n\n[![Language](https://img.shields.io/badge/language-Python-blue.svg)](https://www.python.org/)\n[![pypi](https://img.shields.io/pypi/v/braincube-aws-core-alpha.svg)](https://pypi.org/project/braincube-aws-core-alpha/)\n[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)\n\n## Installation\n\n```bash\npip install braincube-aws-core-alpha\n```\n\n## Built With\n\n- [asyncpg](https://github.com/MagicStack/asyncpg) - A fast PostgreSQL Database Client Library for Python/asyncio.\n- [pydantic](https://github.com/pydantic/pydantic) - Data validation using Python type hints.\n- [pypika](https://github.com/kayak/pypika) - Python Query Builder.\n\n### Application Controllers Example\n\n```python\nimport asyncio\n\nfrom http import HTTPStatus\n\nfrom core.rest.data import HTTPRequest, HTTPResponse\nfrom core.rest.app_module import AppModule\nfrom core.rest.app_controller import AppController\n\nfrom pydantic import BaseModel\n\n\nclass AccountDto(BaseModel):\n    id: int\n    iban: str\n    bban: str\n\n\n_accounts = [\n    AccountDto(1, \"EUR27100777770209299700\", \"EURC12345612345678\"),\n    AccountDto(2, \"GR27100777770209299700\", \"GRC12345612345678\"),\n]\n\napp = AppController(\"/accounts\")\n\n\n@app.get(\"/{id}\")\nasync def get_account(request: HTTPRequest) -> HTTPResponse:\n    account = next((a for a in _accounts if a.id == request.path_parameters[\"id\"]), None)\n    return HTTPResponse(HTTPStatus.OK if account else HTTPStatus.NO_CONTENT, account)\n\n\n@app.post()\nasync def create_account(request: HTTPRequest[AccountDto]) -> HTTPResponse:\n    return HTTPResponse(HTTPStatus.OK)\n\n\nloop = asyncio.get_event_loop()\n\nmodule = AppModule([app])\n\n\ndef main(event, context):\n    return loop.run_until_complete(module.serve(event, context))\n```\n\n### Dependency Injection Example\n\n```python\nfrom core.di.injector import inject\nfrom core.dal.postgres_connection import get_pool, Pool\n\n\n@inject(\"data_warehouse_pool\")\nasync def provide_warehouse_pool() -> Pool:\n    return await get_pool()\n\n\n@inject(qualifier=\"pool:data_warehouse_pool\")\nclass BankService:\n\n    def __init__(self, pool: Pool):\n        self._pool = pool\n```\n\n### Postgres Repository Example\n\n```python\nfrom core.rest.data import HTTPRequest\nfrom core.utils.data import Order, OrderType\nfrom core.dal.data import Key, Schema, Column, Relation, SimpleColumn, JoinType, JoinThrough, StatementField\nfrom core.dal.postgres_connection import get_pool, Pool\nfrom core.dal.postgres_repository import PostgresRepository\n\n# schema definition\nequities = Schema(\n    table=\"equities\",\n    alias=\"e\",\n    primary_key=[\"id\"],\n    order=[Order(type=OrderType.asc, alias=\"name\")],\n    statement_fields=[\n        StatementField(alias=\"isTypeOne\",\n                       statement=\"CASE WHEN e.type = 1 then True else False END\",\n                       relations_aliases=[])\n    ],\n    columns=[\n        Column(name=\"id\", updatable=False, insertable=False),\n        Column(name=\"name\"),\n        Column(name=\"type\"),\n        Column(name=\"issuer_id\", alias=\"issuerId\"),\n        Column(name=\"industry_sector\", alias=\"industrySector\"),\n        Column(name=\"isin\"),\n        Column(name=\"reference\"),\n        Column(name=\"bloomberg_code\", alias=\"bloombergCode\"),\n        Column(name=\"market_symbol\", alias=\"marketSymbol\"),\n        Column(name=\"currency\"),\n        Column(name=\"country\", ),\n        Column(name=\"min_amount\", alias=\"minAmount\"),\n    ],\n    relations=[\n        Relation(\n            table=\"parties\",\n            alias=\"p\",\n            force_join=False,\n            columns=[\n                SimpleColumn(name=\"name\"),\n                SimpleColumn(name=\"short_name\", alias=\"shortName\"),\n            ],\n            join_type=JoinType.left,\n            through=JoinThrough(from_column_name=\"issuer_id\", to_column_name=\"id\")\n        )\n    ]\n)\n\n\n# repository definition\nclass EquitiesRepo(PostgresRepository):\n\n    def __init__(self, pool: Pool):\n        super().__init__(pool, equities)\n\n\n# repository usage\n\nrequest = HTTPRequest()\n\nrepo = EquitiesRepo(await get_pool())\n\nawait repo.find_by_id(key=Key(request.path_parameters[\"id\"]), aliases=request.query_parameters.fields)\n\nawait repo.exists_by_id(key=Key(\"9448a57b-f686-4935-b152-566baab712db\"))\n\nawait repo.find_one(\n    aliases=request.query_parameters.fields,\n    conditions=request.query_parameters.conditions,\n    order=request.query_parameters.order)\n\nawait repo.find_all(\n    aliases=request.query_parameters.fields,\n    conditions=request.query_parameters.conditions,\n    order=request.query_parameters.order)\n\nawait repo.find_all_by_id([\n    Key(\"9448a57b-f686-4935-b152-566baab712db\"),\n    Key(\"43c8ec37-9a59-44eb-be90-def391ba2f02\")],\n    aliases=request.query_parameters.fields,\n    order=request.query_parameters.order)\n\nawait repo.find_all_page(\n    aliases=request.query_parameters.fields,\n    conditions=request.query_parameters.conditions,\n    page=request.query_parameters.page,\n    order=request.query_parameters.order)\n\nawait repo.insert(\n    data={\n        \"name\": \"Bursa de Valori Bucuresti SA\",\n        \"type\": 1,\n        \"industrySector\": 40,\n        \"isin\": \"ROBVBAACNOR0\",\n        \"bloombergCode\": \"BBG000BBWMC5\",\n        \"marketSymbol\": \"BVB RO Equity\",\n        \"currency\": \"RON\",\n        \"country\": \"RO\",\n    })\n\nawait repo.insert_bulk(\n    aliases=[\"name\", \"type\", \"industrySector\", \"isin\", \"bloombergCode\", \"marketSymbol\", \"currency\", \"country\"],\n    data=[\n        [\"Bursa de Valori Bucuresti SA\", 1, 40, \"ROBVBAACNOR0\", \"BBG000BBWMC5\", \"BVB RO Equity\", \"RON\", \"RO\"],\n        [\"Citigroup Inc\", 1, 40, \"US1729674242\", \"BBG000FY4S11\", \"C US Equity\", \"USD\", \"US\"],\n        [\"Coca-Cola HBC AG\", 1, 49, \"CH0198251305\", \"BBG004HJV2T1\", \"EEE GA Equity\", \"EUR\", \"GR\"],\n    ]\n)\n\nawait repo.update(\n    data={\n        \"type\": 1,\n        \"isin\": 40,\n    },\n    conditions=request.query_parameters.conditions,\n    returning_aliases=request.query_parameters.fields)\n\nawait repo.update_by_id(\n    Key(\"9448a57b-f686-4935-b152-566baab712db\"),\n    data={\n        \"type\": 1,\n        \"isin\": 40,\n    }, returning_aliases=[])\n\nawait repo.delete(\n    conditions=request.query_parameters.conditions,\n    returning_aliases=[\"id\", \"name\", \"type\"])\n\nawait repo.delete_by_id(\n    Key(\"9448a57b-f686-4935-b152-566baab712db\"),\n    returning_aliases=[\"id\", \"name\", \"type\"])\n\nawait repo.fetch_raw(\"SELECT * FROM equities WHERE type = $1 and isin = $2\", [1, \"TREEGYO00017\"])\n\nawait repo.fetch_one_raw(\"SELECT * FROM equities WHERE id = $1\", [\"2b67122a-f47e-41b1-b7f7-53be5ca381a0\"])\n\nawait repo.execute_raw(\"DELETE FROM equities WHERE id = $1\", [\"2b67122a-f47e-41b1-b7f7-53be5ca381a0\"])\n```\n\n### Query params format\n\n```\nfields=name, type, industrySector, isin, bloombergCode, parties_name, parties_shortName\n\ntype=1\nisin=range(40, 49)\nid=any(9448a57b-f686-4935-b152-566baab712db, 43c8ec37-9a59-44eb-be90-def391ba2f02)\n\npage_no=1\npage_size=50\ntop_size=50\norder=name, id DESC\n```\n\n### Local Development Requirements\n\nTo use the SAM CLI, you need the following tools.\n\n* [SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-cli-install.html)\n* [Python 3](https://www.python.org/downloads/)\n* [Docker](https://hub.docker.com/search/?type=edition&offering=community)\n\n### Run server locally\n\n```bash\n# open ssh tunel\nsudo sh ssh_tunnel_Analog_JBox.sh\n# apply code changes to docker image\nsam-api$ sam build\n# start server locally on http://127.0.0.1:3000\nsam-api$ sam local start-api --warm-containers EAGER\n# or run function locally using event.json as parameter\nsam-api$ sam local invoke ApiFunction --event events/event.json\n```\n\n### Deploy to AWS\n\n```bash\nsam build --use-container\nsam deploy --guided --profile analog_user --region eu-west-1\n```\n\n### Build and deploy new package version using twine\n\n```bash\npython3 -m pip install --upgrade pip\npython3 -m pip install --upgrade build\npython3 -m pip install --upgrade twine\n```\n\n```bash\npython3 -m build\ntwine upload --skip-existing dist/*\n```\n\n### Resources\n\n* [SAM template.yml](https://github.com/aws/serverless-application-model/blob/master/docs/internals/generated_resources.rst)\n* [asyncpg driver](https://magicstack.github.io/asyncpg/current/)\n* [PyPika query builder](https://pypika.readthedocs.io/en/latest/)\n* [Pydantic](https://docs.pydantic.dev/)\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://bitbucket.org/braincube-common/core-aws.git",
+            "keywords": "python,amazon,aws,lambda,routing,dal,injection",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "braincube-aws-core-alpha",
+            "package_url": "https://pypi.org/project/braincube-aws-core-alpha/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/braincube-aws-core-alpha/",
+            "project_urls": {
+                "Homepage": "https://bitbucket.org/braincube-common/core-aws.git"
+            },
+            "release_url": "https://pypi.org/project/braincube-aws-core-alpha/0.0.22/",
+            "requires_dist": [
+                "asyncpg (==0.27.0)",
+                "pypika (==0.48.9)",
+                "pydantic (==1.10.7)"
+            ],
+            "requires_python": "<4,>=3.10",
+            "summary": "Microframework for python aws lambdas",
+            "version": "0.0.22",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18017848,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "00b32fe7e8b83b165b1810768e6696ec56ce57f15507ff0dc636cafaba8af674",
+                    "md5": "34cccdd892be88c63404b459dc456765",
+                    "sha256": "83d9f254e6dd3c018d14b932b4d9c4fadf9549c4d85f2174695a69e69b892ba2"
+                },
+                "downloads": -1,
+                "filename": "braincube_aws_core_alpha-0.0.22-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "34cccdd892be88c63404b459dc456765",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": "<4,>=3.10",
+                "size": 19068,
+                "upload_time": "2023-05-08T14:20:08",
+                "upload_time_iso_8601": "2023-05-08T14:20:08.778244Z",
+                "url": "https://files.pythonhosted.org/packages/00/b3/2fe7e8b83b165b1810768e6696ec56ce57f15507ff0dc636cafaba8af674/braincube_aws_core_alpha-0.0.22-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "95b43c43b0c1a72f198ba016c5eb91747f50e225170eaa8231107835fcdf1d28",
+                    "md5": "8723511f92fdaff164e9ede3033e1e2f",
+                    "sha256": "cf304e0fa8572a9c38a5ba3f1b3291cc88d7ca59c5a3ab7940c3a46556aa1eac"
+                },
+                "downloads": -1,
+                "filename": "braincube-aws-core-alpha-0.0.22.tar.gz",
+                "has_sig": false,
+                "md5_digest": "8723511f92fdaff164e9ede3033e1e2f",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": "<4,>=3.10",
+                "size": 16191,
+                "upload_time": "2023-05-08T14:20:11",
+                "upload_time_iso_8601": "2023-05-08T14:20:11.196072Z",
+                "url": "https://files.pythonhosted.org/packages/95/b4/3c43b0c1a72f198ba016c5eb91747f50e225170eaa8231107835fcdf1d28/braincube-aws-core-alpha-0.0.22.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
