@@ -48,7 +48,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16696999,
+        "last_serial": 18045369,
         "urls": [
             {
                 "comment_text": "",
@@ -207,7 +207,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16696999,
+        "last_serial": 18045369,
         "urls": [
             {
                 "comment_text": "",
@@ -387,7 +387,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16696999,
+        "last_serial": 18045369,
         "urls": [
             {
                 "comment_text": "",
@@ -537,7 +537,6 @@
                 "Programming Language :: Python :: Implementation :: CPython",
                 "Topic :: System :: Networking"
             ],
-            "description": "# Opinionated Python bindings for the `libyang` library\n\n[![Install via pip](https://img.shields.io/pypi/v/oopt-gnpy-libyang)](https://pypi.org/project/oopt-gnpy-libyang/)\n[![Python versions](https://img.shields.io/pypi/pyversions/oopt-gnpy-libyang)](https://pypi.org/project/oopt-gnpy-libyang/)\n[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/Telecominfraproject/oopt-gnpy-libyang/ci.yaml)](https://github.com/Telecominfraproject/oopt-gnpy-libyang/actions/workflows/ci.yaml)\n\nPython bindings and packaging of [`libyang`](https://github.com/CESNET/libyang).\nWe're focusing on parsing, validating and accessing YANG-modeled JSON data trees.\nEssentially, just enough to get [`gnpy`](https://github.com/Telecominfraproject/oopt-gnpy) going.\nWant more?\nPatches welcome.\n\nCompared to the [CFFI libyang bindings](https://github.com/CESNET/libyang-python), this wrapper takes care of low-level memory management.\nThis means no more `node.free()` and `ctx.destroy()`.\nWe also produce prebuilt binary [wheels](https://realpython.com/python-wheels/) to make installation very simple.\n\n## Usage\n\n### Loading YANG data\n\n```python\nimport oopt_gnpy_libyang as ly\n\nc = ly.Context('tests/yang', ly.ContextOptions.AllImplemented | ly.ContextOptions.NoYangLibrary)\nfor m in ('iana-if-type', 'ietf-interfaces', 'ietf-ip'):\n    c.load_module(m)\nblob = '''{\n  \"ietf-interfaces:interfaces\": {\n    \"interface\": [\n      {\n        \"name\": \"lo\",\n        \"type\": \"iana-if-type:softwareLoopback\",\n        \"ietf-ip:ipv4\": {\n          \"address\": [\n            {\n              \"ip\": \"127.0.0.1\",\n              \"prefix-length\": 8\n            }\n          ]\n        },\n        \"ietf-ip:ipv6\": {\n          \"address\": [\n            {\n              \"ip\": \"::1\",\n              \"prefix-length\": 128\n            }\n          ]\n        }\n      },\n      {\n        \"name\": \"eth0\",\n        \"type\": \"iana-if-type:ethernetCsmacd\"\n      }\n    ]\n  }\n}'''\n\ndata = c.parse_data_str(blob,\n    ly.DataFormat.JSON, ly.ParseOptions.Strict | ly.ParseOptions.Ordered,\n    ly.ValidationOptions.Present | ly.ValidationOptions.NoState)\n```\n### Working with data\n\nLibyang works with forests (sets of trees), this is how to process all the data:\n```python\nfor x in data.siblings():\n    print(f'a sibling: {x.path}')\n    for xx in x.childrenDfs():\n        print(f' {\"term \" if xx.is_term else \"child\"}: {xx.path}')\n        if xx.is_term:\n            print(f'  {xx.as_term()} {\" (default)\" if xx.as_term().is_default_value else \"\"}')\n```\nData can be accessed via their known paths, of course. Either as a full, multi-level XPath:\n\n```python\ndata[\"interface[name='lo']/ietf-ip:ipv6/address[ip='::1']/prefix-length\"].as_term().value == 128\n```\nOr individually, one item per index:\n```python\ndata[\"interface[name='lo']\"][\"ietf-ip:ipv6\"][\"address[ip='::1']\"][\"prefix-length\"].as_term().value\n```\nEverything is an XPath, so it's possible to take a shortcut and skip specifying keys for single-element lists:\n```python\ndata[\"interface[name='lo']\"][\"ietf-ip:ipv6\"][\"address\"][\"prefix-length\"].as_term().value == 128\n```\nThe data are provided as native Python types:\n```python\ntype(data[\"interface[name='lo']\"][\"ietf-ip:ipv6\"][\"address\"][\"prefix-length\"]\n    .as_term().value) == int\n```\n### Validation errors\nIn libyang, if an operation fails, error details are available via `context.errors()`:\n```python\nimport json\nwrong = json.loads(blob)\nwrong[\"ietf-interfaces:interfaces\"][\"interface\"][0]\\\n    [\"ietf-ip:ipv6\"][\"address\"][0][\"prefix-length\"] = 666\ntry:\n    data = c.parse_data_str(json.dumps(wrong),\n        ly.DataFormat.JSON, ly.ParseOptions.Strict | ly.ParseOptions.Ordered,\n        ly.ValidationOptions.Present | ly.ValidationOptions.NoState)\n    assert False\nexcept ly.Error:\n    for error in c.errors():\n        assert error.path == \"Schema location \\\"/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/address/prefix-length\\\", data location \\\"/ietf-ip:address[ip='::1']\\\", line number 1.\"\n        assert error.message == 'Value \"666\" is out of type uint8 min/max bounds.'\n```\n\n## Installing\n\nWe're producing wheels for many popular platforms.\nThe installation is as simple as:\n```console-session\n$ pip install oopt-gnpy-libyang\n```\n\n### Building from source\n\nSince this library is a Python wrapper around a C++ wrapper around a C library, source-based builds are more complex.\nThey require:\n\n- a C++20 compiler (e.g., GCC 10+, clang 10+, MSVC 17.2+)\n- [`libyang`](https://github.com/CESNET/libyang) and its dependencies\n- [`libyang-cpp`](https://github.com/CESNET/libyang-cpp/) and its dependencies\n- [CMake](https://cmake.org/) 3.21+\n\nUnlike the wheels already bundle all the required libraries, when building from source, `libyang`, `libyang-cpp` and all their dependencies will have to be installed first.\nAlso, in a from-source build these won't be bundled into the resulting package.\nFor an inspiration, consult our [GitHub packaging recipes](./.github/workflows/ci.yaml).\n\n## License\n\nCopyright \u00a9 2021-2022 Telecom Infra Project and GNPy contributors.\nLicensed under the [3-clause BSD license](LICENSE).\n",
             "description_content_type": "text/markdown; variant=GFM",
             "docs_url": null,
             "download_url": "https://pypi.org/project/oopt-gnpy-libyang/",
@@ -569,7 +568,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16696999,
+        "last_serial": 18045369,
         "urls": [
             {
                 "comment_text": "",
@@ -757,6 +756,251 @@
                 "upload_time": "2023-02-05T00:07:49",
                 "upload_time_iso_8601": "2023-02-05T00:07:49.922061Z",
                 "url": "https://files.pythonhosted.org/packages/ff/aa/4580009aa58a907d5cbf8bb8e07770c6d3f8d210650f38676c548b093d60/oopt-gnpy-libyang-0.0.5.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.6": {
+        "info": {
+            "author": "Telecom Infra Project",
+            "author_email": "jan.kundrat@telecominfraproject.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Intended Audience :: Developers",
+                "Intended Audience :: Science/Research",
+                "Intended Audience :: Telecommunications Industry",
+                "License :: OSI Approved :: BSD License",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Programming Language :: Python :: Implementation :: CPython",
+                "Topic :: System :: Networking"
+            ],
+            "description": "# Opinionated Python bindings for the `libyang` library\n\n[![Install via pip](https://img.shields.io/pypi/v/oopt-gnpy-libyang)](https://pypi.org/project/oopt-gnpy-libyang/)\n[![Python versions](https://img.shields.io/pypi/pyversions/oopt-gnpy-libyang)](https://pypi.org/project/oopt-gnpy-libyang/)\n[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/Telecominfraproject/oopt-gnpy-libyang/ci.yaml)](https://github.com/Telecominfraproject/oopt-gnpy-libyang/actions/workflows/ci.yaml)\n\nPython bindings and packaging of [`libyang`](https://github.com/CESNET/libyang).\nWe're focusing on parsing, validating and accessing YANG-modeled JSON data trees.\nEssentially, just enough to get [`gnpy`](https://github.com/Telecominfraproject/oopt-gnpy) going.\nWant more?\nPatches welcome.\n\nCompared to the [CFFI libyang bindings](https://github.com/CESNET/libyang-python), this wrapper takes care of low-level memory management.\nThis means no more `node.free()` and `ctx.destroy()`.\nWe also produce prebuilt binary [wheels](https://realpython.com/python-wheels/) to make installation very simple.\n\n## Usage\n\n### Loading YANG data\n\n```python\nimport oopt_gnpy_libyang as ly\n\nc = ly.Context('tests/yang', ly.ContextOptions.AllImplemented | ly.ContextOptions.NoYangLibrary)\nfor m in ('iana-if-type', 'ietf-interfaces', 'ietf-ip'):\n    c.load_module(m)\nblob = '''{\n  \"ietf-interfaces:interfaces\": {\n    \"interface\": [\n      {\n        \"name\": \"lo\",\n        \"type\": \"iana-if-type:softwareLoopback\",\n        \"ietf-ip:ipv4\": {\n          \"address\": [\n            {\n              \"ip\": \"127.0.0.1\",\n              \"prefix-length\": 8\n            }\n          ]\n        },\n        \"ietf-ip:ipv6\": {\n          \"address\": [\n            {\n              \"ip\": \"::1\",\n              \"prefix-length\": 128\n            }\n          ]\n        }\n      },\n      {\n        \"name\": \"eth0\",\n        \"type\": \"iana-if-type:ethernetCsmacd\"\n      }\n    ]\n  }\n}'''\n\ndata = c.parse_data_str(blob,\n    ly.DataFormat.JSON, ly.ParseOptions.Strict | ly.ParseOptions.Ordered,\n    ly.ValidationOptions.Present | ly.ValidationOptions.NoState)\n```\n### Working with data\n\nLibyang works with forests (sets of trees), this is how to process all the data:\n```python\nfor x in data.siblings():\n    print(f'a sibling: {x.path}')\n    for xx in x.childrenDfs():\n        print(f' {\"term \" if xx.is_term else \"child\"}: {xx.path}')\n        if xx.is_term:\n            print(f'  {xx.as_term()} {\" (default)\" if xx.as_term().is_default_value else \"\"}')\n```\nData can be accessed via their known paths, of course. Either as a full, multi-level XPath:\n\n```python\ndata[\"interface[name='lo']/ietf-ip:ipv6/address[ip='::1']/prefix-length\"].as_term().value == 128\n```\nOr individually, one item per index:\n```python\ndata[\"interface[name='lo']\"][\"ietf-ip:ipv6\"][\"address[ip='::1']\"][\"prefix-length\"].as_term().value\n```\nEverything is an XPath, so it's possible to take a shortcut and skip specifying keys for single-element lists:\n```python\ndata[\"interface[name='lo']\"][\"ietf-ip:ipv6\"][\"address\"][\"prefix-length\"].as_term().value == 128\n```\nThe data are provided as native Python types:\n```python\ntype(data[\"interface[name='lo']\"][\"ietf-ip:ipv6\"][\"address\"][\"prefix-length\"]\n    .as_term().value) == int\n```\n### Validation errors\nIn libyang, if an operation fails, error details are available via `context.errors()`:\n```python\nimport json\nwrong = json.loads(blob)\nwrong[\"ietf-interfaces:interfaces\"][\"interface\"][0]\\\n    [\"ietf-ip:ipv6\"][\"address\"][0][\"prefix-length\"] = 666\ntry:\n    data = c.parse_data_str(json.dumps(wrong),\n        ly.DataFormat.JSON, ly.ParseOptions.Strict | ly.ParseOptions.Ordered,\n        ly.ValidationOptions.Present | ly.ValidationOptions.NoState)\n    assert False\nexcept ly.Error:\n    for error in c.errors():\n        assert error.path == \"Schema location \\\"/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/address/prefix-length\\\", data location \\\"/ietf-ip:address[ip='::1']\\\", line number 1.\"\n        assert error.message == 'Value \"666\" is out of type uint8 min/max bounds.'\n```\n\n## Installing\n\nWe're producing wheels for many popular platforms.\nThe installation is as simple as:\n```console-session\n$ pip install oopt-gnpy-libyang\n```\n\n### Building from source\n\nSince this library is a Python wrapper around a C++ wrapper around a C library, source-based builds are more complex.\nThey require:\n\n- a C++20 compiler (e.g., GCC 10+, clang 10+, MSVC 17.2+)\n- [`libyang`](https://github.com/CESNET/libyang) and its dependencies\n- [`libyang-cpp`](https://github.com/CESNET/libyang-cpp/) and its dependencies\n- [CMake](https://cmake.org/) 3.21+\n\nUnlike the wheels already bundle all the required libraries, when building from source, `libyang`, `libyang-cpp` and all their dependencies will have to be installed first.\nAlso, in a from-source build these won't be bundled into the resulting package.\nFor an inspiration, consult our [GitHub packaging recipes](./.github/workflows/ci.yaml).\n\n## License\n\nCopyright \u00a9 2021-2023 Telecom Infra Project and GNPy contributors.\nLicensed under the [3-clause BSD license](LICENSE).\n",
+            "description_content_type": "text/markdown; variant=GFM",
+            "docs_url": null,
+            "download_url": "https://pypi.org/project/oopt-gnpy-libyang/",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/Telecominfraproject/oopt-gnpy-libyang",
+            "keywords": "",
+            "license": "BSD-3-Clause",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "oopt-gnpy-libyang",
+            "package_url": "https://pypi.org/project/oopt-gnpy-libyang/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/oopt-gnpy-libyang/",
+            "project_urls": {
+                "Download": "https://pypi.org/project/oopt-gnpy-libyang/",
+                "Homepage": "https://github.com/Telecominfraproject/oopt-gnpy-libyang"
+            },
+            "release_url": "https://pypi.org/project/oopt-gnpy-libyang/0.0.6/",
+            "requires_dist": [
+                "pytest (>=6.0) ; extra == 'test'"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "Opinionated Python bindings for the libyang library",
+            "version": "0.0.6",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18045369,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "7be101bb7c77df87527d4c676232c465785c7a21e85733d1e5405828a1043d93",
+                    "md5": "6435528e1a0f3b0b6469b962d8372547",
+                    "sha256": "3932241b84976c6db8d617e73391d4e9fa7e0fe32c7896f954e91e555e60cede"
+                },
+                "downloads": -1,
+                "filename": "oopt_gnpy_libyang-0.0.6-cp310-cp310-macosx_12_0_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "6435528e1a0f3b0b6469b962d8372547",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.8",
+                "size": 1978458,
+                "upload_time": "2023-05-10T10:05:42",
+                "upload_time_iso_8601": "2023-05-10T10:05:42.030500Z",
+                "url": "https://files.pythonhosted.org/packages/7b/e1/01bb7c77df87527d4c676232c465785c7a21e85733d1e5405828a1043d93/oopt_gnpy_libyang-0.0.6-cp310-cp310-macosx_12_0_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "9b551b24da83fef971f720f278b6d3b5feb5c98d537f8904dc41c1dbcd06f3c2",
+                    "md5": "e468e5bab2025cd22e24e492cf93c4fc",
+                    "sha256": "c3fd450243b44f576a64fbb7ddb2b03e8f251d5ab5e859dbbb8394d9d424b9af"
+                },
+                "downloads": -1,
+                "filename": "oopt_gnpy_libyang-0.0.6-cp310-cp310-manylinux_2_31_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "e468e5bab2025cd22e24e492cf93c4fc",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.8",
+                "size": 1018584,
+                "upload_time": "2023-05-10T10:05:43",
+                "upload_time_iso_8601": "2023-05-10T10:05:43.733555Z",
+                "url": "https://files.pythonhosted.org/packages/9b/55/1b24da83fef971f720f278b6d3b5feb5c98d537f8904dc41c1dbcd06f3c2/oopt_gnpy_libyang-0.0.6-cp310-cp310-manylinux_2_31_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "18f9423a3a169d93fe052c3ac5d3f91541707814b395a3e1a6e4b6f0fcb4772a",
+                    "md5": "f00852c68c5b3cd5703aa0774b52e87c",
+                    "sha256": "b30c6b8a1a115a6c26fa31354da64cca774964a3b476a205d62209dfd45dc1b8"
+                },
+                "downloads": -1,
+                "filename": "oopt_gnpy_libyang-0.0.6-cp310-cp310-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "f00852c68c5b3cd5703aa0774b52e87c",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.8",
+                "size": 1275474,
+                "upload_time": "2023-05-10T10:05:45",
+                "upload_time_iso_8601": "2023-05-10T10:05:45.974889Z",
+                "url": "https://files.pythonhosted.org/packages/18/f9/423a3a169d93fe052c3ac5d3f91541707814b395a3e1a6e4b6f0fcb4772a/oopt_gnpy_libyang-0.0.6-cp310-cp310-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "39f2fb2886ac1d9d036b6366d788007f13213a9c4696851ddbffd05cd377e626",
+                    "md5": "056d92c651d6cf432031f07603563a07",
+                    "sha256": "b82c5cb3646ce936a499eabef12efb71a9c30e93eb49895acd5b2dfc6f8aa33c"
+                },
+                "downloads": -1,
+                "filename": "oopt_gnpy_libyang-0.0.6-cp311-cp311-macosx_12_0_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "056d92c651d6cf432031f07603563a07",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.8",
+                "size": 1978440,
+                "upload_time": "2023-05-10T10:05:47",
+                "upload_time_iso_8601": "2023-05-10T10:05:47.989092Z",
+                "url": "https://files.pythonhosted.org/packages/39/f2/fb2886ac1d9d036b6366d788007f13213a9c4696851ddbffd05cd377e626/oopt_gnpy_libyang-0.0.6-cp311-cp311-macosx_12_0_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c8aad9b10ce32bb725eeff9c388988b882fc9b0ad6237dae715a3612422f76d8",
+                    "md5": "9551327e1ad6db413f20e09b00f214dd",
+                    "sha256": "5935117a1fc8e48e5adaafc46a990a3c93c461a352e8004dcb3818b7d082b6cb"
+                },
+                "downloads": -1,
+                "filename": "oopt_gnpy_libyang-0.0.6-cp311-cp311-manylinux_2_35_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "9551327e1ad6db413f20e09b00f214dd",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.8",
+                "size": 1024937,
+                "upload_time": "2023-05-10T10:05:50",
+                "upload_time_iso_8601": "2023-05-10T10:05:50.211275Z",
+                "url": "https://files.pythonhosted.org/packages/c8/aa/d9b10ce32bb725eeff9c388988b882fc9b0ad6237dae715a3612422f76d8/oopt_gnpy_libyang-0.0.6-cp311-cp311-manylinux_2_35_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "586f84fa30593360eac68c36622c9275ea3339d2a539ebba3874dc568b0d8108",
+                    "md5": "563db22fb5afcd7963a3336c8eead170",
+                    "sha256": "32395242dc8b5faa90bbfffe952107c8c6f915be1e395716428dd2bb7b5b45ba"
+                },
+                "downloads": -1,
+                "filename": "oopt_gnpy_libyang-0.0.6-cp311-cp311-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "563db22fb5afcd7963a3336c8eead170",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.8",
+                "size": 1275535,
+                "upload_time": "2023-05-10T10:05:52",
+                "upload_time_iso_8601": "2023-05-10T10:05:52.246333Z",
+                "url": "https://files.pythonhosted.org/packages/58/6f/84fa30593360eac68c36622c9275ea3339d2a539ebba3874dc568b0d8108/oopt_gnpy_libyang-0.0.6-cp311-cp311-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ce55e5324a802f8f9cc1bc4ecdc0445caec4ee47b5472fbbb2294c3879747953",
+                    "md5": "e1b282a510fa924af3a4ee16269a4b09",
+                    "sha256": "369213a74ac8886e11a1741222b621758a68bc2a46999e023cd5fd979b6c915f"
+                },
+                "downloads": -1,
+                "filename": "oopt_gnpy_libyang-0.0.6-cp38-cp38-manylinux_2_31_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "e1b282a510fa924af3a4ee16269a4b09",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.8",
+                "size": 1018123,
+                "upload_time": "2023-05-10T10:05:54",
+                "upload_time_iso_8601": "2023-05-10T10:05:54.494531Z",
+                "url": "https://files.pythonhosted.org/packages/ce/55/e5324a802f8f9cc1bc4ecdc0445caec4ee47b5472fbbb2294c3879747953/oopt_gnpy_libyang-0.0.6-cp38-cp38-manylinux_2_31_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "bb36a893598d8feaef262b701b229174ca9642d9ffb30e1864310fc6b2123c7b",
+                    "md5": "b57dd6cb56fdc84284affc122e0cc7bb",
+                    "sha256": "16ab83d2ba175aaaa35c7856ca825b8da0c63c8d7e3aa3b5c42165630d7960ed"
+                },
+                "downloads": -1,
+                "filename": "oopt_gnpy_libyang-0.0.6-cp39-cp39-manylinux_2_31_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "b57dd6cb56fdc84284affc122e0cc7bb",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.8",
+                "size": 1017883,
+                "upload_time": "2023-05-10T10:05:57",
+                "upload_time_iso_8601": "2023-05-10T10:05:57.077337Z",
+                "url": "https://files.pythonhosted.org/packages/bb/36/a893598d8feaef262b701b229174ca9642d9ffb30e1864310fc6b2123c7b/oopt_gnpy_libyang-0.0.6-cp39-cp39-manylinux_2_31_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "598bf47ced8afd4bc947f44316fa005b5d08157a2f2e633cc84b5795ecaf3d2b",
+                    "md5": "e770db0d3d2551bdcc2acadcef509a3d",
+                    "sha256": "fe1906ac4f8dc4378e2d16a4f7867d07dca44d89e588b4a171bb6cb7f909c32a"
+                },
+                "downloads": -1,
+                "filename": "oopt-gnpy-libyang-0.0.6.tar.gz",
+                "has_sig": false,
+                "md5_digest": "e770db0d3d2551bdcc2acadcef509a3d",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 41463,
+                "upload_time": "2023-05-10T10:05:58",
+                "upload_time_iso_8601": "2023-05-10T10:05:58.494883Z",
+                "url": "https://files.pythonhosted.org/packages/59/8b/f47ced8afd4bc947f44316fa005b5d08157a2f2e633cc84b5795ecaf3d2b/oopt-gnpy-libyang-0.0.6.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
