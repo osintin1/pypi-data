@@ -1,0 +1,119 @@
+{
+    "0.1.0": {
+        "info": {
+            "author": "MosaicML",
+            "author_email": "team@mosaicml.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "\n\n# LLM Foundry\n\nThis repository contains code for training, finetuning, evaluating, and deploying LLMs for inference with Composer and the [MosaicML platform](https://forms.mosaicml.com/demo?utm_source=github.com&utm_medium=referral&utm_campaign=llm-foundry). Designed to be easy-to-use, efficient _and_ flexible, this codebase is designed to enable rapid experimentation with the latest techniques.\n\nYou'll find in this repo:\n* `llmfoundry/` - source code for models, datasets, callbacks, utilities, etc.\n* `scripts/` - scripts to run LLM workloads\n  * `data_prep/` - convert text data from original sources to StreamingDataset format\n  * `train/` - train or finetune HuggingFace and MPT models from 125M - 70B parameters\n    * `train/benchmarking` - profile training throughput and MFU\n  * `inference/` - convert models to HuggingFace or ONNX format, and generate responses\n    * `inference/benchmarking` - profile inference latency and throughput\n  * `eval/` - evaluate LLMs on academic (or custom) in-context-learning tasks\n* `mcli/` - launch any of these workloads using [MCLI](https://docs.mosaicml.com/projects/mcli/en/latest/) and the [MosaicML platform](https://www.mosaicml.com/platform)\n\n# MPT\n\nMPT-7B is a GPT-style model, and the first in the MosaicML Foundation Series of models. Trained on 1T tokens of a MosaicML-curated dataset, MPT-7B is open-source, commercially usable, and equivalent to LLaMa 7B on evaluation metrics. The MPT architecture contains all the latest techniques on LLM modeling -- Flash Attention for efficiency, Alibi for context length extrapolation, and stability improvements to mitigate loss spikes. The base model and several variants, including a 64K context length fine-tuned model (!!) are all available:\n\n\n| Model              | Context Length | Download                                           | Demo                                                           | Commercial use? |\n|--------------------|----------------|----------------------------------------------------|----------------------------------------------------------------|-----------------|\n| MPT-7B             | 2048           | https://huggingface.co/mosaicml/mpt-7b             |                                                                | Yes             |\n| MPT-7B-Instruct    | 2048           | https://huggingface.co/mosaicml/mpt-7b-instruct    | [Demo](https://huggingface.co/spaces/mosaicml/mpt-7b-instruct) | Yes             |\n| MPT-7B-Chat        | 2048           | https://huggingface.co/mosaicml/mpt-7b-chat        | [Demo](https://huggingface.co/spaces/mosaicml/mpt-7b-chat)     | No              |\n| MPT-7B-StoryWriter | 65536          | https://huggingface.co/mosaicml/mpt-7b-storywriter |                                                                | Yes             |\n\nTo try out these models locally, [follow the instructions](https://github.com/mosaicml/llm-foundry/tree/main/scripts/inference#interactive-generation-with-modelgenerate) in `scripts/inference/README.md` to prompt HF models using our [hf_generate.py](https://github.com/mosaicml/llm-foundry/blob/main/scripts/inference/hf_generate.py) or [hf_chat.py](https://github.com/mosaicml/llm-foundry/blob/main/scripts/inference/hf_chat.py) scripts.\n\n# Latest News\n* [Blog: Introducing MPT-7B](https://www.mosaicml.com/blog/mpt-7b)\n* [Blog: Benchmarking LLMs on H100](https://www.mosaicml.com/blog/coreweave-nvidia-h100-part-1)\n* [Blog: Blazingly Fast LLM Evaluation](https://www.mosaicml.com/blog/llm-evaluation-for-icl)\n* [Blog: GPT3 Quality for $500k](https://www.mosaicml.com/blog/gpt-3-quality-for-500k)\n* [Blog: Billion parameter GPT training made easy](https://www.mosaicml.com/blog/billion-parameter-gpt-training-made-easy)\n\n\n\n# Prerequisites\nHere's what you need to get started with our LLM stack:\n* Use a Docker image with PyTorch 1.13+, e.g. [MosaicML's PyTorch base image](https://hub.docker.com/r/mosaicml/pytorch/tags)\n   * Recommended tag: `mosaicml/pytorch:1.13.1_cu117-python3.10-ubuntu20.04`\n   * This image comes pre-configured with the following dependencies:\n      * PyTorch Version: 1.13.1\n      * CUDA Version: 11.7\n      * Python Version: 3.10\n      * Ubuntu Version: 20.04\n      * FlashAttention kernels from [HazyResearch](https://github.com/HazyResearch/flash-attention)\n* Use a system with NVIDIA GPUs\n\n# Installation\n\nTo get started, clone this repo and install the requirements:\n\n<!--pytest.mark.skip-->\n```bash\ngit clone https://github.com/mosaicml/llm-foundry.git\ncd llm-foundry\n\n# Optional: we highly recommend creating and using a virtual environment\npython -m venv llmfoundry-venv\nsource llmfoundry-venv/bin/activate\n\npip install -e \".[gpu]\"  # or pip install -e . if no NVIDIA GPU\n```\n\n\n# Quickstart\n\nHere is an end-to-end workflow for preparing a subset of the C4 dataset, training an MPT-125M model for 10 batches,\nconverting the model to HuggingFace format, evaluating the model on the Winograd challenge, and generating responses to prompts.\n\nIf you have a write-enabled [HuggingFace auth token](https://huggingface.co/docs/hub/security-tokens), you can optionally upload your model to the Hub! Just export your token like this:\n```bash\nexport HUGGING_FACE_HUB_TOKEN=your-auth-token\n```\nand uncomment the line containing `--hf_repo_for_upload ...`.\n\n**(Remember this is a quickstart just to demonstrate the tools -- To get good quality, the LLM must be trained for longer than 10 batches \ud83d\ude04)**\n\n<!--pytest.mark.skip-->\n```bash\ncd scripts\n\n# Convert C4 dataset to StreamingDataset format\npython data_prep/convert_dataset_hf.py \\\n  --dataset c4 --data_subset en \\\n  --out_root my-copy-c4 --splits train_small val_small \\\n  --concat_tokens 2048 --tokenizer EleutherAI/gpt-neox-20b --eos_text '<|endoftext|>'\n\n# Train an MPT-125m model for 10 batches\ncomposer train/train.py \\\n  train/yamls/mpt/125m.yaml \\\n  data_local=my-copy-c4 \\\n  train_loader.dataset.split=train_small \\\n  eval_loader.dataset.split=val_small \\\n  max_duration=10ba \\\n  eval_interval=0 \\\n  save_folder=mpt-125m\n\n# Convert the model to HuggingFace format\npython inference/convert_composer_to_hf.py \\\n  --composer_path mpt-125m/ep0-ba10-rank0.pt \\\n  --hf_output_path mpt-125m-hf \\\n  --output_precision bf16 \\\n  # --hf_repo_for_upload user-org/repo-name\n\n# Evaluate the model on Winograd\npython eval/eval.py \\\n  eval/yamls/hf_eval.yaml \\\n  icl_tasks=eval/yamls/winograd.yaml \\\n  model_name_or_path=mpt-125m-hf\n\n# Generate responses to prompts\npython inference/hf_generate.py \\\n  --name_or_path mpt-125m-hf \\\n  --max_new_tokens 256 \\\n  --prompts \\\n    \"The answer to life, the universe, and happiness is\" \\\n    \"Here's a quick recipe for baking chocolate chip cookies: Start by\"\n```\n\n# Contact Us\nIf you run into any problems with the code, please file Github issues directly to this repo.\n\nIf you want to train LLMs on the MosaicML platform, reach out to us at [demo@mosaicml.com](mailto:demo@mosaicml.com)!\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/mosaicml/llm-foundry/",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "llm-foundry",
+            "package_url": "https://pypi.org/project/llm-foundry/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/llm-foundry/",
+            "project_urls": {
+                "Homepage": "https://github.com/mosaicml/llm-foundry/"
+            },
+            "release_url": "https://pypi.org/project/llm-foundry/0.1.0/",
+            "requires_dist": [
+                "mosaicml[nlp,streaming,wandb] (<0.15,>=0.14.1)",
+                "torch (==1.13.1)",
+                "datasets (==2.10.1)",
+                "sentencepiece (==0.1.97)",
+                "einops (==0.5.0)",
+                "omegaconf (<3,>=2.2.3)",
+                "pynvml (<12)",
+                "slack-sdk (<4)",
+                "mosaicml-cli (<1,>=0.3)",
+                "onnx (==1.13.1)",
+                "onnxruntime (==1.14.1)",
+                "triton (==2.0.0.dev20221202) ; extra == 'all'",
+                "pytest-cov (<5,>=4) ; extra == 'all'",
+                "pre-commit (<3,>=2.18.1) ; extra == 'all'",
+                "pytest (<8,>=7.2.1) ; extra == 'all'",
+                "pytest-codeblocks (<0.17,>=0.16.1) ; extra == 'all'",
+                "flash-attn (==v1.0.3.post0) ; extra == 'all'",
+                "toml (<0.11,>=0.10.2) ; extra == 'all'",
+                "pyright (==1.1.296) ; extra == 'all'",
+                "packaging (<23,>=21) ; extra == 'all'",
+                "pre-commit (<3,>=2.18.1) ; extra == 'dev'",
+                "pytest (<8,>=7.2.1) ; extra == 'dev'",
+                "pytest-codeblocks (<0.17,>=0.16.1) ; extra == 'dev'",
+                "pytest-cov (<5,>=4) ; extra == 'dev'",
+                "pyright (==1.1.296) ; extra == 'dev'",
+                "toml (<0.11,>=0.10.2) ; extra == 'dev'",
+                "packaging (<23,>=21) ; extra == 'dev'",
+                "flash-attn (==v1.0.3.post0) ; extra == 'gpu'",
+                "triton (==2.0.0.dev20221202) ; extra == 'gpu'"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "LLM Foundry",
+            "version": "0.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18052387,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d732b1afffb2d76c0be72fcda3184050bc4ebc32695a645ef95bdb35103007ad",
+                    "md5": "71ba2ea5f9f12cf5eaf7af00d5b82faf",
+                    "sha256": "c94955cbdb02dc3df25d862a35fd07f12fc7be8107a30d9ee87c88e43a1ef787"
+                },
+                "downloads": -1,
+                "filename": "llm_foundry-0.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "71ba2ea5f9f12cf5eaf7af00d5b82faf",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 106006,
+                "upload_time": "2023-05-10T20:23:48",
+                "upload_time_iso_8601": "2023-05-10T20:23:48.959920Z",
+                "url": "https://files.pythonhosted.org/packages/d7/32/b1afffb2d76c0be72fcda3184050bc4ebc32695a645ef95bdb35103007ad/llm_foundry-0.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3aae57c3346bd35154ba2f506fc13cb07b38cefc4f5511cb34705c1c34c568f1",
+                    "md5": "7d80b32343332a691e58e8de61739351",
+                    "sha256": "7ff9e195d7a8a4d609a87272dda48eca1a952397240808b26cc3f8f7a8dba090"
+                },
+                "downloads": -1,
+                "filename": "llm-foundry-0.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "7d80b32343332a691e58e8de61739351",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 106333,
+                "upload_time": "2023-05-10T20:23:52",
+                "upload_time_iso_8601": "2023-05-10T20:23:52.386126Z",
+                "url": "https://files.pythonhosted.org/packages/3a/ae/57c3346bd35154ba2f506fc13cb07b38cefc4f5511cb34705c1c34c568f1/llm-foundry-0.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
