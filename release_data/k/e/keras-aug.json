@@ -1,0 +1,88 @@
+{
+    "0.5.0": {
+        "info": {
+            "author": "Hongyu, Chiu (james77777778)",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Intended Audience :: Science/Research",
+                "Operating System :: MacOS",
+                "Operating System :: Microsoft :: Windows",
+                "Operating System :: Unix",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3.8",
+                "Topic :: Scientific/Engineering",
+                "Topic :: Software Development"
+            ],
+            "description": "<!-- markdownlint-disable MD033 -->\n# KerasAug\n\n![Python](https://img.shields.io/badge/python-v3.8.0+-success.svg)\n![Tensorflow](https://img.shields.io/badge/tensorflow-v2.12.0+-success.svg)\n![Tensorflow Probability](https://img.shields.io/badge/tensorflow_probability-v0.20.0+-success.svg)\n![KerasCV](https://img.shields.io/badge/keras_cv-v0.5.0+-success.svg)\n[![Tests Status](https://github.com/james77777778/keras-aug/actions/workflows/actions.yml/badge.svg?branch=main)](https://github.com/james77777778/keras-aug/actions?query=branch%3Amain)\n[![codecov](https://codecov.io/gh/james77777778/keras-aug/branch/main/graph/badge.svg?token=81ELI3VH7H)](https://codecov.io/gh/james77777778/keras-aug)\n[![Contributions Welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/james77777778/keras-aug/issues)\n\n## Description\n\nKerasAug is a library that includes pure TF/Keras preprocessing and augmentation layers, providing support for various data types such as images, bounding boxes, segmentation masks, and more.\n\n<div align=\"center\"><img style=\"width: 440px; max-width: 90%;\" src=\"https://user-images.githubusercontent.com/20734616/237416247-417f2870-1e0d-45d6-abda-e384a82118df.gif\"></div>\n\nKerasAug aims to provide fast and user-friendly preprocessing and augmentation layers, facilitating seamless integration with TensorFlow, Keras, and KerasCV.\n\nKerasAug is:\n\n- built entirely using TensorFlow, TensorFlow Probability, Keras and KerasCV\n- supporting various data types, including images, labels, bounding boxes, segmentation masks, and more.\n- compatible with GPU (partially compatible with TPU/XLA)\n- seamlessly integrating with the `tf.data` and `tf.keras.Model` API\n- cosistent with officially published implementations\n\n## Installation\n\nKerasAug is compatible with the latest version of KerasCV, but is NOT compatible with `keras-cv < 0.5.0`.\n\n```bash\npip install \"keras-cv>=0.5.0\" tensorflow tensorflow_probability --upgrade\n```\n\n## Quickstart\n\n```python\nimport keras_aug\nimport keras_cv\nimport tensorflow as tf\nimport tensorflow_datasets as tfds\nfrom tensorflow import keras\n\n# Create a preprocessing pipeline with KerasAug\nBATCH_SIZE = 16\nNUM_CLASSES = 3\naugmenter = keras.Sequential(\n    [\n        keras_aug.layers.RandomFlip(),\n        keras_aug.layers.RandAugment(\n            value_range=(0, 255),\n            augmentations_per_image=3,\n            magnitude=15,  # [0, 30]\n            magnitude_stddev=0.15,\n        ),\n        keras_aug.layers.CutMix(),\n    ]\n)\n\n\ndef preprocess_data(images, labels, augment=False):\n    labels = tf.one_hot(labels, NUM_CLASSES)\n    inputs = {\"images\": images, \"labels\": labels}\n    outputs = augmenter(inputs) if augment else inputs\n    return outputs[\"images\"], outputs[\"labels\"]\n\n\ntrain_dataset, test_dataset = tfds.load(\n    \"rock_paper_scissors\", as_supervised=True, split=[\"train\", \"test\"]\n)\ntrain_dataset = (\n    train_dataset.batch(BATCH_SIZE)\n    .map(\n        lambda x, y: preprocess_data(x, y, augment=True),\n        num_parallel_calls=tf.data.AUTOTUNE,\n    )\n    .prefetch(tf.data.AUTOTUNE)\n)\ntest_dataset = (\n    test_dataset.batch(BATCH_SIZE)\n    .map(preprocess_data, num_parallel_calls=tf.data.AUTOTUNE)\n    .prefetch(tf.data.AUTOTUNE)\n)\n\n# Create a model using a pretrained backbone\nbackbone = keras_cv.models.EfficientNetV2Backbone.from_preset(\n    \"efficientnetv2_b0_imagenet\"\n)\nmodel = keras_cv.models.ImageClassifier(\n    backbone=backbone,\n    num_classes=NUM_CLASSES,\n    activation=\"softmax\",\n)\nmodel.compile(\n    loss=\"categorical_crossentropy\",\n    optimizer=keras.optimizers.Adam(learning_rate=1e-5),\n    metrics=[\"accuracy\"],\n)\n\n# Train your model\nmodel.fit(\n    train_dataset,\n    validation_data=test_dataset,\n    epochs=8,\n)\n```\n\n<details>\n<summary>trainging log</summary>\n\n```bash\n# KerasCV Quickstart\n...\nEpoch 8/8\n158/158 [==============================] - 39s 242ms/step - loss: 0.7930 - accuracy: 0.7171 - val_loss: 0.2488 - val_accuracy: 0.9946\n\n# KerasAug Quickstart\n...\nEpoch 8/8\n158/158 [==============================] - 34s 215ms/step - loss: 0.7680 - accuracy: 0.7567 - val_loss: 0.2639 - val_accuracy: 1.0000\n```\n\n</details>\n\nKerasAug runs faster (215ms/step vs. 242ms/step) than KerasCV and achieves better performance.\n\n## Benchmark\n\nPlease refer to [benchmarks/README.md](benchmarks/README.md) for more details.\n\nKerasAug is generally faster than KerasCV.\n\nUnit: FPS (frames per second)\n\n| Type           | Layer                   | KerasAug | KerasCV   |\n|----------------|-------------------------|----------|-----------|\n| Geometry       | RandomHFlip             | 2325     | 1769      |\n|                | RandomVFlip             | 2012     | 1923      |\n|                | RandomRotate            | 1896     | 1782      |\n|                | RandomAffine            | 1901     | 818       |\n|                | RandomCropAndResize     | 2480     | 210       |\n|                | Resize (224, 224)       | 2550     | 213       |\n| Intensity      | RandomBrightness        | 3054     | 2925      |\n|                | RandomContrast          | 2941     | 3086      |\n|                | RandomBrighnessContrast | 3009     | 629       |\n|                | RandomColorJitter       | 2201     | 1120      |\n|                | RandomGaussianBlur      | 2632     | 196       |\n|                | Invert                  | 2933     | X         |\n|                | Grayscale               | 3072     | 2762      |\n|                | Equalize                | 204      | 140       |\n|                | AutoContrast            | 2873     | 2744      |\n|                | Posterize               | 3081     | 2929      |\n|                | Solarize                | 2828     | 2560      |\n|                | Sharpness               | 2554     | 2560      |\n| Regularization | RandomCutout            | 2995     | 2978      |\n|                | RandomGridMask          | 904      | 202       |\n| Mix            | CutMix                  | 2352     | 2780      |\n|                | MixUp                   | 2596     | 2962      |\n| Auto           | AugMix                  | 80       | X (Error) |\n|                | RandAugment             | 283      | 253       |\n\n## Citing KerasAug\n\nKerasAug is an extension of KerasCV and it would be preferable to acknowledge and cite both libraries jointly.\n\n```bibtex\n@misc{wood2022kerascv,\n  title={KerasCV},\n  author={Wood, Luke and Tan, Zhenyu and Stenbit, Ian and Bischof, Jonathan and Zhu, Scott and Chollet, Fran\\c{c}ois and others},\n  year={2022},\n  howpublished={\\url{https://github.com/keras-team/keras-cv}},\n}\n```\n\n```bibtex\n@misc{chiu2023kerasaug,\n  title={KeraAug},\n  author={Hongyu, Chiu},\n  year={2023},\n  howpublished={\\url{https://github.com/james77777778/keras-aug}},\n}\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/james77777778/keras-aug",
+            "keywords": "",
+            "license": "Apache License 2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "keras-aug",
+            "package_url": "https://pypi.org/project/keras-aug/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/keras-aug/",
+            "project_urls": {
+                "Homepage": "https://github.com/james77777778/keras-aug"
+            },
+            "release_url": "https://pypi.org/project/keras-aug/0.5.0/",
+            "requires_dist": [
+                "packaging",
+                "absl-py",
+                "regex",
+                "tensorflow-datasets",
+                "tensorflow-datasets ; extra == 'examples'",
+                "matplotlib ; extra == 'examples'",
+                "flake8 ; extra == 'tests'",
+                "isort ; extra == 'tests'",
+                "black[jupyter] ; extra == 'tests'",
+                "pytest ; extra == 'tests'",
+                "pytest-cov ; extra == 'tests'",
+                "pycocotools ; extra == 'tests'",
+                "tensorflow ; extra == 'tests'",
+                "tensorflow-probability ; extra == 'tests'",
+                "keras-cv ; extra == 'tests'"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "Industry-strength augmentation and preprocessing library for TensorFlow, Keras and KerasCV.",
+            "version": "0.5.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18076053,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "24e665a8ad9eb157ab0fd174e8f2cc44b1b578a85caf57d8c51baf30290ea895",
+                    "md5": "93892e4fa42a3eecdfffff8ec79bf028",
+                    "sha256": "2324ca55c5869ec416c4370899419297abf9c27e68edc098c122be781b81090e"
+                },
+                "downloads": -1,
+                "filename": "keras_aug-0.5.0-3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "93892e4fa42a3eecdfffff8ec79bf028",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 177885,
+                "upload_time": "2023-05-12T09:36:43",
+                "upload_time_iso_8601": "2023-05-12T09:36:43.588787Z",
+                "url": "https://files.pythonhosted.org/packages/24/e6/65a8ad9eb157ab0fd174e8f2cc44b1b578a85caf57d8c51baf30290ea895/keras_aug-0.5.0-3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
