@@ -44,7 +44,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17932920,
+        "last_serial": 18070725,
         "urls": [
             {
                 "comment_text": "",
@@ -116,7 +116,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17932920,
+        "last_serial": 18070725,
         "urls": [
             {
                 "comment_text": "",
@@ -272,7 +272,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17932920,
+        "last_serial": 18070725,
         "urls": [
             {
                 "comment_text": "",
@@ -396,7 +396,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "# PY To Proto\n\nThis library holds utilities for converting in-memory data schema representations to [Protobuf](https://developers.google.com/protocol-buffers). The intent is to allow python libraries to leverage the power of `protobuf` while maintaining the source-of-truth for their data in pure python and avoiding static build steps.\n\n## Why?\n\nThe `protobuf` langauge is a powerful tool for defining language-agnostic, composable datastructures. `Protobuf` also offers cross-language compatibility so that a given set of definitions can be compiled into numerous target programming languages. The downside is that `protobuf` requires_a static built step to perform this `proto` -> `X` conversion step. Alternately, there are multiple ways of representing data schemas in pure python which allow a python library to interact with well-typed data objects. The downside here is that these structures can not easily be used from other programming languages. The pros/cons of these generally fall along the following lines:\n\n-   `Protobuf`:\n    -   **Advantages**\n        -   Compact serialization\n        -   Auto-generated [`grpc`](https://grpc.io/) client and service libraries\n        -   Client libraries can be used from different programming languages\n    -   **Disadvantages**\n        -   Learning curve to understand the full ecosystem\n        -   Not a familiar tool outside of service engineering\n        -   Static compilation step required to use in code\n-   Python schemas:\n    -   **Advantages**\n        -   Can be learned quickly using pure-python documentation\n        -   Can be written inline in pure python\n    -   **Disadvantages**\n        -   Generally, no standard serialization beyond `json`\n        -   No automated service implementations\n        -   No/manual mechanism for usage in other programming languages\n\nThis project aims to bring the advantages of both types of schema representation so that a given project can take advantage of the best of both:\n\n-   Define your structures in pure python for simplicity\n-   Dynamically create [`google.protobuf.Descriptor`](https://github.com/protocolbuffers/protobuf/blob/main/python/google/protobuf/descriptor.py#L245) objects to allow for `protobuf` serialization and deserialization\n-   Reverse render a `.proto` file from the generated `Descriptor` so that stubs can be generated in other languages\n-   No static compiliation needed!\n\n## Supported Python Schema Types\n\nCurrently, objects can be declared using either [python `dataclasses`](https://docs.python.org/3/library/dataclasses.html) or [Json TypeDef (JTD)](https://jsontypedef.com/). Additional schemas can be added by [subclassing `ConverterBase`](py_to_proto/converter_base.py).\n\n### Dataclass To Proto\n\nThe following example illustrates how `dataclasses` and `enums` can be converted to proto:\n\n```py\nfrom dataclasses import dataclass\nfrom enum import Enum\nfrom typing import Annotated, Dict, List, Enum\nimport py_to_proto\n\n# Define the Foo structure as a python dataclass, including a nested enum\n@dataclass\nclass Foo:\n\n    class BarEnum(Enum):\n        EXAM: 0\n        JOKE_SETTING: 1\n\n    foo: bool\n    bar: List[BarEnum]\n\n# Define the Foo protobuf message class\nFooProto = py_to_proto.descriptor_to_message_class(\n    py_to_proto.dataclass_to_proto(\n        package=\"foobar\",\n        dataclass_=Foo,\n    )\n)\n\n# Declare the Bar structure as a python dataclass with a reference to the\n# FooProto type\n@dataclass\nclass Bar:\n    baz: FooProto\n\n# Define the Bar protobuf message class\nBarProto = py_to_proto.descriptor_to_message_class(\n    py_to_proto.dataclass_to_proto(\n        package=\"foobar\",\n        dataclass_=Bar,\n    )\n)\n\n# Instantiate a BarProto\nprint(BarProto(baz=FooProto(foo=True, bar=[Foo.BarEnum.EXAM.value])))\n\ndef write_protos(proto_dir: str):\n    \"\"\"Write out the .proto files for FooProto and BarProto to the given\n    directory\n    \"\"\"\n    FooProto.write_proto_file(proto_dir)\n    BarProto.write_proto_file(proto_dir)\n```\n\n### JTD To Proto\n\nThe following example illustrates how JTD schemas can be converted to proto:\n\n```py\nimport py_to_proto\n\n# Declare the Foo protobuf message class\nFoo = py_to_proto.descriptor_to_message_class(\n    py_to_proto.jtd_to_proto(\n        name=\"Foo\",\n        package=\"foobar\",\n        jtd_def={\n            \"properties\": {\n                # Bool field\n                \"foo\": {\n                    \"type\": \"boolean\",\n                },\n                # Array of nested enum values\n                \"bar\": {\n                    \"elements\": {\n                        \"enum\": [\"EXAM\", \"JOKE_SETTING\"],\n                    }\n                }\n            }\n        },\n    )\n)\n\n# Declare an object that references Foo as the type for a field\nBar = py_to_proto.descriptor_to_message_class(\n    py_to_proto.jtd_to_proto(\n        name=\"Bar\",\n        package=\"foobar\",\n        jtd_def={\n            \"properties\": {\n                \"baz\": {\n                    \"type\": Foo.DESCRIPTOR,\n                },\n            },\n        },\n    ),\n)\n\ndef write_protos(proto_dir: str):\n    \"\"\"Write out the .proto files for Foo and Bar to the given directory\"\"\"\n    Foo.write_proto_file(proto_dir)\n    Bar.write_proto_file(proto_dir)\n```\n\n## Similar Projects\n\nThere are a number of similar projects in this space that offer slightly different value:\n\n-   [`jtd-codegen`](https://jsontypedef.com/docs/jtd-codegen/): This project focuses on statically generating language-native code (including `python`) to represent the JTD schema.\n-   [`py-json-to-proto`](https://pypi.org/project/py-json-to-proto/): This project aims to deduce a schema from an instance of a `json` object.\n-   [`pure-protobuf`](https://pypi.org/project/pure-protobuf/): This project has a very similar aim to `py-to-proto`, but it skips the intermediate `descriptor` representation and thus is not able to produce native `message.Message` classes.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -429,7 +428,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17932920,
+        "last_serial": 18070725,
         "urls": [
             {
                 "comment_text": "",
@@ -533,6 +532,163 @@
                 "upload_time": "2023-05-01T23:16:08",
                 "upload_time_iso_8601": "2023-05-01T23:16:08.954720Z",
                 "url": "https://files.pythonhosted.org/packages/f7/40/1e8d53006306ec4452a9a89fe913685639e25b52fba4d0663c1db78f092d/py_to_proto-0.1.2-py39-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.0": {
+        "info": {
+            "author": "Gabe Goodhart",
+            "author_email": "gabe.l.hart@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Intended Audience :: Developers",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# PY To Proto\n\nThis library holds utilities for converting in-memory data schema representations to [Protobuf](https://developers.google.com/protocol-buffers). The intent is to allow python libraries to leverage the power of `protobuf` while maintaining the source-of-truth for their data in pure python and avoiding static build steps.\n\n## Why?\n\nThe `protobuf` langauge is a powerful tool for defining language-agnostic, composable datastructures. `Protobuf` also offers cross-language compatibility so that a given set of definitions can be compiled into numerous target programming languages. The downside is that `protobuf` requires_a static built step to perform this `proto` -> `X` conversion step. Alternately, there are multiple ways of representing data schemas in pure python which allow a python library to interact with well-typed data objects. The downside here is that these structures can not easily be used from other programming languages. The pros/cons of these generally fall along the following lines:\n\n-   `Protobuf`:\n    -   **Advantages**\n        -   Compact serialization\n        -   Auto-generated [`grpc`](https://grpc.io/) client and service libraries\n        -   Client libraries can be used from different programming languages\n    -   **Disadvantages**\n        -   Learning curve to understand the full ecosystem\n        -   Not a familiar tool outside of service engineering\n        -   Static compilation step required to use in code\n-   Python schemas:\n    -   **Advantages**\n        -   Can be learned quickly using pure-python documentation\n        -   Can be written inline in pure python\n    -   **Disadvantages**\n        -   Generally, no standard serialization beyond `json`\n        -   No automated service implementations\n        -   No/manual mechanism for usage in other programming languages\n\nThis project aims to bring the advantages of both types of schema representation so that a given project can take advantage of the best of both:\n\n-   Define your structures in pure python for simplicity\n-   Dynamically create [`google.protobuf.Descriptor`](https://github.com/protocolbuffers/protobuf/blob/main/python/google/protobuf/descriptor.py#L245) objects to allow for `protobuf` serialization and deserialization\n-   Reverse render a `.proto` file from the generated `Descriptor` so that stubs can be generated in other languages\n-   No static compiliation needed!\n\n## Supported Python Schema Types\n\nCurrently, objects can be declared using either [python `dataclasses`](https://docs.python.org/3/library/dataclasses.html) or [Json TypeDef (JTD)](https://jsontypedef.com/). Additional schemas can be added by [subclassing `ConverterBase`](py_to_proto/converter_base.py).\n\n### Dataclass To Proto\n\nThe following example illustrates how `dataclasses` and `enums` can be converted to proto:\n\n```py\nfrom dataclasses import dataclass\nfrom enum import Enum\nfrom typing import Annotated, Dict, List, Enum\nimport py_to_proto\n\n# Define the Foo structure as a python dataclass, including a nested enum\n@dataclass\nclass Foo:\n\n    class BarEnum(Enum):\n        EXAM: 0\n        JOKE_SETTING: 1\n\n    foo: bool\n    bar: List[BarEnum]\n\n# Define the Foo protobuf message class\nFooProto = py_to_proto.descriptor_to_message_class(\n    py_to_proto.dataclass_to_proto(\n        package=\"foobar\",\n        dataclass_=Foo,\n    )\n)\n\n# Declare the Bar structure as a python dataclass with a reference to the\n# FooProto type\n@dataclass\nclass Bar:\n    baz: FooProto\n\n# Define the Bar protobuf message class\nBarProto = py_to_proto.descriptor_to_message_class(\n    py_to_proto.dataclass_to_proto(\n        package=\"foobar\",\n        dataclass_=Bar,\n    )\n)\n\n# Instantiate a BarProto\nprint(BarProto(baz=FooProto(foo=True, bar=[Foo.BarEnum.EXAM.value])))\n\ndef write_protos(proto_dir: str):\n    \"\"\"Write out the .proto files for FooProto and BarProto to the given\n    directory\n    \"\"\"\n    FooProto.write_proto_file(proto_dir)\n    BarProto.write_proto_file(proto_dir)\n```\n\n### JTD To Proto\n\nThe following example illustrates how JTD schemas can be converted to proto:\n\n```py\nimport py_to_proto\n\n# Declare the Foo protobuf message class\nFoo = py_to_proto.descriptor_to_message_class(\n    py_to_proto.jtd_to_proto(\n        name=\"Foo\",\n        package=\"foobar\",\n        jtd_def={\n            \"properties\": {\n                # Bool field\n                \"foo\": {\n                    \"type\": \"boolean\",\n                },\n                # Array of nested enum values\n                \"bar\": {\n                    \"elements\": {\n                        \"enum\": [\"EXAM\", \"JOKE_SETTING\"],\n                    }\n                }\n            }\n        },\n    )\n)\n\n# Declare an object that references Foo as the type for a field\nBar = py_to_proto.descriptor_to_message_class(\n    py_to_proto.jtd_to_proto(\n        name=\"Bar\",\n        package=\"foobar\",\n        jtd_def={\n            \"properties\": {\n                \"baz\": {\n                    \"type\": Foo.DESCRIPTOR,\n                },\n            },\n        },\n    ),\n)\n\ndef write_protos(proto_dir: str):\n    \"\"\"Write out the .proto files for Foo and Bar to the given directory\"\"\"\n    Foo.write_proto_file(proto_dir)\n    Bar.write_proto_file(proto_dir)\n```\n\n## Similar Projects\n\nThere are a number of similar projects in this space that offer slightly different value:\n\n-   [`jtd-codegen`](https://jsontypedef.com/docs/jtd-codegen/): This project focuses on statically generating language-native code (including `python`) to represent the JTD schema.\n-   [`py-json-to-proto`](https://pypi.org/project/py-json-to-proto/): This project aims to deduce a schema from an instance of a `json` object.\n-   [`pure-protobuf`](https://pypi.org/project/pure-protobuf/): This project has a very similar aim to `py-to-proto`, but it skips the intermediate `descriptor` representation and thus is not able to produce native `message.Message` classes.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/IBM/py-to-proto",
+            "keywords": "json,json typedef,jtd,protobuf,proto,dataclass",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "py-to-proto",
+            "package_url": "https://pypi.org/project/py-to-proto/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/py-to-proto/",
+            "project_urls": {
+                "Homepage": "https://github.com/IBM/py-to-proto"
+            },
+            "release_url": "https://pypi.org/project/py-to-proto/0.2.0/",
+            "requires_dist": [
+                "protobuf (<5,>=3.19.0)",
+                "alchemy-logging (>=1.0.3)",
+                "typing-extensions (<5,>=4.5.0) ; python_version < \"3.9\""
+            ],
+            "requires_python": "",
+            "summary": "A tool to dynamically create protobuf message classes from python data schemas",
+            "version": "0.2.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18070725,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "8a05d887f1ce044a3253157bc5c20c0d9eda9ef1a42a915127f867f83bb351f7",
+                    "md5": "a7a35cc10e10b13cf58cedf510c28991",
+                    "sha256": "f7eaf34da107fbf1646c077e9eb7c1104877c63b312905fc2b16d52017d531e5"
+                },
+                "downloads": -1,
+                "filename": "py_to_proto-0.2.0-py310-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "a7a35cc10e10b13cf58cedf510c28991",
+                "packagetype": "bdist_wheel",
+                "python_version": "py310",
+                "requires_python": null,
+                "size": 32191,
+                "upload_time": "2023-05-11T23:00:37",
+                "upload_time_iso_8601": "2023-05-11T23:00:37.241717Z",
+                "url": "https://files.pythonhosted.org/packages/8a/05/d887f1ce044a3253157bc5c20c0d9eda9ef1a42a915127f867f83bb351f7/py_to_proto-0.2.0-py310-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "9495f072f90bbcdb0c617ff5356147903aca8944d742b6e928076b977e16161b",
+                    "md5": "744c805e031e03772c71995dfd65e7f9",
+                    "sha256": "7acf5cde49f82873834ad83a19abeb6889d4a8074cbce493d98bca3ee0e046d7"
+                },
+                "downloads": -1,
+                "filename": "py_to_proto-0.2.0-py311-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "744c805e031e03772c71995dfd65e7f9",
+                "packagetype": "bdist_wheel",
+                "python_version": "py311",
+                "requires_python": null,
+                "size": 32191,
+                "upload_time": "2023-05-11T23:00:33",
+                "upload_time_iso_8601": "2023-05-11T23:00:33.996929Z",
+                "url": "https://files.pythonhosted.org/packages/94/95/f072f90bbcdb0c617ff5356147903aca8944d742b6e928076b977e16161b/py_to_proto-0.2.0-py311-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3aabbfc7b5f875a34610977c0c40462da796a9e6535159513e3e7d50573b9c63",
+                    "md5": "1c6432a3fddb04fc4c5c32ca57e42702",
+                    "sha256": "88e2deca7e7647db7e5d0f654ca40cd8cbd10ec82706afa1e82c958036e2e81a"
+                },
+                "downloads": -1,
+                "filename": "py_to_proto-0.2.0-py37-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "1c6432a3fddb04fc4c5c32ca57e42702",
+                "packagetype": "bdist_wheel",
+                "python_version": "py37",
+                "requires_python": null,
+                "size": 32208,
+                "upload_time": "2023-05-11T23:01:04",
+                "upload_time_iso_8601": "2023-05-11T23:01:04.656298Z",
+                "url": "https://files.pythonhosted.org/packages/3a/ab/bfc7b5f875a34610977c0c40462da796a9e6535159513e3e7d50573b9c63/py_to_proto-0.2.0-py37-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "fbab44aca155d48e03264903c1a420e92c6ab80cbbd7e97edd409f2c3664491b",
+                    "md5": "a7c64eac2008cb15c2434b462551742b",
+                    "sha256": "cfc438fdb269521cca8e988f2ef595bcc190893844b0052dfc63a9d569f9cad8"
+                },
+                "downloads": -1,
+                "filename": "py_to_proto-0.2.0-py38-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "a7c64eac2008cb15c2434b462551742b",
+                "packagetype": "bdist_wheel",
+                "python_version": "py38",
+                "requires_python": null,
+                "size": 32209,
+                "upload_time": "2023-05-11T23:00:35",
+                "upload_time_iso_8601": "2023-05-11T23:00:35.225042Z",
+                "url": "https://files.pythonhosted.org/packages/fb/ab/44aca155d48e03264903c1a420e92c6ab80cbbd7e97edd409f2c3664491b/py_to_proto-0.2.0-py38-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ab4794f9c823b1b5b0cacffc33c7796aae69901cb40e383266b72f8a45e87a6c",
+                    "md5": "fdd572e7f78ca47d4f8e8691140a368f",
+                    "sha256": "38873bd279b152e8119686e8d618b68534395389c2b6654f8fb10905002d8668"
+                },
+                "downloads": -1,
+                "filename": "py_to_proto-0.2.0-py39-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "fdd572e7f78ca47d4f8e8691140a368f",
+                "packagetype": "bdist_wheel",
+                "python_version": "py39",
+                "requires_python": null,
+                "size": 32208,
+                "upload_time": "2023-05-11T23:00:36",
+                "upload_time_iso_8601": "2023-05-11T23:00:36.937201Z",
+                "url": "https://files.pythonhosted.org/packages/ab/47/94f9c823b1b5b0cacffc33c7796aae69901cb40e383266b72f8a45e87a6c/py_to_proto-0.2.0-py39-none-any.whl",
                 "yanked": false,
                 "yanked_reason": null
             }

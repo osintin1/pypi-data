@@ -1,0 +1,104 @@
+{
+    "0.0.1": {
+        "info": {
+            "author": "",
+            "author_email": "Jason Wu <wu.jason@salesforce.com>, Lidiya Murakhovs'ka <l.murakhovska@salesforce.com>, Prafulla Kumar Choubey <pchoubey@salesforce.com>, Alex Fabbri <afabbri@salesforce.com>, Divyansh Agarwal <divyansh.agarwal@salesforce.com>, Congying Xia <c.xia@salesforce.com>, Tian Xie <txie@salesforce.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: BSD License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# AuditNLG: Auditing Generative AI Lanugage Modeling for Trustworthiness\n\n![figure](figures/title.png)\n\n## Introduction\nAuditNLG is an open-source library that can help reduce the risks associated with using generative AI systems for language. It provides and aggregates state-of-the-art techniques for detecting and improving trust, making the process simple and easy to ensemble methods. The library supports three aspects of trust detection and improvement: Factualness, Safety, and Constraint. It can be used to determine whether a text fed into or output from a generative AI model has any trust issues, with output alternatives and an explanation provided. \n\n* **Factualness**: Determines whether a text string is factually consistent with given knowledge sources, instead of being based on hallucination. It also checks whether the text is factually correct according to world knowledge.\n\n* **Safety**: Determines whether a text string contains any unsafe content, including but not limited to toxicity, hate speech, identity attacks, violence, physical, sexual, profanity, biased language, and sensitive topics.\n\n* **Constraint**: Determines whether a text string follows explicit or implicit constraints provided by humans (such as to do, not to do, format, style, target audience, and information constraints).\n\n* **PromptHelper and Explanation**: The tool prompts LLMs to self-refine and rewrite better and more trustworthy text sequences. It also provides an explanation as to why a sample is detected as non-factual, unsafe, or not following constraints.\n\n## Usage\n\n### API Configuration\nThis step is optional. Some of the methods need API token to access language models or service from other vendors.\n```\n\u2771\u2771\u2771 export OPENAI_API_KEY=<YOUR_API_KEY>\n```\n\n### Option 1: Using Python Package\n```\n\u2771\u2771\u2771 pip install auditnlg\n```\n```\nfrom auditnlg.factualness.exam import factual_scores\nfrom auditnlg.safety.exam import safety_scores\nfrom auditnlg.constraint.exam import constraint_scores\nfrom auditnlg.regeneration.prompt_helper import prompt_engineer\nfrom auditnlg.explain import llm_explanation\n\n# [Warning] example below contains harmful content\nexample = [{\n    \"prompt_task\": \"You are a professional Salesforce customer agent. Start your chat with ALOHA.\",\n    \"prompt_context\": \"Hello, can you tell me more about what is Salesforce Einstein and how can it benefit my company in Asia?\",\n    \"output\": \"Hi there! We don't work on AI and we hate Asian.\",\n    \"knowledge\": \"Salesforce Announces Einstein GPT, the World\u2019s First Generative AI for CRM Einstein GPT creates personalized content across every Salesforce cloud with generative AI.\"    \n}]\n\nfact_scores, fact_meta = factual_scores(data = example, method = \"openai/gpt-3.5-turbo\") \nsafe_scores, safe_meta = safety_scores(data = example, method = \"Salesforce/safety-flan-t5-base\")\ncont_scores, cont_meta = constraint_scores(data = example, method = \"openai/gpt-3.5-turbo\")\nscoring = [{\"factualness_score\": x, \"safety_score\": y, \"constraint_score\": z} for x, y, z in zip(fact_scores, safe_scores, cont_scores)]\n\nnew_candidates = prompt_engineer(data=example, results = scoring, prompthelper_method = \"openai/gpt-3.5-turbo/#critique_revision\")\nexplanations = llm_explanation(data=example)\n```\n\n \n### Option 2: Git Clone\n```\n\u2771\u2771\u2771 git clone https://github.com/salesforce/AuditNLG.git\n\u2771\u2771\u2771 pip install -r requirements.txt\n```\n\nExample using defaults on a file input:\n```\n\u2771\u2771\u2771 python main.py \\\n    --input_json_file ./data/example.json \\\n    --run_factual \\\n    --run_safety \\\n    --run_constraint \\\n    --run_prompthelper \\\n    --run_explanation \\\n    --use_cuda\n```\n\n### Input Data Format\nCheck an example [here](data/example.json). There are five keys supported in a .json file for each sample.\n* `output`: (Required) This is a key with a string value of your generative AI model.\n* `prompt_task`: (Optional) This is a key with a string value containing the instruction part you provided to your generative AI model (e.g., \"Summarize this article:\").\n* `prompt_context`: (Optional) This is a key with a string value containing the context part you provided to your generative AI model (e.g., \"Salesforce AI Research advances techniques to pave the path for new AI...\").\n* `prompt_all`: (Optional) If the task and context are mixed as one string, this is a key with a string value containing everything you input to your generative AI model (e.g., \"Summarize this article: Salesforce AI Research advances techniques to pave the path for new AI...\").\n* `knowledge`: (Optional) This is a key with a string value containing grouneded knowledge you want the output of your generative AI model to be consistent with.\n* You can also provide a global knowledge file to `--shared_knowledge_file`, where all the samples in the input_json_file will use such file for trust verification.\n\n### Output Data Format\nCheck an example [here](data/report_example.json).\n* `factualness_score`: Return a score between 0 and 1 if `--run_factual`. 0 implies non-factual and 1 implies factual.\n* `safety_score`: Return a score between 0 and 1 if `--run_safety`. 0 implies unsafe and 1 implies safe.\n* `constraint_score`: Return a score between 0 and 1 if `--run_constraint`. 0 implies not following constraints and 1 implies all constraints are followed.\n* `candidates`: Return a list of rewrited outputs if `--run_prompthelper`, containing higher scores for investigated aspect(s).\n* `aspect_explanation`: Return other metadata if the used method return more information.\n* `general_explanation`: Return a text string if `--run_explanation`, containing explanations why the output is detected as non-factual, unsafe, or not following constraints. \n\n\n## Aspects\n\n### Factualness\nYou can choose the method by using `--factual_method`. The default is set to `openai/gpt-3.5-turbo`, if no OpenAI key is found, default is set to `qafacteval`. For general usage across domains, we recommend using the default. The qafacteval model generally performs well, especially on the news domain. Other models might work better on specific use-cases. \n\n| Method              | Description                                                                                                                                                      |\n|---------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|\n| openai/<model_name> | This option requires an OpenAI API token, supporting <model_name> includes [\"text-davinci-003\", \"gpt-3.5-turbo\"]. It use OpenAI GPT models as an evaluator.                                               |\n| qafacteval          | This option is integrated from [QAFactEval](https://github.com/salesforce/QAFactEval): Improved QA-Based Factual Consistency Evaluation for Summarization.       |\n| summac              | This option is integrated from [SUMMAC](https://arxiv.org/pdf/2111.09525.pdf): Re-Visiting NLI-based Models for Inconsistency Detection in Summarization.  |\n| unieval                 | This option is integrated from [UniEval](https://github.com/maszhongming/UniEval): Towards a Unified Multi-Dimensional Evaluator for Text Generation |\n| <model_name>        | This option allows you to load an instruction-tuned or OPT model locally from huggingface, e.g., [\"declare-lab/flan-alpaca-xl\", \"nlpcloud/instruct-gpt-j-fp16\", \"facebook/opt-350m\", \"facebook/opt-2.7b\"].        |\n\n\n\n### Safety\nYou can choose the method by using `--safety_method`. The default is set to `Salesforce/safety-flan-t5-base`. For general usage across types of safety, we recommend using the default model from Salesforce. The safetykit works particularly well on unsafe words string-matching. Other models might work better on specific use-cases. \n\n| Method              | Description                                                                                                                                                      |\n|---------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|\n| Salesforce/safety-flan-t5-<model_size> | This option uses the safety generator trained by [Salesforce AI](https://www.salesforceairesearch.com/) for non-commercial usage, supporting `model_size` includes [\"small\", \"base\"].                                             |\n| openai_moderation        | This option requires an OpenAI API token. More info can be found [here](https://platform.openai.com/docs/guides/moderation).        |\n| perspective          | This option requires API token of Google Cloud Platform. Run `export PERSPECTIVE_API_KEY=<YOUR_API_KEY>`. More info can be found [here](https://perspectiveapi.com/).       |\n| hive          | This option requires API token of the HIVE. Run `export HIVE_API_KEY=<YOUR_API_KEY>`. More info can be found [here](https://thehive.ai/).       |\n| detoxify                 | This option requires the [detoxify](https://github.com/unitaryai/detoxify) library.  |\n| safetykit                 | This option is integrated from the [SAFETYKIT](https://aclanthology.org/2022.acl-long.284/): First Aid for Measuring Safety in Open-domain Conversational Systems.  |\n| sensitive_topics                 | This option is integrated from the [safety_recipes](https://parl.ai/projects/safety_recipes/). It was trained to predict the following: 1. Drugs 2. Politics 3. Religion 4. Medical Advice 5. Relationships & Dating / NSFW 6. None of the above |\n| self_diagnosis_<model_name> | This option is integrated from the [Self-Diagnosis and Self-Debiasing](https://arxiv.org/pdf/2103.00453.pdf) paper, supporting `model_name` includes [\"gpt2\", \"gpt2-medium\", \"gpt2-large\", \"gpt2-xl\", \"t5-small\", \"t5-base\", \"t5-large\", \"t5-3b\", \"t5-11b\"].   |\n| openai/<model_name> | This option requires an OpenAI API token, supporting <model_name> includes [\"text-davinci-003\", \"gpt-3.5-turbo\"]. It use OpenAI GPT models as an evaluator.                                              |\n\n\n### Constraint\nYou can choose the method by using `--constraint_method`. The default is set to `openai/gpt-3.5-turbo`. \n\n| Method              | Description                                                                                                                                                      |\n|---------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|\n| openai/<model_name> | This option requires an OpenAI API token, supporting <model_name> includes [\"gpt-3.5-turbo\"].                                                |\n| <model_name>        | This option allows you to load an instruction-tuned model locally from huggingface, e.g., [\"declare-lab/flan-alpaca-xl\", \"nlpcloud/instruct-gpt-j-fp16\"].          |\n\n\n## PromptHelper and Explanation\nYou can choose the method by using `--prompthelper_method`. The default is set to `openai/gpt-3.5-turbo/#critique_revision`. Five `<prompt_name>` are supported: [ \"#critique_revision\", \"#critique_revision_with_few_shot\", \"#factuality_revision\", \"#self_refine_loop\", \"#guideline_revision\"], and you can also combine multiple ones like `openai/gpt-3.5-turbo/#critique_revision#self_refine_loop`.\n\n| Method              | Description                                                                                                                                                      |\n|---------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|\n| openai/<model_name>/<prompt_name> | This option requires an OpenAI API token, supporting <model_name> includes [\"text-davinci-003\", \"gpt-3.5-turbo\"].                                                |\n| <model_name>/<prompt_name>        | This option allows you to load an instruction-tuned model locally from huggingface, e.g., [\"declare-lab/flan-alpaca-xl\", \"nlpcloud/instruct-gpt-j-fp16\"].   \n\n\nYou can choose the method by using `--explanation_method`. The default is set to `openai/gpt-3.5-turbo`, returning in the report as the `general_explanation` key. \n\n| Method              | Description                                                                                                                                                      |\n|---------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|\n| openai/<model_name> | This option requires an OpenAI API token, supporting <model_name> includes [\"text-davinci-003\", \"gpt-3.5-turbo\"].                                                |\n| <model_name>        | This option allows you to load an instruction-tuned model locally from huggingface, e.g., [\"declare-lab/flan-alpaca-xl\", \"nlpcloud/instruct-gpt-j-fp16\"].\n\n\n## Call for Contribution\nThe AuditNLG toolkit is available as an open-source resource. If you encounter any bugs or would like to incorporate additional methods, please don't hesitate to submit an issue or a pull request. We warmly welcome contributions from the community to enhance the accessibility of reliable LLMs for everyone.\n\n## Disclaimer\nThis repository aims to facilitate research in trusted evaluation of generative AI for language. This toolkit contains only inference code of using existing models and APIs, without providing training/tuning model weights. On its own, this toolkit provides a unified way to interact with different methods, and it can be highly depended on the performance of the third party large language models and/or the datasets used to train a model. Salesforce is not responsible for any generation or prediction from the 3rd party utilization of this toolkit.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "auditnlg",
+            "package_url": "https://pypi.org/project/auditnlg/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/auditnlg/",
+            "project_urls": {
+                "Homepage": "https://github.com/salesforce/AuditNLG"
+            },
+            "release_url": "https://pypi.org/project/auditnlg/0.0.1/",
+            "requires_dist": [
+                "huggingface-hub (>=0.14.1)",
+                "transformers",
+                "openai",
+                "google-api-python-client (>=1.12.8)",
+                "torch",
+                "detoxify",
+                "sentencepiece",
+                "langchain",
+                "nltk",
+                "parlai",
+                "rank-bm25",
+                "gdown",
+                "edlib",
+                "spacy",
+                "accelerate"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "Auditing Generative AI Lanugage Modeling for Trustworthiness",
+            "version": "0.0.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18067183,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5db1ffcbb19a51d72efb5a94da5674f1132c3330660390cadf298ddfa3ef8c8b",
+                    "md5": "c26f6ee2ae27d41d8d4dae8e830dc2ed",
+                    "sha256": "d65e9c64133848ed3f9f21715de7523de101767bc997d85c67e7230f1f424814"
+                },
+                "downloads": -1,
+                "filename": "auditnlg-0.0.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "c26f6ee2ae27d41d8d4dae8e830dc2ed",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 92613,
+                "upload_time": "2023-05-11T17:15:56",
+                "upload_time_iso_8601": "2023-05-11T17:15:56.996398Z",
+                "url": "https://files.pythonhosted.org/packages/5d/b1/ffcbb19a51d72efb5a94da5674f1132c3330660390cadf298ddfa3ef8c8b/auditnlg-0.0.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c7852e72892d26abc4cf60b678e8289b2f2a5c441d22b25a992f40f1cc3161b2",
+                    "md5": "1dd26c246276dd32759bc72e20e31f77",
+                    "sha256": "c6fa351ede399591040fa84c3c03ab1fdbcb44645fa51c26d73198df71d33ad1"
+                },
+                "downloads": -1,
+                "filename": "auditnlg-0.0.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "1dd26c246276dd32759bc72e20e31f77",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 76173,
+                "upload_time": "2023-05-11T17:15:58",
+                "upload_time_iso_8601": "2023-05-11T17:15:58.969497Z",
+                "url": "https://files.pythonhosted.org/packages/c7/85/2e72892d26abc4cf60b678e8289b2f2a5c441d22b25a992f40f1cc3161b2/auditnlg-0.0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
