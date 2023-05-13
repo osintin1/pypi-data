@@ -42,7 +42,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18069274,
+        "last_serial": 18090091,
         "urls": [
             {
                 "comment_text": "",
@@ -132,7 +132,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18069274,
+        "last_serial": 18090091,
         "urls": [
             {
                 "comment_text": "",
@@ -222,7 +222,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18069274,
+        "last_serial": 18090091,
         "urls": [
             {
                 "comment_text": "",
@@ -312,7 +312,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18069274,
+        "last_serial": 18090091,
         "urls": [
             {
                 "comment_text": "",
@@ -369,7 +369,6 @@
                 "Operating System :: OS Independent",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "Chyp (pronounced \"chip\") is an interactive theorem prover for symmetric monoidal categories (SMCs), a.k.a. process theories. Symmetric monoidal categories are a very general way to reason about processes that can be composed in sequence or in parallel. String diagrams are a convenient notation for maps in an SMC, where processes are represented as boxes connected to each other by wires.\n\n![Chyp screenshot](https://github.com/akissinger/chyp/raw/master/chyp-screen.png)\n\nChyp is short for _Composing HYPergraphs_, which refers to how string diagrams are represented and plugged together formally in the tool. By switching to a combinatoric structure based on hypergraphs, we obtain a convenient rewrite theory for string diagrams. There is a lot of theory behind this, which has been developed over a series of papers:\n\n* [String Diagram Rewrite Theory I: Rewriting with Frobenius Structure](https://arxiv.org/abs/2012.01847)\n* [String Diagram Rewrite Theory II: Rewriting with Symmetric Monoidal Structure](https://arxiv.org/abs/2104.14686)\n* [String diagram rewrite theory III: Confluence with and without Frobenius](https://discovery.ucl.ac.uk/id/eprint/10151067/1/string-diagram-rewrite-theory-iii-confluence-with-and-without-frobenius.pdf)\n\nCurrently, Chyp implements the theory described in part II, using monogamous acyclic hypergraphs to represent morphisms in a symmetric monoidal category. Fancier types of rewriting (e.g. rewriting modulo Frobenius structure) is planned for the future.\n\n\n# Installation\n\nThe latest release of Chyp can be installed via [pip](https://pypi.org/project/chyp/) and run from the command line as follows:\n\n```bash\npip install chyp\nchyp\n```\n\nThis will automatically install dependencies: [PySide6](https://pypi.org/project/PySide6/) (Qt6 GUI bindings), [cvxpy](https://www.cvxpy.org/) (a convex solver used for diagram layout), and [lark](https://github.com/lark-parser/lark) (parser library).\n\nTo run the latest git version, execute the following commands:\n\n```bash\ngit clone https://github.com/akissinger/chyp.git\ncd chyp\npip install .\npython3 -m chyp\n```\n\n# Using Chyp\n\nThe main way to interact with Chyp is by writing `*.chyp` prover files. These are source files written in a simple declarative language that lets you:\n1. define generators,\n2. build terms by composing generators,\n3. define rewrite rules (i.e. axioms), and\n4. prove new rules by rewriting.\n\n## Defining generators and terms\n\nGenerators are defined via the `gen` statement, which takes a name, a number of input wires, and a number of output wires. For example, we can define three new generators `f`, `g`, and `h` with various arities as follows:\n\n    gen f : 2 -> 1\n    gen g : 1 -> 2\n    gen h : 1 -> 1\n\nThese can be combined via parallel composition `*` and sequential composition `;`. We can build composed maps from simpler ones using a `let` statement:\n\n    let a = (g * h) ; (h * f)\n\nParallel composition takes precendence over sequential composition, so the parentheses can be dropped in the above command, which can equivalently be written:\n\n    let a = g * h ; h * f\n\nAny terms can be combined in parallel, but for sequential composition `S ; T` the number of outputs of `S` must match the number of inputs of `T`. There are also special generators `id : 1 -> 1` and `sw : 2 -> 2` corresponding to the identity and swap maps respectively. This enables us to wire boxes up in more complicated ways, like this:\n\n    let b = g * g ; id * sw * id ; f * f\n\nNote that, as you type in the bottom half of the screen, Chyp will automatically update the proof state and the graph view in the top half. This gives instant feedback, which is handy when building complicated terms. As soon as Chyp is able to parse your code, it will highlight to current statement and show the associated diagram(s) on top. To manually check your code, press `CTRL+R`. This is mainly useful for getting useful errors printed in the terminal if something is wrong.\n\nWhile combining `id` and `sw` suffices for building any permutation of wires, this is not very convenient for more complicated permutations. Hence, there is a more powerful version of `sw` which takes an arbitrary permutation. `sw[x0, x1, ..., xk]` defines the map on `k+1` wires that sends input `xi` to output `i` (counting from 0). `sw` is actually shorthand for `sw[1,0]`. Using this notation, we could equivalently write `b` from above as:\n\n    let b = g * g ; sw[0,2,1,3] ; f * f\n\nNote these indices are local to the swap map, so splitting or combining swap maps will change some indices in general. For example:\n\n    sw[1, 2, 0] * sw[1, 0] = sw[1, 2, 0, 4, 3]\n\n\n## Rules and rewriting\n\nAn algebraic theory can be presented by introducing some generators as well as some rewrite rules. Rules are defined via the `rule` statement, which gives the rule a name, then takes as input a pair of terms with the same number of inputs and outputs. For example, we could introduce a pair of rules relating the `f` and `g` generators as follows:\n\n    rule assoc : f * id ; f = id * f ; f\n    rule bialg : f ; g = g * g ; id * sw * id ; f * f\n\nNow for the good part! The `rewrite` statement represents a transitive chain of rule applications. It consists of the keyword `rewrite` followed by a name to use for the resulting theorem, then a sequence of equalities, each giving a justifying rule. For example:\n\n    rewrite ba1 :\n      f * id ; f ; g ; g * id\n      = id * f ; f ; g ; g * id by assoc\n      = g * f ; id * id * g ; id * sw * id ; f * f ; g * id by bialg\n\nNow, when we place the cursor over any step of this rule, it is highlighted in green, and it shows where that rule is applied. The green highlighting is indicating that Chyp has successfully checked this step. Namely, it has matched the LHS of the given rule on the previous term, rewritten the LHS to the RHS, and checked the result is the same as the term given.\n\nThe golden rule of Chyp is that _only connectivity matters_. So, if two terms give the same diagram, like `a * b ; c * d` and `(a ; c) * (b ; d)`, Chyp treats them as identical. Since under the hood, Chyp does everything with graph rewriting and not term rewriting, the prover handles all of this extra book-keeping for you.\n\nNote that, if we make a mistake in the example above (e.g. try to replace `assoc` with `bialg` or `sw` with `id * id`), that line will turn red. This means Chyp was _not_ able to find a matching for the rule given which implies the given equality.\n\n## Automatically rewriting terms\n\nFinally, note that it is not so convenient to manually type in the results of rewriting a term. Chyp's solution for this is to introduce \"holes\", which you can then ask the rewriter to fill. For example, try typing this:\n\n    rewrite ba1 :\n      f * id ; f ; g ; g * id\n      = ? by assoc\n\nPlace your cursor on the last line, which should be red. Then press `CTRL+N` and Chyp will try to find the next matching of the `assoc` rule, apply it, and replace the hole `?` with the result. Since this is now a correct application of the rule, the line will turn green.\n\nTwo hotkeys are provided which make adding new rewrite steps easier. `CTRL+Enter` will insert a new line below the current one containing the code `  = ? by ` and place the cursor at the end of the line, ready to take a rule name.\n\n`CTRL+SHIFT+Enter` will insert a new line `  = ? by NAME` where `NAME` is the name of the rule used on the current step, then automatically try to fill the hole. This is handy for repeatedly applying the same rule. For example, try typing this:\n\n    rewrite ba2 :\n      id * f ; f ; g ; id * g\n      = ? by bialg\n\nThen press `CTRL+N`, followed by `CTRL+SHIFT+Enter` 3 times, and Chyp will compute the normal form with respect to the `bialg` rule:\n\n    rewrite ba2 :\n      id * f ; f ; g ; id * g\n      = g * f ; id * id * g ; id * sw * id ; f * f ; id * g by bialg\n      = g * g * g ; id * id * id * sw * id ; id * id * f * f ; id * sw * id ; f * f ; id * g by bialg\n      = g * g * g ; id * id * id * sw * id ; id * g * f * f ; sw * sw * id ; id * f * id * g ; sw * sw * id ; id * f * f by bialg\n      = g * g * g ; id * id * id * sw * id ; id * g * f * g * g ; sw * sw * id * sw * id ; id * f * id * f * f ; sw * sw * id ; id * f * f by bialg\n\nHow to we know it's a normal form? Pressing `CTRL+SHIFT+Enter` one more time will result in a red line that reads `  = ? by bialg`, which means Chyp wasn't able to find any more matchings of the `bialg` rule.\n\n# Grammar\n\nThe Chyp language is very small. The full grammar, which is essentially the one used in [chyp/parser.py](https://github.com/akissinger/chyp/blob/master/chyp/parser.py), is the following:\n\n```lark\n\nstart : statement*\nstatement : gen | let | rule | rewrite\ngen : \"gen\" var \":\" num \"->\" num\nlet : \"let\" var \"=\" term\nrule : \"rule\" var \":\" term \"=\" term\nrewrite : \"rewrite\" var \":\" term rewrite_part*\nrewrite_part : \"=\" term_hole \"by\" inverse? rule_ref\ninverse : \"-\"\nterm  : par_term | seq\npar_term : \"(\" term \")\" | par | perm | id | term_ref\npar : par_term \"*\" par_term\nseq : term \";\" term\nperm : \"sw\" ( \"[\" num (\",\" num)* \"]\" )?\nid : \"id\"\nterm_hole : term | \"?\"\n\nnum : INT\nvar : IDENTIFIER\nterm_ref : IDENTIFIER\nrule_ref : IDENTIFIER\n\n```\n\nThe parser ignores whitespace and comments starting with `#`.\n\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -403,7 +402,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18069274,
+        "last_serial": 18090091,
         "urls": [
             {
                 "comment_text": "",
@@ -444,6 +443,97 @@
                 "upload_time": "2023-05-11T20:31:58",
                 "upload_time_iso_8601": "2023-05-11T20:31:58.335215Z",
                 "url": "https://files.pythonhosted.org/packages/2d/11/059ad8e5f8f41d0402ce27e0734e9f0e9e64c8e61818a8f87ccb197e746d/chyp-0.3.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.3.2": {
+        "info": {
+            "author": "Aleks Kissinger",
+            "author_email": "aleks0@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: Apache Software License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "Chyp (pronounced \"chip\") is an interactive theorem prover for symmetric monoidal categories (SMCs), a.k.a. process theories. Symmetric monoidal categories are a very general way to reason about processes that can be composed in sequence or in parallel. String diagrams are a convenient notation for maps in an SMC, where processes are represented as boxes connected to each other by wires.\n\n![Chyp screenshot](https://github.com/akissinger/chyp/raw/master/chyp-screen.png)\n\nChyp is short for _Composing HYPergraphs_, which refers to how string diagrams are represented and plugged together formally in the tool. By switching to a combinatoric structure based on hypergraphs, we obtain a convenient rewrite theory for string diagrams. There is a lot of theory behind this, which has been developed over a series of papers:\n\n* [String Diagram Rewrite Theory I: Rewriting with Frobenius Structure](https://arxiv.org/abs/2012.01847)\n* [String Diagram Rewrite Theory II: Rewriting with Symmetric Monoidal Structure](https://arxiv.org/abs/2104.14686)\n* [String diagram rewrite theory III: Confluence with and without Frobenius](https://discovery.ucl.ac.uk/id/eprint/10151067/1/string-diagram-rewrite-theory-iii-confluence-with-and-without-frobenius.pdf)\n\nCurrently, Chyp implements the theory described in part II, using monogamous acyclic hypergraphs to represent morphisms in a symmetric monoidal category. Fancier types of rewriting (e.g. rewriting modulo Frobenius structure) is planned for the future.\n\n\n# Installation\n\nThe latest release of Chyp can be installed via [pip](https://pypi.org/project/chyp/) and run from the command line as follows:\n\n```bash\npip install chyp\nchyp\n```\n\nThis will automatically install dependencies: [PySide6](https://pypi.org/project/PySide6/) (Qt6 GUI bindings), [cvxpy](https://www.cvxpy.org/) (a convex solver used for diagram layout), and [lark](https://github.com/lark-parser/lark) (parser library).\n\nTo run the latest git version, execute the following commands:\n\n```bash\ngit clone https://github.com/akissinger/chyp.git\ncd chyp\npip install .\npython3 -m chyp\n```\n\n# Using Chyp\n\nThe main way to interact with Chyp is by writing `*.chyp` prover files. These are source files written in a simple declarative language that lets you:\n1. define generators,\n2. build terms by composing generators,\n3. define rewrite rules (i.e. axioms), and\n4. prove new rules by rewriting.\n\nYou can find some examples of `*.chyp` files in the [examples](https://github.com/akissinger/chyp/tree/master/examples) folder.\n\n## Defining generators and terms\n\nGenerators are defined via the `gen` statement, which takes a name, a number of input wires, and a number of output wires. For example, we can define three new generators `f`, `g`, and `h` with various arities as follows:\n\n    gen f : 2 -> 1\n    gen g : 1 -> 2\n    gen h : 1 -> 1\n\nThese can be combined via parallel composition `*` and sequential composition `;`. We can build composed maps from simpler ones using a `let` statement:\n\n    let a = (g * h) ; (h * f)\n\nParallel composition takes precendence over sequential composition, so the parentheses can be dropped in the above command, which can equivalently be written:\n\n    let a = g * h ; h * f\n\nAny terms can be combined in parallel, but for sequential composition `S ; T` the number of outputs of `S` must match the number of inputs of `T`. There are also special generators `id : 1 -> 1` and `sw : 2 -> 2` corresponding to the identity and swap maps respectively. This enables us to wire boxes up in more complicated ways, like this:\n\n    let b = g * g ; id * sw * id ; f * f\n\nNote that, as you type in the bottom half of the screen, Chyp will automatically update the proof state and the graph view in the top half. This gives instant feedback, which is handy when building complicated terms. As soon as Chyp is able to parse your code, it will highlight to current statement and show the associated diagram(s) on top. To manually check your code, press `CTRL+R`. This is mainly useful for getting useful errors printed in the terminal if something is wrong.\n\nWhile combining `id` and `sw` suffices for building any permutation of wires, this is not very convenient for more complicated permutations. Hence, there is a more powerful version of `sw` which takes an arbitrary permutation. `sw[x0, x1, ..., xk]` defines the map on `k+1` wires that sends input `xi` to output `i` (counting from 0). `sw` is actually shorthand for `sw[1,0]`. Using this notation, we could equivalently write `b` from above as:\n\n    let b = g * g ; sw[0,2,1,3] ; f * f\n\nNote these indices are local to the swap map, so splitting or combining swap maps will change some indices in general. For example:\n\n    sw[1, 2, 0] * sw[1, 0] = sw[1, 2, 0, 4, 3]\n\n\n## Rules and rewriting\n\nAn algebraic theory can be presented by introducing some generators as well as some rewrite rules. Rules are defined via the `rule` statement, which gives the rule a name, then takes as input a pair of terms with the same number of inputs and outputs. For example, we could introduce a pair of rules relating the `f` and `g` generators as follows:\n\n    rule assoc : f * id ; f = id * f ; f\n    rule bialg : f ; g = g * g ; id * sw * id ; f * f\n\nNow for the good part! The `rewrite` statement represents a transitive chain of rule applications. It consists of the keyword `rewrite` followed by a name to use for the resulting theorem, then a sequence of equalities, each giving a justifying rule. For example:\n\n    rewrite ba1 :\n      f * id ; f ; g ; g * id\n      = id * f ; f ; g ; g * id by assoc\n      = g * f ; id * id * g ; id * sw * id ; f * f ; g * id by bialg\n\nNow, when we place the cursor over any step of this rule, it is highlighted in green, and it shows where that rule is applied. The green highlighting is indicating that Chyp has successfully checked this step. Namely, it has matched the LHS of the given rule on the previous term, rewritten the LHS to the RHS, and checked the result is the same as the term given.\n\nThe golden rule of Chyp is that _only connectivity matters_. So, if two terms give the same diagram, like `a * b ; c * d` and `(a ; c) * (b ; d)`, Chyp treats them as identical. Since under the hood, Chyp does everything with graph rewriting and not term rewriting, the prover handles all of this extra book-keeping for you.\n\nNote that, if we make a mistake in the example above (e.g. try to replace `assoc` with `bialg` or `sw` with `id * id`), that line will turn red. This means Chyp was _not_ able to find a matching for the rule given which implies the given equality.\n\n## Automatically rewriting terms\n\nFinally, note that it is not so convenient to manually type in the results of rewriting a term. Chyp's solution for this is to introduce \"holes\", which you can then ask the rewriter to fill. For example, try typing this:\n\n    rewrite ba1 :\n      f * id ; f ; g ; g * id\n      = ? by assoc\n\nPlace your cursor on the last line, which should be red. Then press `CTRL+N` and Chyp will try to find the next matching of the `assoc` rule, apply it, and replace the hole `?` with the result. Since this is now a correct application of the rule, the line will turn green.\n\nTwo hotkeys are provided which make adding new rewrite steps easier. `CTRL+Enter` will insert a new line below the current one containing the code `  = ? by ` and place the cursor at the end of the line, ready to take a rule name.\n\n`CTRL+SHIFT+Enter` will insert a new line `  = ? by NAME` where `NAME` is the name of the rule used on the current step, then automatically try to fill the hole. This is handy for repeatedly applying the same rule. For example, try typing this:\n\n    rewrite ba2 :\n      id * f ; f ; g ; id * g\n      = ? by bialg\n\nThen press `CTRL+N`, followed by `CTRL+SHIFT+Enter` 3 times, and Chyp will compute the normal form with respect to the `bialg` rule:\n\n    rewrite ba2 :\n      id * f ; f ; g ; id * g\n      = g * f ; id * id * g ; id * sw * id ; f * f ; id * g by bialg\n      = g * g * g ; id * id * id * sw * id ; id * id * f * f ; id * sw * id ; f * f ; id * g by bialg\n      = g * g * g ; id * id * id * sw * id ; id * g * f * f ; sw * sw * id ; id * f * id * g ; sw * sw * id ; id * f * f by bialg\n      = g * g * g ; id * id * id * sw * id ; id * g * f * g * g ; sw * sw * id * sw * id ; id * f * id * f * f ; sw * sw * id ; id * f * f by bialg\n\nHow to we know it's a normal form? Pressing `CTRL+SHIFT+Enter` one more time will result in a red line that reads `  = ? by bialg`, which means Chyp wasn't able to find any more matchings of the `bialg` rule.\n\n# Grammar\n\nThe Chyp language is very small. The full grammar, which is essentially the one used in [chyp/parser.py](https://github.com/akissinger/chyp/blob/master/chyp/parser.py), is the following:\n\n```lark\n\nstart : statement*\nstatement : gen | let | rule | rewrite\ngen : \"gen\" var \":\" num \"->\" num\nlet : \"let\" var \"=\" term\nrule : \"rule\" var \":\" term \"=\" term\nrewrite : \"rewrite\" var \":\" term rewrite_part*\nrewrite_part : \"=\" term_hole \"by\" inverse? rule_ref\ninverse : \"-\"\nterm  : par_term | seq\npar_term : \"(\" term \")\" | par | perm | id | term_ref\npar : par_term \"*\" par_term\nseq : term \";\" term\nperm : \"sw\" ( \"[\" num (\",\" num)* \"]\" )?\nid : \"id\"\nterm_hole : term | \"?\"\n\nnum : INT\nvar : IDENTIFIER\nterm_ref : IDENTIFIER\nrule_ref : IDENTIFIER\n\n```\n\nThe parser ignores whitespace and comments starting with `#`.\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/akissinger/chyp",
+            "keywords": "",
+            "license": "Apache2",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "chyp",
+            "package_url": "https://pypi.org/project/chyp/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/chyp/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/akissinger/chyp/issues",
+                "Homepage": "https://github.com/akissinger/chyp"
+            },
+            "release_url": "https://pypi.org/project/chyp/0.3.2/",
+            "requires_dist": [
+                "PySide6 (>=6.4.3)",
+                "lark (>=1.1.5)",
+                "cvxpy (>=1.3.1)"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "An interactive theorem prover for monoidal categories",
+            "version": "0.3.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18090091,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "18d5aa60b2e77ec50539b25f228504c145ddf1dcb2fe738e43a92693e47685b3",
+                    "md5": "d32cc4abb26a00522fe81919b6f22e07",
+                    "sha256": "668be1d500bbb01ab6d8b5a9e1add265fc258e38618ce008413c11c2c382a7d5"
+                },
+                "downloads": -1,
+                "filename": "chyp-0.3.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "d32cc4abb26a00522fe81919b6f22e07",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 44738,
+                "upload_time": "2023-05-13T12:30:39",
+                "upload_time_iso_8601": "2023-05-13T12:30:39.597582Z",
+                "url": "https://files.pythonhosted.org/packages/18/d5/aa60b2e77ec50539b25f228504c145ddf1dcb2fe738e43a92693e47685b3/chyp-0.3.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f463cf0022472691f6c3724813d953820f94515078a348b31440a3e37debaa95",
+                    "md5": "35afa53bf1850ff8db5830e2ea865953",
+                    "sha256": "713c81f531081b35ebd99848ba699a49a203480e7579a4285179d39b14bd622a"
+                },
+                "downloads": -1,
+                "filename": "chyp-0.3.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "35afa53bf1850ff8db5830e2ea865953",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 38207,
+                "upload_time": "2023-05-13T12:30:41",
+                "upload_time_iso_8601": "2023-05-13T12:30:41.649134Z",
+                "url": "https://files.pythonhosted.org/packages/f4/63/cf0022472691f6c3724813d953820f94515078a348b31440a3e37debaa95/chyp-0.3.2.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
