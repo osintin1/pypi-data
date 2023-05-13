@@ -1,0 +1,104 @@
+{
+    "1.0": {
+        "info": {
+            "author": "",
+            "author_email": "\"Beanbag, Inc.\" <questions@beanbaginc.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 5 - Production/Stable",
+                "Environment :: Other Environment",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Software Development",
+                "Topic :: Software Development :: Libraries",
+                "Topic :: Software Development :: Libraries :: Python Modules"
+            ],
+            "description": "# Housekeeping for Python\n\nHousekeeping is a Python package designed to make it easy for projects to mark\nconsumed code as deprecated or pending deprecation, with helpful instructions\nfor consumers using deprecated functionality.\n\nIt's built with the lessons we learned in\n[Review Board](https://www.reviewboard.org),\n[Djblets](https://github.com/djblets/djblets), and\n[RBTools](https://www.reviewboard.org/downloads/rbtools/).\n\nWith Housekeeping, you can easily manage deprecations in your code, helping you\nand any consumers of your code transition to the latest and greatest.\n\nIt offers decorators, mixins, and functions to help with deprecating functions,\nmethods, classes, modules, attributes, parameters, and dictionary keys.\n\nHousekeeping is licensed under the MIT license.\n\n\n## Installing Housekeeping\n\nHousekeeping is built as a utility library for your project. It should be\nadded to your project's list of dependencies.\n\nTo install it manually, run:\n\n```console\n$ pip install housekeeping\n```\n\nHousekeeping follows [semantic versioning](https://semver.org/), meaning no\nsurprises when you upgrade.\n\n\n## Using Housekeeping In Your Project\n\n### Add Your Deprecation Classes\n\nAdd base deprecation warning classes to your project.\n\nThere are two categories of warnings:\n\n* **Deprecation warnings**, which mark code as being deprecated and\n scheduled for removal in a specific upcoming version.\n\n* **Pending deprecation warnings**, which mark code as being available but\n scheduled to be deprecated in an unknown future version. Projects should\n later transition these to full deprecation warnings.\n\nYou'll be creating classes for each type that identify your project and any\nupcoming versions where deprecated code may be removed.\n\nWe recommend adding these to the ``<project_name>.deprecation`` module.\n\nFor example:\n\n```python\nfrom housekeeping import BasePendingRemovalWarning, BaseRemovedInWarning\n\n\nclass PendingRemovalInMyProjectWarning(BasePendingRemovalWarning):\n   project = 'My Project'\n\n\nclass BaseRemovedInMyProjectWarning(BaseRemovedInWarning):\n   project = 'My Project'\n\n\nclass RemovedInMyProject20Warning(BaseRemovedInMyProjectWarning):\n   version = '2.0'\n\n\nclass RemovedInMyProject30Warning(BaseRemovedInMyProjectWarning):\n   version = '3.0'\n\n...\n```\n\n\n### Begin Deprecating Code\n\nHousekeeping offers several deprecation helpers to deprecate code.\n\nYou can also call `.warn()` on your deprecation classes to warn about\ndeprecated code at any time.\n\n\n#### Deprecating Functions\n\n##### `@deprecate_non_keyword_only_args`\n\nThis decorator can help convert positional arguments to keyword-only arguments:\n\n```python\nfrom housekeeping import deprecate_non_keyword_only_args\n\n\n@deprecate_non_keyword_only_args(RemovedInMyProject20Warning)\ndef add_abc(a, *, b, c=1):\n    return a + b + c\n\n\nadd_abc(1, 2, 3)      # This will emit a deprecation warning.\nadd_abc(1, b=2, c=3)  # This will not.\n````\n\n\n##### `@func_deprecated`\n\nThis decorator marks a function as deprecated, or pending deprecation:\n\n```python\nfrom housekeeping import func_deprecated\n\n\n@func_deprecated(RemovedInMyProject20Warning)\ndef my_func():\n    ...\n\n\nmy_func()  # This will emit a deprecation warning.\n```\n\n\n##### `@func_moved`\n\nThis decorator marks a function as having moved elsewhere.\n\n```python\nfrom housekeeping import func_moved\n\nfrom myproject.new_module import my_func as new_my_func\n\n\n# This can be invoked with some special behavior:\n@func_moved(RemovedInMyProject20Warning,\n            new_func=new_my_func)\ndef my_func(a, b):\n    new_my_func(a, b, True)\n\n\nmy_func()  # This will emit a deprecation warning.\n```\n\n\n##### `deprecated_arg_value`\n\nThis wraps values that, when accessed, emit a deprecation or pending\ndeprecation warning. It's useful for passing legacy data to callback handlers.\n\n```python\nfrom housekeeping import deprecated_arg_value\n\n\ndef callback_handler(username=None, user=None):\n    user = get_user(username)  # This will emit a deprecation warning.\n    user = get_user(user)      # This would not.\n\n\nclass User:\n    ...\n\n    def emit_did_thing(self):\n        callback_handler(\n            user=self,\n            username=deprecated_arg_value(\n                RemovedInMyProject20Warning,\n                owner_name='User',\n                value=self.username,\n                old_name='username',\n                new_name='user'))\n```\n\n#### Deprecating Classes\n\n#### `ClassDeprecatedMixin`\n\nThis class mixin will emit warnings when you either instantiate or subclass\nthe class.\n\n```python\nfrom housekeeping import ClassDeprecatedMixin\n\n\nclass MyOldClass(ClassDeprecatedMixin,\n                 warning_cls=RemovedInMyProject20Warning):\n    pass\n\n# This will emit a deprecation warning.\nMyOldClass()\n\n# So will this.\nclass MyChildClass(OldBaseClass):\n    pass\n\n# But this will not.\nMyChildClass()\n\n# Nor will this.\nclass MyGrandChildClass(MyChildClass):\n    pass\n```\n\n\n#### `ClassMovedMixin`\n\nThis class mixin will emit warnings when you either instantiate or subclass\nthe class, pointing you to a replacement class or import.\n\n```python\nfrom housekeeping import ClassDeprecatedMixin\n\n\nclass MyOldClass(ClassMovedMixin, MyNewBaseClass,\n                 warning_cls=RemovedInMyProject20Warning):\n    pass\n\n# This will emit a deprecation warning.\nMyOldClass()\n\n# So will this.\nclass MyChildClass(MyOldClass):\n    pass\n\n# But this will not.\nMyChildClass()\n\n# Nor will this.\nclass MyGrandChildClass(MyChildClass):\n    pass\n```\n\n\n#### Deprecating Modules\n\n##### ``module_deprecated``\n\nThis function can be called within a module body to emit a warning when the\nmodule is imported.\n\n```python\nfrom housekeeping import module_deprecated\n\nfrom myproject.deprecation import RemovedInMyProject20Warning\n\n\nmodule_deprecated(RemovedInMyProject20Warning, __name__)\n```\n\n\n##### ``module_moved``\n\nThis function can be called within a module body to emit a warning when the\nmodule is imported, pointing the consumer to a replacement module. This is\nuseful when reorganizing the codebase and moving modules around.\n\n```python\nfrom housekeeping import module_moved\n\nfrom myproject.deprecation import RemovedInMyProject20Warning\nfrom myproject import newmodule\n\n\nmodule_moved(RemovedInMyProject20Warning, __name__, newmodule.__name__)\n```\n\n\nOur Other Projects\n------------------\n\n* [Review Board](https://www.reviewboard.org) -\n  Our free, open source, extensible code and document review tool.\n* [Djblets](https://github.com/djblets/djblets/) -\n  Our pack of Django utilities for datagrids, API, extensions, and more. Used\n  by Review Board.\n* [Review Bot](https://www.reviewboard.org/downloads/reviewbot/) -\n  Automated code review for Review Board.\n\nYou can see more on [github.com/beanbaginc](https://github.com/beanbaginc) and\n[github.com/reviewboard](https://github.com/reviewboard).\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "deprecation,cleanup,code quality",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "housekeeping",
+            "package_url": "https://pypi.org/project/housekeeping/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/housekeeping/",
+            "project_urls": {
+                "documentation": "https://github.com/beanbaginc/housekeeping",
+                "homepage": "https://github.com/beanbaginc/housekeeping",
+                "repository": "https://github.com/beanbaginc/housekeeping"
+            },
+            "release_url": "https://pypi.org/project/housekeeping/1.0/",
+            "requires_dist": [
+                "typing-extensions (>=4.4)"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "Python utilities for helping deprecate and remove code.",
+            "version": "1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18085241,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "8b98c96ae4310db4896d20e189202f59ceca7116682c2e44a776ac74c6347efb",
+                    "md5": "fad88452664370d0b76a775d630ce5f3",
+                    "sha256": "9e5216e96e9c00588a7aa59db77b7cf598a82091386c819e47abe3e877b16e06"
+                },
+                "downloads": -1,
+                "filename": "housekeeping-1.0-py3-none-any.whl",
+                "has_sig": true,
+                "md5_digest": "fad88452664370d0b76a775d630ce5f3",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 21300,
+                "upload_time": "2023-05-12T23:42:58",
+                "upload_time_iso_8601": "2023-05-12T23:42:58.798843Z",
+                "url": "https://files.pythonhosted.org/packages/8b/98/c96ae4310db4896d20e189202f59ceca7116682c2e44a776ac74c6347efb/housekeeping-1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "19d1472ea2f9b8e8b4dca9003560a0f072bcf41a5d514865d6398f33f3c28e86",
+                    "md5": "5cd55f517c76102a5ec01b61c22ea7c7",
+                    "sha256": "ff24151175aee7057f25d615e4742d6ac0fbf3e4593645e370b00df95c1ba837"
+                },
+                "downloads": -1,
+                "filename": "housekeeping-1.0.tar.gz",
+                "has_sig": true,
+                "md5_digest": "5cd55f517c76102a5ec01b61c22ea7c7",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 18867,
+                "upload_time": "2023-05-12T23:43:00",
+                "upload_time_iso_8601": "2023-05-12T23:43:00.867633Z",
+                "url": "https://files.pythonhosted.org/packages/19/d1/472ea2f9b8e8b4dca9003560a0f072bcf41a5d514865d6398f33f3c28e86/housekeeping-1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

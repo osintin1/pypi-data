@@ -41,7 +41,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16467046,
+        "last_serial": 18079547,
         "urls": [
             {
                 "comment_text": "",
@@ -99,7 +99,6 @@
                 "Operating System :: OS Independent",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -129,7 +128,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16467046,
+        "last_serial": 18079547,
         "urls": [
             {
                 "comment_text": "",
@@ -170,6 +169,94 @@
                 "upload_time": "2023-01-18T02:13:29",
                 "upload_time_iso_8601": "2023-01-18T02:13:29.829881Z",
                 "url": "https://files.pythonhosted.org/packages/0f/2f/99418167273944a95f70f94f81fb73a98954b6716f1827cafdc4cf87e001/rfcontrolpy-0.0.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.3": {
+        "info": {
+            "author": "Rogier van Staveren",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: Apache Software License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# rfcontrolpy\n\nrfcontrolpy is a Python library and port of the node.js [rfcontrolpy](https://github.com/rrooggiieerr/rfcontrolpy)\nmodule for parsing and constructing 433mhz On-Off Keying (OOK) signals for various devices,\nswitches and weather stations.\n\nIt works together with the [RFControl](https://github.com/rrooggiieerr/RFControl) Arduino library\nfor receiving the signals.\n\nThe Python port now contains a working contoller and a dozen of protocols. Not all protocols are\nported yet due to low demand or lack of hardware.\n\nYou can find a list of all supported protocols [here](protocols.md).\n\nThe Processing Pipeline\n-----------------------\n\n### 1. Receiving\n\nThe arduino is connected via serial bus to the processing computer (for example a raspberry pi)\nand waits for rf signal. \n\n> Mostly all 433mhzw OOK signals from devices are send multiple times directly in row and have a\n> longer footer pulse in between. They differ by the pulse lengths used to encode the data and footer \n> and the pulse count.\n\n[RFControl](https://github.com/rrooggiieerr/RFControl) running on the Arduino detects the start of a \nsignal by its longer footer pulse and verifies it one time by comparing it with the next signal. \nIt is unaware of the specific protocol, it just uses the stated fact above. Also we are \nnot interested in it if the pulse was a high or low pulse (presence or absence of a carrier wave), \nbecause the information is decoded in the pulse lengths.\n\nWe will call the received sequence of pulse lengths now **timings sequence**. For example a timing\nsequence in microseconds could look like this:\n\n```\n288  972  292  968  292  972  292  968  292  972  920  344  288  976  920  348  \n284  976  288  976  284  976  288  976  288  976  916  348  284  980  916  348  \n284  976  920  348  284  976  920  348  284  980  280  980  284  980  916  348  \n284  9808\n```\n\nYou can clearly see the two different pulse lengths (around 304 and 959 microseconds) for the data\nencoding and the longer footer pulse (9808 microseconds). \n\nAll observed protocols have less than 8 different pulse length and all pulse length do differ by at \nleast a factor of 2. This makes a further compression and simplification possible: We map each \npulse length to a number from 0 to 7 (a bucket) and calculate for a better accuracy the average of \nall timings mapped to each of the bucket. The result is something like that:\n\n```\nbuckets: 304, 959, 9808\npulses: 01010101011001100101010101100110011001100101011002\n```\n\nTo make the representation unique, we choose the buckets in ascending order (respectively we are\nsorting it after receiving from the Arduino).\n\nWe call the sorted buckets **pulse lengths**, the compressed timings **pulse sequence** and the \nlength of the pulse sequence (inclusive footer) **pulse count**.\n\n### 2. Protocol Matching\n\nWe detect possible protocols by two criteria. The pulse length must match with a small tolerance\nand the pulse count must match. \n\n### 3. Protocol Parsing\n\nIf a protocol matches, its `parse` function is called with the pulse sequence. Most protocols are\nparsed almost the same way. First the pulse squence must be converted to a binary representation.\n\nIn almost all cases there exist a mapping from pulse sequences to a binary `0` and `1`. In this\nexample the pulse sequence `0110` represents a binary `0` and `0101` maps to a binary `1`:\n\n```Python\npulses2binary_mapping = {\n  [\"0110\": \"0\"], # Binary 0\n  [\"0101\": \"1\"], # Binary 1 \n  [\"02\": \"\"]     # Footer\n}\nbinary = helpers.pulses2binary(pulses, pulses2binary_mapping)\n```\n\nThe binary reprsentation now looks like this:\n\n```\n110011000010\n```\n\nAs last step the protocol dependent information must be extracted from the binary representation:\n\n```Python\ndecoded = {\n  \"id\": int(binary[:6], 2),\n  \"unit\": int(binary[6:11], 2),\n  \"state\": binary[12] == \"1\"\n}\n```\n\n\nDetails\n--------\n\nRFControl is more sensitive than needed for most protocols. \nSo we get sometimes, depending of the accuracy of the sender/remote, different bucket counts. \n\nThis is by design, to catch up further protocols that maybe need a higher sensitivity. The specific\nprotocol has not to deal with this issue, because `rfcontrolpy` auto merges similar buckets before\ncalling the `decodePulses` function of each protocol.\n\nThe algorithm is the following:\n\n  1. Record the (maybe to many) buckets and compressed pulses with [RFControl](https://github.com/pimatic/RFControl) (Arduino / c++)\n  2. Sort the buckets in `rfcontrolpy` `prepare_compressed_pulses`\n  3. Try to find a matching protocol in rfcontrolpy `decode_pulses`\n  4. If we have more than 3 buckets and two of the buckets are similar (`b1*2 < b2`) we merge them to just one bucket by averaging and adapting the pulses in rfcontrolpy `fix_pulses`\n  5. Go to step 3\n\nAdding a new Protocol\n--------------------\n\n## Preparation\n\n1. Fork the rfcontrolpy repository and clone your fork into a local directory.\n2. We are using [unittest](https://docs.python.org/3/library/unittest.html) for automating tests.\n3. You should be able to run the tests with `python3 -m unittest discover`.\n5. Running `python3 -m build` let it compile all files and whats for changes.\n\n## Protocol development\n\n1. Create a new protocol file (like the others) in `rfcontrol/protocols/`.\n2. Add a test case in `tests/protocols` with the data from the Arduino.\n3. Adapt the protocol file, so that the test get passed.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "Apache-2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "rfcontrolpy",
+            "package_url": "https://pypi.org/project/rfcontrolpy/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/rfcontrolpy/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/rrooggiieerr/rfcontrolpy/issues",
+                "Homepage": "https://github.com/rrooggiieerr/rfcontrolpy"
+            },
+            "release_url": "https://pypi.org/project/rfcontrolpy/0.0.3/",
+            "requires_dist": null,
+            "requires_python": ">=3.7",
+            "summary": "Library with protocol support for different 433MHz switches and weather stations for the RFControl Arduino library.",
+            "version": "0.0.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18079547,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "65fc09cb5186f3e57c81e873f276a83a4ddbad693ad6224efb1281b62bcc6d3a",
+                    "md5": "a28e8193fa9b72b7975329398323ab87",
+                    "sha256": "4146b8e6c8cfc2a4c10d6b756e3ee80fb85ee301737752018f98b7f62453891d"
+                },
+                "downloads": -1,
+                "filename": "rfcontrolpy-0.0.3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "a28e8193fa9b72b7975329398323ab87",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 35900,
+                "upload_time": "2023-05-12T14:57:28",
+                "upload_time_iso_8601": "2023-05-12T14:57:28.887629Z",
+                "url": "https://files.pythonhosted.org/packages/65/fc/09cb5186f3e57c81e873f276a83a4ddbad693ad6224efb1281b62bcc6d3a/rfcontrolpy-0.0.3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "87f411ebca5827831b4fe66bacc8997ba02726567b715b175327ec4c5575f72b",
+                    "md5": "0a338bd1543d78ddabf7e6b65958264b",
+                    "sha256": "191530ba6b4e76b84ec323af7760133ee5377329cc702ce0d48e9cc5d362b5ca"
+                },
+                "downloads": -1,
+                "filename": "rfcontrolpy-0.0.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "0a338bd1543d78ddabf7e6b65958264b",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 33417,
+                "upload_time": "2023-05-12T14:57:30",
+                "upload_time_iso_8601": "2023-05-12T14:57:30.399278Z",
+                "url": "https://files.pythonhosted.org/packages/87/f4/11ebca5827831b4fe66bacc8997ba02726567b715b175327ec4c5575f72b/rfcontrolpy-0.0.3.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

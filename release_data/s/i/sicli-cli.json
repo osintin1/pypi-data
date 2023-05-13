@@ -39,7 +39,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18005233,
+        "last_serial": 18083568,
         "urls": [
             {
                 "comment_text": null,
@@ -95,7 +95,6 @@
                 "Intended Audience :: Developers",
                 "License :: OSI Approved :: MIT License"
             ],
-            "description": "# Sicli\n## Introduction\n`sicli` is a wrapper around standard library module `argparse` that lets you create CLIs in a simple, declarative way.\nIt parses the signature of your *type-hinted* function and generates CLI from that.\n\n`sicli` is not intended for big and complex applications, so if you need that, you rather need to use a framework like [Click](https://click.palletsprojects.com/en) or [Typer](https://typer.tiangolo.com/).\n\n## Quickstart\nLet's create a simple example:\n\n```python\nimport sicli\n\nfrom typing import Literal\nfrom typing import Annotated as Ann\nfrom pathlib import Path\n\n\ndef congratulate(\n    # positional arguments go here\n    reason: str,\n    gift: Ann[str, \"What to give them\"], # help message\n    language: Literal[\"en\", \"fr\"] = \"en\", # choice of values \n\n    # options go here\n    *,\n    output: Path = Path(\"./out.txt\"),\n    loud: Ann[bool, \"IF ENABLED THEN SCREAM\"], # flag\n    names: list[str] = [\"Maria\"], # multiple arguments\n) -> None:\n    \"\"\"\n    This program congratulates everyone if you haven't guessed.\n    By the way, this doctring is the help message for the CLI.\n    \"\"\"\n    if language == \"fr\":\n        print(\"But I don't speak french...\")\n        return\n    for name in names:\n        if loud:\n            print(f\"happy {reason}, {name}!!1!\".upper())\n        else:\n            print(f\"happy {reason}, {name}.\")\n        print(f\"Here's your {gift}\")\n    print(\"Writing to file\", output.resolve())\n\n\nif __name__ == \"__main__\":\n    sicli.run(congratulate)\n```\n\nThis produces the following output for `--help`:\n```\n$ python3 -m examples.congrat --help\nusage: congrat.py [-h] [--output [OUTPUT]] [--loud] [--names [NAMES ...]] reason gift [{en,fr}]\n\nThis program congratulates everyone if you haven't guessed. By the way, this doctring is the help message for the CLI.\n\npositional arguments:\n  reason\n  gift                 What to give them\n  {en,fr}\n\noptions:\n  -h, --help           show this help message and exit\n  --output [OUTPUT]\n  --loud               IF ENABLED THEN SCREAM\n  --names [NAMES ...]\n```\n\nLet's now test out CLI:\n```\n$ python3 -m examples.congrat Christmas chocolate en --loud --output ./xm.txt --names Elizabath Maria\nHAPPY CHRISTMAS, ELIZABATH!!1!\nHere's your chocolate\nHAPPY CHRISTMAS, MARIA!!1!\nHere's your chocolate\nWriting to file /home/alex/repos/sicli/xm.txt\n```\n\n## Usage\n\n### Creating entry point\nThe main API of the library is `sicli.run`.\nIf it's called with a list of functions, they will work as subcommands.\nYou can pass CLI arguments as the second argument to parse them instead of `sys.argv[1:]`.\nAlso, you can pass any `**kwargs` to `argparse.ArgumentParser`.\n\nExample:\n\n```python\n\n>>> import sicli\n>>> def create_table(*, name: str):\n...     print(\"inited\")\n... \n>>> def drop_table(*, name: str):\n...     print(\"dropped\")\n... \n>>> sicli.run([create_table, drop_table], [\"drop-table\", \"--name\", \"students\"], description=\"cli for your db\")\ndropped\n\n```\n\n### Arguments vs options\n- Regular arguments are mapped to positional arguments in CLI.\n- Keyword-only arguments (after `*`) are mapped to options.\n\n### Default values\nDefault values for both types of arguments are mapped, as your intuition would suggest, to default arguments in CLI. For flags, default value is always `False` and don't have to be set.\n\n### Types\n\n#### `typing.Annotated[T, help, args, kwargs]`\n`Annotated` in Python is the way to store metadata inside a valid type.\nSo, `sicli` uses\n- first argument as the type and does whatever would be done with it\n- argument of type `str` as help for this argument. \n- argument of type `list` as names for argument. \n- argument of type `dict` to merge it with `*kwargs` for `argparse.ArgumentParser.add_argument` (see `argparse` docs).\n\nExample:\n```python\n\n>>> import sicli\n>>> from typing import Annotated as Ann\n>>> def divide(\n...     *,\n...     numbers: Ann[\n...         list[int],\n...         \"Numbers to divide\",\n...         [\"+n\", \"+numbers\"],\n...         {\"nargs\": 2},\n...     ],\n... ):\n...     print(numbers[0] / numbers[1])\n... \n>>> sicli.run(divide, [\"+numbers\", \"1\", \"2\"], prefix_chars=\"-+\")\n0.5\n\n```\n\n#### `list[T], typing.List[T], typing.Sequence[T], typing.Iterable[T]`\nAs you saw, `list[T]` lets you pass multiple arguments. `tuple[...]` (for heterogeneous types) is not currently not supported.\n\n#### `typing.Literal`\n`Literal[A, B, ...]` (of the same type) lets you restrict values.\n\n#### `enum.Enum`\nIt is recommended to use `Literal` instead, but `enum.Enum` can work similarly. To use it, you need to create `__str__` method like that:\n```python\nclass Color(Enum):\n    red = \"r\"\n    black = \"b\"\n\n    def __str__(self) -> str:\n        return self.value\n```\n\n#### `bool`\n`bool` is interpreted as flag. Its default value is always `False` and shouldn't be set.\n\n#### Other types\nAny other primitive type that you would pass to `type` argument in `argparse.ArgumentParser.add_argument` would work. For instance, `int`, `str`, `Path`.\n\n#### Overriding types\nYou can use `dict` in `Annotated` to override type for `argparse.ArgumentParser.add_argument`:\n```python\ndef example(\n    s: Annotated[str, {\"type\": ascii}],\n):\n```\nYou could've used `ascii` directly as type annotation here if you don't care that your type checker will complain.\n\n#### Limitations\nNote that arbitrary nesting of types is not supported (Like in `list[Annotated[Literal[1, 2, 3], {}]]`). Only `Annotated` can wrap other generic types.\n\n## Requirements\nNo dependencies are needed, only pure Python \u2265 `3.10`.\n\n## Installation\nInstall from PyPI:\n```\npip install sicli-cli\n```\n\n## Motivation\nFor fun.\n\n## Alternatives\n[Click](https://click.palletsprojects.com/en): The greatest CLI toolkit. Use it if you want to have a complex CLI.\n\n[Typer](https://typer.tiangolo.com/): Cool Click wrapper, similar to `sicli`.\n\n[Plac](https://plac.readthedocs.io/en/latest/): Simple wrapper for `argparse`.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": null,
@@ -127,7 +126,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18005233,
+        "last_serial": 18083568,
         "urls": [
             {
                 "comment_text": null,
@@ -168,6 +167,73 @@
                 "upload_time": "2023-05-07T08:48:32",
                 "upload_time_iso_8601": "2023-05-07T08:48:32.041219Z",
                 "url": "https://files.pythonhosted.org/packages/2a/a8/db4417c99ed462e889272acbe5db7cfa0b1c8cf768403295f83d40f3565f/sicli-cli-0.2.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.3.0": {
+        "info": {
+            "author": "immanelg",
+            "author_email": null,
+            "bugtrack_url": null,
+            "classifiers": [
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: MIT License"
+            ],
+            "description": "# Sicli\n## Introduction\n`sicli` is a wrapper around standard library module `argparse` that lets you create CLIs in a simple, declarative way.\nIt parses the signature of your *type-hinted* function and generates CLI from that.\n\n`sicli` is not intended for big and complex applications, so if you need that, you rather need to use a framework like [Click](https://click.palletsprojects.com/en) or [Typer](https://typer.tiangolo.com/).\n\n## Quickstart\nLet's create a simple example:\n\n```python\nimport sicli\n\nfrom typing import Literal\nfrom typing import Annotated as Ann\nfrom pathlib import Path\n\n\ndef congratulate(\n    # positional arguments go here\n    reason: str,\n    gift: Ann[str, \"What to give them\"], # help message\n    language: Literal[\"en\", \"fr\"] = \"en\", # choice of values \n\n    # options go here\n    *,\n    output: Path = Path(\"./out.txt\"),\n    loud: Ann[bool, \"IF ENABLED THEN SCREAM\"], # flag\n    names: list[str] = [\"Maria\"], # multiple arguments\n) -> None:\n    \"\"\"\n    This program congratulates everyone if you haven't guessed.\n    By the way, this doctring is the help message for the CLI.\n    \"\"\"\n    if language == \"fr\":\n        print(\"But I don't speak french...\")\n        return\n    for name in names:\n        if loud:\n            print(f\"happy {reason}, {name}!!1!\".upper())\n        else:\n            print(f\"happy {reason}, {name}.\")\n        print(f\"Here's your {gift}\")\n    print(\"Writing to file\", output.resolve())\n\n\nif __name__ == \"__main__\":\n    sicli.run(congratulate)\n```\n\nThis produces the following output for `--help`:\n```\n$ python3 -m examples.congrat --help\nusage: congrat.py [-h] [--output [OUTPUT]] [--loud] [--names [NAMES ...]] reason gift [{en,fr}]\n\nThis program congratulates everyone if you haven't guessed. By the way, this doctring is the help message for the CLI.\n\npositional arguments:\n  reason\n  gift                 What to give them\n  {en,fr}\n\noptions:\n  -h, --help           show this help message and exit\n  --output [OUTPUT]\n  --loud               IF ENABLED THEN SCREAM\n  --names [NAMES ...]\n```\n\nLet's now test out CLI:\n```\n$ python3 -m examples.congrat Christmas chocolate en --loud --output ./xm.txt --names Elizabath Maria\nHAPPY CHRISTMAS, ELIZABATH!!1!\nHere's your chocolate\nHAPPY CHRISTMAS, MARIA!!1!\nHere's your chocolate\nWriting to file /home/alex/repos/sicli/xm.txt\n```\n\n## Usage\n\n### Creating entry point\nThe main API of the library is `sicli.run`.\nIf it's called with a list of functions, they will work as subcommands.\nYou can pass CLI arguments as the second argument to parse them instead of `sys.argv[1:]`.\nAlso, you can pass any `**kwargs` to `argparse.ArgumentParser`.\n\nExample:\n\n```python\n\n>>> import sicli\n>>> def create_table(*, name: str):\n...     print(\"inited\")\n... \n>>> def drop_table(*, name: str):\n...     print(\"dropped\")\n... \n>>> sicli.run([create_table, drop_table], [\"drop-table\", \"--name\", \"students\"], description=\"cli for your db\")\ndropped\n\n```\n\n### Arguments vs options\n- Regular arguments are mapped to positional arguments in CLI.\n- Keyword-only arguments (after `*`) are mapped to options.\n\n### Default values\nDefault values for both types of arguments are mapped, as your intuition would suggest, to default arguments in CLI. For flags, default value is always `False` and don't have to be set.\n\n### Types\n\n#### `typing.Annotated[T, help, args, kwargs]`\n`Annotated` in Python is the way to store metadata inside a valid type.\nSo, `sicli` uses\n- first argument as the type and does whatever would be done with it\n- argument of type `str` as help for this argument. \n- argument of type `list` as names for argument. \n- argument of type `dict` to merge it with `*kwargs` for `argparse.ArgumentParser.add_argument` (see `argparse` docs).\n\nExample:\n```python\n\n>>> import sicli\n>>> from typing import Annotated as Ann\n>>> def divide(\n...     *,\n...     numbers: Ann[\n...         list[int],\n...         \"Numbers to divide\",\n...         [\"+n\", \"+numbers\"],\n...         {\"nargs\": 2},\n...     ],\n... ):\n...     print(numbers[0] / numbers[1])\n... \n>>> sicli.run(divide, [\"+numbers\", \"1\", \"2\"], prefix_chars=\"-+\")\n0.5\n\n```\n\n#### `list[T], typing.List[T], typing.Sequence[T], typing.Iterable[T]`\nAs you saw, `list[T]` lets you pass multiple arguments. `tuple[...]` (for heterogeneous types) is not currently not supported.\n\n#### `typing.Literal`\n`Literal[A, B, ...]` (of the same type) lets you restrict values.\n\n#### `enum.Enum`\nIt is recommended to use `Literal` instead, but `enum.Enum` can work similarly. To use it, you need to create `__str__` method like that:\n```python\nclass Color(Enum):\n    red = \"r\"\n    black = \"b\"\n\n    def __str__(self) -> str:\n        return self.value\n```\n\n#### `bool`\n`bool` is interpreted as flag. Its default value is always `False` and shouldn't be set.\n\n#### Other types\nAny other primitive type that you would pass to `type` argument in `argparse.ArgumentParser.add_argument` would work. For instance, `int`, `str`, `Path`.\n\n#### Overriding types\nYou can use `dict` in `Annotated` to override type for `argparse.ArgumentParser.add_argument`:\n```python\ndef example(\n    s: Annotated[str, {\"type\": ascii}],\n):\n```\nYou could've used `ascii` directly as type annotation here if you don't care that your type checker will complain.\n\n#### Limitations\nNote that arbitrary nesting of types is not supported (Like in `list[Annotated[Literal[1, 2, 3], {}]]`). Only `Annotated` can wrap other generic types.\n\n## Requirements\nNo dependencies are needed, only pure Python \u2265 `3.10`.\n\n## Installation\nInstall from PyPI:\n```\npip install sicli-cli\n```\n\n## Motivation\nFor fun.\n\n## Alternatives\n[Click](https://click.palletsprojects.com/en): The greatest CLI toolkit. Use it if you want to have a complex CLI.\n\n[Typer](https://typer.tiangolo.com/): Cool Click wrapper, similar to `sicli`.\n\n[Plac](https://plac.readthedocs.io/en/latest/): Simple wrapper for `argparse`.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": null,
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": null,
+            "keywords": null,
+            "license": null,
+            "maintainer": null,
+            "maintainer_email": null,
+            "name": "sicli-cli",
+            "package_url": "https://pypi.org/project/sicli-cli/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/sicli-cli/",
+            "project_urls": {
+                "Documentation": "https://github.com/immanelg/sicli",
+                "Source Code": "https://github.com/immanelg/sicli"
+            },
+            "release_url": "https://pypi.org/project/sicli-cli/0.3.0/",
+            "requires_dist": [
+                "pytest ; extra == \"test\""
+            ],
+            "requires_python": ">=3.10",
+            "summary": "A package to build simple command line tools in the declarative way.",
+            "version": "0.3.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18083568,
+        "urls": [
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "b4d976322403fb7366d4c13a4471bf78d77bb2a6915dd3da09405d682264c5d2",
+                    "md5": "7fff393d4fa80ad06626c2703c613719",
+                    "sha256": "6cd820e80938878f01a46b1bb0cf32bb24f79f0d9983c47e5f14c0c8b78ae428"
+                },
+                "downloads": -1,
+                "filename": "sicli_cli-0.3.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "7fff393d4fa80ad06626c2703c613719",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.10",
+                "size": 7199,
+                "upload_time": "2023-05-12T20:09:06",
+                "upload_time_iso_8601": "2023-05-12T20:09:06.109298Z",
+                "url": "https://files.pythonhosted.org/packages/b4/d9/76322403fb7366d4c13a4471bf78d77bb2a6915dd3da09405d682264c5d2/sicli_cli-0.3.0-py3-none-any.whl",
                 "yanked": false,
                 "yanked_reason": null
             }
