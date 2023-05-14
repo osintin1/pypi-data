@@ -1,0 +1,108 @@
+{
+    "0.1.1": {
+        "info": {
+            "author": "",
+            "author_email": "Chengkai Mai <c.mai@madainchina.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 5 - Production/Stable",
+                "Environment :: Console",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Database",
+                "Topic :: Software Development :: Code Generators"
+            ],
+            "description": ".. image:: https://github.com/agronholm/sqlacodegen/actions/workflows/test.yml/badge.svg\n  :target: https://github.com/agronholm/sqlacodegen/actions/workflows/test.yml\n  :alt: Build Status\n.. image:: https://coveralls.io/repos/github/agronholm/sqlacodegen/badge.svg?branch=master\n  :target: https://coveralls.io/github/agronholm/sqlacodegen?branch=master\n  :alt: Code Coverage\n\nThis is an fork project from https://github.com/agronholm/sqlacodegen\n\nThis is a tool that reads the structure of an existing database and generates the\nappropriate SQLAlchemy model code, using the declarative style if possible.\n\nThis tool was written as a replacement for `sqlautocode`_, which was suffering from\nseveral issues (including, but not limited to, incompatibility with Python 3 and the\nlatest SQLAlchemy version).\n\n.. _sqlautocode: http://code.google.com/p/sqlautocode/\n\n\nFeatures\n========\n\n* Supports SQLAlchemy 2.0\n* Produces declarative code that almost looks like it was hand written\n* Produces `PEP 8`_ compliant code\n* Accurately determines relationships, including many-to-many, one-to-one\n* Automatically detects joined table inheritance\n* Excellent test coverage\n\n.. _PEP 8: http://www.python.org/dev/peps/pep-0008/\n\n\nInstallation\n============\n\nTo install, do::\n\n    pip install sqlacodegen\n\nTo include support for the PostgreSQL ``CITEXT`` extension type (which should be\nconsidered as tested only under a few environments) specify the ``citext`` extra::\n\n    pip install sqlacodegen[citext]\n\n\nQuickstart\n==========\n\nAt the minimum, you have to give sqlacodegen a database URL. The URL is passed directly\nto SQLAlchemy's `create_engine()`_ method so please refer to\n`SQLAlchemy's documentation`_ for instructions on how to construct a proper URL.\n\nExamples::\n\n    sqlacodegen postgresql:///some_local_db\n    sqlacodegen --generator tables mysql+pymysql://user:password@localhost/dbname\n    sqlacodegen --generator dataclasses sqlite:///database.db\n\nTo see the list of generic options::\n\n    sqlacodegen --help\n\n.. _create_engine(): http://docs.sqlalchemy.org/en/latest/core/engines.html#sqlalchemy.create_engine\n.. _SQLAlchemy's documentation: http://docs.sqlalchemy.org/en/latest/core/engines.html\n\nAvailable generators\n====================\n\nThe selection of a generator determines the\n\nThe following built-in generators are available:\n\n* ``tables`` (only generates ``Table`` objects, for those who don't want to use the ORM)\n* ``declarative`` (the default; generates classes inheriting from ``declarative_base()``\n* ``declarative-dataclasses`` (generate declarative model with Superclass ``MappedAsDataclass``)\n* ``dataclasses`` (generates dataclass-based models; v1.4+ only)\n* ``sqlmodels`` (generates model classes for SQLModel_)\n\n.. _SQLModel: https://sqlmodel.tiangolo.com/\n\nGenerator-specific options\n==========================\n\nThe following options can be turned on by passing them using ``--option`` (can be used\nmultiple times):\n\n* ``tables``\n\n  * ``noconstraints``: ignore constraints (foreign key, unique etc.)\n  * ``nocomments``: ignore table/column comments\n  * ``noindexes``: ignore indexes\n\n* ``declarative``\n\n  * all the options from ``tables``\n  * ``use_inflect``: use the ``inflect`` library when naming classes and relationships\n    (turning plural names into singular; see below for details)\n  * ``nojoined``: don't try to detect joined-class inheritance (see below for details)\n  * ``nobidi``: generate relationships in a unidirectional fashion, so only the\n    many-to-one or first side of many-to-many relationships gets a relationship\n    attribute, as on v2.X\n\n* ``dataclasses``\n\n  * all the options from ``declarative``\n\n* ``sqlmodel``\n\n  * all the options from ``declarative``\n\nModel class generators\n----------------------\n\nThe code generators that generate classes try to generate model classes whenever\npossible. There are two circumstances in which a ``Table`` is generated instead:\n\n* the table has no primary key constraint (which is required by SQLAlchemy for every\n  model class)\n* the table is an association table between two other tables (see below for the\n  specifics)\n\nModel class naming logic\n++++++++++++++++++++++++\n\nBy default, table names are converted to valid PEP 8 compliant class names by replacing\nall characters unsuitable for Python identifiers with ``_``. Then, each valid parts\n(separated by underscores) are title cased and then joined together, eliminating the\nunderscores. So, ``example_name`` becomes ``ExampleName``.\n\nIf the ``use_inflect`` option is used, the table name (which is assumed to be in\nEnglish) is converted to singular form using the \"inflect\" library. For example,\n``sales_invoices`` becomes ``SalesInvoice``. Since table names are not always in\nEnglish, and the inflection process is far from perfect, inflection is disabled by\ndefault.\n\nRelationship detection logic\n++++++++++++++++++++++++++++\n\nRelationships are detected based on existing foreign key constraints as follows:\n\n* **many-to-one**: a foreign key constraint exists on the table\n* **one-to-one**: same as **many-to-one**, but a unique constraint exists on the\n  column(s) involved\n* **many-to-many**: (not implemented on the ``sqlmodel`` generator) an association table\n  is found to exist between two tables\n\nA table is considered an association table if it satisfies all of the following\nconditions:\n\n#. has exactly two foreign key constraints\n#. all its columns are involved in said constraints\n\nRelationship naming logic\n+++++++++++++++++++++++++\n\nRelationships are typically named based on the table name of the opposite class.\nFor example, if a class has a relationship to another class with the table named\n``companies``, the relationship would be named ``companies`` (unless the ``use_inflect``\noption was enabled, in which case it would be named ``company`` in the case of a\nmany-to-one or one-to-one relationship).\n\nA special case for single column many-to-one and one-to-one relationships, however, is\nif the column is named like ``employer_id``. Then the relationship is named ``employer``\ndue to that ``_id`` suffix.\n\nFor self referential relationships, the reverse side of the relationship will be named\nwith the ``_reverse`` suffix appended to it.\n\nCustomizing code generation logic\n=================================\n\nIf the built-in generators with all their options don't quite do what you want, you can\ncustomize the logic by subclassing one of the existing code generator classes. Override\nwhichever methods you need, and then add an `entry point`_ in the\n``sqlacodegen.generators`` namespace that points to your new class. Once the entry point\nis in place (you typically have to install the project with ``pip install``), you can\nuse ``--generator <yourentrypoint>`` to invoke your custom code generator.\n\nFor examples, you can look at sqlacodegen's own entry points in its `pyproject.toml`_.\n\n.. _entry point: https://setuptools.readthedocs.io/en/latest/userguide/entry_point.html\n.. _pyproject.toml: https://github.com/agronholm/sqlacodegen/blob/master/pyproject.toml\n\nCustomizing Workflow\n=================================\nYou may import ``generate_models`` directly from  ``sqlacodegen_v2``\n",
+            "description_content_type": "text/x-rst",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "sqlalchemy",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "sqlacodegen-v2",
+            "package_url": "https://pypi.org/project/sqlacodegen-v2/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/sqlacodegen-v2/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/maacck/sqlacodegen_v2/issues",
+                "Source Code": "https://github.com/maacck/sqlacodegen_v2"
+            },
+            "release_url": "https://pypi.org/project/sqlacodegen-v2/0.1.1/",
+            "requires_dist": [
+                "SQLAlchemy (>=2.0)",
+                "inflect (>=4.0.0)",
+                "importlib-metadata ; python_version < \"3.10\"",
+                "sqlalchemy-citext (>=1.7.0) ; extra == 'citext'",
+                "pytest ; extra == 'test'",
+                "pytest-cov ; extra == 'test'",
+                "psycopg2-binary ; extra == 'test'",
+                "mysql-connector-python ; extra == 'test'",
+                "sqlmodel ; extra == 'test'"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "Automatic model code generator for SQLAlchemy 2.0",
+            "version": "0.1.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18096418,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e04133a4f413aa9d2b2a116ec20cb935f807ceb3f9941720ca0f83c10a2b4bfc",
+                    "md5": "2162877ba86d33ea5a9528865443aa87",
+                    "sha256": "8533d27198af6c4dfbeb8274b8929e9536bb06b34f3dbd3212010238c4e7a293"
+                },
+                "downloads": -1,
+                "filename": "sqlacodegen_v2-0.1.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "2162877ba86d33ea5a9528865443aa87",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 22231,
+                "upload_time": "2023-05-14T10:52:41",
+                "upload_time_iso_8601": "2023-05-14T10:52:41.721086Z",
+                "url": "https://files.pythonhosted.org/packages/e0/41/33a4f413aa9d2b2a116ec20cb935f807ceb3f9941720ca0f83c10a2b4bfc/sqlacodegen_v2-0.1.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "079a0217083f0b1ff80960f672020e8684c5345eabaeffb7f49f83ca3cf03aa3",
+                    "md5": "05eb4bc8e3925b94307f8f1a8cc8aad5",
+                    "sha256": "4b69e152cfc9490f854a2887cb67d8e3de26efed04cafec657271406e5b8bacc"
+                },
+                "downloads": -1,
+                "filename": "sqlacodegen_v2-0.1.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "05eb4bc8e3925b94307f8f1a8cc8aad5",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 35123,
+                "upload_time": "2023-05-14T10:52:44",
+                "upload_time_iso_8601": "2023-05-14T10:52:44.086243Z",
+                "url": "https://files.pythonhosted.org/packages/07/9a/0217083f0b1ff80960f672020e8684c5345eabaeffb7f49f83ca3cf03aa3/sqlacodegen_v2-0.1.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
