@@ -1,0 +1,88 @@
+{
+    "0.1.0": {
+        "info": {
+            "author": "Alex Rogozhnikov",
+            "author_email": null,
+            "bugtrack_url": null,
+            "classifiers": [
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "<div align=\"center\">\n  <img src=\"https://arogozhnikov.github.io/images/eindex/logo-animated.gif\" alt=\"eindex animated logo\" />\n</div>\n\n# eindex\n\nConcept of multidimensional indexing for tensors\n\n\n## Example of K-means clustering\n\n\nPlain numpy\n\n```python\ndef kmeans(init_centers, X, n_iterations: int):\n    n_clusters, n_dim = init_centers.shape\n    n_onservations, n_dim = X.shape\n\n    centers = init_centers.copy()\n    for _ in range(n_iterations):\n        d = cdist(centers, X)\n        clusters = np.argmin(d, axis=0)\n        new_centers_sum = np.zeros_like(centers)\n        indices_dim = np.arange(n_dim)[None, :]\n        np.add.at(new_centers_sum, (clusters[:, None], indices_dim), X)\n        cluster_counts = np.bincount(clusters, minlength=n_clusters)\n        centers = new_centers_sum / cluster_counts[:, None]\n    return centers\n```\n\n\nWith eindex\n\n```python\ndef kmeans_eindex(init_centers, X, n_iterations: int):\n    centers = init_centers\n    for _ in range(n_iterations):\n        d = cdist(centers, X)\n        clusters = EX.argmin(d, 'cluster i -> [cluster] i')\n        centers = EX.scatter(X, clusters, 'i c, [cluster] i -> cluster c',  \n                             agg='mean', cluster=len(centers))\n    return centers\n```\n\n## [Tutorial notebook](https://github.com/arogozhnikov/eindex/blob/main/tutorial/tutorial.ipynb)\n\n\n## Goals\n\n- Form helpful 'language' to think about indexing and index-related operations. Tools shape minds \n- Cover most common cases of multidimensional indexing that are hard to implement using the standard API\n- Approach should be applicable to most common tensor frameworks, autograd should work out-of-the-box\n- Aim for readable and reliable code\n- Allow simple adoption in existing codebases\n- Implementation should base on fairly common tensor operations. No custom kernels allowed.\n- Complexity should be visible: execution plan for every operation should form a static graph. \n  Structure of the graph depends on the pattern, but not on tensor arguments.\n\nNon-goals: there is no goal to develop 'the shortest notation' or 'the most advanced/comprehensive tool for indexing' or 'cover as many operations as possible' or 'completely replace default indexing'.\n\n\n\n## Examples\n\nFollow [tutorial](https://github.com/arogozhnikov/eindex/blob/main/tutorial/tutorial.ipynb) first to learn about all operations provided.\n\n<details>\n<summary>Click to unfold</summary>\n\n#### - how do I select a single embedding from every image in a batch?\n\nLet's say you have pairs of images and captions, and you want to take closest embedding:\n```python\nscore = einsum(images_bhwc, sentences_btc, 'b h w c, b token c -> b h w token')\nclosest_index = argmax(score, 'b h w token -> [h, w] b token')\nclosest_emb = gather('b h w c, [h, w] b token -> b t c', images_bhwc, closest_index)\n```\n\nTo adjust this example for video not image, replace 'h w' to 'h w t'. Yes, that simple.\n\n\n#### - how to collect top-1 or top-3 predicted word for every position in audio/text?\n\n```python\n[most_likely_words] = argmax(prob_tbc, 't b w -> [w] t b')\n[top_words] = argsort(prob_tbc, 't b w -> [w] t b order')[..., -3:]\n```\n\n#### - how to average embeddings over neighbors in a graph?\n```python\n# without batch (single graph)\ngather('vin c, [vin, vout] edge -> vout', embeddings, edges)\n# with batch (multile graphs)\ngather('b vin c, [b, vin, vout] edge -> b vout', embeddings, edges)\n``` \n\n#### - can eindex help with (complex) positional embeddings?\n\nIf we're speaking about trainable abspos, it can be just saved as `emb_hwc` and added every time to a batch.\nThere is no need for indexing. \n\nBut it can be very helpful for complex scenarios: for example in T5-relpos, when a bias is added to every logit before softmax-ing to compute attention?\nThat's simple to implement for 1d, and *much* harder for 2d/3d. Let's implement for 2d with eindex:\n```python\nN = None\npos # [I, J] i j\npos1 = pos[:, :, :, N, N]\npos2 = pos[:, N, N, :, :]\nxy_diff = (pos1 - pos2) % image_side  # we make shifts positive by wrapping\nattention_bias = gather('i j head , [i, j] i1 j1 i2 j2 -> i1 j1 i2 j2 head', biases, xy_diff)\n```\nNote that we indeed encounter relative position (shift in x and y), which is not done in most implementations that deal with flat sequence instead.\n\nIn a similar way we could produce vector-shift attention (another typical version of relpos):\n```python\nvector_shift = gather('i j head c, [i, j] i1 j1 i2 j2 -> i1 j1 i2 j2 head c', biases, xy_diff)\n```\n</details>\n\n\n\n## Implementation\n\nRepo provides two implementation:\n\n- array api standard. This implementation is based on a [standard](https://data-apis.org/array-api/latest/) that multiple frameworks pre-agreed to follow.\n  Implementation uses only API from standard, so all available operations support all frameworks that follow the standard.\n\n  At some point this should become the one and the only implementation.\n\n  Here is the catch: current support of array api standard is poor, that's why the second implementation exists\n\n\n- numpy implementation\n  \n  This independent implementation works right now.\n\n  Numpy implementation is great to test things out, and is handy for a number of non-DL applications as well.\n\n\n## Development Status\n\nAPI looks solid, but breaking changes are still possible, so lock the version in your projects (e.g. `eindex==0.1.0`)\n\n\n## Related projects\n\nOther projects you likely want to look at:\n\n- [tullio](https://github.com/mcabbott/Tullio.jl) by Michael Abbott (@mcabbott) provides Julia macros with a high level of flexibility. \n  Resulting operations are then compiled.\n- [torchdim](https://github.com/facebookresearch/torchdim) by Zachary DeVito (@zdevito) introduces \"dimension objects\", which in particular allow convenient multi-dim indexing\n- [einindex](https://github.com/malmaud/einindex) is an einops-inspired prototype by Jonathan Malmaud (@malmaud) to develop multi-dim indexing notation.\n  (Also, that's why this package isn't called `einindex`)\n\n\n## Contributing\n\nWe welcome the following contributions:\n\n- next time you deal with multidimensional indexing, do this with eindex <br />\n  Worked? &rarr; great - [let us know](https://github.com/arogozhnikov/eindex/discussions/new?category=show-and-tell); didn't work or unclear how to implement &rarr; post in [discussions](https://github.com/arogozhnikov/eindex/discussions)\n- if you feel you're already fluent in eindex, help others\n- guides/tutorials/video-guides are very welcome, and will be linked\n- If you want to translate tutorial to other language and post it somewhere - welcome \n\n\n\n## Discussions\n\nUse github discussions for this project https://github.com/arogozhnikov/eindex/discussions",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": null,
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": null,
+            "keywords": "eindex,einops,indexing,numpy,tensor,tensor indexing",
+            "license": "MIT",
+            "maintainer": null,
+            "maintainer_email": null,
+            "name": "eindex",
+            "package_url": "https://pypi.org/project/eindex/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/eindex/",
+            "project_urls": {
+                "Homepage": "https://github.com/arogozhnikov/eindex"
+            },
+            "release_url": "https://pypi.org/project/eindex/0.1.0/",
+            "requires_dist": null,
+            "requires_python": ">=3.8",
+            "summary": "A concept of multidimensional indexing for tensors",
+            "version": "0.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18104122,
+        "urls": [
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "14d0a8307baae963d97aea356f8573108b74b60b123ae8caa25efffd8bf607fa",
+                    "md5": "042991f96e995bb1e9e4f542fb7165a2",
+                    "sha256": "a806489c30bc2f6ae61417763bc062780d3816b69716c6a7e2419d9c6c80c7c1"
+                },
+                "downloads": -1,
+                "filename": "eindex-0.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "042991f96e995bb1e9e4f542fb7165a2",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 13618,
+                "upload_time": "2023-05-15T07:55:28",
+                "upload_time_iso_8601": "2023-05-15T07:55:28.184191Z",
+                "url": "https://files.pythonhosted.org/packages/14/d0/a8307baae963d97aea356f8573108b74b60b123ae8caa25efffd8bf607fa/eindex-0.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "d5f8faa6a4a97d1e10ee3b4494ce764aa82daa5916adf562ef5155ca5c632d26",
+                    "md5": "5358eb85a2c73acac70e6dff114389a8",
+                    "sha256": "f7225c5e478663931a2ccf25adfff932fd80c942e7c507ca54b709f1b1524954"
+                },
+                "downloads": -1,
+                "filename": "eindex-0.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "5358eb85a2c73acac70e6dff114389a8",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 34342,
+                "upload_time": "2023-05-15T07:55:31",
+                "upload_time_iso_8601": "2023-05-15T07:55:31.024643Z",
+                "url": "https://files.pythonhosted.org/packages/d5/f8/faa6a4a97d1e10ee3b4494ce764aa82daa5916adf562ef5155ca5c632d26/eindex-0.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

@@ -1,0 +1,82 @@
+{
+    "1.0.10": {
+        "info": {
+            "author": "SAP SE",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 5 - Production/Stable",
+                "Intended Audience :: Developers",
+                "Intended Audience :: End Users/Desktop",
+                "Intended Audience :: Financial and Insurance Industry",
+                "Intended Audience :: Healthcare Industry",
+                "Intended Audience :: Information Technology",
+                "Intended Audience :: Legal Industry",
+                "Intended Audience :: Manufacturing",
+                "Intended Audience :: Science/Research",
+                "License :: Other/Proprietary License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Topic :: Scientific/Engineering",
+                "Topic :: Scientific/Engineering :: Artificial Intelligence",
+                "Topic :: Software Development :: Libraries",
+                "Topic :: Software Development :: Libraries :: Python Modules"
+            ],
+            "description": "## content package for large language models for SAP AI Core\n\n## Objective\nA content package to deploy LLM workflows in AI Core.\n\n### User Guide\n\n#### 1. Deploy a proxy to your deployment in Azure OpenAI\n\n*Pre-requisites*\n\n1. Complete [AI Core Onboarding](https://help.sap.com/viewer/2d6c5984063c40a59eda62f4a9135bee/LATEST/en-US/8ce24833036d481cb3113a95e3a39a07.html)\n2. Access to the Git repository, Docker repository and S3 bucket onboarded to AI Core\n3. You have an Azure OpenAI account, created an API key to access this account and created a model deployment.\n\n*Steps*\n\n1. Install AI Core SDK\n```\npip install ai-core-sdk[aicore_content]\n```\n2. Install this content package\n```\npip install sap-ai-core-llm\n```\n3. Create a config file with the name proxy_serving_config.yaml with the following content.\n```\n.contentPackage: sap-ai-core-llm\n.dockerType: default\n.workflow: azure-openai-proxy\nannotations:\n  executables.ai.sap.com/description: <YOUR EXECUTABLE DESCRIPTION>\n  executables.ai.sap.com/name: <YOUR EXECUTABLE NAME>\n  scenarios.ai.sap.com/description: <YOUR SCENARIO DESCRIPTION>\n  scenarios.ai.sap.com/name: <YOUR SCENARIO NAME>\nimage: <YOUR DOCKER IMAGE TAG>\nimagePullSecret: <YOUR DOCKER IMAGE PULL SECRET NAME>\nlabels:\n  ai.sap.com/version: <YOUR SCENARIO VERSION>\n  scenarios.ai.sap.com/id: <YOUR SCENARIO ID>\nname: <YOUR SERVING TEMPLATE NAME>\n```\n4. Fill in the desired values in the config file. An example config file is shown below.\n```\n.contentPackage: sap-ai-core-llm\n.dockerType: default\n.workflow: azure-openai-proxy\nannotations:\n  executables.ai.sap.com/description: My Azure OpenAI Proxy\n  executables.ai.sap.com/name: my-azure-openai-proxy\n  scenarios.ai.sap.com/description: My Azure OpenAI Proxy Scenario\n  scenarios.ai.sap.com/name: my-azure-openai-scenario\nimage: docker.io/YOUR_USER_NAME/my-proxy-image:1.0\nimagePullSecret: my-docker-secret\nlabels:\n  ai.sap.com/version: 1.0\n  scenarios.ai.sap.com/id: my-azure-openai-scenario\nname: my-azure-openai-proxy\n```\n5. Generate a docker image\n```\naicore-content create-image -p sap-ai-core-llm -w azure-openai-proxy proxy_serving_config.yaml\n```\n6. Generate a serving template\n```\naicore-content create-template -p sap-ai-core-llm -w azure-openai-proxy proxy_serving_config.yaml -o './proxy-serving-template.yaml'\n```\n7. Push the docker image to your docker repository\n```\ndocker push docker.io/YOUR_USER_NAME/my-proxy-image:1.0\n```\n8. Push the serving template to your git repository\n```\ncd <repo_path>\ngit add <path_within_repo>/proxy-serving-template.yaml\ngit commit -m 'updated template proxy-serving-template.yaml'\ngit push\n```\n9. Obtain a client credentials token to AI Core\n```\ncurl --location '<YOUR AUTH ENDPOINT URL>/oauth/token?grant_type=client_credentials' --header 'Authorization: Basic <YOUR AI CORE CREDENTIALS>'\n```\n10. Create a secret for your Azure OpenAI API key\n```\ncurl --location '<YOUR AI CORE URL>/v2/admin/secrets' \\\n--header 'AI-Resource-Group: <YOUR RESOURCE GROUP NAME>' \\\n--header 'Content-Type: application/json' \\\n--header 'Authorization: Bearer <CLIENT CREDENTAILS TOKEN>' \\\n--data '{\n  \"name\": \"azure-openai-key\",\n  \"data\": {\n    \"AzureAPIKey\": \"<YOUR AZURE OPENAI KEY ENCODED IN BASE64>\"\n  }\n}'\n```\n11. Create a configuration and save the configuration id from the response.\n```\ncurl --location '<YOUR AI CORE URL>/v2/lm/configurations' \\\n--header 'AI-Resource-Group: <YOUR RESOURCE GROUP NAME>' \\\n--header 'Content-Type: application/json' \\\n--header 'Authorization: Bearer <CLIENT CREDENTAILS TOKEN>' \\\n--data '{\n    \"name\": \"<CONFIGURATION NAME>\",\n    \"executableId\": \"<YOUR EXECUTABLE ID>\",\n    \"scenarioId\": \"<YOUR SCENARIO ID>\",\n    \"versionId\": \"<YOUR SCENARIO VERSION>\",\n    \"parameterBindings\": [\n        {\n            \"key\": \"AzureDeploymentURL\",\n            \"value\": \"<YOUR AZURE OPENAI DEPLOYMENT URL>\"\n        }\n    ]\n}'\n```\n12. Create a deployment and note down the deployment id from the response\n```\ncurl --location --globoff --request POST '<YOUR AI CORE URL>/v2/lm/configurations/<YOUR CONFIGURATION ID>/deployments' \\\n--header 'AI-Resource-Group: <YOUR RESOURCE GROUP NAME>' \\\n--header 'Authorization: Bearer <CLIENT CREDENTAILS TOKEN>'\n```\n13. Check the status of the deployment. Note down the deployment URL after the status changes to RUNNING.\n```\ncurl --location --globoff '<YOUR AI CORE URL>/v2/lm/deployments/<YOUR DEPLOYMENT ID>' \\\n--header 'AI-Resource-Group: <YOUR RESOURCE GROUP NAME>' \\\n--header 'Authorization: Bearer <CLIENT CREDENTAILS TOKEN>'\n```\n14. Use your deployment. The example shown below is for a davinci-003 text completions model\n```\ncurl --location '<YOUR DEPLOYMENT URL>/v1/predict' \\\n--header 'AI-Resource-Group: <YOUR RESOURCE GROUP NAME>' \\\n--header 'Content-Type: application/json' \\\n--header 'Authorization: Bearer <CLIENT CREDENTAILS TOKEN>' \\\n--data '{\n    \"prompt\": \"Who are you?\",\n    \"max_tokens\": 100\n}'\n```\n\n### Security Guide\nSee [Security in SAP AI Core](https://help.sap.com/docs/sap-ai-core/sap-ai-core-service-guide/security?locale=en-US) for general information about how SAP AI Core handles security.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "https://pypi.python.org/pypi/sap-ai-core-llm",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://www.sap.com/",
+            "keywords": "SAP AI Core,Large Language Models,LLM",
+            "license": "SAP DEVELOPER LICENSE AGREEMENT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "sap-ai-core-llm",
+            "package_url": "https://pypi.org/project/sap-ai-core-llm/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/sap-ai-core-llm/",
+            "project_urls": {
+                "Download": "https://pypi.python.org/pypi/sap-ai-core-llm",
+                "Homepage": "https://www.sap.com/"
+            },
+            "release_url": "https://pypi.org/project/sap-ai-core-llm/1.0.10/",
+            "requires_dist": null,
+            "requires_python": ">=3.7",
+            "summary": "content package for large language models for SAP AI Core",
+            "version": "1.0.10",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18106952,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f447451c1847ce3d01e7475da8557d342f58ebd40bcfa9123b9329b2f48f3c3d",
+                    "md5": "64badda17890f2b1924917773eed47c3",
+                    "sha256": "0ec93de80a1b3132c271434d90bc56dd24150c89a0e306dc5a711eae9fa718ae"
+                },
+                "downloads": -1,
+                "filename": "sap_ai_core_llm-1.0.10-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "64badda17890f2b1924917773eed47c3",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 12310,
+                "upload_time": "2023-05-15T11:46:33",
+                "upload_time_iso_8601": "2023-05-15T11:46:33.692601Z",
+                "url": "https://files.pythonhosted.org/packages/f4/47/451c1847ce3d01e7475da8557d342f58ebd40bcfa9123b9329b2f48f3c3d/sap_ai_core_llm-1.0.10-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
