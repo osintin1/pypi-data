@@ -1,0 +1,88 @@
+{
+    "3.0.0": {
+        "info": {
+            "author": "",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "# pytmac\n\nPython based threat modelling as code tool (Python T.M.A.C).\n\npytmac generates a report of a designated workload given a combination of manually created resources, configured checks \nand custom checks.\n\n## Resources\n\nManual resources can be added to `./docs/resources.yaml` and should be in the following format.\n\n```\n---\nresources:\n  networks:\n    - name: office_network\n    - name: home_network\n  users:\n    - name: user1\n      network: home_network\n      description: Database Administrator\n  databases:\n    - name: staging\n      network: office_network\n      description: Staging database\n  systems:\n    - name: vpn_server\n      network: office_network\n      description: VPN Server\n      config:\n        db_op: false\n  containers:\n  res_links:\n    - source: user1\n      destination: vpn_server\n      description: User connects to VPN into office_network\n    - source: vpn_server\n      destination: \"/api/user/add\"\n      description: \"/api/user/add accessed from the VPN server\"\n    - source: vpn_server\n      destination: \"/api/user\"\n      description: \"/api/user accessed from the VPN server\"\n    - source: \"/api/user/add\"\n      destination: staging\n      description: \"/api/user/add and adds data in the staging database\"\n    - source: \"/api/user\"\n      destination: staging\n      description: \"/api/user gets data from the staging database\"\n```\n\nThe above yaml content will be processed and generate the following DFD (Data Flow Diagram) in PlantUML.\n\n```\n@startuml report-2023-03-25\n!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml\n!include https://raw.githubusercontent.com/geret1/plantuml-schemas/main/stride.puml\n\nBoundary(boffice_network, \"office_network\") {\n\tSystemDb(staging,\"staging \", \"Staging database\")\n\tSystem(vpn_server,\"vpn_server \", \"VPN Server\")\n\tContainer(_api_user_add,\"/api/user/add \", \"Receive requests from client to write users to database.\")\n\tContainer(_api_user,\"/api/user \", \"Endpoint to list all users from Database\")\n}\nBoundary(bhome_network, \"home_network\") {\n\tPerson(user1, \"user1\", \"Database Administrator\")\n}\nBiRel(user1,vpn_server, \"User connects to VPN into office_network\")\nBiRel(vpn_server,_api_user_add, \"/api/user/add accessed from the VPN server\")\nBiRel(vpn_server,_api_user, \"/api/user accessed from the VPN server\")\nBiRel(_api_user_add,staging, \"/api/user/add and adds data in the staging database\")\nBiRel(_api_user,staging, \"/api/user gets data from the staging database\")\n@enduml\n```\n\n\n## Configuration\n\nConfiguration defines characteristics of a given resource. Default settings for a given resource type can be set in \n`./docs/defaults.yaml` as follows (following the same format for a resource type).\n\nThese settings will be applied to all resources generated. \n\n```\ndatabases:\n  audit_logging_alerts: true\n  audit_logging_enabled: true\n  audit_logging_monitored: true\n  audit_logging_tamper_proof: true\n  audit_logging_to_siem: true\n  authentication_required: true\n  automatic_updates: true\n  cleanup_tasks_configured: true\n  contains_pii: true\n  database_os: MySQL\n  default_accounts_enabled: true\n  firewall_restricted: true\n  has_scheduled_backup: true\n  incident_response_runbooks: true\n  is_encrypted: true\n  is_hardened: true\n  is_replica: true\n  least_privileged_access: true\n  least_privileged_network: true\n  least_privileged_users: true\n  passwords_hashed: true\n  requires_encrypted_connections: true\n  secure_logging_enabled: true\n  tested_recovery_process: true\nnetworks:\n  has_wifi: false\n  is_cloud: false\n  is_public: false\nsystems:\n  access_logging_enabled: true\n  allows_manual_changes: true\n  audit_logging_alerts: true\n  audit_logging_enabled: true\n  audit_logging_includes_user_details: true\n  audit_logging_monitored: true\n  audit_logging_tamper_proof: true\n  audit_logging_to_siem: true\n  authentication_required: true\n  automatic_updates: true\n  code_review_required: true\n  code_scan_in_pipeline: true\n  cors_minimal_required_usage: true\n  db_op: true\n  default_accounts_enabled: true\n  delayed_login_failures: true\n  dependabot_used: true\n  dependency_signing_required: true\n  has_secure_password_policy: true\n  has_waf: true\n  incident_response_runbooks: true\n  input_sanitization: true\n  input_validation: true\n  ip_restrictions: true\n  is_hardened: true\n  least_privileged_access: true\n  least_privileged_network: true\n  login_failures_logged: true\n  mfa_enabled: true\n  password_username_incorrect_same_message: true\n  public_facing: true\n  requires_authentication: true\n  requires_encryption: true\n  secret_scanning_used: true\n  secure_logging_enabled: true\n  security_scan_on_artifact_storage: true\n  security_scan_on_build: true\n  sessions_stored_securely: true\n  stateful_sessions_invalidated: true\n  tested_recovery_process: true\nusers:\n  company_device: true\n  company_user: true\n  uses_mfa: true\n  uses_own_login: true\n\n```\n\nOverides can be set on a per-resource basis, by appending `configs` nested dictionary to the resources.yaml. The yaml \nbelow is based on having `\"is_cloud\": false` as a default setting - It will create two networks, one with is_cloud set\nto `false` (the default), the other (`aws_public_subnet`) will have `is_cloud` set to `true`.\n\n\n```\n---\nresources:\n  networks:\n    - name: office_network\n    - name: aws_public_subnet\n      - config:\n        is_cloud: true\n```\n\n## Security Checks\n\nSecurity checks have been included to cover use cases for the Owasp top 10, however you may want to extend pytmac with custom checks can be written and added to `./docs/security_checks.yaml`. These files should be written as below, the \nchecks are iterated over and executed individually, all fields are required.\n\nSeverity should be used as a combination of Risk vs Likelihood, any security findings are prioritised by severity in the report output. \n\n```\nuser_owned_device:\n  name: Non company device used\n  description: Checks for users with company_user true and company_device false.\n  remediation: Understand and remediate or document known exception.\n  severity: 3\n  resource_scope:\n    - users\n  check_query:\n    - resources[resource][\"company_user\"] and not resources[resource][\"company_device\"]\n```\n\n## Outputs\n\nThe primary output of pytmac is a generated Markdown report, including a DFD (Data Flow Diagram) generated from the \nprovided resources, and a programmatically generated list of security concerns using fields from the configuration\n(including overrides).\n\nAdditionally, a yaml report is generated of all resources and their config - To ease reviewing the findings during a \nthreat modelling session.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "pytmac",
+            "package_url": "https://pypi.org/project/pytmac/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/pytmac/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/pytmac/3.0.0/",
+            "requires_dist": [
+                "python-dotenv (==1.0.0)",
+                "pytest-env (==0.8.1)",
+                "pytest-dotenv (==0.5.2)",
+                "PyYAML (==6.0)",
+                "pytest-cov (==4.0.0)"
+            ],
+            "requires_python": "",
+            "summary": "",
+            "version": "3.0.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18099480,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a7e2222428ccd1e84c979b5b4777334440a9ef55fe7483f426fb8c18f967dc94",
+                    "md5": "722f355cfb2d1a4c4aa76ac95879168c",
+                    "sha256": "006bf5c97e4f481c8284654a1e430b05c9f97c66d23971886fa731ddb88e614c"
+                },
+                "downloads": -1,
+                "filename": "pytmac-3.0.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "722f355cfb2d1a4c4aa76ac95879168c",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 13272,
+                "upload_time": "2023-05-14T19:21:21",
+                "upload_time_iso_8601": "2023-05-14T19:21:21.353018Z",
+                "url": "https://files.pythonhosted.org/packages/a7/e2/222428ccd1e84c979b5b4777334440a9ef55fe7483f426fb8c18f967dc94/pytmac-3.0.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "cd0f8812572c5fb569a8afce74873e34e5b5b621763f2f7502c530677b6f4c31",
+                    "md5": "8c7420fa6625163189e625195ef60fe7",
+                    "sha256": "35a4988f7cc0ac878e26096f43952b0a7591d7c5c9301cb3dad71ef1a9ea8dcb"
+                },
+                "downloads": -1,
+                "filename": "pytmac-3.0.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "8c7420fa6625163189e625195ef60fe7",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 13677,
+                "upload_time": "2023-05-14T19:21:23",
+                "upload_time_iso_8601": "2023-05-14T19:21:23.221194Z",
+                "url": "https://files.pythonhosted.org/packages/cd/0f/8812572c5fb569a8afce74873e34e5b5b621763f2f7502c530677b6f4c31/pytmac-3.0.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

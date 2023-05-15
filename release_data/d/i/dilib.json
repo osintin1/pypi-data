@@ -31,7 +31,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16322317,
+        "last_serial": 18100787,
         "urls": [],
         "vulnerabilities": []
     },
@@ -76,7 +76,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16322317,
+        "last_serial": 18100787,
         "urls": [
             {
                 "comment_text": "",
@@ -182,7 +182,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16322317,
+        "last_serial": 18100787,
         "urls": [
             {
                 "comment_text": "",
@@ -290,7 +290,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16322317,
+        "last_serial": 18100787,
         "urls": [
             {
                 "comment_text": "",
@@ -401,7 +401,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16322317,
+        "last_serial": 18100787,
         "urls": [
             {
                 "comment_text": "",
@@ -467,7 +467,6 @@
                 "Topic :: Software Development :: Libraries",
                 "Topic :: Utilities"
             ],
-            "description": "# dilib\n\nDependency injection (DI) library for python\n\n[![PyPI version](https://badge.fury.io/py/dilib.svg)](https://badge.fury.io/py/dilib)\n[![PyPI Supported Python Versions](https://img.shields.io/pypi/pyversions/dilib.svg)](https://pypi.python.org/pypi/dilib/)\n[![GitHub Actions (Tests)](https://github.com/ansatzcapital/dilib/workflows/Test/badge.svg)](https://github.com/ansatzcapital/dilib)\n\n## About DI\n\n[Dependency injection](https://en.wikipedia.org/wiki/Dependency_injection) \ncan be thought of as a **software engineering pattern** \nas well as a **framework**. The goal is to develop objects in a more\ncomposable and modular way.\n\nThe **pattern** is: when creating objects, always express what you depend on, \nand let someone else give you those dependencies. (This is sometimes\nreferred to as the \"Hollywood principle\": \"Don't call us; we'll call you.\")\n\nThe **framework** is meant to ease the inevitable boilerplate \nthat occurs when following this pattern, and `dilib` is one such framework.\n\nSee the [Google Clean Code Talk about Dependency Injection](https://testing.googleblog.com/2008/11/clean-code-talks-dependency-injection.html).\n\n## Installation\n\n`dilib` is available on [PyPI](https://pypi.org/project/dilib/):\n\n```bash\npip install dilib\n```\n\n## Quick Start\n\nThere are 3 major parts of this framework:\n\n- `dilib.{Prototype,Singleton}`: A recipe that describes how to instantiate \nthe object when needed later. `dilib.Prototype` indicates to the retriever\nthat a new instance should be created per retrieval, \nwhile `dilib.Singleton` indicates only 1 instance of the object \nshould exist. (Both spec types inherit from `dilib.Spec`.)\n- `dilib.Config`: Nestable bag of types and values, bound by specs, \nthat can be loaded, perturbed, and saved.\n- `dilib.Container`: The object retriever--it's in charge of \n_materializing_ the aforementioned delayed specs that \nare wired together by config into actual instances \n(plus caching, if indicated by the spec).\n\n```python\nfrom typing import Optional\n\nimport dilib\n\n\n# API\nclass Engine:\n    pass\n\n\n# An implementation of the engine API that makes network calls\nclass DBEngine(Engine):\n    def __init__(self, addr: str, token: Optional[str] = None):\n        self.addr = addr\n        self.token = token\n\n\n# An implementation of the engine API designed for testing\nclass MockEngine(Engine):\n     pass\n\n\nclass Car:\n    # Takes an Engine instance via constructor injection\n    def __init__(self, engine: Engine):\n        self.engine = engine\n\n\nclass EngineConfig(dilib.Config):\n    db_addr = dilib.GlobalInput(str, default=\"some-db-addr\")\n\n    token_prefix = dilib.LocalInput(str)\n    token = dilib.Prototype(lambda x: x + \".bar\", x=token_prefix)\n\n    # Objects depend on other objects via named aliases\n    engine0: Engine = dilib.Singleton(DBEngine, db_addr, token=token)\n    # Or equivalently, if DBEngine used dilib.SingletonMixin:\n    # engine0 = dilib.DBEngine(db_addr, token=token)\n\n    # Alternate engine spec\n    engine1: Engine = dilib.Singleton(DBEngine, db_addr)\n\n    # Forward spec resolution to the target spec\n    engine: Engine = dilib.Forward(engine0)\n\n\nclass CarConfig(dilib.Config):\n    # Configs depend on other configs via types. \n    # Here, CarConfig depends on EngineConfig.\n    engine_config = EngineConfig(foo_prefix=\"baz\")\n\n    car = dilib.Singleton(Car, engine_config.engine)\n\n\n# Get instance of config (with global input value set)\ncar_config: CarConfig = dilib.get_config(\n  CarConfig, db_addr=\"some-other-db-addr\"\n)\n\n# Perturb here as you'd like. E.g.:\ncar_config.engine_config.Engine = dilib.Singleton(MockEngine)\n\n# Pass config to a container\ncontainer: dilib.Container[CarConfig] = dilib.get_container(car_config)\n\n# Retrieve objects from container (some of which are cached inside)\nassert container.config.engine_config.db_addr == \"some-other-db-addr\"\nassert isinstance(container.config.engine_config.engine, MockEngine)\nassert isinstance(container.config.car, Car)\nassert container.config.car is container.car  # Because it's a Singleton\n```\n\nNotes:\n- `Car` *takes in* an `Engine` via its constructor \n(known as \"constructor injection\"),\ninstead of making or getting one within itself.\n- For this to work, `Car` cannot make any assumptions about \n*what kind* of `Engine` it received. Different engines have different \nconstructor params but have the [same API and semantics](https://en.wikipedia.org/wiki/Liskov_substitution_principle).\n- In order to take advantage of typing (e.g., `mypy`, PyCharm auto-complete), \nuse `dilib.get_config(...)` and `container.config`, \nwhich are type-safe alternatives to `CarConfig().get(...)` and \ndirect `container` access. Note also how we set the `engine` config field type\nto the base class `Engine`--this way, clients of the config are \nabstracted away from which implementation is currently configured. \n\n### API Overview\n\n- `dilib.Config`: Inherit from this to specify your objects and params\n- `config = dilib.get_config(ConfigClass, **global_inputs)`: Instantiate \nconfig object\n  - Alternatively: `config = ConfigClass().get(**global_inputs)`\n- `container = dilib.get_container(config)`: Instantiate container object\nby passing in the config object \n  - Alternatively: `container = dilib.Container(config)`\n- `container.config.x_config.y_config.z`: Get the instantianted object\n  - Alternatively: `container.x_config.y_config.z`, \nor even `container[\"x_config.y_config.z\"]`\n\nSpecs:\n\n- `dilib.Object`: Pass-through already-instantiated object\n- `dilib.Forward`: Forward to a different config field\n- `dilib.Prototype`: Instantiate a new object at each container retrieval\n- `dilib.Singleton`: Instantiate and cache object at each container retrieval\n- `dilib.Singleton{Tuple,List,Dict}`: Special helpers to ease \ncollections of specs. E.g.:\n\n```python\nimport dataclasses\n\nimport dilib\n\n\n@dataclasses.dataclass(frozen=True)\nclass ValuesWrapper:\n    x: int\n    y: int\n    z: int = 3\n\n\nclass CollectionsConfig(dilib.Config):\n    x: int = dilib.Object(1)\n    y: int = dilib.Object(2)\n    z: int = dilib.Object(3)\n\n    xy_tuple = dilib.SingletonTuple(x, y)\n    xy_list = dilib.SingletonList(x, y)\n    xy_dict0 = dilib.SingletonDict(x=x, y=y)\n    xy_dict1 = dilib.SingletonDict({\"x\": x, \"y\": y})\n    xy_dict2 = dilib.SingletonDict({\"x\": x, \"y\": y}, z=z)\n\n    # You can also build a partial kwargs dict that can be \n    # re-used and combined downstream\n    partial_kwargs = dilib.SingletonDict(x=x, y=y)\n    values0 = dilib.Singleton(ValuesWrapper, __lazy_kwargs=partial_kwargs)\n    values1 = dilib.Singleton(ValuesWrapper, z=4, __lazy_kwargs=partial_kwargs)\n\n\nconfig = dilib.get_config(CollectionsConfig)\ncontainer = dilib.get_container(config)\n\nassert container.config.xy_tuple == (1, 2)\nassert container.config.xy_list == [1, 2]\nassert container.config.xy_dict0 == {\"x\": 1, \"y\": 2}\nassert container.config.xy_dict1 == {\"x\": 1, \"y\": 2}\nassert container.config.xy_dict2 == {\"x\": 1, \"y\": 2, \"z\": 3}\n```\n\n## Comparisons with Other DI Frameworks\n\n### pinject\n\nA prominent DI library in \npython is [`pinject`](https://github.com/google/pinject).\n\n#### Advantages of dilib\n\n- Focus on simplicity. E.g.:\n  - `foo = dilib.Object(\"a\")` rather than `bind(\"foo\", to_instance=\"a\")`.\n  - Child configs look like just another field on the config.\n- Getting is via *names* rather than *classes*.\n  - In `pinject`, the equivalent of container attr access\n    takes a class (like `Car`) rather than a config address.\n- No implicit wiring: No assumptions are made about aligning \narg names with config params.\n  - Granted, `pinject` does have an explicit mode, \n    but the framework's default state is implicit.\n  - The explicit wiring in dilib configs obviates the need \n  for complications like [inject decorators](https://github.com/google/pinject#safety) \n  and [annotations](https://github.com/google/pinject#annotations).\n- Minimal or no pollution of objects: Objects are not aware of \nthe DI framework. The only exception is:\nif you want the IDE autocompletion to work when wiring up configs in an\nenvironment that does not support `ParamSpec`\n(e.g., `car = Car(engine=...)`), you have\nto inherit from, e.g., `dilib.SingletonMixin`. But this is completely \noptional; in `pinject`, on the other hand, one is required to \ndecorate with `@pinject.inject()` in some circumstances.\n\n### dependency-injector\n\nAnother prominent DI library in python is [`dependency-injector`](https://github.com/ets-labs/python-dependency-injector).\n\n#### Advantages of dilib\n\n- `dilib` discourages use of class-level state by not supporting it\n(that is, `dilib.Container` is equivalent to \n`dependency_injector.containers.DynamicContainer`)\n- Cleaner separation between \"config\" and \"container\" \n(dependency-injector conflates the two)\n- Easy-to-use perturbing with simple `config.x = new_value` syntax\n- Easier to nest configs via config locator pattern\n- Child configs are typed instead of relying on \n`DependenciesContainer` stub (which aids in IDE auto-complete)\n- Easier-to-use global input configuration\n- Written in native python for more transparency\n\n## Design\n\n### Prevent Pollution of Objects\n\nThe dependency between the DI config and the actual objects in the \nobject graph should be one way: \nthe DI config depends on the object graph types and values. \nThis keeps the objects clean of \nparticular decisions made by the DI framework.\n\n(`dilib` offers optional mixins that violate this decision \nfor users that want to favor the typing and \nauto-completion benefits of using the object types directly.)\n\n### Child Configs are Singletons by Type\n\nIn `dilib`, when you set a child config on a config object, \nyou're not actually instantiating the child config. \nRather, you're creating a spec that will be instantiated \nwhen the root config's `.get()` is called. \nThis means that the config instances are singletons by type \n(unlike the actual objects specified in the config, which are by alias). \nIt would be cleaner to create instances of common configs and \npass them through to other configs \n(that's what DI is all about, after all!). However, the decision was made \nto not allow this because this would make \nbuilding up configs almost as complicated as building up the \nactual object graph users are interested in \n(essentially, the user would be engaged in an abstract meta-DI problem). \nAs such, all references to the same config type are \nautomatically resolved to the same instance, \nat the expense of some flexibility and directness. \nThe upside, however, is that it's much easier to create nested configs, \nwhich means users can get to designing the actual object graph quicker.\n\n### Factories for Dynamic Objects\n\nIf you need to configure objects dynamically \n(e.g., check db value to resolve what type to use, \nset config keys based on another value), consider a factory pattern like:\n\n```python\nimport dilib\n\n\nclass Foo:\n    @property\n    def value(self) -> int:\n        raise NotImplementedError\n\n\nclass FooFactory:\n    def get_foo(self) -> Foo:\n        raise NotImplementedError\n\n\nclass FooClient:\n    def __init__(self, foo_factory: FooFactory):\n        self.foo_factory = foo_factory\n        \n    def get_foo_value(self) -> int:\n        foo = self.foo_factory.get_foo()\n        return foo.value\n\n\nclass FooConfig(dilib.Config):\n    db_param = dilib.Object(\"some-db-addr\")\n    foo_factory = dilib.Singleton(FooFactory, db_param)\n    foo_client = dilib.Singleton(FooClient, foo_factory=foo_factory)\n```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -513,7 +512,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16322317,
+        "last_serial": 18100787,
         "urls": [
             {
                 "comment_text": "",
@@ -554,6 +553,118 @@
                 "upload_time": "2023-01-05T21:36:59",
                 "upload_time_iso_8601": "2023-01-05T21:36:59.464503Z",
                 "url": "https://files.pythonhosted.org/packages/45/89/125b3a21b2031a4b116bdde6385a3ad9d2d2532bc4ff1e76e685fae5ea3e/dilib-0.4.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.4.3": {
+        "info": {
+            "author": "",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 5 - Production/Stable",
+                "Intended Audience :: Developers",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Programming Language :: Python :: Implementation :: CPython",
+                "Programming Language :: Python :: Implementation :: PyPy",
+                "Topic :: Software Development :: Libraries",
+                "Topic :: Utilities"
+            ],
+            "description": "# dilib\n\nDependency injection (DI) library for python\n\n[![PyPI version](https://badge.fury.io/py/dilib.svg)](https://badge.fury.io/py/dilib)\n[![PyPI Supported Python Versions](https://img.shields.io/pypi/pyversions/dilib.svg)](https://pypi.python.org/pypi/dilib/)\n[![GitHub Actions (Tests)](https://github.com/ansatzcapital/dilib/workflows/Test/badge.svg)](https://github.com/ansatzcapital/dilib)\n\n## About DI\n\n[Dependency injection](https://en.wikipedia.org/wiki/Dependency_injection) \ncan be thought of as a **software engineering pattern** \nas well as a **framework**. The goal is to develop objects in a more\ncomposable and modular way.\n\nThe **pattern** is: when creating objects, always express what you depend on, \nand let someone else give you those dependencies. (This is sometimes\nreferred to as the \"Hollywood principle\": \"Don't call us; we'll call you.\")\n\nThe **framework** is meant to ease the inevitable boilerplate \nthat occurs when following this pattern, and `dilib` is one such framework.\n\nSee the [Google Clean Code Talk about Dependency Injection](https://testing.googleblog.com/2008/11/clean-code-talks-dependency-injection.html).\n\n## Installation\n\n`dilib` is available on [PyPI](https://pypi.org/project/dilib/):\n\n```bash\npip install dilib\n```\n\n## Quick Start\n\nThere are 3 major parts of this framework:\n\n- `dilib.{Prototype,Singleton}`: A recipe that describes how to instantiate \nthe object when needed later. `dilib.Prototype` indicates to the retriever\nthat a new instance should be created per retrieval, \nwhile `dilib.Singleton` indicates only 1 instance of the object \nshould exist. (Both spec types inherit from `dilib.Spec`.)\n- `dilib.Config`: Nestable bag of types and values, bound by specs, \nthat can be loaded, perturbed, and saved.\n- `dilib.Container`: The object retriever--it's in charge of \n_materializing_ the aforementioned delayed specs that \nare wired together by config into actual instances \n(plus caching, if indicated by the spec).\n\n```python\nfrom typing import Optional\n\nimport dilib\n\n\n# API\nclass Engine:\n    pass\n\n\n# An implementation of the engine API that makes network calls\nclass DBEngine(Engine):\n    def __init__(self, addr: str, token: Optional[str] = None):\n        self.addr = addr\n        self.token = token\n\n\n# An implementation of the engine API designed for testing\nclass MockEngine(Engine):\n     pass\n\n\nclass Car:\n    # Takes an Engine instance via constructor injection\n    def __init__(self, engine: Engine):\n        self.engine = engine\n\n\nclass EngineConfig(dilib.Config):\n    db_addr = dilib.GlobalInput(str, default=\"some-db-addr\")\n\n    token_prefix = dilib.LocalInput(str)\n    token = dilib.Prototype(lambda x: x + \".bar\", x=token_prefix)\n\n    # Objects depend on other objects via named aliases\n    engine0: Engine = dilib.Singleton(DBEngine, db_addr, token=token)\n    # Or equivalently, if DBEngine used dilib.SingletonMixin:\n    # engine0 = dilib.DBEngine(db_addr, token=token)\n\n    # Alternate engine spec\n    engine1: Engine = dilib.Singleton(DBEngine, db_addr)\n\n    # Forward spec resolution to the target spec\n    engine: Engine = dilib.Forward(engine0)\n\n\nclass CarConfig(dilib.Config):\n    # Configs depend on other configs via types. \n    # Here, CarConfig depends on EngineConfig.\n    engine_config = EngineConfig(token_prefix=\"baz\")\n\n    car = dilib.Singleton(Car, engine_config.engine)\n\n\n# Get instance of config (with global input value set)\ncar_config: CarConfig = dilib.get_config(\n  CarConfig, db_addr=\"some-other-db-addr\"\n)\n\n# Perturb here as you'd like. E.g.:\ncar_config.engine_config.engine = dilib.Singleton(MockEngine)\n\n# Pass config to a container\ncontainer: dilib.Container[CarConfig] = dilib.get_container(car_config)\n\n# Retrieve objects from container (some of which are cached inside)\nassert container.config.engine_config.db_addr == \"some-other-db-addr\"\nassert isinstance(container.config.engine_config.engine, MockEngine)\nassert isinstance(container.config.car, Car)\nassert container.config.car is container.car  # Because it's a Singleton\n```\n\nNotes:\n- `Car` *takes in* an `Engine` via its constructor \n(known as \"constructor injection\"),\ninstead of making or getting one within itself.\n- For this to work, `Car` cannot make any assumptions about \n*what kind* of `Engine` it received. Different engines have different \nconstructor params but have the [same API and semantics](https://en.wikipedia.org/wiki/Liskov_substitution_principle).\n- In order to take advantage of typing (e.g., `mypy`, PyCharm auto-complete), \nuse `dilib.get_config(...)` and `container.config`, \nwhich are type-safe alternatives to `CarConfig().get(...)` and \ndirect `container` access. Note also how we set the `engine` config field type\nto the base class `Engine`--this way, clients of the config are \nabstracted away from which implementation is currently configured. \n\n### API Overview\n\n- `dilib.Config`: Inherit from this to specify your objects and params\n- `config = dilib.get_config(ConfigClass, **global_inputs)`: Instantiate \nconfig object\n  - Alternatively: `config = ConfigClass().get(**global_inputs)`\n- `container = dilib.get_container(config)`: Instantiate container object\nby passing in the config object \n  - Alternatively: `container = dilib.Container(config)`\n- `container.config.x_config.y_config.z`: Get the instantianted object\n  - Alternatively: `container.x_config.y_config.z`, \nor even `container[\"x_config.y_config.z\"]`\n\nSpecs:\n\n- `dilib.Object`: Pass-through already-instantiated object\n- `dilib.Forward`: Forward to a different config field\n- `dilib.Prototype`: Instantiate a new object at each container retrieval\n- `dilib.Singleton`: Instantiate and cache object at each container retrieval\n- `dilib.Singleton{Tuple,List,Dict}`: Special helpers to ease \ncollections of specs. E.g.:\n\n```python\nimport dataclasses\n\nimport dilib\n\n\n@dataclasses.dataclass(frozen=True)\nclass ValuesWrapper:\n    x: int\n    y: int\n    z: int = 3\n\n\nclass CollectionsConfig(dilib.Config):\n    x: int = dilib.Object(1)\n    y: int = dilib.Object(2)\n    z: int = dilib.Object(3)\n\n    xy_tuple = dilib.SingletonTuple(x, y)\n    xy_list = dilib.SingletonList(x, y)\n    xy_dict0 = dilib.SingletonDict(x=x, y=y)\n    xy_dict1 = dilib.SingletonDict({\"x\": x, \"y\": y})\n    xy_dict2 = dilib.SingletonDict({\"x\": x, \"y\": y}, z=z)\n\n    # You can also build a partial kwargs dict that can be \n    # re-used and combined downstream\n    partial_kwargs = dilib.SingletonDict(x=x, y=y)\n    values0 = dilib.Singleton(ValuesWrapper, __lazy_kwargs=partial_kwargs)\n    values1 = dilib.Singleton(ValuesWrapper, z=4, __lazy_kwargs=partial_kwargs)\n\n\nconfig = dilib.get_config(CollectionsConfig)\ncontainer = dilib.get_container(config)\n\nassert container.config.xy_tuple == (1, 2)\nassert container.config.xy_list == [1, 2]\nassert container.config.xy_dict0 == {\"x\": 1, \"y\": 2}\nassert container.config.xy_dict1 == {\"x\": 1, \"y\": 2}\nassert container.config.xy_dict2 == {\"x\": 1, \"y\": 2, \"z\": 3}\n```\n\n## Comparisons with Other DI Frameworks\n\n### pinject\n\nA prominent DI library in \npython is [`pinject`](https://github.com/google/pinject).\n\n#### Advantages of dilib\n\n- Focus on simplicity. E.g.:\n  - `foo = dilib.Object(\"a\")` rather than `bind(\"foo\", to_instance=\"a\")`.\n  - Child configs look like just another field on the config.\n- Getting is via *names* rather than *classes*.\n  - In `pinject`, the equivalent of container attr access\n    takes a class (like `Car`) rather than a config address.\n- No implicit wiring: No assumptions are made about aligning \narg names with config params.\n  - Granted, `pinject` does have an explicit mode, \n    but the framework's default state is implicit.\n  - The explicit wiring in dilib configs obviates the need \n  for complications like [inject decorators](https://github.com/google/pinject#safety) \n  and [annotations](https://github.com/google/pinject#annotations).\n- Minimal or no pollution of objects: Objects are not aware of \nthe DI framework. The only exception is:\nif you want the IDE autocompletion to work when wiring up configs in an\nenvironment that does not support `ParamSpec`\n(e.g., `car = Car(engine=...)`), you have\nto inherit from, e.g., `dilib.SingletonMixin`. But this is completely \noptional; in `pinject`, on the other hand, one is required to \ndecorate with `@pinject.inject()` in some circumstances.\n\n### dependency-injector\n\nAnother prominent DI library in python is [`dependency-injector`](https://github.com/ets-labs/python-dependency-injector).\n\n#### Advantages of dilib\n\n- `dilib` discourages use of class-level state by not supporting it\n(that is, `dilib.Container` is equivalent to \n`dependency_injector.containers.DynamicContainer`)\n- Cleaner separation between \"config\" and \"container\" \n(dependency-injector conflates the two)\n- Easy-to-use perturbing with simple `config.x = new_value` syntax\n- Easier to nest configs via config locator pattern\n- Child configs are typed instead of relying on \n`DependenciesContainer` stub (which aids in IDE auto-complete)\n- Easier-to-use global input configuration\n- Written in native python for more transparency\n\n## Design\n\n### Prevent Pollution of Objects\n\nThe dependency between the DI config and the actual objects in the \nobject graph should be one way: \nthe DI config depends on the object graph types and values. \nThis keeps the objects clean of \nparticular decisions made by the DI framework.\n\n(`dilib` offers optional mixins that violate this decision \nfor users that want to favor the typing and \nauto-completion benefits of using the object types directly.)\n\n### Child Configs are Singletons by Type\n\nIn `dilib`, when you set a child config on a config object, \nyou're not actually instantiating the child config. \nRather, you're creating a spec that will be instantiated \nwhen the root config's `.get()` is called. \nThis means that the config instances are singletons by type \n(unlike the actual objects specified in the config, which are by alias). \nIt would be cleaner to create instances of common configs and \npass them through to other configs \n(that's what DI is all about, after all!). However, the decision was made \nto not allow this because this would make \nbuilding up configs almost as complicated as building up the \nactual object graph users are interested in \n(essentially, the user would be engaged in an abstract meta-DI problem). \nAs such, all references to the same config type are \nautomatically resolved to the same instance, \nat the expense of some flexibility and directness. \nThe upside, however, is that it's much easier to create nested configs, \nwhich means users can get to designing the actual object graph quicker.\n\n### Factories for Dynamic Objects\n\nIf you need to configure objects dynamically \n(e.g., check db value to resolve what type to use, \nset config keys based on another value), consider a factory pattern like:\n\n```python\nimport dataclasses\n\nimport dilib\n\n\n# Object that needs to be created dynamically\n@dataclasses.dataclass(frozen=True)\nclass Foo:\n    value: int\n\n\n# Factory that takes static params via constructor injection and dynamic params via method injection\n@dataclasses.dataclass(frozen=True)\nclass FooFactory:\n    db_host: str\n    alpha: int\n    beta: int\n\n    def get_foo(self, gamma: int) -> Foo:\n        raise NotImplementedError\n\n\n# Object that needs Foo object\n@dataclasses.dataclass(frozen=True)\nclass FooClient:\n    foo_factory: FooFactory\n\n    def process_foo_value(self) -> int:\n        return 100 + self.foo_factory.get_foo(gamma=3).value\n\n\nclass FooConfig(dilib.Config):\n    db_host = dilib.GlobalInput(type_=str, default=\"some-db-addr\")\n    foo_factory = dilib.Singleton(FooFactory, db_host=db_host, alpha=1, beta=2)\n    foo_client = dilib.Singleton(FooClient, foo_factory=foo_factory)\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/ansatzcapital/dilib",
+            "keywords": "dependency injection, di, inversion of control, ioc, design patterns",
+            "license": "Apache License 2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "dilib",
+            "package_url": "https://pypi.org/project/dilib/",
+            "platform": "any",
+            "project_url": "https://pypi.org/project/dilib/",
+            "project_urls": {
+                "Homepage": "https://github.com/ansatzcapital/dilib",
+                "Packaging": "https://pypi.org/project/dilib/",
+                "Source": "https://github.com/ansatzcapital/dilib",
+                "Tracker": "https://github.com/ansatzcapital/dilib/issues"
+            },
+            "release_url": "https://pypi.org/project/dilib/0.4.3/",
+            "requires_dist": [
+                "typing-extensions (>=4.4.0)",
+                "build (>=0.6.0) ; extra == 'building'",
+                "setuptools-scm[toml] (>=3.4) ; extra == 'building'",
+                "wheel (>=0.38.0) ; extra == 'building'",
+                "black (>=22.8) ; extra == 'testing'",
+                "docformatter (>=1.5.0) ; extra == 'testing'",
+                "flake8 (>=5.0.4) ; extra == 'testing'",
+                "isort (>=5.2.2) ; extra == 'testing'",
+                "mypy (>=0.800) ; extra == 'testing'",
+                "pytest (>=6.2.5) ; extra == 'testing'",
+                "pytest-cov (<3,>=2) ; extra == 'testing'",
+                "pyright (>=1.1.284) ; extra == 'testing'",
+                "tox (>=3.27.1) ; extra == 'testing'"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "Dependency injection library",
+            "version": "0.4.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18100787,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "b72331cf1677a522003c5075455be30818e1d8f1f3779f1398a60fd5a8ede972",
+                    "md5": "54bb378aa0123da1b5f5815b385ea1fc",
+                    "sha256": "2a0eb6f7e8917e120b8290a574120313b4517b112eca8faa4a06c2bab1ce07be"
+                },
+                "downloads": -1,
+                "filename": "dilib-0.4.3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "54bb378aa0123da1b5f5815b385ea1fc",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 25367,
+                "upload_time": "2023-05-14T23:50:50",
+                "upload_time_iso_8601": "2023-05-14T23:50:50.774636Z",
+                "url": "https://files.pythonhosted.org/packages/b7/23/31cf1677a522003c5075455be30818e1d8f1f3779f1398a60fd5a8ede972/dilib-0.4.3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2c275f61fdfff4d1bd5bf9e992b703e37b2edf3efacebd055262da0cb75b8489",
+                    "md5": "2c0a3444e46b8fae3734650b6dab6949",
+                    "sha256": "fc6f9fa908778c9e08fc65a6f3f9b52857022679e1bbd71f650f244c8576c0ed"
+                },
+                "downloads": -1,
+                "filename": "dilib-0.4.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "2c0a3444e46b8fae3734650b6dab6949",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 28180,
+                "upload_time": "2023-05-14T23:50:52",
+                "upload_time_iso_8601": "2023-05-14T23:50:52.556706Z",
+                "url": "https://files.pythonhosted.org/packages/2c/27/5f61fdfff4d1bd5bf9e992b703e37b2edf3efacebd055262da0cb75b8489/dilib-0.4.3.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

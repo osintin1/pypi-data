@@ -38,7 +38,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18096315,
+        "last_serial": 18098317,
         "urls": [
             {
                 "comment_text": "",
@@ -95,7 +95,6 @@
                 "Programming Language :: Python :: 3",
                 "Programming Language :: Python :: 3.10"
             ],
-            "description": "# Hyperparameters\n\nAre you tired of repeating hyperparameters in code, `argparse` definitions, and hyperparameter tunning libraries?\n\n`Hyperparameters` lets you define your hyperparameters once and use everywhere! Moreover, you get type linting and spelling checks for free!\n\n## Quickstart\n\nInstall `Hyperparameters`:\n```bash\npip install hyperparameters\n```\n\nYou need to install the `ray.tune` package separately if you want to use the `ray.tune` hypertunning integration:\n```bash\npip install -U \"ray[tune]\"\n```\n\nDefine your parameters once using the `Hyperparams` class:\n\n```python\nfrom argparse import ArgumentParser\nfrom typing import Optional\n\nfrom hyperparameters import HP, Hyperparams\n\n\nclass MyHyperparams(Hyperparams):\n    epochs: int = HP(\n        \"Number of epochs to train for\",\n        default=5,\n    )\n    lr: float = HP(\n        \"Learning rate\",\n        default=1e-3,\n    )\n    tokenizer: str = HP(\n        \"HF tokenizer to use\",\n        default=\"BPE\",\n        choices=[\"BPE\", \"WordPiece\"],\n    )\n    train_data_path: str = HP(\n        \"Path to the training dataset\",\n    )\n    use_dropout: bool = HP(\n        \"Whether the dropout layers should be activated\",\n        default=True,\n    )\n    pretrained_weights: Optional[str] = HP(\n        \"Path to the pretrained model weights, if any\",\n        default=None,\n    )\n\n\nparser = ArgumentParser()\nMyHyperparams.add_arguments(parser)\nparams = MyHyperparams.from_arguments(parser.parse_args())\n\n# access parameters as typed attributes\nparams.train_data_path\n\n# convert to a dictionary\nprint(params.dict())\n```\n\nLet's see the registered arguments by running the code above with `--help`:\n```\nusage: example.py [-h] [--epochs EPOCHS] [--lr LR] [--tokenizer {BPE,WordPiece}] --train-data-path TRAIN_DATA_PATH [--use-dropout | --no-use-dropout]\n                  [--pretrained-weights PRETRAINED_WEIGHTS]\n\noptions:\n  -h, --help            show this help message and exit\n  --epochs EPOCHS       Number of epochs to train for\n  --lr LR               Learning rate\n  --tokenizer {BPE,WordPiece}\n                        HF tokenizer to use\n  --train-data-path TRAIN_DATA_PATH\n                        Path to the training dataset\n  --use-dropout         Whether the dropout layers should be activated\n  --no-use-dropout      Disable: Whether the dropout layers should be activated\n  --pretrained-weights PRETRAINED_WEIGHTS\n                        Path to the pretrained model weights, if any\n```\nAs can be seen from the above, `Hyperparameters` takes care of low level details for you:\n\n1. The `--train-data-path` parameter is required because we didn't provide a default value for it. All other parameters are optional.\n2. Even though the default value for `--pretrained-weights` is `None`, this parameter is optional. However, we had to use the `Optional[str]` type hint.\n3. You can provide the `--use-dropout` or the `--no-use-dropout` flag, but not both at the same time. Neither flag is required, as the `use_dropout` parameter has a default value.\n4. The `--tokenizer` parameter can only be `BPE` or `WordPiece`. Providing any other value results in an error.\n5. The data types of the parameters are parsed from strings and validated according to the type hints in the `MyHyperparams` class. \n6. The default values are used whenever an argument is ommitted. Let's check that by running with `--train-data-path mydata/`: the script prints: `{'epochs': 5, 'lr': 0.001, 'tokenizer': 'BPE', 'train_data_path': 'mydata/', 'use_dropout': True, 'pretrained_weights': None}`.\n\n\n### Default values and required parameters\n\n1. If a default value is omitted completely, the parameter will be required.\n2. Otherwise, if any default value is specified, even `None`, the parameter will be optional.\n3. You must use the `Optional` type hint if the default value is `None`.\n4. You can't have `bool` parameters with `None` as default. Flags that can be `None` just don't make any sense.\n5. You can't have choice parameters with `None` as default. If you need this, just add a \"null\" value to the list of choices.\n\n\n## Hypertunning\nDifferent hypertunning libraries provide different APIs for defining search spaces. `Hyperparameters` can be easily extended to support any hypertunning library. You can do it yourself following the steps discussed below - it's easy! The `ray.tune` library is supported out of the box.\n\nWhen defining hypertunable parameters with `Hyperparameters`, make sure to inherit from both the `Hyperparams` class and the mixin class specific to your hypertunning library. Here is an example for `ray.tune`:\n```python\nfrom hyperparameters import HP, Hyperparams\nfrom hyperparameters.ray_tune_hyperparams import RayTuneHyperparamsMixin\n\n\nclass MyHyperparams(Hyperparams, RayTuneHyperparamsMixin):\n    ...\n```\n\nNext, you can specify the search spaces:\n\n1. use the hypertunning library API to describe the search space and provide this object to the `HP(..., search_space=)` parameter;\n2. if you already specify the `HP(..., choices=[])` parameter you can treat the possible choices as a search space by setting the `HP(..., tunable=True)` parameter.\n3. for `bool` fields just set the `HP(..., tunable=True)` parameter, which is equivallent to `HP(..., tunable=True, choices=[False, True])`.\n\nNote that when using the `search_space` parameter, you don't need to use the `tunable` parameter.\n\nFinally, you are ready to use the mixin-specific class methods to extract information about your search spaces. For `ray.tune` these are:\n\n1. `.ray_tune_param_space()` method that returns a dictionary describing the search space.\n2. `.ray_tune_best_values()` method that returns a dictionary of the best values to start hypertunning from.\n\nHere is a complete example of defining parameters hypertunable with `ray.tune`:\n```python\nfrom ray import tune\n\nfrom hyperparameters import HP, Hyperparams\nfrom hyperparameters.ray_tune_hyperparams import RayTuneHyperparamsMixin\n\n\nclass MyHyperparams(Hyperparams, RayTuneHyperparamsMixin):\n    lr: float = HP(\n        \"Learning rate\",\n        default=1e-3,\n        search_space=tune.loguniform(1e-5, 1e-2),\n    )\n    layers_num: int = HP(\n        \"Number of model layers\",\n        default=8,\n        tunable=True,\n        choices=[4, 8, 16, 24],\n    )\n    use_dropout: bool = HP(\n        \"Whether the dropout layers should be activated\",\n        default=True,\n        tunable=True,\n    )\n\n# Search space config that ray.tune understands\nMyHyperparams.ray_tune_param_space()\n\n# Best values to start the hypertunning from\nMyHyperparams.ray_tune_best_values()\n```\n\n### Supporting other hypertunning libraries\n\nIn `Hyperparameters`, the logic specific to hypertunning libraries is implemented with mixin classes. This means that you can add many mixins to your parameters and support several hypertunning libraries at once.\n\nThe best place to start is to review the implementation of the `RayTuneHyperparamsMixin` class in `hyperparameters/ray_tune_hyperparams.py`.\n\nThe class implementing a new hypertunning library must:\n\n1. Inherit from `hyperparameters.hyperparams.HyperparamsProtocol`.\n2. Provide class methods for converting the params data stored in `hyperparameters.hyperparams.HyperparamInfo` structure into a format that the hypertunning library understands.\n3. Use the `cls._tunable_params()` to get the info about the parameters.\n4. Wrap `info.choices` in a proper type for the hypertunning library.\n5. Provide a method for returning the best parameter values to start the hypertunning from.\n\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -128,7 +127,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18096315,
+        "last_serial": 18098317,
         "urls": [
             {
                 "comment_text": "",
@@ -169,6 +168,96 @@
                 "upload_time": "2023-05-14T10:36:05",
                 "upload_time_iso_8601": "2023-05-14T10:36:05.599652Z",
                 "url": "https://files.pythonhosted.org/packages/2c/e4/378fb53096309fc852a5e6bf8d75aff069a26b50e43facdc31c23474935a/hyperparameters-0.2.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.1": {
+        "info": {
+            "author": "Oleh Lokshyn",
+            "author_email": "olokshyn@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10"
+            ],
+            "description": "# Hyperparameters\n\nAre you tired of repeating hyperparameters in code, `argparse` definitions, and hyperparameter tunning libraries?\n\n`Hyperparameters` lets you define your hyperparameters once and use everywhere! Moreover, you get type linting and spelling checks for free!\n\n## Quickstart\n\nInstall `Hyperparameters`:\n```bash\npip install hyperparameters\n```\n\nYou need to install the `ray.tune` package separately if you want to use the `ray.tune` hypertunning integration:\n```bash\npip install -U \"ray[tune]\"\n```\n\nDefine your parameters once using the `Hyperparams` class:\n\n```python\nfrom argparse import ArgumentParser\nfrom typing import Optional\n\nfrom hyperparameters import HP, Hyperparams\n\n\nclass MyHyperparams(Hyperparams):\n    epochs: int = HP(\n        \"Number of epochs to train for\",\n        default=5,\n    )\n    lr: float = HP(\n        \"Learning rate\",\n        default=1e-3,\n    )\n    tokenizer: str = HP(\n        \"HF tokenizer to use\",\n        default=\"BPE\",\n        choices=[\"BPE\", \"WordPiece\"],\n    )\n    train_data_path: str = HP(\n        \"Path to the training dataset\",\n    )\n    use_dropout: bool = HP(\n        \"Whether the dropout layers should be activated\",\n        default=True,\n    )\n    pretrained_weights: Optional[str] = HP(\n        \"Path to the pretrained model weights, if any\",\n        default=None,\n    )\n\n\nparser = ArgumentParser()\nMyHyperparams.add_arguments(parser)\nparams = MyHyperparams.from_arguments(parser.parse_args())\n\n# access parameters as typed attributes\nparams.train_data_path\n\n# convert to a dictionary\nprint(params.dict())\n```\n\nLet's see the registered arguments by running the code above with `--help`:\n```\nusage: example.py [-h] [--epochs EPOCHS] [--lr LR] [--tokenizer {BPE,WordPiece}] --train-data-path TRAIN_DATA_PATH [--use-dropout | --no-use-dropout]\n                  [--pretrained-weights PRETRAINED_WEIGHTS]\n\noptions:\n  -h, --help            show this help message and exit\n  --epochs EPOCHS       Number of epochs to train for\n  --lr LR               Learning rate\n  --tokenizer {BPE,WordPiece}\n                        HF tokenizer to use\n  --train-data-path TRAIN_DATA_PATH\n                        Path to the training dataset\n  --use-dropout         Whether the dropout layers should be activated\n  --no-use-dropout      Disable: Whether the dropout layers should be activated\n  --pretrained-weights PRETRAINED_WEIGHTS\n                        Path to the pretrained model weights, if any\n```\nAs can be seen from the above, `Hyperparameters` takes care of low level details for you:\n\n1. The `--train-data-path` parameter is required because we didn't provide a default value for it. All other parameters are optional.\n2. Even though the default value for `--pretrained-weights` is `None`, this parameter is optional. However, we had to use the `Optional[str]` type hint.\n3. You can provide the `--use-dropout` or the `--no-use-dropout` flag, but not both at the same time. Neither flag is required, as the `use_dropout` parameter has a default value.\n4. The `--tokenizer` parameter can only be `BPE` or `WordPiece`. Providing any other value results in an error.\n5. The data types of the parameters are parsed from strings and validated according to the type hints in the `MyHyperparams` class. \n6. The default values are used whenever an argument is ommitted. Let's check that by running with `--train-data-path mydata/`: the script prints: `{'epochs': 5, 'lr': 0.001, 'tokenizer': 'BPE', 'train_data_path': 'mydata/', 'use_dropout': True, 'pretrained_weights': None}`.\n\n\n### Default values and required parameters\n\n1. If a default value is omitted completely, the parameter will be required.\n2. Otherwise, if any default value is specified, even `None`, the parameter will be optional.\n3. You must use the `Optional` type hint if the default value is `None`.\n4. You can't have `bool` parameters with `None` as default. Flags that can be `None` just don't make any sense.\n5. You can't have choice parameters with `None` as default. If you need this, just add a \"null\" value to the list of choices.\n\n\n## Hypertunning\nDifferent hypertunning libraries provide different APIs for defining search spaces. `Hyperparameters` can be easily extended to support any hypertunning library. You can do it yourself following the steps discussed below - it's easy! The `ray.tune` library is supported out of the box.\n\nWhen defining hypertunable parameters with `Hyperparameters`, make sure to inherit from both the `Hyperparams` class and the mixin class specific to your hypertunning library. Here is an example for `ray.tune`:\n```python\nfrom hyperparameters import HP, Hyperparams\nfrom hyperparameters.ray_tune_hyperparams import RayTuneHyperparamsMixin\n\n\nclass MyHyperparams(Hyperparams, RayTuneHyperparamsMixin):\n    ...\n```\n\nNext, you can specify the search spaces:\n\n1. use the hypertunning library API to describe the search space and provide this object to the `HP(..., search_space=)` parameter;\n2. if you already specify the `HP(..., choices=[])` parameter you can treat the possible choices as a search space by setting the `HP(..., tunable=True)` parameter.\n3. for `bool` fields just set the `HP(..., tunable=True)` parameter, which is equivallent to `HP(..., tunable=True, choices=[False, True])`.\n\nNote that when using the `search_space` parameter, you don't need to use the `tunable` parameter.\n\nFinally, you are ready to use the mixin-specific class methods to extract information about your search spaces. For `ray.tune` these are:\n\n1. `.ray_tune_param_space()` method that returns a dictionary describing the search space.\n2. `.ray_tune_best_values()` method that returns a dictionary of the best values to start hypertunning from.\n\nHere is a complete example of defining parameters hypertunable with `ray.tune`:\n```python\nfrom ray import tune\n\nfrom hyperparameters import HP, Hyperparams\nfrom hyperparameters.ray_tune_hyperparams import RayTuneHyperparamsMixin\n\n\nclass MyHyperparams(Hyperparams, RayTuneHyperparamsMixin):\n    lr: float = HP(\n        \"Learning rate\",\n        default=1e-3,\n        search_space=tune.loguniform(1e-5, 1e-2),\n    )\n    layers_num: int = HP(\n        \"Number of model layers\",\n        default=8,\n        tunable=True,\n        choices=[4, 8, 16, 24],\n    )\n    use_dropout: bool = HP(\n        \"Whether the dropout layers should be activated\",\n        default=True,\n        tunable=True,\n    )\n\n# Search space config that ray.tune understands\nMyHyperparams.ray_tune_param_space()\n\n# Best values to start the hypertunning from\nMyHyperparams.ray_tune_best_values()\n```\n\n### Supporting other hypertunning libraries\n\nIn `Hyperparameters`, the logic specific to hypertunning libraries is implemented with mixin classes. This means that you can add many mixins to your parameters and support several hypertunning libraries at once.\n\nThe best place to start is to review the implementation of the `RayTuneHyperparamsMixin` class in `hyperparameters/ray_tune_hyperparams.py`.\n\nThe class implementing a new hypertunning library must:\n\n1. Inherit from `hyperparameters.hyperparams.HyperparamsProtocol`.\n2. Provide class methods for converting the params data stored in `hyperparameters.hyperparams.HyperparamInfo` structure into a format that the hypertunning library understands.\n3. Use the `cls._tunable_params()` to get the info about the parameters.\n4. Wrap `info.choices` in a proper type for the hypertunning library.\n5. Provide a method for returning the best parameter values to start the hypertunning from.\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "hyperparameters",
+            "package_url": "https://pypi.org/project/hyperparameters/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/hyperparameters/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/olokshyn/Hyperparameters/issues",
+                "Repository": "https://github.com/olokshyn/Hyperparameters"
+            },
+            "release_url": "https://pypi.org/project/hyperparameters/0.2.1/",
+            "requires_dist": [
+                "pydantic (>=1.10.7,<2.0.0)",
+                "ray[tune] (>=2.4.0,<3.0.0) ; extra == \"ray\""
+            ],
+            "requires_python": ">=3.10,<3.11",
+            "summary": "Define your Hyperparameters once and use in argparse, hypertunning libraries, and as strongly-typed attributes in code!",
+            "version": "0.2.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18098317,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5a01420b642fbf173f272edac66a3950056f653d8b9c177f78b5d3da8a985c3f",
+                    "md5": "43f11612adc702998c216b173d16ceea",
+                    "sha256": "40d7acc449837a270ac2cdf8a471efe8867fcc7792e85ac753f7429c53e36153"
+                },
+                "downloads": -1,
+                "filename": "hyperparameters-0.2.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "43f11612adc702998c216b173d16ceea",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.10,<3.11",
+                "size": 7663,
+                "upload_time": "2023-05-14T16:11:48",
+                "upload_time_iso_8601": "2023-05-14T16:11:48.350351Z",
+                "url": "https://files.pythonhosted.org/packages/5a/01/420b642fbf173f272edac66a3950056f653d8b9c177f78b5d3da8a985c3f/hyperparameters-0.2.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "b0b7337f673a56217140fb3a592fce2afef7aae8b0f7a8250de46c5155eb9505",
+                    "md5": "2de831e67ad0ec8424ec134deea4ecf8",
+                    "sha256": "b915b60e19bb195d8b78395b46234422da127006a2ec4bf80c88c37211c58b56"
+                },
+                "downloads": -1,
+                "filename": "hyperparameters-0.2.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "2de831e67ad0ec8424ec134deea4ecf8",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.10,<3.11",
+                "size": 6738,
+                "upload_time": "2023-05-14T16:11:50",
+                "upload_time_iso_8601": "2023-05-14T16:11:50.594758Z",
+                "url": "https://files.pythonhosted.org/packages/b0/b7/337f673a56217140fb3a592fce2afef7aae8b0f7a8250de46c5155eb9505/hyperparameters-0.2.1.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
