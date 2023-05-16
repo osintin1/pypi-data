@@ -1,0 +1,92 @@
+{
+    "1.3.2": {
+        "info": {
+            "author": "levan92",
+            "author_email": "lingevan0208@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# Deep SORT\r\n\r\n## Introduction\r\n\r\nA more realtime adaptation of Deep SORT. This fork allows the selection of the cuda device.\r\n\r\nAdapted from the [official repo of *Simple Online and Realtime Tracking with a Deep Association Metric* (Deep SORT)](https://github.com/nwojke/deep_sort)\r\n\r\nSee their [paper](https://arxiv.org/abs/1703.07402) for more technical information.\r\n\r\n## Dependencies\r\n\r\n`requirements.txt` gives the default packages required (it installs torch/torchvision to use the default mobilenet embedder), modify accordingly.\r\n\r\nMain dependencies are:\r\n\r\n- Python3\r\n- NumPy, `pip install numpy`\r\n- SciPy, `pip install scipy`\r\n- cv2, `pip install opencv-python`\r\n- (optional) [Embedder](#appearance-embedding-network) requires Pytorch & Torchvision (for the default MobiletnetV2 embedder) or Tensorflow 2+\r\n  - `pip install torch torchvision`\r\n  - `pip install tensorflow`\r\n- (optional) Additionally, to use [Torchreid](https://github.com/KaiyangZhou/deep-person-reid) embedder, `torchreid` Python package needs to be installed. You can follow [installation guide](https://github.com/KaiyangZhou/deep-person-reid#installation) on `Torchreid`'s page. Without using conda, you can simply clone that [repository](https://github.com/KaiyangZhou/deep-person-reid) and do a `python3 -m pip install .` from inside the repo.    \r\n- (optional) To use [CLIP](https://github.com/openai/CLIP) embedder, `pip install git+https://github.com/openai/CLIP.git`\r\n\r\n## Install\r\n\r\n- from [PyPI](https://pypi.org/project/deep-sort-realtime/) via `pip3 install deep-sort-realtime` or `python3 -m pip install deep-sort-realtime`\r\n- or, clone this repo & install deep-sort-realtime as a python package using `pip` or as an editable package if you like (`-e` flag)\r\n\r\n```bash\r\ncd deep_sort_realtime && pip3 install .\r\n```\r\n\r\n- or, download `.whl` file in this repo's [releases](https://github.com/levan92/deep_sort_realtime/releases/latest)\r\n\r\n## Run\r\n\r\nExample usage:\r\n\r\n```python\r\nfrom deep_sort_realtime.deepsort_tracker import DeepSort\r\ntracker = DeepSort(max_age=5)\r\nbbs = object_detector.detect(frame) \r\ntracks = tracker.update_tracks(bbs, frame=frame) # bbs expected to be a list of detections, each in tuples of ( [left,top,w,h], confidence, detection_class )\r\nfor track in tracks:\r\n    if not track.is_confirmed():\r\n        continue\r\n    track_id = track.track_id\r\n    ltrb = track.to_ltrb()\r\n```\r\n\r\n- To add project-specific logic into the `Track` class, you can make a subclass (of `Track`) and pass it in (`override_track_class` argument) when instantiating `DeepSort`.\r\n\r\n- Example with your own embedder/ReID model: \r\n\r\n```python\r\nfrom deep_sort_realtime.deepsort_tracker import DeepSort\r\ntracker = DeepSort(max_age=5)\r\nbbs = object_detector.detect(frame) # your own object detection\r\nobject_chips = chipper(frame, bbs) # your own logic to crop frame based on bbox values\r\nembeds = embedder(object_chips) # your own embedder to take in the cropped object chips, and output feature vectors\r\ntracks = tracker.update_tracks(bbs, embeds=embeds) # bbs expected to be a list of detections, each in tuples of ( [left,top,w,h], confidence, detection_class ), also, no need to give frame as your chips has already been embedded\r\nfor track in tracks:\r\n    if not track.is_confirmed():\r\n        continue\r\n    track_id = track.track_id\r\n    ltrb = track.to_ltrb()\r\n```\r\n\r\n- Look into [`deep_sort_realtime/deepsort_tracker.py`](deep_sort_realtime/deepsort_tracker.py) for more hyperparameters which you can tune to suit your use-case. \r\n\r\n## Getting bounding box of original detection\r\n\r\nThe original `Track.to_*` methods for retrieving bounding box values returns only the Kalman predicted values. However, in some applications, it is better to return the bb values of the original detections the track was associated to at the current round.\r\n\r\nHere we added an `orig` argument to all the `Track.to_*` methods. If `orig` is flagged as `True` and this track is associated to a detection this update round, then the bounding box values returned by the method will be that associated to the original detection. Otherwise, it will still return the Kalman predicted values.\r\n\r\n`orig_strict` argument in all the `Track.to_*` methods is only active when `orig` is `True`. Flagging `orig_strict=True` will mean it will output `None` when there's no original detection associated to this track at current frame, otherwise normally it will return Kalman predicted values.\r\n\r\n### Storing supplementary info of original detection\r\n\r\nSupplementary info can be pass into the track from the detection. `Detection` class now has an `others` argument to store this and pass it to the associate track during update. Can be retrieved through `Track.get_det_supplementary` method. Can be passed in through `others` argument of `DeepSort.update_tracks`, expects to be a list with same length as `raw_detections`. Examples of when you will this includes passing in corresponding instance segmentation masks, to be consumed when iterating through the tracks output. \r\n\r\n## Polygon support\r\n\r\nOther than horizontal bounding boxes, detections can now be given as polygons. We do not track polygon points per se, but merely convert the polygon to its bounding rectangle for tracking. That said, if embedding is enabled, the embedder works on the crop around the bounding rectangle, with area not covered by the polygon masked away.\r\n\r\nWhen instantiating a `DeepSort` object (as in `deepsort_tracker.py`), `polygon` argument should be flagged to `True`. See `DeepSort.update_tracks` docstring for details on the polygon format. In polygon mode, the original polygon coordinates are passed to the associated track through the [supplementary info](#storing-supplementary-info-of-original-detection).\r\n\r\n## Differences from original repo\r\n\r\n- Remove \"academic style\" offline processing style and implemented it to take in real-time detections and output accordingly.\r\n- Provides both options of using an in-built appearance feature embedder or to provide embeddings during update\r\n- Added pytorch mobilenetv2 as appearance embedder (tensorflow embedder is also available now too).\r\n- Added [CLIP](https://github.com/openai/CLIP) network from OpenAI as embedder (pytorch).\r\n- Skip nms completely in preprocessing detections if `nms_max_overlap == 1.0` (which is the default), in the original repo, nms will still be done even if threshold is set to 1.0 (probably because it was not optimised for speed).\r\n- Now able to override the `Track` class with a custom Track class (that inherits from `Track` class) for custom track logic\r\n- Takes in today's date now, which provides date for track naming and facilities track id reset every day, preventing overflow and overly large track ids when system runs for a long time.\r\n  \r\n  ```python3\r\n  from datetime import datetime\r\n  today = datetime.now().date()\r\n  ```\r\n\r\n- Now supports polygon detections. We do not track polygon points per se, but merely convert the polygon to its bounding rectangle for tracking. That said, if embedding is enabled, the embedder works on the crop around the bounding rectangle, with area not covered by the polygon masked away. [Read more here](#polygon-support).\r\n- The original `Track.to_*` methods for retrieving bounding box values returns only the Kalman predicted values. In some applications, it is better to return the bb values of the original detections the track was associated to at the current round. Added a `orig` argument which can be flagged `True` to get that. [Read more here](#getting-bounding-box-of-original-detection).\r\n- Added `get_det_supplementary` method to `Track` class, in order to pass detection related info through the track. [Read more here](#storing-supplementary-info-of-original-detection).\r\n- [As of [2fad967](https://github.com/levan92/deep_sort_realtime/commit/2fad9673771e8e75524917e630e17e0cda3b3e4d)] Supports background masking by giving instance mask to `DeepSort.update_tracks`. [Read more here](#background-masking).\r\n- Other minor adjustments/optimisation of code.\r\n\r\n## Highlevel overview of source files in `deep_sort` (from original repo)\r\n\r\nIn package `deep_sort` is the main tracking code:\r\n\r\n- `detection.py`: Detection base class.\r\n- `kalman_filter.py`: A Kalman filter implementation and concrete\r\n   parametrization for image space filtering.\r\n- `linear_assignment.py`: This module contains code for min cost matching and\r\n   the matching cascade.\r\n- `iou_matching.py`: This module contains the IOU matching metric.\r\n- `nn_matching.py`: A module for a nearest neighbor matching metric.\r\n- `track.py`: The track class contains single-target track data such as Kalman\r\n  state, number of hits, misses, hit streak, associated feature vectors, etc.\r\n- `tracker.py`: This is the multi-target tracker class.\r\n\r\n## Test\r\n\r\n```bash\r\npython3 -m unittest\r\n```\r\n\r\n## Appearance Embedding Network\r\n\r\n### Pytorch Embedder (default)\r\n\r\nDefault embedder is a pytorch MobilenetV2 (trained on Imagenet).\r\n\r\nFor convenience (I know it's not exactly best practice) & since the weights file is quite small, it is pushed in this github repo and will be installed to your Python environment when you install deep_sort_realtime.  \r\n\r\n#### TorchReID\r\n\r\n[Torchreid](https://github.com/KaiyangZhou/deep-person-reid) is a person re-identification library, and is supported here especially useful for extracting features of humans. `Torchreid` will need to be installed (see [dependencies](#Dependencies) section above) It provides a zoo of [models](https://kaiyangzhou.github.io/deep-person-reid/MODEL_ZOO). Select model type to use, note the model name and provide as arguments. Download the corresponding model weights file on the model zoo site and point to the downloaded file. Model 'osnet_ain_x1_0' with domain generalized training on (MS+D+C) is provide by default, together with the corresponding weights. If `embedder='torchreid'` when initalizing `DeepSort` object without specifying `embedder_model_name` or `embedder_wts`, it will default to that.  \r\n\r\n```python\r\nfrom deep_sort_realtime.deepsort_tracker import DeepSort\r\ntracker = DeepSort(max_age=5, embedder='torchreid')\r\nbbs = object_detector.detect(frame) \r\ntracks = tracker.update_tracks(bbs, frame=frame) # bbs expected to be a list of detections, each in tuples of ( [left,top,w,h], confidence, detection_class )\r\nfor track in tracks:\r\n    if not track.is_confirmed():\r\n        continue\r\n    track_id = track.track_id\r\n    ltrb = track.to_ltrb()\r\n```\r\n\r\n#### CLIP\r\n\r\n[CLIP](https://github.com/openai/CLIP) is added as another option of embedder due to its proven flexibility and generalisability. Download the CLIP model weights you want at [deep_sort_realtime/embedder/weights/download_clip_wts.sh](deep_sort_realtime/embedder/weights/download_clip_wts.sh) and store the weights at that directory as well, or you can provide your own CLIP weights through `embedder_wts` argument of the `DeepSort` object.\r\n\r\n### Tensorflow Embedder\r\n\r\nAvailable now at `deep_sort_realtime/embedder/embedder_tf.py`, as alternative to (the default) pytorch embedder. Tested on Tensorflow 2.3.1. You need to make your own code change to use it.\r\n\r\nThe tf MobilenetV2 weights (pretrained on imagenet) are not available in this github repo (unlike the torch one). Download from this [link](https://drive.google.com/file/d/1RBroAFc0tmfxgvrh7iXc2e1EK8TVzXkA/view?usp=sharing) or run [download script](./deep_sort_realtime/embedder/weights/download_tf_wts.sh). You may drop it into `deep_sort_realtime/embedder/weights/` before pip installing.\r\n\r\n### Background Masking \r\n\r\nIf instance mask is given during `DeepSort.update_tracks` with no external appearance embeddings given, the mask will be used to mask out the background of the corresponding detection crop so that only foreground information goes into the embedder. This reduces background bias.  \r\n\r\n### Example\r\n\r\nExample cosine distances between images in `./test/` (\"diff\": rock vs smallapple, \"close\": smallapple vs smallapple slightly augmented)\r\n\r\n```\r\n.Testing pytorch embedder\r\nclose: 0.012196660041809082 vs diff: 0.4409685730934143\r\n\r\n.Testing Torchreid embedder\r\nModel: osnet_ain_x1_0\r\n- params: 2,193,616\r\n- flops: 978,878,352\r\nSuccessfully loaded pretrained weights from \"/Users/levan/Workspace/deep_sort_realtime/deep_sort_realtime/embedder/weights/osnet_ain_ms_d_c_wtsonly.pth\"\r\nclose: 0.012312591075897217 vs diff: 0.4590487480163574\r\n```\r\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/Cranfield-GDP3/deep_sort_realtime",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "tactus-deep-sort-realtime",
+            "package_url": "https://pypi.org/project/tactus-deep-sort-realtime/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/tactus-deep-sort-realtime/",
+            "project_urls": {
+                "Homepage": "https://github.com/Cranfield-GDP3/deep_sort_realtime"
+            },
+            "release_url": "https://pypi.org/project/tactus-deep-sort-realtime/1.3.2/",
+            "requires_dist": [
+                "numpy",
+                "scipy",
+                "opencv-python"
+            ],
+            "requires_python": "",
+            "summary": "Deep SORT with device selector",
+            "version": "1.3.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18113139,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "9af71ea40e42e2a0bc890d7ada9c92186dc856599098931de964a072254d4db7",
+                    "md5": "233707a927b05ee4d9d7e0506c009321",
+                    "sha256": "53338e6ef3e930d22651f903f27d46d347ee11acb139b20e06a08c004de5d162"
+                },
+                "downloads": -1,
+                "filename": "tactus_deep_sort_realtime-1.3.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "233707a927b05ee4d9d7e0506c009321",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 8429844,
+                "upload_time": "2023-05-15T20:40:04",
+                "upload_time_iso_8601": "2023-05-15T20:40:04.199714Z",
+                "url": "https://files.pythonhosted.org/packages/9a/f7/1ea40e42e2a0bc890d7ada9c92186dc856599098931de964a072254d4db7/tactus_deep_sort_realtime-1.3.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "bb61dd13f5b34bbb62e73cac8bec320f29fe55993e08b2a2a8265b8fb8467886",
+                    "md5": "be60fb44c219505f1af8d907c001c3e5",
+                    "sha256": "328ef92d4047cf13c44217dcbfce11d3a6755b4eb8b3e37b8276d8fb9be8ad91"
+                },
+                "downloads": -1,
+                "filename": "tactus_deep-sort-realtime-1.3.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "be60fb44c219505f1af8d907c001c3e5",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 8430372,
+                "upload_time": "2023-05-15T20:40:11",
+                "upload_time_iso_8601": "2023-05-15T20:40:11.506479Z",
+                "url": "https://files.pythonhosted.org/packages/bb/61/dd13f5b34bbb62e73cac8bec320f29fe55993e08b2a2a8265b8fb8467886/tactus_deep-sort-realtime-1.3.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

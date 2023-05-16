@@ -33,7 +33,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18065952,
+        "last_serial": 18108554,
         "urls": [
             {
                 "comment_text": "",
@@ -86,7 +86,6 @@
             "author_email": "FlixTech <open-source@flixbus.com>",
             "bugtrack_url": null,
             "classifiers": [],
-            "description": "# Postgres Task queue\n\nThis repo will contain the [Postgres](https://www.postgresql.org/) based task queue logic, similar to [our redis-tq](https://github.com/flix-tech/redis-tq) but based on postgres instead.\n\nSimilar to redis-tq, this package allows for sharing data between multiple processes or hosts.\n\nTasks support a \"lease time\". After that time other workers may consider this client to have crashed or stalled and pick up the item instead. The number of retries can also be configured.\n\nBy default it keeps all the queues and tasks in a single table `task_queue`. If you want to use a different table for different queues for example it could also be configured when instantiating the queue.\n\nYou can either set the `create_table=True` when instantiating the queue or create the table yourself with the following query:\n\n```sql\nCREATE TABLE task_queue (\n    id UUID PRIMARY KEY,\n    queue_name TEXT NOT NULL,\n    task JSONB NOT NULL,\n    ttl INT NOT NULL,\n    created_at TIMESTAMP NOT NULL DEFAULT NOW(),\n    processing BOOLEAN NOT NULL DEFAULT false,\n    lease_timeout FLOAT,\n    deadline TIMESTAMP,\n    completed_at TIMESTAMP\n)\n```\n\n## How it works\n\nIt uses row level locks of postgres to mimic the atomic pop and atomic push of redis-tq when getting a new task from the queue:\n\n```sql\nUPDATE task_queue\nSET processing = true,\n    deadline =\n        NOW() + CAST(lease_timeout || ' seconds' AS INTERVAL)\nWHERE id = (\n    SELECT id\n    FROM task_queue\n    WHERE completed_at IS NULL\n        AND processing = false\n        AND queue_name = <your_queue_name>\n        AND ttl > 0\n    ORDER BY created_at\n    FOR UPDATE SKIP LOCKED\n    LIMIT 1\n)\nRETURNING id, task;\n```\n\nLet's say two workers try to get a new task at the same time, assuming that they will probably see the same task to be picked up using the subquery:\n\n```sql\nSELECT id\nFROM task_queue\nWHERE completed_at IS NULL\n    AND processing = false\n    AND queue_name = <your_queue_name>\n    AND ttl > 0\nORDER BY created_at\n```\n\nThe first worker locks the row with the `FOR UPDATE` clause until the update is completed and committed. If we hadn't used the `SKIP LOCKED` clause, the second worker would have seen the same row and waited for the first worker to finish the update. However, since the first worker already updated it, the subquery would no longer be valid, and the second worker would return zero rows because `WHERE id = NULL`.\n\nHowever, since we are using `FOR UPDATE SKIP LOCKED` the first worker locks the row for update and the second worker, skips that locked row and chooses another row for itself to update. This way we can avoid the race condition.\n\nThe other methods `complete()` and `reschedule()` work similarly under the hood.\n\n## How to use\n\nOn the producing side, populate the queue with tasks and a respective lease timeout:\n\n```py\nfrom postgrestq import TaskQueue\n\ntask_queue = TaskQueue(POSTGRES_CONN_STR, queue_name, reset=True)\n\nfor i in range(10):\n    task_queue.add(some_task, lease_timeout, ttl=3)\n```\n\nOn the consuming side:\n\n```py\nfrom postgrestq import TaskQueue\n\ntask_queue = TaskQueue(POSTGRES_CONN_STR, queue_name, reset=True)\nwhile True:\n    task, task_id = task_queue.get()\n    if task is not None:\n        # do something with task and mark it as complete afterwards\n        task_queue.complete(task_id)\n    if task_queue.is_empty():\n        break\n    # task_queue.get is non-blocking, so you may want to sleep a\n    # bit before the next iteration\n    time.sleep(1)\n```\n\nOr you can even use the \\_\\_iter\\_\\_() method of the class TaskQueue and loop over the queue:\n\n```py\nfrom postgrestq import TaskQueue\n\ntask_queue = TaskQueue(POSTGRES_CONN_STR, queue_name, reset=True)\n\nfor task, id_ in taskqueue:\n    # do something with task and it automatically\n    # marked as completed by the iterator at the end\n    # of the iteration\n\n```\n\nIf the consumer crashes (i.e. the task is not marked as completed after lease_timeout seconds), the task will be put back into the task queue. This rescheduling will happen at most ttl times and then the task will be dropped. A callback can be provided if you want to monitor such cases.\n\n## Running the tests\n\nThe tests will check a presence of an Postgres DB in the port 15432. To initiate one using docker you can run:\n\n```\nmake run-postgres\n```\n\nThen run\n\n```\nmake test\n```\n\nMake sure you have `pdm` and `Docker` installed for this to work.\n\n## License\n\nThis project is licensed under the [MIT License](LICENSE).\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -115,7 +114,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18065952,
+        "last_serial": 18108554,
         "urls": [
             {
                 "comment_text": "",
@@ -156,6 +155,88 @@
                 "upload_time": "2023-05-11T16:01:28",
                 "upload_time_iso_8601": "2023-05-11T16:01:28.430223Z",
                 "url": "https://files.pythonhosted.org/packages/7b/61/f48d264bfe470922e0899dcee88683bef5e0abd63ec4940e99efc0cd414b/postgres-tq-0.0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.2": {
+        "info": {
+            "author": "",
+            "author_email": "FlixTech <open-source@flixbus.com>",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "[![postgres-tq Actions Status](https://github.com/flix-tech/postgres-tq/workflows/CI/CD%20Pipeline/badge.svg?branch=main)](https://github.com/flix-tech/postgres-tq/actions)\n[![License](https://img.shields.io/github/license/flix-tech/postgres-tq)](https://pypi.org/project/postgres-tq/)\n[![PyPI - Python Version](https://img.shields.io/pypi/v/postgres-tq)](https://pypi.org/project/postgres-tq/)\n\n# Postgres Task Queue\n\nThis repo will contain the [Postgres](https://www.postgresql.org/) based task queue logic, similar to [our redis-tq](https://github.com/flix-tech/redis-tq) but based on postgres instead.\n\nSimilar to redis-tq, this package allows for sharing data between multiple processes or hosts.\n\nTasks support a \"lease time\". After that time other workers may consider this client to have crashed or stalled and pick up the item instead. The number of retries can also be configured.\n\nBy default it keeps all the queues and tasks in a single table `task_queue`. If you want to use a different table for different queues for example it could also be configured when instantiating the queue.\n\nYou can either set the `create_table=True` when instantiating the queue or create the table yourself with the following query:\n\n```sql\nCREATE TABLE task_queue (\n    id UUID PRIMARY KEY,\n    queue_name TEXT NOT NULL,\n    task JSONB NOT NULL,\n    ttl INT NOT NULL,\n    created_at TIMESTAMP NOT NULL DEFAULT NOW(),\n    processing BOOLEAN NOT NULL DEFAULT false,\n    lease_timeout FLOAT,\n    deadline TIMESTAMP,\n    completed_at TIMESTAMP\n)\n```\n\n## Installation\n\npostgres-tq is available on [PyPI][] so you can simply install via:\n\n```bash\n$ pip install postgres-tq\n```\n\n[PyPI]: https://pypi.org/project/postgres-tq/\n\n## How it works\n\nIt uses row level locks of postgres to mimic the atomic pop and atomic push of redis-tq when getting a new task from the queue:\n\n```sql\nUPDATE task_queue\nSET processing = true,\n    deadline =\n        NOW() + CAST(lease_timeout || ' seconds' AS INTERVAL)\nWHERE id = (\n    SELECT id\n    FROM task_queue\n    WHERE completed_at IS NULL\n        AND processing = false\n        AND queue_name = <your_queue_name>\n        AND ttl > 0\n    ORDER BY created_at\n    FOR UPDATE SKIP LOCKED\n    LIMIT 1\n)\nRETURNING id, task;\n```\n\nLet's say two workers try to get a new task at the same time, assuming that they will probably see the same task to be picked up using the subquery:\n\n```sql\nSELECT id\nFROM task_queue\nWHERE completed_at IS NULL\n    AND processing = false\n    AND queue_name = <your_queue_name>\n    AND ttl > 0\nORDER BY created_at\n```\n\nThe first worker locks the row with the `FOR UPDATE` clause until the update is completed and committed. If we hadn't used the `SKIP LOCKED` clause, the second worker would have seen the same row and waited for the first worker to finish the update. However, since the first worker already updated it, the subquery would no longer be valid, and the second worker would return zero rows because `WHERE id = NULL`.\n\nHowever, since we are using `FOR UPDATE SKIP LOCKED` the first worker locks the row for update and the second worker, skips that locked row and chooses another row for itself to update. This way we can avoid the race condition.\n\nThe other methods `complete()` and `reschedule()` work similarly under the hood.\n\n## How to use\n\nOn the producing side, populate the queue with tasks and a respective lease timeout:\n\n```py\nfrom postgrestq import TaskQueue\n\ntask_queue = TaskQueue(POSTGRES_CONN_STR, queue_name, reset=True)\n\nfor i in range(10):\n    task_queue.add(some_task, lease_timeout, ttl=3)\n```\n\nOn the consuming side:\n\n```py\nfrom postgrestq import TaskQueue\n\ntask_queue = TaskQueue(POSTGRES_CONN_STR, queue_name, reset=True)\nwhile True:\n    task, task_id = task_queue.get()\n    if task is not None:\n        # do something with task and mark it as complete afterwards\n        task_queue.complete(task_id)\n    if task_queue.is_empty():\n        break\n    # task_queue.get is non-blocking, so you may want to sleep a\n    # bit before the next iteration\n    time.sleep(1)\n```\n\nOr you can even use the \\_\\_iter\\_\\_() method of the class TaskQueue and loop over the queue:\n\n```py\nfrom postgrestq import TaskQueue\n\ntask_queue = TaskQueue(POSTGRES_CONN_STR, queue_name, reset=True)\n\nfor task, id_ in taskqueue:\n    # do something with task and it's automatically\n    # marked as completed by the iterator at the end\n    # of the iteration\n\n```\n\nIf the consumer crashes (i.e. the task is not marked as completed after lease_timeout seconds), the task will be put back into the task queue. This rescheduling will happen at most ttl times and then the task will be dropped. A callback can be provided if you want to monitor such cases.\n\n## Running the tests\n\nThe tests will check a presence of an Postgres DB in the port 15432. To initiate one using docker you can run:\n\n```bash\n$ make run-postgres\n```\n\nThen run\n\n```bash\n$ pdm run make test\n```\n\n`pdm run` will ensure that the `make test` command is executed within the context of the virtual environment managed by `pdm`. Make sure you have `pdm` and `Docker` installed for this to work.\n\n## License\n\nThis project is licensed under the [MIT License](LICENSE).\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "postgres-tq",
+            "package_url": "https://pypi.org/project/postgres-tq/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/postgres-tq/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/postgres-tq/0.0.2/",
+            "requires_dist": [
+                "psycopg[binary] (>=3.1.8)"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "Postgres Based Task Queue",
+            "version": "0.0.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18108554,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "412885c790a025fa3306b154d909778066f094943ab160749cb17fa42dac91ff",
+                    "md5": "4f532bba18697f94ad6d7af1af7ec0a1",
+                    "sha256": "52371d01a0bb2c0f4db9633179a459a4612d702d3eb2018468c285b8eea425cc"
+                },
+                "downloads": -1,
+                "filename": "postgres_tq-0.0.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "4f532bba18697f94ad6d7af1af7ec0a1",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 8692,
+                "upload_time": "2023-05-15T13:35:06",
+                "upload_time_iso_8601": "2023-05-15T13:35:06.808945Z",
+                "url": "https://files.pythonhosted.org/packages/41/28/85c790a025fa3306b154d909778066f094943ab160749cb17fa42dac91ff/postgres_tq-0.0.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "81e26afe484ec9f506239ce2cb236231c7cf6f056d47d4dcef585a8e285c651b",
+                    "md5": "a947b8d792c75f610a01ee4c9b801bc6",
+                    "sha256": "2dc7c914f9b5044f052c2930368aeab22acfe6143578bc81ff8201eccd58a3ab"
+                },
+                "downloads": -1,
+                "filename": "postgres-tq-0.0.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "a947b8d792c75f610a01ee4c9b801bc6",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 9976,
+                "upload_time": "2023-05-15T13:35:08",
+                "upload_time_iso_8601": "2023-05-15T13:35:08.503722Z",
+                "url": "https://files.pythonhosted.org/packages/81/e2/6afe484ec9f506239ce2cb236231c7cf6f056d47d4dcef585a8e285c651b/postgres-tq-0.0.2.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
