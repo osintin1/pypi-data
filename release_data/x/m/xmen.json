@@ -1,15 +1,18 @@
 {
-    "0.1.0": {
+    "0.9.3": {
         "info": {
             "author": "Florian Borchert",
             "author_email": "florian.borchert@hpi.de",
             "bugtrack_url": null,
             "classifiers": [
+                "License :: OSI Approved :: Apache Software License",
                 "Programming Language :: Python :: 3",
-                "Programming Language :: Python :: 3.8"
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
             ],
-            "description": "",
-            "description_content_type": null,
+            "description": "# \u2716\ufe0fMEN\n\nxMEN is an extensible toolkit for Cross-lingual (**x**) **M**edical **E**ntity **N**ormalization.\nThrough its compatibility with the [BigBIO (BigScience Biomedical)](https://github.com/bigscience-workshop/biomedical) framework, it can be used out-of-the box to run experiments with many open biomedical datasets. It can also be easily integrated with existing Named Entity Recognition (NER) pipelines.\n\n### Installation\n\nxMEN is available through PyPi: `pip install xmen`\n\n### Development\n\nWe use [Poetry](https://python-poetry.org/) for building, testing and dependency management (see [pyproject.toml](pyproject.toml)).\n\n## \ud83d\udcc2 Data Loading\n\nUsually, BigBIO-compatible datasets can just be loaded from the Hugging Face Hub:\n\n```\nfrom datasets import load_dataset\ndataset = load_dataset(\"distemist\", \"distemist_linking_bigbio_kb\")\n```\n\n### Integration with NER Tools\n\nTo use xMEN with existing NER pipelines, you can also create a dataset at runtime.\n\n### spaCy\n\n```\nfrom xmen.data import from_spacy\ndocs = ... #  list of spaCy docs with entity spans\ndataset = from_spacy(docs)\n```\n\n## \ud83d\udd27 Configuration and CLI\n\nxMEN provides a convenient command line interface to prepare entity linking pipelines by creating target dictionaries and pre-computing indices to link to concepts in them.\n\nRun `xmen help` to get an overview of the available commands.\n\nConfiguration is done through `.yaml` files. For examples, see the [conf](/conf) folder.\n\n## \ud83d\udcd5 Creating Dictionaries\n\nRun `xmen dict` to create dictionaries to link against. Although the most common use case is to create subsets of the UMLS, it also supports passing custom parser scripts for non-UMLS dictionaries.\n\n**Note**: Creating UMLS subsets requires a local installation of the [UMLS metathesaurus](https://www.nlm.nih.gov/research/umls/licensedcontent/umlsknowledgesources.html) (not only MRCONSO.RRF). In the examples, we assume that the environment variable `$UMLS_HOME` points to the installation path. You can either set this variable, or replace the path with your local installation.\n\n### UMLS Subsets\n\nExample configuration for [Medmentions](https://github.com/chanzuckerberg/MedMentions):\n\n```\nname: medmentions\n\ndict:\n  umls:\n    lang: \n      - en\n    meta_path: ${oc.env:UMLS_HOME}/2017AA/META\n    version: 2017AA\n    semantic_types:\n      - T005\n      - T007\n      - T017\n      - T022\n      - T031\n      - T033\n      - T037\n      - T038\n      - T058\n      - T062\n      - T074\n      - T082\n      - T091\n      - T092\n      - T097\n      - T098\n      - T103\n      - T168\n      - T170\n      - T201\n      - T204\n    sabs:\n      - CPT\n      - FMA\n      - GO\n      - HGNC\n      - HPO\n      - ICD10\n      - ICD10CM\n      - ICD9CM\n      - MDR\n      - MSH\n      - MTH\n      - NCBI\n      - NCI\n      - NDDF\n      - NDFRT\n      - OMIM\n      - RXNORM\n      - SNOMEDCT_US\n```\n\nRunning `xmen --dict conf/medmentions.yaml` creates a `.jsonl` file from the described UMLS subset.\n\n### Using Custom Dictionaries\n\nParsing scripts for custom dictionaries can be provided with the `--code` option (examples can be found in the [dicts](/dicts) folder).\n\nExample configuration for [DisTEMIST](https://temu.bsc.es/distemist/):\n\n```\nname: distemist\n\ndict:\n  custom:\n    lang: \n      - es\n    distemist_path: path/to/dictionary_distemist.tsv\n```\n\nRunning `xmen dict conf/distemist.yaml --code dicts/distemist.py --key distemist_gazetteer` creates a `.jsonl` file from the custom DisTEMIST gazetteer.\n\n## \ud83d\udd0e Candidate Generation\n\nThe `xmen index` command is used to compute term indices from a dictionary created through the `dict` command.\nIf an index already exists, you will be prompted to overwrite the existing file (or pass `--overwrite`).\n\nxMEN provides implementations of different neural and non-neural candidate generators\n\n### TF-IDF Weighted Character N-grams\n\nBased on the implementation from [scispaCy](https://github.com/allenai/scispacy).\n\nYAML file:\n\n```\nlinker:\n  candidate_generation:\n    ngram:\n      k: 100\n```\n\nRun `xmen index my_config.yaml --ngram` or `xmen index my_config.yaml --all` to create the index.\n\nTo use the linker at runtime, pass the index folder as an argument:\n\n```\nngram_linker = TFIDFNGramLinker(index_base_path=<path to index>, k=100)\npredictions = ngram_linker.predict_batch(dataset)\n```\n\nExample usage: see [notebooks/BioASQ_DisTEMIST.ipynb](notebooks/BioASQ_DisTEMIST.ipynb)\n\n### SapBERT\n\nDense Retrieval based on [SapBERT](https://github.com/cambridgeltl/sapbert) embeddings.\n\nYAML file:\n\n```\nlinker:\n  candidate_generation:\n    sapbert:\n      embedding_model_name: cambridgeltl/SapBERT-UMLS-2020AB-all-lang-from-XLMR\n      k: 1000\n```\n\nRun `xmen index my_config.yaml --sapbert` or `xmen index my_config.yaml --all` to create the [FAISS](https://github.com/facebookresearch/faiss) index.\n\nTo use the linker at runtime, pass the `embedding_model_name` (usually the same as was used for creating the index)  and index folder as an argument. To make predictions on a batch of documents, you have to pass a batch size, as the SapBERT linker runs on the GPU by default:\n\n```\nsapbert_linker = SapBERTLinker(\n    embedding_model_name = <name of the SapBERT model>,\n    index_base_path = <path to index>,\n    k = 1000\n)\npredictions = sapbert_linker.predict_batch(dataset, batch_size=128)\n```\n\nIf you have loaded a yaml-config as a dictionary, you may also just pass it as kwargs:\n\n```\nsapbert_linker = SapBERTLinker(**config)\n```\n\nExample usage: see [notebooks/BioASQ_DisTEMIST.ipynb](notebooks/BioASQ_DisTEMIST.ipynb)\n\n### Ensemble\n\nDifferent candidate generators often work well for different kinds of entity mentions, and it can be helpful to combine their predictions.\n\nIn xMEN, this can be easily achieved with an `EnsembleLinker`:\n\n```\nensemble_linker = EnsembleLinker()\nensemble_linker.add_linker('sapbert', sapbert_linker, k=10)\nensemble_linker.add_linker('ngram', ngram_linker, k=10)\n```\n\nYou can call `predict_batch` on the `EnsembleLinker` just as with any other linker.\n\nSometimes, you want to compare the ensemble performance to individual linkers and already have the candidate lists. To avoid recomputation, you can use the `reuse_preds` argument:\n\n```\nprediction = ensemble_linker.predict_batch(dataset, 128, 100, reuse_preds={'sapbert' : predictions_sap, 'ngram' : predictions_ngram'})\n```\n\nNote: `reuse_preds` currently does not support Hugging Face `DatasetDict` objects, so you would have to call it on each split individually.\n\nExample usage: see [notebooks/BioASQ_DisTEMIST.ipynb](notebooks/BioASQ_DisTEMIST.ipynb)\n\n## \ud83c\udf00 Rerankers\n\n### Cross-Encoder Reranker\n\nWhen labelled training data is available, a trainable reranker can improve ranking of candidate lists a lot.\n\nTo train a cross-encoder, first create a dataset of mention / candidate pairs:\n\n```\nfrom xmen.reranking.cross_encoder import CrossEncoderReranker, CrossEncoderTrainingArgs\nfrom xmen.knowledge_base import load_kb\n\n# Load a KB from a pre-computed dictionary (jsonl) to obtain synonyms for concept encoding\nkb = load_kb('path/to/my/dictionary.jsonl')\n\ncandidates = ... # obtain prediction from candidate generator (see above)\ncontext_length = 128 # set to adjust context length for mention encoding, more context causes larger memory footprint\n\ncross_enc_ds = CrossEncoderReranker.prepare_data(candidates, dataset, kb, context_length)\n```\n\nThen you can use this dataset to train a supervised reranking model:\n\n```\nfrom xmen.reranking.cross_encoder import CrossEncoderReranker, CrossEncoderTrainingArgs\n\ncross_encoder_model = 'bert-base-multilingual-cased' # any BERT model, potentially language specific\nn_epochs = 10 # number of epochs to train\noutput_dir = ... # Path to temp dir for writing model checkpoints\n\ntrain_args = CrossEncoderTrainingArgs(cross_encoder_model, n_epochs)\n\nrr = CrossEncoderReranker()\nrr.fit(cross_enc_ds['train'].dataset, cross_enc_ds['validation'].dataset, output_dir=output_dir, training_args=train_args)\n\nprediction = rr.rerank_batch(candidates['test'], cross_enc_ds['test'])\n```\n\nExample usage:see [notebooks/BioASQ_DisTEMIST.ipynb](notebooks/BioASQ_DisTEMIST.ipynb)\n\n### Rule-based Reranker\n\nTODO\n\n## \ud83d\udca1 Pre- and Post-Processing\n\nWe support various optional components for transforming input data and result sets:\n\n- [Sampling](xmen/preprocessing/sampling.py)\n- [Abbrevation expansion](xmen/preprocessing/abbrevations.py)\n- [Filtering by UMLS semantic groups](xmen/preprocessing/semantic_groups.py)\n- [Filtering by UMLS semantic types](xmen/preprocessing/semantic_types.py)\n- [Replacement of retired CUIS](xmen/preprocessing/retired_cuis.py)\n\n## \ud83d\udcca Evaluation\n\nxMEN provides implementations of common entity linking metrics (e.g., a wrapper for [neleval](https://github.com/wikilinks/neleval))\n\nExample usage: see [notebooks/BioASQ_DisTEMIST.ipynb](notebooks/BioASQ_DisTEMIST.ipynb)\n\n## \ud83d\udcc8 Benchmark Results\n\nTODO\n",
+            "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
             "downloads": {
@@ -17,17 +20,20 @@
                 "last_month": -1,
                 "last_week": -1
             },
-            "home_page": "",
+            "home_page": "https://github.com/hpi-dhc/xmen",
             "keywords": "",
-            "license": "",
+            "license": "Apache-2.0",
             "maintainer": "",
             "maintainer_email": "",
             "name": "xmen",
             "package_url": "https://pypi.org/project/xmen/",
             "platform": null,
             "project_url": "https://pypi.org/project/xmen/",
-            "project_urls": null,
-            "release_url": "https://pypi.org/project/xmen/0.1.0/",
+            "project_urls": {
+                "Homepage": "https://github.com/hpi-dhc/xmen",
+                "Repository": "https://github.com/hpi-dhc/xmen"
+            },
+            "release_url": "https://pypi.org/project/xmen/0.9.3/",
             "requires_dist": [
                 "datasets (>=2.0.0,<3.0.0)",
                 "lxml (>=4.8.0,<5.0.0)",
@@ -37,56 +43,62 @@
                 "pytorch-metric-learning (==0.9.98.dev1)",
                 "sentencepiece (>=0.1.96,<0.2.0)",
                 "protobuf (>=3.20.0,<4.0.0)",
-                "bioc (>=2.0.post3,<3.0)",
-                "hydra-core (>=1.1.1,<2.0.0)",
+                "omegaconf (>=2.3.0,<3.0.0)",
                 "langcodes (>=3.3.0,<4.0.0)",
-                "rich (>=12.3.0,<13.0.0)"
+                "rich (>=12.3.0,<13.0.0)",
+                "torch (>=1.13.0,<2.0.0)",
+                "scispacy (>=0.5.2,<0.6.0)",
+                "sentence-transformers (>=2.2.2,<3.0.0)",
+                "faiss-gpu (>=1.7.1,<2.0.0) ; sys_platform == \"linux\"",
+                "faiss-cpu (>=1.7.1,<2.0.0) ; sys_platform != \"linux\""
             ],
-            "requires_python": ">=3.8,<3.9",
-            "summary": "",
-            "version": "0.1.0",
+            "requires_python": ">=3.8,<3.11",
+            "summary": "An extensible toolkit for Cross-lingual (x) Medical Entity Normalization.",
+            "version": "0.9.3",
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 14420569,
+        "last_serial": 18122788,
         "urls": [
             {
                 "comment_text": "",
                 "digests": {
-                    "md5": "b6102fa3003da009db16e0ff6d28c5d5",
-                    "sha256": "8c22e14263953371d4c9d5624d74d6e6b6d07f3846e7ec01937b3b4941e8b080"
+                    "blake2b_256": "b0225706d6208bc640c68590587c23baa07ba97f5366dc35382ca7a3e2fb8f5e",
+                    "md5": "3d3d75bf9c249fd5dcf2f9a3a5a028c1",
+                    "sha256": "dba5f20026d2d7e2eccbd5001fb30f3a9953014dac8c90cd25a73c016cd37b24"
                 },
                 "downloads": -1,
-                "filename": "xmen-0.1.0-py3-none-any.whl",
+                "filename": "xmen-0.9.3-py3-none-any.whl",
                 "has_sig": false,
-                "md5_digest": "b6102fa3003da009db16e0ff6d28c5d5",
+                "md5_digest": "3d3d75bf9c249fd5dcf2f9a3a5a028c1",
                 "packagetype": "bdist_wheel",
                 "python_version": "py3",
-                "requires_python": ">=3.8,<3.9",
-                "size": 14979195,
-                "upload_time": "2022-07-13T09:49:43",
-                "upload_time_iso_8601": "2022-07-13T09:49:43.910395Z",
-                "url": "https://files.pythonhosted.org/packages/65/bc/fda6aadbcfa3b9f14c105ab5cefa1bbee4ddcc30d257bd779d422a13945a/xmen-0.1.0-py3-none-any.whl",
+                "requires_python": ">=3.8,<3.11",
+                "size": 103110,
+                "upload_time": "2023-05-16T11:53:22",
+                "upload_time_iso_8601": "2023-05-16T11:53:22.937842Z",
+                "url": "https://files.pythonhosted.org/packages/b0/22/5706d6208bc640c68590587c23baa07ba97f5366dc35382ca7a3e2fb8f5e/xmen-0.9.3-py3-none-any.whl",
                 "yanked": false,
                 "yanked_reason": null
             },
             {
                 "comment_text": "",
                 "digests": {
-                    "md5": "f3d5418a57f68c4e1ad5a1f722016317",
-                    "sha256": "dac25bb099c336a44f35135c929bd96d715ed6ec3d47c20538ce7138424a2b32"
+                    "blake2b_256": "00457dd9b060f377fd7141fcc2781613235fc0465cdb9b5fc86ea47346f94017",
+                    "md5": "0a061c91861aac6d399d55e0d16b4712",
+                    "sha256": "42045329adcdb7fced0c9f1ecee85ff1e77f8b3c017f5e294b2a88f24c0afd22"
                 },
                 "downloads": -1,
-                "filename": "xmen-0.1.0.tar.gz",
+                "filename": "xmen-0.9.3.tar.gz",
                 "has_sig": false,
-                "md5_digest": "f3d5418a57f68c4e1ad5a1f722016317",
+                "md5_digest": "0a061c91861aac6d399d55e0d16b4712",
                 "packagetype": "sdist",
                 "python_version": "source",
-                "requires_python": ">=3.8,<3.9",
-                "size": 14921537,
-                "upload_time": "2022-07-13T09:49:49",
-                "upload_time_iso_8601": "2022-07-13T09:49:49.940881Z",
-                "url": "https://files.pythonhosted.org/packages/1b/50/3ec401fe1e281bd8452f0821d7f0833958d0085218fb741123d69a46aef8/xmen-0.1.0.tar.gz",
+                "requires_python": ">=3.8,<3.11",
+                "size": 84191,
+                "upload_time": "2023-05-16T11:53:24",
+                "upload_time_iso_8601": "2023-05-16T11:53:24.654052Z",
+                "url": "https://files.pythonhosted.org/packages/00/45/7dd9b060f377fd7141fcc2781613235fc0465cdb9b5fc86ea47346f94017/xmen-0.9.3.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

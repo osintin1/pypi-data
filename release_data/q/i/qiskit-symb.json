@@ -5,7 +5,6 @@
             "author_email": "simone.gasperini4@unibo.it",
             "bugtrack_url": null,
             "classifiers": [],
-            "description": "![](/img/logo.png)\n\n<p align=\"center\">\n    <img title=\"license\" src=\"https://img.shields.io/badge/license-Apache_2.0-blue.svg\">\n    <img title=\"python\" src=\"https://img.shields.io/badge/python-\u22653.8-blue.svg\">\n    <img title=\"Ecosystem\" src=\"https://img.shields.io/badge/Qiskit-Ecosystem-blueviolet.svg\">\n</p>\n\n<p align=\"center\">\n    <img title=\"build\" src='https://github.com/SimoneGasperini/qiskit-symb/actions/workflows/python-package.yml/badge.svg?branch=master'>\n    <img title=\"coverage\" src='https://coveralls.io/repos/github/SimoneGasperini/qiskit-symb/badge.svg?branch=master'>\n</p>\n\n***\n\n# Table of contents\n- [Introduction](#introduction)\n- [Installation](#installation)\n    - [User-mode](#user-mode)\n    - [Dev-mode](#dev-mode)\n- [Usage examples](#usage-examples)\n    - [_Sympify_ a Qiskit circuit](#sympify-a-qiskit-circuit)\n    - [_Lambdify_ a Qiskit circuit](#lambdify-a-qiskit-circuit)\n- [Contributors](#contributors)\n\n\n# Introduction\nThe `qiskit-symb` package is meant to be a Python tool to enable the symbolic evaluation of parametric quantum states and operators defined in [Qiskit](https://github.com/Qiskit/qiskit-terra) by parameterized quantum circuits.\n\nA Parameterized Quantum Circuit (PQC) is a quantum circuit where we have at least one free parameter (e.g. a rotation angle $\\theta$). PQCs are particularly relevant in Quantum Machine Learning (QML) models, where the values of these parameters can be learned during training to reach the desired output.\n\nIn particular, `qiskit-symb` can be used to create a symbolic representation of a parametric quantum statevector, density matrix, or unitary operator directly from the Qiskit quantum circuit. This has been achieved through the re-implementation of some basic classes defined in the [`qiskit/quantum_info/`](https://github.com/Qiskit/qiskit-terra/tree/main/qiskit/quantum_info) module by using [sympy](https://github.com/sympy/sympy) as a backend for symbolic expressions manipulation.\n\n\n# Installation\n\n## User-mode\n```\npip install qiskit-symb\n```\n\n## Dev-mode\n```\ngit clone https://github.com/SimoneGasperini/qiskit-symb.git\ncd qiskit-symb\npip install -r requirements-dev.txt\npip install -e .\n```\n\n\n# Usage examples\n\n### _Sympify_ a Qiskit circuit\nLet's get started on how to use `qiskit-symb` to get the symbolic representation of a given Qiskit circuit. In particular, in this first basic example, we consider the following quantum circuit:\n```python\nfrom qiskit import QuantumCircuit\nfrom qiskit.circuit import Parameter, ParameterVector\n\ny = Parameter('y')\np = ParameterVector('p', length=2)\n\npqc = QuantumCircuit(2)\npqc.ry(y, 0)\npqc.cx(0, 1)\npqc.u(0, *p, 1)\n\npqc.draw('mpl')\n```\n![](/img/example_circuit.png)\n\nTo get the *sympy* representation of the unitary matrix corresponding to the parameterized circuit, we just have to create the symbolic `Operator` instance and call the `to_sympy()` method:\n```python\nfrom qiskit_symb.quantum_info import Operator\n\nop = Operator(pqc)\nop.to_sympy()\n```\n```math\n\\left[\\begin{matrix}\\cos{\\left(\\frac{y}{2} \\right)} & - \\sin{\\left(\\frac{y}{2} \\right)} & 0 & 0\\\\0 & 0 & \\sin{\\left(\\frac{y}{2} \\right)} & \\cos{\\left(\\frac{y}{2} \\right)}\\\\0 & 0 & e^{i \\left(p[0] + p[1]\\right)} \\cos{\\left(\\frac{y}{2} \\right)} & - e^{i \\left(p[0] + p[1]\\right)} \\sin{\\left(\\frac{y}{2} \\right)}\\\\e^{i \\left(p[0] + p[1]\\right)} \\sin{\\left(\\frac{y}{2} \\right)} & e^{i \\left(p[0] + p[1]\\right)} \\cos{\\left(\\frac{y}{2} \\right)} & 0 & 0\\end{matrix}\\right]\n```\n\nIf you want then to assign a value to some specific parameter, you can use the `subs(<dict>)` method passing a dictionary that maps each parameter to the desired corresponding value:\n```python\nparams2value = {p: [-1, 2]}\nnew_op = op.subs(params2value)\nnew_op.to_sympy()\n```\n```math\n\\left[\\begin{matrix}\\cos{\\left(\\frac{y}{2} \\right)} & - \\sin{\\left(\\frac{y}{2} \\right)} & 0 & 0\\\\0 & 0 & \\sin{\\left(\\frac{y}{2} \\right)} & \\cos{\\left(\\frac{y}{2} \\right)}\\\\0 & 0 & e^{i} \\cos{\\left(\\frac{y}{2} \\right)} & - e^{i} \\sin{\\left(\\frac{y}{2} \\right)}\\\\e^{i} \\sin{\\left(\\frac{y}{2} \\right)} & e^{i} \\cos{\\left(\\frac{y}{2} \\right)} & 0 & 0\\end{matrix}\\right]\n```\n\n### _Lambdify_ a Qiskit circuit\nGiven a Qiskit circuit, `qiskit-symb` also allows to generate a Python lambda function with actual arguments matching the Qiskit unbounded parameters.\nLet's consider the following example starting from a `ZZFeatureMap` circuit, commonly used as a data embedding ansatz in QML applications:\n```python\nfrom qiskit.circuit.library import ZZFeatureMap\n\npqc = ZZFeatureMap(feature_dimension=3, reps=1)\npqc.draw('mpl')\n```\n![](/img/zzfeaturemap_circuit.png)\n\nTo get the Python lambda function representing, for instance, the final parameterized statevector, we just have to create the symbolic `Statevector` instance and call the `to_lambda()` method:\n```python\nfrom qiskit_symb.quantum_info import Statevector\n\nsv = Statevector(pqc)\nsv_func = sv.to_lambda()\n```\n\nWe can now call the generated lambda function passing the actual values we want to assign to each free parameter (in alphabetical order, same convention used in `qiskit-terra`). The returned object will be a *numpy* 2D-array (with `shape=(8,1)` in this case) representing the final output statevector.\n```python\nvalues = [1.24, 2.27, 0.29]\nstatevec = sv_func(*values)\n```\n\n**_REMARK_** \\\n*When the PQC has to be evaluated on a large number of different sets of parameters values (typical case in QML), this `qiskit-symb` feature can help to significantly improve the (full-statevector) simulation performace. Indeed, the symbolic evalutation of the circuit and the lambda generation take place only once; then, the simulation only consists in executing multiple times the returned function passing a different set of parameters values for each iteration. For relatively shallow PQCs with a limilted number of qubits (e.g. Quantum Kernels evaluation), this can reduce the execution time up to two order of magnitudes (depending on the number of iterations) compared to the standard Qiskit simulation based on the [Aer Simulators](https://qiskit.org/documentation/tutorials/simulators/1_aer_provider.html) or the [Sampler](https://qiskit.org/documentation/stubs/qiskit.primitives.Sampler.html) primitive.*\n\n\n# Contributors\n\n<table>\n  <tr>\n    <td align=\"center\"><a href=\"https://github.com/SimoneGasperini\"><img src=\"https://avatars2.githubusercontent.com/u/71086758?s=400&v=4\" width=\"120px;\"/><br/><b>Simone Gasperini</b></a></td>\n  </tr>\n</table>\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -36,7 +35,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18110735,
+        "last_serial": 18123380,
         "urls": [
             {
                 "comment_text": "",
@@ -77,6 +76,90 @@
                 "upload_time": "2023-05-15T16:38:13",
                 "upload_time_iso_8601": "2023-05-15T16:38:13.821506Z",
                 "url": "https://files.pythonhosted.org/packages/44/dc/9a4329670972589d38496a2aaff224721eaf41f9cc399cf92099300014ff/qiskit-symb-0.1.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.2": {
+        "info": {
+            "author": "SimoneGasperini",
+            "author_email": "simone.gasperini4@unibo.it",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "![](/img/logo.png)\n\n<p align=\"center\">\n    <img title=\"license\" src=\"https://img.shields.io/badge/license-Apache_2.0-blue.svg\">\n    <img title=\"python\" src=\"https://img.shields.io/badge/python-\u22653.8-blue.svg\">\n    <img title=\"Ecosystem\" src=\"https://img.shields.io/badge/Qiskit-Ecosystem-blueviolet.svg\">\n</p>\n\n<p align=\"center\">\n    <img title=\"build\" src='https://github.com/SimoneGasperini/qiskit-symb/actions/workflows/python-package.yml/badge.svg?branch=master'>\n    <img title=\"coverage\" src='https://coveralls.io/repos/github/SimoneGasperini/qiskit-symb/badge.svg?branch=master'>\n</p>\n\n***\n\n# Table of contents\n- [Introduction](#introduction)\n- [Installation](#installation)\n    - [User-mode](#user-mode)\n    - [Dev-mode](#dev-mode)\n- [Usage examples](#usage-examples)\n    - [_Sympify_ a Qiskit circuit](#sympify-a-qiskit-circuit)\n    - [_Lambdify_ a Qiskit circuit](#lambdify-a-qiskit-circuit)\n- [Contributors](#contributors)\n\n\n# Introduction\nThe `qiskit-symb` package is meant to be a Python tool to enable the symbolic evaluation of parametric quantum states and operators defined in [Qiskit](https://github.com/Qiskit/qiskit-terra) by parameterized quantum circuits.\n\nA Parameterized Quantum Circuit (PQC) is a quantum circuit where we have at least one free parameter (e.g. a rotation angle $\\theta$). PQCs are particularly relevant in Quantum Machine Learning (QML) models, where the values of these parameters can be learned during training to reach the desired output.\n\nIn particular, `qiskit-symb` can be used to create a symbolic representation of a parametric quantum statevector, density matrix, or unitary operator directly from the Qiskit quantum circuit. This has been achieved through the re-implementation of some basic classes defined in the [`qiskit/quantum_info/`](https://github.com/Qiskit/qiskit-terra/tree/main/qiskit/quantum_info) module by using [sympy](https://github.com/sympy/sympy) as a backend for symbolic expressions manipulation.\n\n\n# Installation\n\n## User-mode\n```\npip install qiskit-symb\n```\n\n## Dev-mode\n```\ngit clone https://github.com/SimoneGasperini/qiskit-symb.git\ncd qiskit-symb\npip install -e .\n```\n\n\n# Usage examples\n\n### _Sympify_ a Qiskit circuit\nLet's get started on how to use `qiskit-symb` to get the symbolic representation of a given Qiskit circuit. In particular, in this first basic example, we consider the following quantum circuit:\n```python\nfrom qiskit import QuantumCircuit\nfrom qiskit.circuit import Parameter, ParameterVector\n\ny = Parameter('y')\np = ParameterVector('p', length=2)\n\npqc = QuantumCircuit(2)\npqc.ry(y, 0)\npqc.cx(0, 1)\npqc.u(0, *p, 1)\n\npqc.draw('mpl')\n```\n![](/img/example_circuit.png)\n\nTo get the *sympy* representation of the unitary matrix corresponding to the parameterized circuit, we just have to create the symbolic `Operator` instance and call the `to_sympy()` method:\n```python\nfrom qiskit_symb.quantum_info import Operator\n\nop = Operator(pqc)\nop.to_sympy()\n```\n```math\n\\left[\\begin{matrix}\\cos{\\left(\\frac{y}{2} \\right)} & - \\sin{\\left(\\frac{y}{2} \\right)} & 0 & 0\\\\0 & 0 & \\sin{\\left(\\frac{y}{2} \\right)} & \\cos{\\left(\\frac{y}{2} \\right)}\\\\0 & 0 & e^{i \\left(p[0] + p[1]\\right)} \\cos{\\left(\\frac{y}{2} \\right)} & - e^{i \\left(p[0] + p[1]\\right)} \\sin{\\left(\\frac{y}{2} \\right)}\\\\e^{i \\left(p[0] + p[1]\\right)} \\sin{\\left(\\frac{y}{2} \\right)} & e^{i \\left(p[0] + p[1]\\right)} \\cos{\\left(\\frac{y}{2} \\right)} & 0 & 0\\end{matrix}\\right]\n```\n\nIf you want then to assign a value to some specific parameter, you can use the `subs(<dict>)` method passing a dictionary that maps each parameter to the desired corresponding value:\n```python\nparams2value = {p: [-1, 2]}\nnew_op = op.subs(params2value)\nnew_op.to_sympy()\n```\n```math\n\\left[\\begin{matrix}\\cos{\\left(\\frac{y}{2} \\right)} & - \\sin{\\left(\\frac{y}{2} \\right)} & 0 & 0\\\\0 & 0 & \\sin{\\left(\\frac{y}{2} \\right)} & \\cos{\\left(\\frac{y}{2} \\right)}\\\\0 & 0 & e^{i} \\cos{\\left(\\frac{y}{2} \\right)} & - e^{i} \\sin{\\left(\\frac{y}{2} \\right)}\\\\e^{i} \\sin{\\left(\\frac{y}{2} \\right)} & e^{i} \\cos{\\left(\\frac{y}{2} \\right)} & 0 & 0\\end{matrix}\\right]\n```\n\n### _Lambdify_ a Qiskit circuit\nGiven a Qiskit circuit, `qiskit-symb` also allows to generate a Python lambda function with actual arguments matching the Qiskit unbounded parameters.\nLet's consider the following example starting from a `ZZFeatureMap` circuit, commonly used as a data embedding ansatz in QML applications:\n```python\nfrom qiskit.circuit.library import ZZFeatureMap\n\npqc = ZZFeatureMap(feature_dimension=3, reps=1)\npqc.draw('mpl')\n```\n![](/img/zzfeaturemap_circuit.png)\n\nTo get the Python lambda function representing, for instance, the final parameterized statevector, we just have to create the symbolic `Statevector` instance and call the `to_lambda()` method:\n```python\nfrom qiskit_symb.quantum_info import Statevector\n\nsv = Statevector(pqc)\nsv_func = sv.to_lambda()\n```\n\nWe can now call the generated lambda function passing the actual values we want to assign to each free parameter (in alphabetical order, same convention used in `qiskit-terra`). The returned object will be a *numpy* 2D-array (with `shape=(8,1)` in this case) representing the final output statevector.\n```python\nvalues = [1.24, 2.27, 0.29]\nstatevec = sv_func(*values)\n```\n\n**_REMARK_** \\\n*When the PQC has to be evaluated on a large number of different sets of parameters values (typical case in QML), this `qiskit-symb` feature can help to significantly improve the (full-statevector) simulation performace. Indeed, the symbolic evalutation of the circuit and the lambda generation take place only once; then, the simulation only consists in executing multiple times the returned function passing a different set of parameters values for each iteration. For relatively shallow PQCs with a limilted number of qubits (e.g. Quantum Kernels evaluation), this can reduce the execution time up to two order of magnitudes (depending on the number of iterations) compared to the standard Qiskit simulation based on the [Aer Simulators](https://qiskit.org/documentation/tutorials/simulators/1_aer_provider.html) or the [Sampler](https://qiskit.org/documentation/stubs/qiskit.primitives.Sampler.html) primitive.*\n\n\n# Contributors\n\n<table>\n  <tr>\n    <td align=\"center\"><a href=\"https://github.com/SimoneGasperini\"><img src=\"https://avatars2.githubusercontent.com/u/71086758?s=400&v=4\" width=\"120px;\"/><br/><b>Simone Gasperini</b></a></td>\n  </tr>\n</table>\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/SimoneGasperini/qiskit-symb",
+            "keywords": "",
+            "license": "Apache 2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "qiskit-symb",
+            "package_url": "https://pypi.org/project/qiskit-symb/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/qiskit-symb/",
+            "project_urls": {
+                "Homepage": "https://github.com/SimoneGasperini/qiskit-symb"
+            },
+            "release_url": "https://pypi.org/project/qiskit-symb/0.1.2/",
+            "requires_dist": [
+                "qiskit-terra"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "",
+            "version": "0.1.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18123380,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5eda435da0142df382868a73fc784e5a67d9a5d2e0ff615c0384bdddc2fc9325",
+                    "md5": "d07095e2854bc7a5f9cd6739930eae48",
+                    "sha256": "91f93b84fffdb6e5fe50f883431e47aad8a5949f81ad4663d4a4beb850e0eb42"
+                },
+                "downloads": -1,
+                "filename": "qiskit_symb-0.1.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "d07095e2854bc7a5f9cd6739930eae48",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 30818,
+                "upload_time": "2023-05-16T12:46:13",
+                "upload_time_iso_8601": "2023-05-16T12:46:13.723860Z",
+                "url": "https://files.pythonhosted.org/packages/5e/da/435da0142df382868a73fc784e5a67d9a5d2e0ff615c0384bdddc2fc9325/qiskit_symb-0.1.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "68ed096e665fb6daed45d22fdbbee226b7fa4a6e26c0d10170ed3e6f043bfda2",
+                    "md5": "a6706f66dc25fe31443d4234f7711503",
+                    "sha256": "c3202144a27a125ad00cedbbd8447894e95088c7d894dd4b7d1199fa900bbe57"
+                },
+                "downloads": -1,
+                "filename": "qiskit-symb-0.1.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "a6706f66dc25fe31443d4234f7711503",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 20558,
+                "upload_time": "2023-05-16T12:46:15",
+                "upload_time_iso_8601": "2023-05-16T12:46:15.370396Z",
+                "url": "https://files.pythonhosted.org/packages/68/ed/096e665fb6daed45d22fdbbee226b7fa4a6e26c0d10170ed3e6f043bfda2/qiskit-symb-0.1.2.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

@@ -1,0 +1,82 @@
+{
+    "1.0.17": {
+        "info": {
+            "author": "SAP SE",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 5 - Production/Stable",
+                "Intended Audience :: Developers",
+                "Intended Audience :: End Users/Desktop",
+                "Intended Audience :: Financial and Insurance Industry",
+                "Intended Audience :: Healthcare Industry",
+                "Intended Audience :: Information Technology",
+                "Intended Audience :: Legal Industry",
+                "Intended Audience :: Manufacturing",
+                "Intended Audience :: Science/Research",
+                "License :: Other/Proprietary License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Topic :: Scientific/Engineering",
+                "Topic :: Scientific/Engineering :: Artificial Intelligence",
+                "Topic :: Software Development :: Libraries",
+                "Topic :: Software Development :: Libraries :: Python Modules"
+            ],
+            "description": "## content package for DataRobot integration for SAP AI Core\n\n## Objective\nA content package to deploy DataRobot workflows in AI Core.\n\n### User Guide\n\n#### 1. Deploy a DataRobot model in AI Core\n\n*Pre-requisites*\n\n1. Complete [AI Core Onboarding](https://help.sap.com/viewer/2d6c5984063c40a59eda62f4a9135bee/LATEST/en-US/8ce24833036d481cb3113a95e3a39a07.html)\n2. Access to the Git repository, Docker repository and S3 bucket onboarded to AI Core\n3. You have a registered DataRobot account, trained a model, downloaded the model from DataRobot and stored the model in Object Store configured with AI Core.\n\n\n*Steps*\n\n1. Install AI Core SDK\n```\npip install ai-core-sdk[aicore_content]\n```\n2. Install this content package\n```\npip install sap-ai-core-datarobot\n```\n3. Create a config file with the name model_serving_config.yaml with the following content.\n```\nserving_config = {\n    '.contentPackage': 'sap_datarobot',\n    '.workflow': 'model-jar-serving',\n    '.dockerType': 'default',\n    'name': '<YOUR SERVING TEMPLATE NAME>',\n    'labels': {\n        'scenarios.ai.sap.com/id': \"<YOUR SCENARIO ID>\",\n        'ai.sap.com/version': \"<YOUR SCENARIO VERSION>\"\n    },\n    \"annotations\": {\n        \"scenarios.ai.sap.com/name\": \"<YOUR SCENARIO NAME>\",\n        \"executables.ai.sap.com/name\": \"<YOUR EXECUTABLE NAME>\",\n        \"executables.ai.sap.com/description\": \"<YOUR EXECUTABLE DESCRIPTION>\",\n        \"scenarios.ai.sap.com/description\": \"<YOUR SCENARIO DESCRIPTION>\"\n    },\n    'image': '<YOUR DOCKER IMAGE TAG>',\n    \"imagePullSecret\": \"<YOUR DOCKER IMAGE PULL SECRET NAME>\"\n}\n```\n4. Fill in the desired values in the config file. An example config file is shown below.\n```\nserving_config = {\n    '.contentPackage': 'sap_datarobot',\n    '.workflow': 'model-jar-serving',\n    '.dockerType': 'default',\n    'name': 'datarobot-model-serving',\n    'labels': {\n        'scenarios.ai.sap.com/id': \"00db4197-1538-4640-9ea9-44731041ed88\",\n        'ai.sap.com/version': \"0.0.1\"\n    },\n    \"annotations\": {\n        \"scenarios.ai.sap.com/name\": \"my-datarobot-scenario\",\n        \"executables.ai.sap.com/name\": \"datarobot-model-serving\",\n        \"executables.ai.sap.com/description\": \"datarobot model serving\",\n        \"scenarios.ai.sap.com/description\": \"my datarobot scenario\"\n    },\n    'image': 'docker.io/<YOUR_DOCKER_USERNAME>/model-serve:1.0',\n    \"imagePullSecret\": \"my-docker-secret\"\n}\n```\n5. Generate a docker image\n```\naicore-content create-image -p sap_datarobot -w model-jar-serving model_serving_config.yaml\n```\n6. Generate a serving template\n```\naicore-content create-template -p sap_datarobot -w model-jar-serving model_serving_config.yaml -o './model-serving-template.yaml'\n```\n7. Push the docker image to your docker repository\n```\ndocker push docker.io/<YOUR_DOCKER_USERNAME>/model-serve:1.0\n```\n8. Push the serving template to your git repository\n```\ncd <repo_path>\ngit add <path_within_repo>/proxy-serving-template.yaml\ngit commit -m 'updated template model-serving-template.yaml'\ngit push\n```\n9. Obtain a client credentials token to AI Core\n```\ncurl --location '<YOUR AI CORE AUTH ENDPOINT URL>/oauth/token' --header 'Authorization: Basic <YOUR AI CORE CREDENTIALS>'\n```\n10. Create an artifact to connect the DataRobot model, to make it available for use in SAP AI Core. Save the model artifact id from the response.\n```\ncurl --location --request POST \"<YOUR AI CORE URL>/v2/lm/artifacts\" \\\n--header \"Authorization: Bearer <CLIENT CREDENTAILS TOKEN>\" \\\n--header \"Content-Type: application/json\" \\\n--header \"AI-Resource-Group: <YOUR RESOURCE GROUP NAME>\" \\\n--data-raw '{\n \"name\": \"my-datarobot-model\",\n \"kind\": \"model\",\n \"url\": \"ai://<YOUR OBJECTSTORE NAME>/<YOUR MODEL PATH>\",\n \"description\": \"my datarobot model jar\",\n \"scenarioId\": \"<YOUR SCENARIO ID>\"\n }'\n```\n11. Create a configuration and save the configuration id from the response.\n```\ncurl --request POST \"<YOUR AI CORE URL>/v2/lm/configurations\" \\\n--header \"Authorization: Bearer <CLIENT CREDENTAILS TOKEN>\" \\\n--header \"AI-Resource-Group: <YOUR RESOURCE GROUP NAME>\" \\\n--header \"Content-Type: application/json\" \\\n--data '{\n    \"name\": \"<CONFIGURATION NAME>\",\n    \"executableId\": \"<YOUR EXECUTABLE ID>\",\n    \"scenarioId\": \"<YOUR SCENARIO ID>\",\n    \"parameterBindings\": [\n        {\n            \"key\": \"modelName\",\n            \"value\": \"<YOUR MODEL JAR FILE NAME>\"\n        }\n    ],\n    \"inputArtifactBindings\": [\n        {\n            \"key\": \"modeljar\",\n            \"artifactId\": \"<YOUR MODEL ARTIFACT ID>\"\n        }\n    ]\n}'\n```\n12. Create a deployment and note down the deployment id from the response\n```\ncurl --location --globoff --request POST '<YOUR AI CORE URL>/v2/lm/configurations/<YOUR CONFIGURATION ID>/deployments' \\\n--header 'AI-Resource-Group: <YOUR RESOURCE GROUP NAME>' \\\n--header 'Authorization: Bearer <CLIENT CREDENTAILS TOKEN>'\n```\n13. Check the status of the deployment. Note down the deployment URL after the status changes to RUNNING.\n```\ncurl --location --globoff '<YOUR AI CORE URL>/v2/lm/deployments/<YOUR DEPLOYMENT ID>' \\\n--header 'AI-Resource-Group: <YOUR RESOURCE GROUP NAME>' \\\n--header 'Authorization: Bearer <CLIENT CREDENTAILS TOKEN>'\n```\n14. Use your deployment. The example inference data shown below is for an employee churn prediction model\n```\ncurl --location '<YOUR DEPLOYMENT URL>/v1/predict' \\\n--header 'AI-Resource-Group: <YOUR RESOURCE GROUP NAME>' \\\n--header 'Content-Type: application/json' \\\n--header 'Authorization: Bearer <CLIENT CREDENTAILS TOKEN>' \\\n--data '[\n    {\n        \"EMPLOYEE_ID\": 00000,\n        \"AGE\": 33,\n        \"AGE_GROUP10\": \"(25-35]\",\n        \"AGE_GROUP5\": \"(30-35]\",\n        \"GENERATION\": \"Generation Y\",\n        \"CRITICAL_JOB_ROLE\": \"Critical\",\n        \"RISK_OF_LOSS\": \"Low\",\n        \"IMPACT_OF_LOSS\": \"Medium\",\n        \"FUTURE_LEADER\": \"No Future Leader\",\n        \"GENDER\": \"Male\",\n        \"MGR_EMP\": \"No Mgr\",\n        \"MINORITY\": \"Non-Minority\",\n        \"TENURE_MONTHS\": 64,\n        \"TENURE_INTERVAL_YEARS\": \"( 5 - 10]\",\n        \"TENURE_INTERVALL_DESC\": \"4 - senior\",\n        \"SALARY\": 50000,\n        \"EMPLOYMENT_TYPE\": \"Full-Time\",\n        \"EMPLOYMENT_TYPE_2\": \"Regular\",\n        \"HIGH_POTENTIAL\": \"No High Pot\",\n        \"PREVIOUS_FUNCTIONAL_AREA\": null,\n        \"PREVIOUS_JOB_LEVEL\": null,\n        \"PREVIOUS_CAREER_PATH\": null,\n        \"PREVIOUS_PERFORMANCE_RATING\": null,\n        \"PREVIOUS_COUNTRY\": null,\n        \"PREVCOUNTRYLAT\": null,\n        \"PREVCOUNTRYLON\": null,\n        \"PREVIOUS_REGION\": null,\n        \"TIMEINPREVPOSITIONMONTH\": 4,\n        \"CURRENT_FUNCTIONAL_AREA\": \"Service\",\n        \"CURRENT_JOB_LEVEL\": \"3 - Senior\",\n        \"CURRENT_CAREER_PATH\": \"Functional\",\n        \"CURRENT_PERFORMANCE_RATING\": \"0 - No performance Measurement\",\n        \"CURRENT_REGION\": \"EMEA\",\n        \"CURRENT_COUNTRY\": \"Germany\",\n        \"CURCOUNTRYLAT\": 51.08342,\n        \"CURCOUNTRYLON\": 10.423447,\n        \"PROMOTION_WITHIN_LAST_3_YEARS\": \"No Promotion\",\n        \"CHANGED_POSITION_WITHIN_LAST_2_YEARS\": \"No Change\",\n        \"CHANGE_IN_PERFORMANCE_RATING\": \"0 - Not available\",\n        \"FUNCTIONALAREACHANGETYPE\": \"No change\",\n        \"JOBLEVELCHANGETYPE\": \"No change\",\n        \"HEADS\": 1,\n        \"FLIGHT_RISK\": \"No\",\n        \"ID\": 00000,\n        \"LINKEDIN\": \"No\",\n        \"HRTRAINING\": \"No\",\n        \"SICKDAYS\": 16\n    }\n]'\n```\n\n### Security Guide\nSee [Security in SAP AI Core](https://help.sap.com/docs/sap-ai-core/sap-ai-core-service-guide/security?locale=en-US) for general information about how SAP AI Core handles security.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "https://pypi.python.org/pypi/sap-ai-core-datarobot",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://www.sap.com/",
+            "keywords": "SAP AI Core,DataRobot",
+            "license": "SAP DEVELOPER LICENSE AGREEMENT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "sap-ai-core-datarobot",
+            "package_url": "https://pypi.org/project/sap-ai-core-datarobot/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/sap-ai-core-datarobot/",
+            "project_urls": {
+                "Download": "https://pypi.python.org/pypi/sap-ai-core-datarobot",
+                "Homepage": "https://www.sap.com/"
+            },
+            "release_url": "https://pypi.org/project/sap-ai-core-datarobot/1.0.17/",
+            "requires_dist": null,
+            "requires_python": ">=3.7",
+            "summary": "content package for DataRobot integration for SAP AI Core",
+            "version": "1.0.17",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18118491,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "435af4210f69adb88466a70b063fa9adb72718a9c135af72f3ddd2d62a2d9944",
+                    "md5": "10b3ea982fedd320912acbac4fa84482",
+                    "sha256": "cf618841b7b7aecdd20edbdd1b1fb67ce36c647d73cee51a30b6f53374d97c0b"
+                },
+                "downloads": -1,
+                "filename": "sap_ai_core_datarobot-1.0.17-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "10b3ea982fedd320912acbac4fa84482",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 16454,
+                "upload_time": "2023-05-16T05:00:37",
+                "upload_time_iso_8601": "2023-05-16T05:00:37.608287Z",
+                "url": "https://files.pythonhosted.org/packages/43/5a/f4210f69adb88466a70b063fa9adb72718a9c135af72f3ddd2d62a2d9944/sap_ai_core_datarobot-1.0.17-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

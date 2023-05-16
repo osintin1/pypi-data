@@ -22,7 +22,6 @@
                 "Programming Language :: Python :: 3.9",
                 "Topic :: Scientific/Engineering :: Artificial Intelligence"
             ],
-            "description": "Torchvision+ Deformable Convolution Networks\n========\n![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/inspiros/tvdcn/build_wheels.yml)\n![PyPI](https://img.shields.io/pypi/v/tvdcn)\n![GitHub](https://img.shields.io/github/license/inspiros/tvdcn)\n\nThis package contains the PyTorch implementations of the **2D Deformable Convolution** operation\n(the commonly used  `torchvision.ops.deform_conv2d`) proposed in https://arxiv.org/abs/1811.11168,\nas well as its **1D** and **3D** equivalences, which are not available in `torchvision` (thus the name).\n\nAnd beyond that, the package also provides the **transposed** versions of them,\nwhich interestingly noone has ever proposed to use.\nThe main idea is, while `offset` in deformable convolution guides the convolution kernel where to get the inputs to\ncompute the output; in transposed deformable convolution, it guides the convolution kernel where to write the outputs.\n\n## Highlights\n\n- **Supported operations:** _(All are implemented in C++/Cuda)_\n\n  - `tvdcn.ops.deform_conv1d`\n  - `tvdcn.ops.deform_conv2d`\n  - `tvdcn.ops.deform_conv3d`\n  - `tvdcn.ops.deform_conv_transpose1d`\n  - `tvdcn.ops.deform_conv_transpose2d`\n  - `tvdcn.ops.deform_conv_transpose3d`\n\n- And the following **supplementary operations** (for activating `mask`):\n  - `tvdcn.ops.mask_softmax1d`\n  - `tvdcn.ops.mask_softmax2d`\n  - `tvdcn.ops.mask_softmax3d`\n\n- `offset` and `mask` can be applied in separate groups\n  (following [Deformable Convolution v3](https://arxiv.org/abs/2211.05778)).\n\n- All the `nn.Module` wrappers for these operations are implemented,\n  everything is `@torch.jit.script`-able! Please check [Usage](#usage).\n\n**Note:** We don't care much about `onnx` exportation, but if you do, you can check this repo:\nhttps://github.com/masamitsu-murase/deform_conv2d_onnx_exporter.\n\n## Requirements\n\n- `torch>=1.8`\n\n## Installation\n\n#### From PyPI:\n\n[tvdcn](https://pypi.org/project/tvdcn) provides some prebuilt wheels on **PyPI**.\nRun this command to install:\n\n```terminal\npip install tvdcn\n```\n\nThe Linux and Windows wheels are built with **Cuda 11.8**, which is compatible with `torch==2.0.0`.\nIf you cannot find a wheel for your Arch/Python/Cuda, or there is any problem with library linking when importing,\nplease proceed to [instructions to build from source](#from-source), all steps are super easy.\n\n|                  |     Linux/Windows     |     MacOS      |\n|------------------|:---------------------:|:--------------:|\n| Python version:  |       3.8-3.11        |    3.8-3.11    |\n| PyTorch version: |    `torch==2.0.0`     | `torch==2.0.0` |\n| Cuda version:    |         11.8          |       -        |\n| GPU CCs:         | `6.1,7.5,8.6,8.9+PTX` |       -        |\n\n#### From Source:\n\nFor installing from source, you need a C++ compiler (`gcc`/`msvc`) and a Cuda compiler (`nvcc`).\nClone this repo and execute the following command:\n\n```terminal\npip install .\n```\n\nOr just compile the binary for inplace usage:\n\n```terminal\npython setup.py build_ext --inplace\n```\n\nA binary (`.so` file for Unix and `.pyd` file for Windows) should be compiled inside the `tvdcn` folder.\nTo check if installation is successful, try:\n\n```python\nfrom tvdcn import _HAS_OPS\n\nassert _HAS_OPS\n```\n\n**Note:** We use soft Cuda version compatibility checking between the built binary and the installed PyTorch,\nwhich means only major version matching is required.\nHowever, we suggest building the binaries with the same Cuda version with installed PyTorch's Cuda version to prevent\nany possible conflict.\n\n## Usage\n\n#### Functions:\n\nFunctionally, the package offers 6 functions (listed in [Highlights](#highlights)) much similar to\n`torchvision.ops.deform_conv2d`.\nHowever, the order of parameters is slightly different, so be cautious.\nSpecifically, the signatures of `deform_conv2d` and `deform_conv_transpose2d` look like this:\n\n```python\ndef deform_conv2d(\n        input: Tensor,\n        weight: Tensor,\n        offset: Optional[Tensor] = None,\n        mask: Optional[Tensor] = None,\n        bias: Optional[Tensor] = None,\n        stride: Union[int, Tuple[int, ...]] = 1,\n        padding: Union[int, Tuple[int, ...]] = 0,\n        dilation: Union[int, Tuple[int, ...]] = 1,\n        groups: int = 1) -> Tensor:\n    ...\n\n\ndef deform_conv_transpose2d(\n        input: Tensor,\n        weight: Tensor,\n        offset: Optional[Tensor] = None,\n        mask: Optional[Tensor] = None,\n        bias: Optional[Tensor] = None,\n        stride: Union[int, Tuple[int, ...]] = 1,\n        padding: Union[int, Tuple[int, ...]] = 0,\n        output_padding: Union[int, Tuple[int, ...]] = 0,\n        dilation: Union[int, Tuple[int, ...]] = 1,\n        groups: int = 1) -> Tensor:\n    ...\n```\n\nIf `offset=None` and `mask=None`, the executed operations are identical to conventional convolution.\n\n#### Neural Network Layers:\n\nThe `nn.Module` wrappers are:\n\n- `tvdcn.ops.DeformConv1d`\n- `tvdcn.ops.DeformConv2d`\n- `tvdcn.ops.DeformConv3d`\n- `tvdcn.ops.DeformConvTranspose1d`\n- `tvdcn.ops.DeformConvTranspose2d`\n- `tvdcn.ops.DeformConvTranspose3d`\n\nThey are subclasses of the `torch.nn.modules._ConvNd`,\nbut you have to specify `offset` and optionally `mask` as extra inputs for the `forward` function.\nFor example:\n\n```python\nimport torch\n\nfrom tvdcn import DeformConv2d\n\ninput = torch.rand(2, 3, 64, 64)\noffset = torch.rand(2, 2 * 3 * 3, 62, 62)\n# if mask is None, perform the original deform_conv without modulation (v2)\nmask = torch.rand(2, 1 * 3 * 3, 62, 62)\n\nconv = DeformConv2d(3, 16, kernel_size=(3, 3))\n\noutput = conv(input, offset, mask)\nprint(output.shape)\n```\n\nAdditionally, following many other implementations out there, we also implemented the _packed_ wrappers:\n\n- `tvdcn.ops.PackedDeformConv1d`\n- `tvdcn.ops.PackedDeformConv2d`\n- `tvdcn.ops.PackedDeformConv3d`\n- `tvdcn.ops.PackedDeformConvTranspose1d`\n- `tvdcn.ops.PackedDeformConvTranspose2d`\n- `tvdcn.ops.PackedDeformConvTranspose3d`\n\nThese are easy-to-use classes that contain ordinary convolution layers with appropriate hyperparameters to generate\n`offset` (and `mask` if initialized with `modulated=True`);\nbut that means less customization.\nThe only tunable hyperparameters that effect these supplementary conv layers are `offset_groups` and `mask_groups`,\nwhich have been decoupled from and behave somewhat similar to `groups`.\n\n```python\nimport torch\n\nfrom tvdcn import PackedDeformConv1d\n\ninput = torch.rand(2, 3, 128)\n\nconv = PackedDeformConv1d(3, 16, kernel_size=5, modulated=True)\n# jit scripting\nscripted_conv = torch.jit.script(conv)\nprint(scripted_conv)\n\noutput = scripted_conv(input)\nprint(output.shape)\n```\n\n**Note:** For transposed packed modules, we are generating `offset` and `mask` with pointwise convolution\nas we haven't found a better way to do it.\n\nCheck the [examples](examples) folder, maybe you can find something helpful.\n\n## Acknowledgements\n\nThis for fun project is directly modified and extended from `torchvision.ops.deform_conv2d`.\n\n## License\n\nThe code is released under the MIT license. See [`LICENSE.txt`](LICENSE.txt) for details.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -56,7 +55,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18112185,
+        "last_serial": 18119826,
         "urls": [
             {
                 "comment_text": "",
@@ -328,6 +327,341 @@
                 "upload_time": "2023-05-15T17:40:31",
                 "upload_time_iso_8601": "2023-05-15T17:40:31.617124Z",
                 "url": "https://files.pythonhosted.org/packages/44/ef/f2cda353310bcc6c4f06a8f98aeb7a8f886d8e91b46e5aa697572d6695e6/tvdcn-0.2.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.3": {
+        "info": {
+            "author": "Hoang-Nhat Tran (inspiros)",
+            "author_email": "hnhat.tran@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "Environment :: GPU :: NVIDIA CUDA :: 11.8",
+                "Intended Audience :: Developers",
+                "Intended Audience :: Education",
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.6",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Scientific/Engineering :: Artificial Intelligence"
+            ],
+            "description": "Torchvision+ Deformable Convolution Networks\n========\n![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/inspiros/tvdcn/build_wheels.yml)\n![PyPI](https://img.shields.io/pypi/v/tvdcn)\n![GitHub](https://img.shields.io/github/license/inspiros/tvdcn)\n\nThis package contains the PyTorch implementations of the **2D Deformable Convolution** operation\n(the commonly used  `torchvision.ops.deform_conv2d`) proposed in https://arxiv.org/abs/1811.11168,\nas well as its **1D** and **3D** equivalences, which are not available in `torchvision` (thus the name).\n\nAnd beyond that, the package also provides the **transposed** versions of them,\nwhich interestingly noone has ever proposed to use.\nThe main idea is, while `offset` in deformable convolution guides the convolution kernel where to get the inputs to\ncompute the output; in transposed deformable convolution, it guides the convolution kernel where to write the outputs.\n\n## Highlights\n\n- **Supported operations:** _(All are implemented in C++/Cuda)_\n\n  - `tvdcn.ops.deform_conv1d`\n  - `tvdcn.ops.deform_conv2d`\n  - `tvdcn.ops.deform_conv3d`\n  - `tvdcn.ops.deform_conv_transpose1d`\n  - `tvdcn.ops.deform_conv_transpose2d`\n  - `tvdcn.ops.deform_conv_transpose3d`\n\n- And the following **supplementary operations** (for activating `mask`):\n  - `tvdcn.ops.mask_softmax1d`\n  - `tvdcn.ops.mask_softmax2d`\n  - `tvdcn.ops.mask_softmax3d`\n\n- Both `offset` and `mask` can turned off, and can be applied in separate groups\n  ([Deformable Convolution v3](https://arxiv.org/abs/2211.05778)).\n\n- All the `nn.Module` wrappers for these operations are implemented,\n  everything is `@torch.jit.script`-able! Please check [Usage](#usage).\n\n**Note:** We don't care much about `onnx` exportation, but if you do, you can check this repo:\nhttps://github.com/masamitsu-murase/deform_conv2d_onnx_exporter.\n\n## Requirements\n\n- `torch>=1.8`\n\n## Installation\n\n#### From PyPI:\n\n[tvdcn](https://pypi.org/project/tvdcn) provides some prebuilt wheels on **PyPI**.\nRun this command to install:\n\n```terminal\npip install tvdcn\n```\n\nThe Linux and Windows wheels are built with **Cuda 11.8**, which is compatible with `torch==2.0.0`.\nIf you cannot find a wheel for your Arch/Python/Cuda, or there is any problem with library linking when importing,\nplease proceed to [instructions to build from source](#from-source), all steps are super easy.\n\n|                  |     Linux/Windows     |     MacOS      |\n|------------------|:---------------------:|:--------------:|\n| Python version:  |       3.8-3.11        |    3.8-3.11    |\n| PyTorch version: |    `torch==2.0.0`     | `torch==2.0.0` |\n| Cuda version:    |         11.8          |       -        |\n| GPU CCs:         | `6.1,7.5,8.6,8.9+PTX` |       -        |\n\n#### From Source:\n\nFor installing from source, you need a C++ compiler (`gcc`/`msvc`) and a Cuda compiler (`nvcc`).\nClone this repo and execute the following command:\n\n```terminal\npip install .\n```\n\nOr just compile the binary for inplace usage:\n\n```terminal\npython setup.py build_ext --inplace\n```\n\nA binary (`.so` file for Unix and `.pyd` file for Windows) should be compiled inside the `tvdcn` folder.\nTo check if installation is successful, try:\n\n```python\nimport tvdcn\n\nprint('Library loaded successfully:', tvdcn.has_ops())\nprint('Compiled with Cuda:', tvdcn.with_cuda())\n```\n\n**Note:** We use soft Cuda version compatibility checking between the built binary and the installed PyTorch,\nwhich means only major version matching is required.\nHowever, we suggest building the binaries with the same Cuda version with installed PyTorch's Cuda version to prevent\nany possible conflict.\n\n## Usage\n\n#### Functions:\n\nFunctionally, the package offers 6 functions (listed in [Highlights](#highlights)) much similar to\n`torchvision.ops.deform_conv2d`.\nHowever, the order of parameters is slightly different, so be cautious\n(check [this comparison](tests/test_compatibility_with_torchvision.py)).\nSpecifically, the signatures of `deform_conv2d` and `deform_conv_transpose2d` look like this:\n\n```python\ndef deform_conv2d(\n        input: Tensor,\n        weight: Tensor,\n        offset: Optional[Tensor] = None,\n        mask: Optional[Tensor] = None,\n        bias: Optional[Tensor] = None,\n        stride: Union[int, Tuple[int, ...]] = 1,\n        padding: Union[int, Tuple[int, ...]] = 0,\n        dilation: Union[int, Tuple[int, ...]] = 1,\n        groups: int = 1) -> Tensor:\n    ...\n\n\ndef deform_conv_transpose2d(\n        input: Tensor,\n        weight: Tensor,\n        offset: Optional[Tensor] = None,\n        mask: Optional[Tensor] = None,\n        bias: Optional[Tensor] = None,\n        stride: Union[int, Tuple[int, ...]] = 1,\n        padding: Union[int, Tuple[int, ...]] = 0,\n        output_padding: Union[int, Tuple[int, ...]] = 0,\n        dilation: Union[int, Tuple[int, ...]] = 1,\n        groups: int = 1) -> Tensor:\n    ...\n```\n\nIf `offset=None` and `mask=None`, the executed operations are identical to conventional convolution.\n\n#### Neural Network Layers:\n\nThe `nn.Module` wrappers are:\n\n- `tvdcn.ops.DeformConv1d`\n- `tvdcn.ops.DeformConv2d`\n- `tvdcn.ops.DeformConv3d`\n- `tvdcn.ops.DeformConvTranspose1d`\n- `tvdcn.ops.DeformConvTranspose2d`\n- `tvdcn.ops.DeformConvTranspose3d`\n\nThey are subclasses of the `torch.nn.modules._ConvNd`,\nbut you have to specify `offset` and optionally `mask` as extra inputs for the `forward` function.\nFor example:\n\n```python\nimport torch\n\nfrom tvdcn import DeformConv2d\n\ninput = torch.rand(2, 3, 64, 64)\noffset = torch.rand(2, 2 * 3 * 3, 62, 62)\n# if mask is None, perform the original deform_conv without modulation (v2)\nmask = torch.rand(2, 1 * 3 * 3, 62, 62)\n\nconv = DeformConv2d(3, 16, kernel_size=(3, 3))\n\noutput = conv(input, offset, mask)\nprint(output.shape)\n```\n\nAdditionally, following many other implementations out there, we also implemented the _packed_ wrappers:\n\n- `tvdcn.ops.PackedDeformConv1d`\n- `tvdcn.ops.PackedDeformConv2d`\n- `tvdcn.ops.PackedDeformConv3d`\n- `tvdcn.ops.PackedDeformConvTranspose1d`\n- `tvdcn.ops.PackedDeformConvTranspose2d`\n- `tvdcn.ops.PackedDeformConvTranspose3d`\n\nThese are easy-to-use classes that contain ordinary convolution layers with appropriate hyperparameters to generate\n`offset` (and `mask` if initialized with `modulated=True`);\nbut that means less customization.\nThe only tunable hyperparameters that effect these supplementary conv layers are `offset_groups` and `mask_groups`,\nwhich have been decoupled from and behave somewhat similar to `groups`.\n\n```python\nimport torch\n\nfrom tvdcn import PackedDeformConv1d\n\ninput = torch.rand(2, 3, 128)\n\nconv = PackedDeformConv1d(3, 16, kernel_size=5, modulated=True)\n# jit scripting\nscripted_conv = torch.jit.script(conv)\nprint(scripted_conv)\n\noutput = scripted_conv(input)\nprint(output.shape)\n```\n\n**Note:** For transposed packed modules, we are generating `offset` and `mask` with pointwise convolution\nas we haven't found a better way to do it.\n\nCheck the [examples](examples) folder, maybe you can find something helpful.\n\n## Acknowledgements\n\nThis for fun project is directly modified and extended from `torchvision.ops.deform_conv2d`.\n\n## License\n\nThe code is released under the MIT license. See [`LICENSE.txt`](LICENSE.txt) for details.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/inspiros/tvdcn",
+            "keywords": "deform_conv; deformable convolution",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "tvdcn",
+            "package_url": "https://pypi.org/project/tvdcn/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/tvdcn/",
+            "project_urls": {
+                "Homepage": "https://github.com/inspiros/tvdcn",
+                "Source": "https://github.com/inspiros/tvdcn"
+            },
+            "release_url": "https://pypi.org/project/tvdcn/0.2.3/",
+            "requires_dist": [
+                "torch",
+                "tqdm ; extra == 'examples'",
+                "tqdm ; extra == 'tests'"
+            ],
+            "requires_python": ">=3.6",
+            "summary": "Torchvision+ Deformable Convolutional Networks",
+            "version": "0.2.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18119826,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "7ccb21e3f8853e195a32dbab5492b3269f5f424a54a46027929b74bc95720164",
+                    "md5": "e6d576ea79167abad13195586de76293",
+                    "sha256": "606f2d1bfd883e55a2a173bf18f01d2af1bae6f190660abf31e15654b7cd83e1"
+                },
+                "downloads": -1,
+                "filename": "tvdcn-0.2.3-cp310-cp310-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "e6d576ea79167abad13195586de76293",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.6",
+                "size": 422623,
+                "upload_time": "2023-05-16T07:33:08",
+                "upload_time_iso_8601": "2023-05-16T07:33:08.429740Z",
+                "url": "https://files.pythonhosted.org/packages/7c/cb/21e3f8853e195a32dbab5492b3269f5f424a54a46027929b74bc95720164/tvdcn-0.2.3-cp310-cp310-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "46f9437d9773ed3993346e5e6f56079f2059e4319b612100399f0aadb6cb0ab3",
+                    "md5": "e7283521cd36ac72bc9fc2acda63c4bd",
+                    "sha256": "ea9041bc78ccaf85e7f7294012c3097b439bce1b336b08bf8497bd34cffae81e"
+                },
+                "downloads": -1,
+                "filename": "tvdcn-0.2.3-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "e7283521cd36ac72bc9fc2acda63c4bd",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.6",
+                "size": 12870024,
+                "upload_time": "2023-05-16T07:33:10",
+                "upload_time_iso_8601": "2023-05-16T07:33:10.587379Z",
+                "url": "https://files.pythonhosted.org/packages/46/f9/437d9773ed3993346e5e6f56079f2059e4319b612100399f0aadb6cb0ab3/tvdcn-0.2.3-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5949bbc1598932ea10ef7b80ebcd4b3a873dc1fb87983633e6ecf5d77a4ee1a1",
+                    "md5": "6611cd5432f28fca129dfbdf27b9c2c1",
+                    "sha256": "001145f16685b6772901b43b4d8397fd199bd6ce19afd9e7e02d776073eda402"
+                },
+                "downloads": -1,
+                "filename": "tvdcn-0.2.3-cp310-cp310-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "6611cd5432f28fca129dfbdf27b9c2c1",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.6",
+                "size": 4506609,
+                "upload_time": "2023-05-16T07:33:15",
+                "upload_time_iso_8601": "2023-05-16T07:33:15.538510Z",
+                "url": "https://files.pythonhosted.org/packages/59/49/bbc1598932ea10ef7b80ebcd4b3a873dc1fb87983633e6ecf5d77a4ee1a1/tvdcn-0.2.3-cp310-cp310-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "03eab854ad61e5b05983a75789ca2c8b6865a35c20d4aba51d7a79b97a21b601",
+                    "md5": "470bebc5f5a3f6770c5c63c99a6ce8b3",
+                    "sha256": "cd0bd24e648d4f1539044f48cdac6249f2ee109f850f2d0aa5e2ed9f1d0efda9"
+                },
+                "downloads": -1,
+                "filename": "tvdcn-0.2.3-cp311-cp311-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "470bebc5f5a3f6770c5c63c99a6ce8b3",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.6",
+                "size": 422625,
+                "upload_time": "2023-05-16T07:33:17",
+                "upload_time_iso_8601": "2023-05-16T07:33:17.719197Z",
+                "url": "https://files.pythonhosted.org/packages/03/ea/b854ad61e5b05983a75789ca2c8b6865a35c20d4aba51d7a79b97a21b601/tvdcn-0.2.3-cp311-cp311-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5a0d4d832033c41e3be3c56c82ab9aeccd70717dac42bdacf6f0a7cd2542176b",
+                    "md5": "710b8bff3c61ebf2558f7fd72990004e",
+                    "sha256": "57f6c2181342af718d076cb695cbc5ad501a7fd44c705372a0146cd7e68f0257"
+                },
+                "downloads": -1,
+                "filename": "tvdcn-0.2.3-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "710b8bff3c61ebf2558f7fd72990004e",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.6",
+                "size": 12870060,
+                "upload_time": "2023-05-16T07:33:19",
+                "upload_time_iso_8601": "2023-05-16T07:33:19.836258Z",
+                "url": "https://files.pythonhosted.org/packages/5a/0d/4d832033c41e3be3c56c82ab9aeccd70717dac42bdacf6f0a7cd2542176b/tvdcn-0.2.3-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "fd635e92eb839317c13c88ece452ccd54605c62293befe2a8740f9b6c9cb9f12",
+                    "md5": "3cfb211dba0a5592fe34dc50b887f4e7",
+                    "sha256": "dd210c47ce94f13adb398f3c9016a5aa24149d0a966a8075ca3566d9914e9ef1"
+                },
+                "downloads": -1,
+                "filename": "tvdcn-0.2.3-cp311-cp311-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "3cfb211dba0a5592fe34dc50b887f4e7",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.6",
+                "size": 4506667,
+                "upload_time": "2023-05-16T07:33:25",
+                "upload_time_iso_8601": "2023-05-16T07:33:25.628021Z",
+                "url": "https://files.pythonhosted.org/packages/fd/63/5e92eb839317c13c88ece452ccd54605c62293befe2a8740f9b6c9cb9f12/tvdcn-0.2.3-cp311-cp311-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "154266c4b5917d37095df1ad03a62f9fe4eb3bb251091f7bec860886427fd5f3",
+                    "md5": "9b9cb2bf270407e1492a48f8545f09ef",
+                    "sha256": "4f1a724f4e9a1c65bf775a7336e9ea94b286dfd0291a3c642f05c901988a2d29"
+                },
+                "downloads": -1,
+                "filename": "tvdcn-0.2.3-cp38-cp38-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "9b9cb2bf270407e1492a48f8545f09ef",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.6",
+                "size": 422612,
+                "upload_time": "2023-05-16T07:33:28",
+                "upload_time_iso_8601": "2023-05-16T07:33:28.052812Z",
+                "url": "https://files.pythonhosted.org/packages/15/42/66c4b5917d37095df1ad03a62f9fe4eb3bb251091f7bec860886427fd5f3/tvdcn-0.2.3-cp38-cp38-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ad9019c4cc4e24de97dbccafefe6ba5a71cce20256012b805ab1cf39a01a3ea0",
+                    "md5": "2f1c0797c4b4e9ee9291bcf27e4eafe0",
+                    "sha256": "7306179179d1195750a1b68c31f9319a0ecf9e8461fd3a9217e04ed4d4c3760b"
+                },
+                "downloads": -1,
+                "filename": "tvdcn-0.2.3-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "2f1c0797c4b4e9ee9291bcf27e4eafe0",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.6",
+                "size": 12870041,
+                "upload_time": "2023-05-16T07:33:30",
+                "upload_time_iso_8601": "2023-05-16T07:33:30.507478Z",
+                "url": "https://files.pythonhosted.org/packages/ad/90/19c4cc4e24de97dbccafefe6ba5a71cce20256012b805ab1cf39a01a3ea0/tvdcn-0.2.3-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "97e17476de337465b84fc3049b41515da1dbadc86a60d2b9f937f948ff656c85",
+                    "md5": "fe4952a3cdb3a0334ffc72b9516d1b94",
+                    "sha256": "c07a83055cdd5bcbf16ec96c1af156c28ac07fdbdf8ebd4b1d35a5aab6e9b009"
+                },
+                "downloads": -1,
+                "filename": "tvdcn-0.2.3-cp38-cp38-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "fe4952a3cdb3a0334ffc72b9516d1b94",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.6",
+                "size": 4506630,
+                "upload_time": "2023-05-16T07:33:33",
+                "upload_time_iso_8601": "2023-05-16T07:33:33.965596Z",
+                "url": "https://files.pythonhosted.org/packages/97/e1/7476de337465b84fc3049b41515da1dbadc86a60d2b9f937f948ff656c85/tvdcn-0.2.3-cp38-cp38-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "9aa759b53de0fce70e8d878ff4c9e8f24343fc9c6ddcf46247cce208d022d331",
+                    "md5": "2015e29ebff522101333cbe770ffca3f",
+                    "sha256": "b5656624c6de963a8a101f0952cd7a6e4e43068328622ff0edb318cf071c5a9c"
+                },
+                "downloads": -1,
+                "filename": "tvdcn-0.2.3-cp39-cp39-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "2015e29ebff522101333cbe770ffca3f",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.6",
+                "size": 422608,
+                "upload_time": "2023-05-16T07:33:35",
+                "upload_time_iso_8601": "2023-05-16T07:33:35.786477Z",
+                "url": "https://files.pythonhosted.org/packages/9a/a7/59b53de0fce70e8d878ff4c9e8f24343fc9c6ddcf46247cce208d022d331/tvdcn-0.2.3-cp39-cp39-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6a39ad83736fc6a3f6d548cbdb3c685b346ee79083466d80430b6610d60a59e1",
+                    "md5": "7f503f934a069fad234bfcda4312b459",
+                    "sha256": "e608fd2dc2ae6f5f1f7c9f7a09e3c4086c0e485e51cd19566121d031498f86b7"
+                },
+                "downloads": -1,
+                "filename": "tvdcn-0.2.3-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "7f503f934a069fad234bfcda4312b459",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.6",
+                "size": 12870044,
+                "upload_time": "2023-05-16T07:33:37",
+                "upload_time_iso_8601": "2023-05-16T07:33:37.783463Z",
+                "url": "https://files.pythonhosted.org/packages/6a/39/ad83736fc6a3f6d548cbdb3c685b346ee79083466d80430b6610d60a59e1/tvdcn-0.2.3-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6d650a1273b6184a18d6268f8c3631263e4c2b14db892b08734f478b91a0033b",
+                    "md5": "20e2ebcc3942d5594a73c7cbe3c4a879",
+                    "sha256": "d363952c9f81808a1f31b2b3f0293dc8bf00e1d15461d97653b497572eddcea2"
+                },
+                "downloads": -1,
+                "filename": "tvdcn-0.2.3-cp39-cp39-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "20e2ebcc3942d5594a73c7cbe3c4a879",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.6",
+                "size": 4506636,
+                "upload_time": "2023-05-16T07:33:40",
+                "upload_time_iso_8601": "2023-05-16T07:33:40.821521Z",
+                "url": "https://files.pythonhosted.org/packages/6d/65/0a1273b6184a18d6268f8c3631263e4c2b14db892b08734f478b91a0033b/tvdcn-0.2.3-cp39-cp39-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "fcfca7f6360e843acb3950ed7e7647266e6f40300fe2bbb1fe877b08de52eb18",
+                    "md5": "f2167e4d86b534cddc805e476b67dbec",
+                    "sha256": "b6cfa7169f41e3fdc8b4974b73da3bd5ee82f2d81d308bdc52a7978936b59980"
+                },
+                "downloads": -1,
+                "filename": "tvdcn-0.2.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "f2167e4d86b534cddc805e476b67dbec",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.6",
+                "size": 35334,
+                "upload_time": "2023-05-16T07:33:43",
+                "upload_time_iso_8601": "2023-05-16T07:33:43.054941Z",
+                "url": "https://files.pythonhosted.org/packages/fc/fc/a7f6360e843acb3950ed7e7647266e6f40300fe2bbb1fe877b08de52eb18/tvdcn-0.2.3.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
