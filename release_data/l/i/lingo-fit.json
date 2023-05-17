@@ -1,0 +1,75 @@
+{
+    "0.1.0": {
+        "info": {
+            "author": "rauan_akylzhanov",
+            "author_email": "akylzhanov.r@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# aws-ml-inference-demo\n\nwe aim at building a product that can truly teach languages to our learners.\nTo do this we need to provide a personalized experience that suits each learner's needs.\nAs part of this personalized learning, imagine that we want to\nprompt learners (within the app or via notifications)\nwith a personalized message to encourage them to review the material they have learned recently.\nThe message is personalized in the sense that it\nrecommends one of the Listening, Speaking, Writing, or Flashcards exercise types\nthat will most likely be attempted by the learner.\nFor the sake of this exercise assume the content and every other aspect of the messages are fixed and static.\n\n\n# API and Architecture Design:\n\nFor our service, we need to expose two endpoints for training and inference.\nThe incoming request will accept a learner identifier UUID\nand respond with one of four possible values: \"listening\", \"speaking\", \"writing\", or \"flashcard\".\n\nScale of the Service:\nThere are around 1 million active daily users concentrated mainly in North American and Europe.\nThis number might vary since we have 100k new app downloads every day.\n\n## Assumptions on the regions and user base distribution\nThere are 8 regions with 24 availability zones in Europe\nand 7 regions in North America\nWe assume there is negligible number of learners in elsewhere.\n\n\nWith daily 100k downloads,\nthe active daily users number can rise up to 15 millions in 3-4 months if they start learning after download.\nSo the maximum (unlikely to reach) is 1 million user in every AWS geographical region.\nIn order to keep network overhead low, we aim to deploy an AWS Sagemaker endpoint to each of 15 regions.\n\n## Sise of user records table\nWe want to keep network overhead costs low to increase payload of the messages in the future or their granularity.\nWe expect each user to have 2 lessons (one hour maximum duration) per day maximum with maximum 6 exercsies per each lesson.\nSo each user requires maximum 12 recommendations per day. That makes 12 million recommendation in any 2 hour window\nduring the day.\n\n## endpoints\nWith these assumptions we deploy 15 AWS sagemaker lambda functions into each of the 15 global regions.\nThe traffic between zones is rerouted automatically to the step function.\n\n\n\nWe will have two API endpoints:\n\n    POST /inference: This endpoint will accept a learner UUID in the request body and respond with a recommendation for an exercise type based on the Thompson Sampling algorithm.\n\n    POST /training: This endpoint will accept a learner UUID and the learner's response in the request body. The Lambda function will use the response to update the underlying models in the Thompson Sampling algorithm.\n# About training\nThe training in batches will result in the same sequence of prior param values as\nevent-based training on new user interactions with the app in the region\nThere are many ways to distribute training but the methodology is still in research phase [1].\nThere, we adopt on event training for the bandits which simply amounts to updating the priors for the best arm.\nWe do not use the updated priors in the production endpoint.\n\n\n\n## API design: Syncing model updates\nEvery day, we shall update the model with latest priors for the day\nThis is the structure of the bucket\nthe structure of the prior files\n\"s3://personalization-service/priors/region=us-east2/timestamp=2022-01-01 T08:04:15.1256/priors.json\"\nthe structure of the user experience data used for updating the priors\n\"s3://personalization-service/experience/region=us-east2/timestamp=2022-01-01 T08:04:15.1256/data.parquet\neach local AWS sagemaker instance shall select latest by time priors for its region and re-run cloud build job to\nupdate the endpoint\n\n## storage size per region\nEach request response is few bytes, 10 bytes, so overall data exchange in network is 0.012 Gb\nwe have around 10 columns of user activity in app that we record, it makes 40 bytes per record\nEach exercise completion generates a record in an sql table, we expect\n40 bytes * 12 million recommendation request 0.48 Gb per day of new data.\nWe might store last 30 days of user interaction records, that will be 14 Gb per region\n\n## ingesting user experience data\n1. As soon as the learner studied 1/4, 2/4, 3/4, 4/4 of the lesson, the AWS Lambda function\ngets triggered and calls Kinesis Data Stream.\n2. Kinesis Data stream calls the Firehose and store the file on S3 bucket.\n3. As soon as the file upload to the bucket, another Lambda gets trigger and call the Glue Job.\n4. AWS Glue job runs and convert the JSON file format to Parquet file format\n5. Glue Job place this new file to the destination bucket.\n6. Snowpipe configure on the destination bucket and trigger once file uploads to Bucket.\n7. On the event of the parquet file being added, we trigger \"train\" endpoint to produce new priors\n7. Data gets ingest to the Snowflake.\n\n## Modelling Problem:\nWe want to model probabilities that the suggested exercise type is useful for the user and he/she will start and finish the exercise.\nThis probability shall be represented by the Beta-Bernoulli distribution\nWe want to model the relevancy of each of the exercises as a multi-armed bandit with one arm corresponding to suggested exercise type.\nThe probability of the completion of any of the four exercise types is represented by the beta bernoulli model.\nIn other words, for each user uuid + possible attached features vector of features is classified by four labels: \"listening\", \"speaking\", \"writing\", or \"flashcard\",\nwhere each label indicates that exercise of this type will be completed by the user\nThe reward is modelled by the beta-bernoulli model.\n\n## Billing\nSnowflake instance\n\n\n12 million requests per day per region\n0.2 per 1M requests\n0.2 * 12 = 2.4 usd per region\n\nSnowflake instance incurs costs for storage of up to 14Gb per region\nand compute on demand (runing sql queries against the data). We do not plan to run SQL queries every day.\n\n# Bibliography\n1. https://arxiv.org/pdf/2105.10590.pdf\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "lingo-fit",
+            "package_url": "https://pypi.org/project/lingo-fit/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/lingo-fit/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/lingo-fit/0.1.0/",
+            "requires_dist": [
+                "faker (>=18.7.0,<19.0.0)",
+                "fastapi (>=0.95.1,<0.96.0)",
+                "numpy (>=1.24.3,<2.0.0)",
+                "pre-commit (>=3.3.1,<4.0.0)",
+                "pydantic (>=1.10.7,<2.0.0)",
+                "sagemaker (>=2.155.0,<3.0.0)",
+                "scipy (>=1.10.1,<2.0.0)",
+                "uvicorn (>=0.22.0,<0.23.0)"
+            ],
+            "requires_python": ">=3.8.1,<3.12",
+            "summary": "",
+            "version": "0.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18129474,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "45ab1d2e2fe57471fd2e3ced1899b56f9eea5ed57d384e05e19ed968920da0b0",
+                    "md5": "bd882bba7f528ef981444df185a272a3",
+                    "sha256": "c28a717376a3d7576a9aeb70011d44bd131ddac510f0fc2f5f6f1b724c259bd0"
+                },
+                "downloads": -1,
+                "filename": "lingo_fit-0.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "bd882bba7f528ef981444df185a272a3",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8.1,<3.12",
+                "size": 18817,
+                "upload_time": "2023-05-16T21:10:58",
+                "upload_time_iso_8601": "2023-05-16T21:10:58.827634Z",
+                "url": "https://files.pythonhosted.org/packages/45/ab/1d2e2fe57471fd2e3ced1899b56f9eea5ed57d384e05e19ed968920da0b0/lingo_fit-0.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
