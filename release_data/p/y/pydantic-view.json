@@ -46,7 +46,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18107138,
+        "last_serial": 18153310,
         "urls": [
             {
                 "comment_text": "",
@@ -140,7 +140,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18107138,
+        "last_serial": 18153310,
         "urls": [
             {
                 "comment_text": "",
@@ -234,7 +234,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18107138,
+        "last_serial": 18153310,
         "urls": [
             {
                 "comment_text": "",
@@ -328,7 +328,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18107138,
+        "last_serial": 18153310,
         "urls": [
             {
                 "comment_text": "",
@@ -422,7 +422,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18107138,
+        "last_serial": 18153310,
         "urls": [
             {
                 "comment_text": "",
@@ -488,7 +488,6 @@
                 "Topic :: Software Development :: Libraries :: Python Modules",
                 "Topic :: Utilities"
             ],
-            "description": "# Pydantic view helper decorator\n\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)\n\n### Installation\n```bash\npip install pydantic_view\n```\n\n### Usage\n\n```python\nIn [1]: from uuid import UUID, uuid4\n   ...: \n   ...: from pydantic import BaseModel, Field\n   ...: from pydantic_view import view\n   ...: \n   ...: \n   ...: @view(\"Create\", exclude={\"id\"})\n   ...: @view(\"Update\")\n   ...: @view(\"Patch\", optional={\"username\", \"password\", \"address\"})\n   ...: @view(\"Out\", exclude={\"password\"})\n   ...: class User(BaseModel):\n   ...:     id: int\n   ...:     username: str\n   ...:     password: str\n   ...:     address: str\n   ...: \n\nIn [2]: user = User(id=0, username=\"human\", password=\"iamaman\", address=\"Earth\")\n   ...: user.Out()\n   ...: \nOut[2]: UserOut(id=0, username='human', address='Earth')\n\nIn [3]: User.Update(id=0, username=\"human\", password=\"iamasuperman\", address=\"Earth\")\n   ...: \nOut[3]: UserUpdate(id=0, username='human', password='iamasuperman', address='Earth')\n\nIn [4]: User.Patch(id=0, address=\"Mars\")\n   ...: \nOut[4]: UserPatch(id=0, username=None, password=None, address='Mars')\n```\n\n\n### FastAPI example\n\n```python\nfrom typing import List\n\nfrom fastapi import FastAPI\nfrom fastapi.testclient import TestClient\nfrom pydantic import BaseModel, Field\n\nfrom pydantic_view import view, view_validator\n\n\n@view(\"Out\", exclude={\"secret\"})\n@view(\"Create\", exclude={\"id\"}, config={\"extra\": \"forbid\"})\n@view(\"Update\", exclude={\"id\"})\n@view(\"UpdateMany\")\n@view(\"Patch\", exclude={\"id\"}, optional={\"name\", \"secret\"})\n@view(\"PatchMany\", optional={\"name\", \"secret\"})\nclass Group(BaseModel):\n    id: int\n    name: str\n    secret: str = None\n\n    @view_validator([\"Create\", \"Update\", \"UpdateMany\", \"Patch\", \"PatchMany\"], \"name\", allow_reuse=True)\n    def validate_name(cls, v):\n        if v == \"admin\":\n            raise ValueError(\"Invalid name\")\n        return v\n\n\n@view(\"Out\", exclude={\"password\"}, recursive=True)\n@view(\n    \"Create\",\n    exclude={\"id\"},\n    fields={\"groups\": Field(default_factory=lambda: [Group(id=0, name=\"default\")])},\n    config={\"extra\": \"forbid\"},\n    recursive=True,\n)\n@view(\"Update\", exclude={\"id\"}, recursive=True)\n@view(\"UpdateMany\", recursive=True)\n@view(\"Patch\", exclude={\"id\"}, optional={\"username\", \"password\", \"groups\"}, recursive=True)\n@view(\"PatchMany\", optional={\"username\", \"password\", \"groups\"}, recursive=True)\nclass User(BaseModel):\n    id: int\n    username: str\n    password: str\n    groups: List[Group]\n\n\napp = FastAPI()\n\ndb = {}\n\n\n@app.get(\"/users/{user_id}\", response_model=User.Out)\nasync def get(user_id: int) -> User.Out:\n    return db[user_id]\n\n\n@app.post(\"/users\", response_model=User.Out)\nasync def post(user: User.Create) -> User.Out:\n    user_id = 0  # generate_user_id()\n    db[0] = User(id=user_id, **user.dict())\n    return db[0]\n\n\n@app.put(\"/users/{user_id}\", response_model=User.Out)\nasync def put(user_id: int, user: User.Update) -> User.Out:\n    db[user_id] = User(id=user_id, **user.dict())\n    return db[user_id]\n\n\n@app.put(\"/users\", response_model=List[User.Out])\nasync def put_many(users: List[User.UpdateMany]) -> List[User.Out]:\n    for user in users:\n        db[user.id] = user\n    return users\n\n\n@app.patch(\"/users/{user_id}\", response_model=User.Out)\nasync def patch(user_id: int, user: User.Patch) -> User.Out:\n    db[user_id] = User(**{**db[user_id].dict(), **user.dict(exclude_unset=True)})\n    return db[user_id]\n\n\n@app.patch(\"/users\", response_model=List[User.Out])\nasync def patch_many(users: List[User.PatchMany]) -> List[User.Out]:\n    for user in users:\n        db[user.id] = User(**{**db[user.id].dict(), **user.dict(exclude_unset=True)})\n    return [db[user.id] for user in users]\n\n\ndef test_fastapi():\n    client = TestClient(app)\n\n    # POST\n    response = client.post(\n        \"/users\",\n        json={\n            \"username\": \"admin\",\n            \"password\": \"admin\",\n        },\n    )\n    assert response.status_code == 200\n    assert response.json() == {\n        \"id\": 0,\n        \"username\": \"admin\",\n        \"groups\": [{\"id\": 0, \"name\": \"default\"}],\n    }\n\n    # GET\n    response = client.get(\"/users/0\")\n    assert response.status_code == 200\n    assert response.json() == {\n        \"id\": 0,\n        \"username\": \"admin\",\n        \"groups\": [{\"id\": 0, \"name\": \"default\"}],\n    }\n\n    # PUT\n    response = client.put(\n        \"/users/0\",\n        json={\n            \"username\": \"superadmin\",\n            \"password\": \"superadmin\",\n            \"groups\": [],\n        },\n    )\n    assert response.status_code == 200\n    assert response.json() == {\n        \"id\": 0,\n        \"username\": \"superadmin\",\n        \"groups\": [],\n    }\n\n    # PUT many\n    response = client.put(\n        \"/users\",\n        json=[\n            {\n                \"id\": 0,\n                \"username\": \"admin\",\n                \"password\": \"admin\",\n                \"groups\": [{\"id\": 0, \"name\": \"default\", \"secret\": \"secret_value\"}],\n            }\n        ],\n    )\n    assert response.status_code == 200\n    assert response.json() == [\n        {\n            \"id\": 0,\n            \"username\": \"admin\",\n            \"groups\": [{\"id\": 0, \"name\": \"default\"}],\n        }\n    ]\n\n    # PATCH\n    response = client.patch(\"/users/0\", json={\"id\": 0, \"username\": \"guest\"})\n    assert response.status_code == 200\n    assert response.json() == {\n        \"id\": 0,\n        \"username\": \"guest\",\n        \"groups\": [{\"id\": 0, \"name\": \"default\"}],\n    }\n\n    # PATCH many\n    response = client.patch(\"/users\", json=[{\"id\": 0, \"groups\": []}])\n    assert response.status_code == 200\n    assert response.json() == [\n        {\n            \"id\": 0,\n            \"username\": \"guest\",\n            \"groups\": [],\n        }\n    ]\n```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -517,7 +516,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18107138,
+        "last_serial": 18153310,
         "urls": [
             {
                 "comment_text": "",
@@ -558,6 +557,101 @@
                 "upload_time": "2023-05-15T12:01:07",
                 "upload_time_iso_8601": "2023-05-15T12:01:07.498522Z",
                 "url": "https://files.pythonhosted.org/packages/df/f2/198e90d6a13a47f046dd54ee689ba4608fbae832721da06d05b2b3e2f65b/pydantic_view-0.2.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.2": {
+        "info": {
+            "author": "Roman Koshel",
+            "author_email": "roma.koshel@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "Framework :: Pydantic",
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Software Development :: Libraries :: Python Modules",
+                "Topic :: Utilities"
+            ],
+            "description": "# Pydantic view helper decorator\n\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)\n\n### Installation\n```bash\npip install pydantic_view\n```\n\n### Usage\n\n```python\nIn [1]: from uuid import UUID, uuid4\n   ...: \n   ...: from pydantic import BaseModel, Field\n   ...: from pydantic_view import view\n   ...: \n   ...: \n   ...: @view(\"Create\", exclude={\"id\"})\n   ...: @view(\"Update\")\n   ...: @view(\"Patch\", optional={\"username\", \"password\", \"address\"})\n   ...: @view(\"Out\", exclude={\"password\"})\n   ...: class User(BaseModel):\n   ...:     id: int\n   ...:     username: str\n   ...:     password: str\n   ...:     address: str\n   ...: \n\nIn [2]: user = User(id=0, username=\"human\", password=\"iamaman\", address=\"Earth\")\n   ...: user.Out()\n   ...: \nOut[2]: UserOut(id=0, username='human', address='Earth')\n\nIn [3]: User.Update(id=0, username=\"human\", password=\"iamasuperman\", address=\"Earth\")\n   ...: \nOut[3]: UserUpdate(id=0, username='human', password='iamasuperman', address='Earth')\n\nIn [4]: User.Patch(id=0, address=\"Mars\")\n   ...: \nOut[4]: UserPatch(id=0, username=None, password=None, address='Mars')\n```\n\n\n### FastAPI example\n\n```python\nfrom typing import List\n\nfrom fastapi import FastAPI\nfrom fastapi.testclient import TestClient\nfrom pydantic import BaseModel, Field\n\nfrom pydantic_view import view, view_validator\n\n\n@view(\"Out\", exclude={\"secret\"})\n@view(\"Create\", exclude={\"id\"}, config={\"extra\": \"forbid\"})\n@view(\"Update\", exclude={\"id\"})\n@view(\"UpdateMany\")\n@view(\"Patch\", exclude={\"id\"}, optional={\"name\", \"secret\"})\n@view(\"PatchMany\", optional={\"name\", \"secret\"})\nclass Group(BaseModel):\n    id: int\n    name: str\n    secret: str = None\n\n    @view_validator([\"Create\", \"Update\", \"UpdateMany\", \"Patch\", \"PatchMany\"], \"name\", allow_reuse=True)\n    def validate_name(cls, v):\n        if v == \"admin\":\n            raise ValueError(\"Invalid name\")\n        return v\n\n\n@view(\"Out\", exclude={\"password\"}, recursive=True)\n@view(\n    \"Create\",\n    exclude={\"id\"},\n    fields={\"groups\": Field(default_factory=lambda: [Group(id=0, name=\"default\")])},\n    config={\"extra\": \"forbid\"},\n    recursive=True,\n)\n@view(\"Update\", exclude={\"id\"}, recursive=True)\n@view(\"UpdateMany\", recursive=True)\n@view(\"Patch\", exclude={\"id\"}, optional={\"username\", \"password\", \"groups\"}, recursive=True)\n@view(\"PatchMany\", optional={\"username\", \"password\", \"groups\"}, recursive=True)\nclass User(BaseModel):\n    id: int\n    username: str\n    password: str\n    groups: List[Group]\n\n\napp = FastAPI()\n\ndb = {}\n\n\n@app.get(\"/users/{user_id}\", response_model=User.Out)\nasync def get(user_id: int) -> User.Out:\n    return db[user_id]\n\n\n@app.post(\"/users\", response_model=User.Out)\nasync def post(user: User.Create) -> User.Out:\n    user_id = 0  # generate_user_id()\n    db[0] = User(id=user_id, **user.dict())\n    return db[0]\n\n\n@app.put(\"/users/{user_id}\", response_model=User.Out)\nasync def put(user_id: int, user: User.Update) -> User.Out:\n    db[user_id] = User(id=user_id, **user.dict())\n    return db[user_id]\n\n\n@app.put(\"/users\", response_model=List[User.Out])\nasync def put_many(users: List[User.UpdateMany]) -> List[User.Out]:\n    for user in users:\n        db[user.id] = user\n    return users\n\n\n@app.patch(\"/users/{user_id}\", response_model=User.Out)\nasync def patch(user_id: int, user: User.Patch) -> User.Out:\n    db[user_id] = User(**{**db[user_id].dict(), **user.dict(exclude_unset=True)})\n    return db[user_id]\n\n\n@app.patch(\"/users\", response_model=List[User.Out])\nasync def patch_many(users: List[User.PatchMany]) -> List[User.Out]:\n    for user in users:\n        db[user.id] = User(**{**db[user.id].dict(), **user.dict(exclude_unset=True)})\n    return [db[user.id] for user in users]\n\n\ndef test_fastapi():\n    client = TestClient(app)\n\n    # POST\n    response = client.post(\n        \"/users\",\n        json={\n            \"username\": \"admin\",\n            \"password\": \"admin\",\n        },\n    )\n    assert response.status_code == 200\n    assert response.json() == {\n        \"id\": 0,\n        \"username\": \"admin\",\n        \"groups\": [{\"id\": 0, \"name\": \"default\"}],\n    }\n\n    # GET\n    response = client.get(\"/users/0\")\n    assert response.status_code == 200\n    assert response.json() == {\n        \"id\": 0,\n        \"username\": \"admin\",\n        \"groups\": [{\"id\": 0, \"name\": \"default\"}],\n    }\n\n    # PUT\n    response = client.put(\n        \"/users/0\",\n        json={\n            \"username\": \"superadmin\",\n            \"password\": \"superadmin\",\n            \"groups\": [],\n        },\n    )\n    assert response.status_code == 200\n    assert response.json() == {\n        \"id\": 0,\n        \"username\": \"superadmin\",\n        \"groups\": [],\n    }\n\n    # PUT many\n    response = client.put(\n        \"/users\",\n        json=[\n            {\n                \"id\": 0,\n                \"username\": \"admin\",\n                \"password\": \"admin\",\n                \"groups\": [{\"id\": 0, \"name\": \"default\", \"secret\": \"secret_value\"}],\n            }\n        ],\n    )\n    assert response.status_code == 200\n    assert response.json() == [\n        {\n            \"id\": 0,\n            \"username\": \"admin\",\n            \"groups\": [{\"id\": 0, \"name\": \"default\"}],\n        }\n    ]\n\n    # PATCH\n    response = client.patch(\"/users/0\", json={\"id\": 0, \"username\": \"guest\"})\n    assert response.status_code == 200\n    assert response.json() == {\n        \"id\": 0,\n        \"username\": \"guest\",\n        \"groups\": [{\"id\": 0, \"name\": \"default\"}],\n    }\n\n    # PATCH many\n    response = client.patch(\"/users\", json=[{\"id\": 0, \"groups\": []}])\n    assert response.status_code == 200\n    assert response.json() == [\n        {\n            \"id\": 0,\n            \"username\": \"guest\",\n            \"groups\": [],\n        }\n    ]\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "pydantic,model,view,utils",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "pydantic-view",
+            "package_url": "https://pypi.org/project/pydantic-view/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/pydantic-view/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/pydantic-view/0.2.2/",
+            "requires_dist": [
+                "pydantic (>=1.10,<2.0)"
+            ],
+            "requires_python": ">=3.8,<4.0",
+            "summary": "View decorator to create the child pydantic models from the root model.",
+            "version": "0.2.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18153310,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c35e59eeaed21e8cca03ff78af1710a8c281a977395ece97a49f0b05dc01b087",
+                    "md5": "7868dc0661e4dd87fc0a7ad4da26e2eb",
+                    "sha256": "f68efd35045e52f40288aea4c38be25c7826afad07e8c8929dad8f392add1bfc"
+                },
+                "downloads": -1,
+                "filename": "pydantic_view-0.2.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "7868dc0661e4dd87fc0a7ad4da26e2eb",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8,<4.0",
+                "size": 5649,
+                "upload_time": "2023-05-18T11:33:23",
+                "upload_time_iso_8601": "2023-05-18T11:33:23.336958Z",
+                "url": "https://files.pythonhosted.org/packages/c3/5e/59eeaed21e8cca03ff78af1710a8c281a977395ece97a49f0b05dc01b087/pydantic_view-0.2.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "31d4235cf8f96d67073476697db17a219b9ce7e0c35e94f42e03612beb1a1d2e",
+                    "md5": "6b5834a9708394f5cbe2ee29092a39b8",
+                    "sha256": "499a55e8c0f2053ae814b479d2b171c9e4a8fd450155335f72e99967a0ea1835"
+                },
+                "downloads": -1,
+                "filename": "pydantic_view-0.2.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "6b5834a9708394f5cbe2ee29092a39b8",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8,<4.0",
+                "size": 5097,
+                "upload_time": "2023-05-18T11:33:26",
+                "upload_time_iso_8601": "2023-05-18T11:33:26.821072Z",
+                "url": "https://files.pythonhosted.org/packages/31/d4/235cf8f96d67073476697db17a219b9ce7e0c35e94f42e03612beb1a1d2e/pydantic_view-0.2.2.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

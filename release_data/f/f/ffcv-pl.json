@@ -33,7 +33,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17376912,
+        "last_serial": 18150912,
         "urls": [
             {
                 "comment_text": "",
@@ -114,7 +114,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17376912,
+        "last_serial": 18150912,
         "urls": [
             {
                 "comment_text": "",
@@ -195,7 +195,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17376912,
+        "last_serial": 18150912,
         "urls": [
             {
                 "comment_text": "",
@@ -276,7 +276,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17376912,
+        "last_serial": 18150912,
         "urls": [
             {
                 "comment_text": "",
@@ -357,7 +357,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17376912,
+        "last_serial": 18150912,
         "urls": [
             {
                 "comment_text": "",
@@ -389,7 +389,6 @@
             "author_email": "",
             "bugtrack_url": null,
             "classifiers": [],
-            "description": "# FFCV Dataloader with Pytorch Lightning\n\nFFCV is a fast dataloader for neural networks training: https://github.com/libffcv/ffcv  \n\nIn this repository, all the steps to install and configure it with pytorch-lightning are presented.  \nMoreover, some useful methods to quickly create, preprocess and load Datasets with *FFCV* and *pytorch-lightning* \nare proposed.\n\n## Installation\n\n### Dependencies\n\nThere are actually some known issues about the installation of the FFCV package.   \nIn particular, even a successful installation may rise the following error when \ntrying to import `ffcv` (this seems to happen also in version `1.0.x` of FFCV):\n\n```ImportError: libopencv_imgproc.so.405: cannot open shared object file: No such file or directory```\n\nThere is a Closed issue about this [#136](https://github.com/libffcv/ffcv/issues/136).\n\nIn order to correctly install everything, I suggest to use Conda \n(I tried also pip but encountered the error above).\n\nFirst, try to install dependencies with `environment.yml` file:  \n```\nconda env create --file environment.yml\n```\nThis should correctly create a conda environment named `ffcv-pl`.  \n\n**If the above does not work**, then \nyou can try installing packages manually: \n\n1. create conda environment\n    ```\n    conda create --name ffcv-pl\n    conda activate ffcv-pl\n    ```\n\n2. install pytorch according to [official website](https://pytorch.org/get-started/locally/)\n\n    ```\n    # in my environment the command is the following \n    conda install pytorch torchvision torchaudio pytorch-cuda=11.6 -c pytorch -c nvidia\n    ```\n\n3. install ffcv dependencies and pytorch-lightning\n    ```\n    # can take a very long time, but should not create conflicts\n    conda install cupy pkg-config compilers libjpeg-turbo opencv numba pytorch-lightning -c pytorch -c conda-forge\n    ```\n\n4. install ffcv\n    ```\n    pip install ffcv\n    ```\n\n### Package\n\nOnce dependencies are installed, it is safe to install package: \n```\npip install ffcv_pl\n```\n\n## Dataset Creation\n\nYou need to save your dataset in ffcv format (`.beton`).  \nOfficial FFCV [docs](https://docs.ffcv.io/writing_datasets.html).\n\nThis package allows different types of Datasets, listed in the `dataset` subpackage.\nA quick example on how to create a dataset is provided in the `dataset_creation.py script`:\n\n```\nfrom ffcv_pl.ffcv_utils.generate_dataset import create_image_label_dataset\n\nif __name__ == '__main__':\n\n    # write dataset in \".beton\" format\n    train_folder = '/media/dserez/datasets/cub/train/'\n    test_folder = '/media/dserez/datasets/cub/test/'\n    create_image_label_dataset(train_folder=train_folder, test_folder=test_folder)\n```\n\nFor example, this code will create the files `/media/dserez/datasets/cub/test.beton` and \n`/media/dserez/datasets/cub/train.beton`, \nloading images from folders `/media/dserez/datasets/cub/test/` and \n`/media/dserez/datasets/cub/train/`, respectively.\n\nNote that you can pass also more folders, all in one call. \n\n## Dataloader and Datamodule\n\nMerge the PL Datamodule with the FFCV Loader object.  \nIt should be compatible with ddp/multiprocessing.  \nSee `main.py` for a complete example.  \nOfficial FFCV [docs](https://docs.ffcv.io/making_dataloaders.html).\n\n```\nimport pytorch_lightning as pl\nimport torch\nfrom pytorch_lightning.strategies.ddp import DDPStrategy\n\nfrom torch import nn\nfrom torch.optim import Adam\n\nfrom ffcv_pl.datasets.image import ImageDataModule\n\n\n# define the LightningModule\nclass LitAutoEncoder(pl.LightningModule):\n\n    def __init__(self):\n\n        super().__init__()\n        self.encoder = nn.Sequential(nn.Linear(256 * 256 * 3, 64), nn.ReLU(), nn.Linear(64, 3))\n        self.decoder = nn.Sequential(nn.Linear(3, 64), nn.ReLU(), nn.Linear(64, 256 * 256 * 3))\n\n    def training_step(self, batch, batch_idx):\n\n        x, y = batch\n\n        b, c, h, w = x.shape\n        x = x.reshape(b, -1)\n        z = self.encoder(x)\n        x_hat = self.decoder(z)\n        loss = nn.functional.mse_loss(x_hat, x)\n        # Logging to TensorBoard by default\n        self.log(\"train_loss\", loss)\n        return loss\n\n    def configure_optimizers(self):\n        optimizer = Adam(self.parameters(), lr=1e-3)\n        return optimizer\n\n\nif __name__ == '__main__':\n\n    SEED = 1234\n\n    pl.seed_everything(SEED, workers=True)\n\n    dataset = 'cub'\n    image_size = 256\n    batch_size = 16\n    train_folder = f'/media/dserez/datasets/{dataset}/train.beton'\n    val_folder = f'/media/dserez/datasets/{dataset}/test.beton'\n\n    gpus = 2\n    workers = 8\n\n    # define model\n    model = LitAutoEncoder()\n\n    # trainer\n    trainer = pl.Trainer(strategy=DDPStrategy(find_unused_parameters=False), deterministic=True,\n                         accelerator='gpu', devices=gpus, num_nodes=1, max_epochs=5)\n\n    # Note: set is_dist True if you are using DDP and more than one GPU\n    data_module = ImageDataModule(train_folder, val_folder, val_folder, image_size, torch.float32, batch_size,\n                                  num_workers=1, is_dist=gpus > 1, seed=SEED)\n\n    trainer.fit(model, data_module)\n\n```\n\nEach `ffcv_pl.datasets.*` contains a couple of classes (Dataset, Dataloader).\n\n## Citations\n\n1. Pytorch-Lightning:  \n    Falcon, W., & The PyTorch Lightning team. (2019). PyTorch Lightning (Version 1.4) \n    [Computer software]. https://doi.org/10.5281/zenodo.3828935\n\n2. FFCV: \n    ```\n    @misc{leclerc2022ffcv,\n        author = {Guillaume Leclerc and Andrew Ilyas and Logan Engstrom and Sung Min Park and Hadi Salman and Aleksander Madry},\n        title = {{FFCV}: Accelerating Training by Removing Data Bottlenecks},\n        year = {2022},\n        howpublished = {\\url{https://github.com/libffcv/ffcv/}},\n        note = {commit xxxxxxx}\n    }\n    ```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -418,7 +417,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17376912,
+        "last_serial": 18150912,
         "urls": [
             {
                 "comment_text": "",
@@ -438,6 +437,127 @@
                 "upload_time": "2023-03-21T09:41:45",
                 "upload_time_iso_8601": "2023-03-21T09:41:45.283965Z",
                 "url": "https://files.pythonhosted.org/packages/af/5c/f258bba6f1fba16e42af517e14a8f7e7959ea9eb0e8de641c8a2759983b6/ffcv_pl-0.1.5.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.0": {
+        "info": {
+            "author": "DSerez",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/SerezD/ffcv_pytorch_lightning",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "ffcv-pl",
+            "package_url": "https://pypi.org/project/ffcv-pl/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/ffcv-pl/",
+            "project_urls": {
+                "Homepage": "https://github.com/SerezD/ffcv_pytorch_lightning"
+            },
+            "release_url": "https://pypi.org/project/ffcv-pl/0.2.0/",
+            "requires_dist": null,
+            "requires_python": "",
+            "summary": "manage fast data loading with ffcv and pytorch lightning",
+            "version": "0.2.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18150912,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "15f85930bf5b00c0ccda2b4d57d4e66003841fa43dcc8d25ab242d746c6ca99b",
+                    "md5": "720d8b200963f03e9fdd42eda4acc417",
+                    "sha256": "5f28ea116833a6642842047f003aac51fae8c71a9211dcf51671155577d1bc19"
+                },
+                "downloads": -1,
+                "filename": "ffcv_pl-0.2.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "720d8b200963f03e9fdd42eda4acc417",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 8889,
+                "upload_time": "2023-05-18T07:40:12",
+                "upload_time_iso_8601": "2023-05-18T07:40:12.536448Z",
+                "url": "https://files.pythonhosted.org/packages/15/f8/5930bf5b00c0ccda2b4d57d4e66003841fa43dcc8d25ab242d746c6ca99b/ffcv_pl-0.2.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.1": {
+        "info": {
+            "author": "DSerez",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "see [github project](https://github.com/SerezD/ffcv_pytorch_lightning) \n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/SerezD/ffcv_pytorch_lightning",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "ffcv-pl",
+            "package_url": "https://pypi.org/project/ffcv-pl/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/ffcv-pl/",
+            "project_urls": {
+                "Homepage": "https://github.com/SerezD/ffcv_pytorch_lightning"
+            },
+            "release_url": "https://pypi.org/project/ffcv-pl/0.2.1/",
+            "requires_dist": null,
+            "requires_python": "",
+            "summary": "manage fast data loading with ffcv and pytorch lightning",
+            "version": "0.2.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18150912,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a7751af5786673c946fe0d41dc5d9f260ee1b7997aa5adae32ade056715338b3",
+                    "md5": "df800f1b02ac74ad3f95535a0d1193f4",
+                    "sha256": "c425fc7175eb2e5b2f8f8560d603a060557d412142529560f3f490419d12c980"
+                },
+                "downloads": -1,
+                "filename": "ffcv_pl-0.2.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "df800f1b02ac74ad3f95535a0d1193f4",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 5024,
+                "upload_time": "2023-05-18T07:51:23",
+                "upload_time_iso_8601": "2023-05-18T07:51:23.409463Z",
+                "url": "https://files.pythonhosted.org/packages/a7/75/1af5786673c946fe0d41dc5d9f260ee1b7997aa5adae32ade056715338b3/ffcv_pl-0.2.1.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

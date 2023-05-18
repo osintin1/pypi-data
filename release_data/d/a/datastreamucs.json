@@ -1,11 +1,12 @@
 {
-    "1.0.0": {
+    "1.0.17": {
         "info": {
-            "author": "LSEG",
-            "author_email": "datastream@lseg.com",
+            "author": "London Stock Exchange",
+            "author_email": "datastreamapi@lseg.com",
             "bugtrack_url": null,
             "classifiers": [],
-            "description_content_type": "",
+            "description": "A python package for retrieving Datastream content, our historical financial database with over 35 million individual instruments\nor indicators across all major asset classes, including 14.5 million active economic indicators. It features 120 years of data,\nacross 175 countries \u2013 the information you need to interpret market trends, economic cycles, and the impact of world events.\n\nData spans bond indices, bonds, commodities, convertibles, credit default swaps, derivatives, economics, energy, equities, equity\nindices, ESG, estimates, exchange rates, fixed income, funds, fundamentals, interest rates, and investment trusts. Unique content\nincludes I/B/E/S Estimates, Worldscope Fundamentals, point-in-time data, and Reuters Polls.\n\nAlongside the content, sit a set of powerful\nanalytical tools for exploring relationships between different asset types, with a library of customizable analytical functions.\n\nIn house time series can also be uploaded using the package to comingle with Datastream maintained datasets, use with these analytical\ntools and displayed in Datastream\u2019s flexible charting facilities in Microsoft Office.\u00a0\n\n\n# Available in this version \n\nThis release supports the following features:\n\n* A DataClient for retrieval of static and timeseries data.\n* A TimeserieClient for creating and managing your custom timeseries data.\n* An EconomicFilters client for creating and managing custom filters for analysing changes to economics data.\n\n\n# Dependencies\n\nThis package has a dependency on the pandas, requests and ssl packages.\n\n\n# Prerequisites\n\nYou need to have an account to access Datastream content and these credentials need to be permissioned to access our API service.\n\nIf you do not have an account, please request Datastream product details [here](https://www.refinitiv.com/en/products/datastream-macroeconomic-analysis/). If you do have an account, please contact your local Refinitiv representative to discuss access to the web API service.\n\nIn addition to the basic access, you need additional permissions to be able to create and manage custsom timeseries and economic filters. Again, contact your customer representative.\n\n\n# Getting started\n\nFirst of all we need to download the package:\n```\npip install DatastreamUCS\n```\n\nThen we just import the library and refer to the following sections demonstrating usage:\n```\nimport DatastreamUCS as dsweb\n```\n\n\n# Logging on with your credentials\n\nIn order to access Datastream content, you need to logon with your Datastream credentials. Each of the modules can load the credentials from a configuration file, or you can\nsupply the credentials directly in the constructor:\n\n```\n# loading credentials from a config file\nds = dsweb.DataClient('Config.ini')\n\n# loading credentials directly into the constructor\nds = dsweb.DataClient(None, 'YourID', 'YourPwd')\n```\n\nFor the configuration file option you can specify your credentials with the following configuration section:\n```\n[credentials]\n# Replace YourID and YourPwd values with your specific Datastream credentials.\nusername=YourID\npassword=YourPwd\n```\n\n\n# Basic timeseries and static data retrieval\n\nTo access timeseries or static data you use the DataClient object.\n\nA sample timeseries request takes the form:\n\n```\nds = dsweb.DataClient('Config.ini')\n\nstart_date = '2020-01-01'\nend_date = '2022-12-31'\n\n# Retrieve and print out some timeseries data for Apple and Microsoft\nhistory = ds.get_data(tickers = '@AAPL,@MSFT', fields = ['P', 'VO', 'RI'],\\\n                     kind = 1, start = start_date, end = end_date, freq = 'M')\nhistory.index = pd.date_range(start_date, end_date, freq = 'M')\nprint (history)\n```\n\nA sample static data request takes the form:\n\n```\nstaticdata = ds.get_data(tickers = '@AAPL,@MSFT', fields = ['NAME', 'ISIN', 'BDATE'], kind = 0)\nprint(staticdata)\n```\n\n\n# Managing custom timeseries items\n\nDatastream permits users to create and manage custom items. One of these types is custom timeseries data. Clients can upload\ntheir own timeseries data to Datastream\u2019s central systems. These can then be used in combination with Datastream maintained\nseries in charts and data requests with the full power of the Datastream expressions language.\n\n```\nimport DatastreamUCS as dsweb\nimport pandas as pd\n# We import random only to generate some test data \nimport random\n\n# create your client\ntimeseriesClient = dsweb.TimeseriesClient(None, 'YourID', 'YourPwd')\n\n# Note Timeseries IDs must be 8 uppercase alphanumeric characters in length and start with TS. e.g. TSZZZ001\ntestID = 'TSZZZ001'\n\n# let us create a data series with quarterly values between 2016-01-01 and 2022-04-01\nstartDate = date(2016, 1, 1)\nendDate = date(2022, 4, 1)\nfreq = dsweb.DSUserObjectFrequency.Quarterly\n\n# First step is to retrieve the list of supported dates for the above period\ndateRangeResp = timeseriesClient.GetTimeseriesDateRange(startDate, endDate, freq)\nif dateRangeResp:\n    if dateRangeResp.ResponseStatus == dsweb.DSUserObjectResponseStatus.UserObjectSuccess and dateRangeResp.Dates != None:\n        # You would normally use the returned supported dates to match up with dates in your data source\n        # Here we will just create some random data based on the number of returned dates\n        random.seed()\n        values = [(random.randint(1000, 20000) / 100) for k in range(0, len(dateRangeResp.Dates))]\n\n        # Construct our timeseries object with the ID, start and end dates, frequency and list of datapoints\n        testTs = dsweb.DSTimeSeriesRequestObject(testID, startDate, endDate, freq, values)\n\n        # Set any other optional properties directly\n        testTs.DisplayName = 'My first test timeseries' # set to the same as the ID in the response by default.\n        testTs.DecimalPlaces = 2 # we created our array of values with 2 decimal places. You can specify 0 to 8 decimal places.\n        testTs.Units = \"Billions\"  # Leave units blank or set with any custom text (max 12 chars).\n        # when requested by users in data retrieval, you can specify the quarterly dates to be returned as start, middle or end of \n        # the selected period (frequency). Here we want the quarterly data to be mid period (15th of middle month)\n        testTs.DateAlignment = dsweb.DSTimeSeriesDateAlignment.MidPeriod \n\n        # and create the new item with the overWrite option set to perfrom an update if the timeseries already exists.\n        tsResponse = timeseriesClient.CreateItem(testTs, overWrite = True)\n\n        # Any request dealing with a single user created item returns a DSUserObjectResponse.\n        # This has ResponseStatus property that indicates success or failure\n        if tsResponse.ResponseStatus != dsweb.DSUserObjectResponseStatus.UserObjectSuccess:\n            print('Request failed for timeseries with error ' + tsResponse.ResponseStatus.name + ': ' + tsResponse.ErrorMessage, end='\\n\\n')\n        elif tsResponse.UserObject != None:  # The timeseries item won't be returned if you set SkipItem true in CreateItem or UpdateItem\n            # Here we simply display the timeseries data using a dataframe.\n            tsItem = tsResponse.UserObject\n            names = ['Id', 'Desc', 'LastModified', 'StartDate', 'EndDate', 'Frequency', 'NoOfValues']\n            coldata = [tsItem.Id, tsItem.Description, tsItem.LastModified.strftime(\"%Y-%m-%d\"), \n                        tsItem.DateInfo.StartDate.strftime(\"%Y-%m-%d\"), tsItem.DateInfo.EndDate.strftime(\"%Y-%m-%d\"),\n                        tsItem.DateInfo.Frequency.name, tsItem.DateRange.ValuesCount]\n            df = pd.DataFrame(coldata, index=names)\n```\n\n\nYou can also obtain summary details for all the timeseries you currently have or retrieve the full details for a specified item. The class also\nsupports methods that allow you to modify or delete a given timeseries:\n\n```\n# list all the custom timeseries you already own\nitemsResp = timeseriesClient.GetAllItems()\n# Returns a DSUserObjectGetAllResponse which has ResponseStatus property that indicates success or failure for the query\nif itemsResp:\n    if itemsResp.ResponseStatus != dsweb.DSUserObjectResponseStatus.UserObjectSuccess:\n        # Your Datastream Id might not be permissioned for managing user created items on this API\n        print('GetAllItems failed with error ' + itemsResp.ResponseStatus.name + ': ' + itemsResp.ErrorMessage, end='\\n\\n')\n    elif itemsResp.UserObjectsCount == 0 or itemsResp.UserObjects == None:\n        print('GetAllItems returned zero timeseries items.', end='\\n\\n')\n    else:\n        \"\"\"You do have access to some timeseries.\n        # Here we just put the timeseries details into a dataframe and list them\n        print('{}{}{}'.format('GetAllItems returned ', itemsResp.UserObjectsCount, ' timeseries items.'))\n        data  = []\n        colnames = ['Id', 'Start', 'End', 'Freq', 'DPs']\n        for tsItem in itemsResp.UserObjects:\n            if tsItem:\n                rowdata = [tsItem.Id, tsItem.DateInfo.StartDate.strftime(\"%Y-%m-%d\"), tsItem.DateInfo.EndDate.strftime(\"%Y-%m-%d\"),\n                           tsItem.DateInfo.Frequency.name, tsItem.DateRange.ValuesCount]\n                data.append(rowdata)\n        df = pd.DataFrame(data, columns=colnames)\n        print(df, end='\\n\\n')\n\n\n# To retrieve the full details of a specific timeseries use the GetItem method\ntsResponse = timeseriesClient.GetItem(testID)\nif tsResponse.ResponseStatus != dsweb.DSUserObjectResponseStatus.UserObjectSuccess:\n    print('Request failed for timeseries with error ' + tsResponse.ResponseStatus.name + ': ' + tsResponse.ErrorMessage, end='\\n\\n')\nelif tsResponse.UserObject != None:  # The timeseries item won't be returned if you set SkipItem true in CreateItem or UpdateItem\n    # Here we simply display the timeseries data using a dataframe.\n    tsItem = tsResponse.UserObject\n    names = ['Id', 'Desc', 'LastModified', 'StartDate', 'EndDate', 'Frequency', 'NoOfValues']\n    coldata = [tsItem.Id, tsItem.Description, tsItem.LastModified.strftime(\"%Y-%m-%d\"), \n                tsItem.DateInfo.StartDate.strftime(\"%Y-%m-%d\"), tsItem.DateInfo.EndDate.strftime(\"%Y-%m-%d\"),\n                tsItem.DateInfo.Frequency.name, tsItem.DateRange.ValuesCount]\n    df = pd.DataFrame(coldata, index=names)\n\n# updating an item takes the same parameters as CreateItem. See how we construct testTs above\ntsResponse = timeseriesClient.UpdateItem(testTs)\n\n# And we can delete the item using the test ID we defined in the CreateItem step\ndelResp = timeseriesClient.DeleteItem(testID)\n```\n\n\n\n# Creating custom economic filters\n\nDatastream provides access to nearly 16 million economic series. With coverage of this extent, it can be difficult to prioritise which\nregion, country, sector or industry to analyse and investigate. With this in mind, clients that access the full Datatstream Web Service\ncan now poll for the latest changes and corrections to any of the economic series.\n\nEven with polling for changes and corrections, the large number of economic series supported can produce a large number of updates to\nprocess each day. To reduce the number of updates, Datastream provides a global filter, REFINITIVCC_KEYIND_GLOBAL, that comprises the \n25K most prominent series. Querying for updates using this filter can significantly reduce the number of updates reported.\n\nClients can now also create their own custom filters comprising up to 100K series and use these to query for changes and corrections.\nThis section demonstrates using the DatastreamUCS package to create and manage custom filters.\n\nFirst of all let us see how to query for a list of economic items that have updated since a given start date. Then we will demonstrate\nusing the built in filter REFINITIVCC_KEYIND_GLOBAL to restrict the number of updates to a specified list of economic series.\n\nPolling for recent changes requires using a starting sequence ID and retrieving up to 10K updates with each polling request. As we process\neach response, we retrieve in the response the next sequence ID to request in the chain of updates until we are instructed that there\nare no more updates. We would then use the returned final sequence ID to poll every 10 minutes until we receive a response with new updates.\n\n```\nimport DatastreamUCS as dsweb\nimport pandas as pd\n\n# Try creating the client by replacing 'YourID' and 'YourPwd' with your own credentials.\neconFilterClient = EconomicFilters(None, 'YourID', 'YourPwd')\n\n# We'll start searching for any changes beginning 3 weeks ago (you can go back a maximum of 28 days)\n# NB: Setting the timestamp to None will set the start date at 00:00 hours on the previous weekday from now\nupdatesResp = econFilterClient.GetEconomicChanges(datetime.today() - timedelta(days=21))\n# this should tell us the start sequence ID for updates from the given start datetime and how many updates we have pending\nsequenceId = 0 # placeholder which we will update and use later in the demo\nif updatesResp:\n    if updatesResp.ResponseStatus != dsweb.DSFilterResponseStatus.FilterSuccess:\n        # Any filter request errors, such as invalid filter, not being explicity permissioned to use custom economic filters, etc.\n        print('GetEconomicChanges failed with error ' + updatesResp.ResponseStatus.name + ': ' + updatesResp.ErrorMessage)\n    else:\n        sequenceId = updatesResp.NextSequenceId\n        # we'll now use this starting sequence in the following test cells.\n        updatesResp = econFilterClient.GetEconomicChanges(None, sequenceId)\n        if updatesResp:\n            if updatesResp.ResponseStatus != dsweb.DSFilterResponseStatus.FilterSuccess:\n                print('GetEconomicChanges failed with error ' + updatesResp.ResponseStatus.name + ': ' + updatesResp.ErrorMessage)\n            else:\n                if updatesResp.Updates and updatesResp.UpdatesCount > 0:\n                    # You have some updates; process them and retrieve the NextSequenceID for retrieving any subsequent updates.\n                    print ('You have {:,} new updates:'.format(updatesResp.UpdatesCount))\n                    updates = [[update.Series, update.Frequency.name, update.Updated.strftime('%Y-%m-%d %H:%M:%S')] for update in updatesResp.Updates]\n                    df = pd.DataFrame(data=updates, columns=['Series', 'Frequency', 'Updated'])\n                    print(df, end='\\n\\n')\n                if updatesResp.UpdatesPending:\n                    print ('You still have {:,} updates pending starting from new sequence {}.'.format(updatesResp.PendingCount, updatesResp.NextSequenceId))\n                else:\n                    print ('You have no more updates pending. Use the new sequence {} to begin polling for future updates.'.format(updatesResp.NextSequenceId))\n\n# Whilst updatesResp.UpdatesPending is True you would retrieve the next request sequence from updatesResp.NextSequenceId and request the next block of updates.\n# You would continue walking through the chain until you receive the final chain with updatesResp.UpdatesPending returning False\n# At this point the value in updatesResp.NextSequenceId will contain the ID for the next update that occurs. You then use this ID in periodic polls\n# (minimum every 10 minutes) to wait for new updates to be notified.\n```\n\nIn the previous example, where we started searching for updates starting from 3 weeks ago, you will find you have a large chain of updates to query\nfor in order to process the updates across the entire universe of +16 million series. \n\nTo optimise this search, Datastream provides a custom filter, REFINITIVCC_KEYIND_GLOBAL, which defines the most popular economic series. Using this filter drastically cuts\ndown the number of updates you will receive and process.\n\n```\nprint('Let us repeat the processing using the same starting sequence ID. This time we will use the global filter REFINITIVCC_KEYIND_GLOBAL.')\nupdatesResp = econFilterClient.GetEconomicChanges(None, sequenceId, 'REFINITIVCC_KEYIND_GLOBAL')\nif updatesResp:\n    if updatesResp.ResponseStatus != dsweb.DSFilterResponseStatus.FilterSuccess:\n        print('GetEconomicChanges failed with error ' + updatesResp.ResponseStatus.name + ': ' + updatesResp.ErrorMessage)\n    else:\n        if updatesResp.Updates and updatesResp.UpdatesCount > 0:\n            # You have some updates; process them.\n            print ('You have {:,} new updates:'.format(updatesResp.UpdatesCount))\n            updates = [[update.Series, update.Frequency.name, update.Updated.strftime('%Y-%m-%d %H:%M:%S')] for update in updatesResp.Updates]\n            df = pd.DataFrame(data=updates, columns=['Series', 'Frequency', 'Updated'])\n            print(df, end='\\n\\n')\n        if updatesResp.UpdatesPending:\n            print ('You still have {:,} updates pending starting from new sequence {}.'.format(updatesResp.PendingCount, updatesResp.NextSequenceId))\n        else:\n            print ('You have no more updates pending. Use the new sequence {} and the filter to begin polling for future updates.'.format(updatesResp.NextSequenceId))\n```\n\nYou can also create your own custom economic filter to specifically query for changes just against this restricted set of economic series.\n```\n# This example demonstrates how to create a new filter.  We will define this filter with ID MyTempTestFilter\ndemoId = 'MyTempTestFilter'\n\n# Let us create the filter. We'll create it with 10 valid constituents but also include two invalid items, BADINST1 and \n# BADINSTFMT, to also demonstrate how the server will reject invalid or unsupported items. BADINST1 has valid syntax but is not a \n# valid series. BADINSTFMT is not the correct economic series format (7 to 9 chars only).\n\n#  NB: These are 10 random series chosen because they update frequently.\ninitialConstituents = ['UKEPUPO', 'USEPUPO', 'USEPUEQ', 'IDTVALS', 'IDTVOLS', 'IDTVADS', \n                       'IDTVALP', 'IDTVOLP', 'IDTVADP', 'IDTVAFP', 'BADINST1', 'BADINSTFMT']\n\n# we construct DSEconomicsFilter with our test ID MyTempTestFilter, assign the constituents, set the description and call CreateFilter\nmyFilter = DSEconomicsFilter()\nmyFilter.FilterId = demoId\n\nmyFilter.Constituents = initialConstituents\nmyFilter.Description = 'MyTempTestFilter for testing.'\n    \nprint('Creating private filter ' + demoId + '...')\nfilterResp = econFilterClient.CreateFilter(myFilter)\nif filterResp:\n    # Any request dealing with a single filter returns a DSEconomicsFilterResponse.\n    # This has ResponseStatus property that indicates success or failure\n    if filterResp.ResponseStatus != dsweb.DSFilterResponseStatus.FilterSuccess:\n        print('Request failed for filter ' + filterName + ' with error ' + filterResp.ResponseStatus.name + ': ' + filterResp.ErrorMessage, end='\\n\\n')\n    elif filterResp.Filter != None: #display it\n        filter = filterResp.Filter\n        names = ['FilterId', 'OwnerId', 'Shared?', 'LastModified', 'Description', 'No. of Constituents']\n        data = [filter.FilterId, filter.OwnerId, 'Yes' if bool(filter.Shared) else 'No', \n                filter.LastModified.strftime('%Y-%m-%d %H:%M:%S'), filter.Description, filter.ConstituentsCount]\n        df = pd.DataFrame(data, index=names)\n        print(df)\n\n        print('The filter contains the following constituents:')\n        df = pd.DataFrame(filter.Constituents)\n        print(df, end='\\n\\n')\n            \n        if filterResp.ItemErrors and len(filterResp.ItemErrors) > 0:\n            print('The service did not add the following items as they are invalid or are not supported:')\n            df = pd.DataFrame(filterResp.ItemErrors)\n            print(df, end='\\n\\n')\n```\n\nYou can then use your new filter in any queries for new updates:\n```\nupdatesResp = econFilterClient.GetEconomicChanges(None, sequenceId, 'MyTempTestFilter')\n# see the initial GetEconomicChanges example for how to process the result\n```\n\nThe EconomicsFilter object also supports the following methods:\n* GetAllFilters - returns a summary list of all filters owned by you and/or the globally available filters.\n* GetFilter - returns the full details, including constituents, for a specified filter.\n* UpdateFilter - allows you to append or remove specified constituent series or replace all the constituents.\n* DeleteFilter - allows you to delete one of your filters.\n\n\n\n# Error handling\n\nThe DatastreamUCS package makes web API queries against our servers. This can result in network errors or authentication errors if you\nare not authorised to use the service.\n\nDSUserObjectFault exceptions are thrown for any non-network errors from the API. These are returned for the following reasons:\n* Invalid credentials\n* Empty credentials\n* Access blocked due to missuse of the service (for filter requests after credentials validation).\n\nAny general network errors such as firewall issues, proxy issues, general connectivity issues, etc. will throw an Exception object.\nThis will typically be returned from the sessions.py module directly, or an exception will be thrown using the Response.raise_for_status()\nshould the returned response not be processed correctly.\n\n\n```\ntry:\n    # Try creating the client by replacing 'YourID' and 'YourPwd' with your own credentials.\n    econFilterClient = dsweb.EconomicFilters(None. 'YourId', 'YourPwd')\n    print('Successfully created the EconomicFilters client.', end='\\n\\n')\n\nexcept DSUserObjectFault as dsFault:\n    print('EconomicFilters() failed returning a DSUserObjectFault exception:')\n    print(dsFault)\nexcept Exception as exp:\n    print('A network error occurred.')\n    print(exp)\n```\n\n\nFor requests against the TimeseriesClient or EconomicFilters client objects (e.g. GetAllItems), the response object contains either a\nDSUserObjectResponseStatus or DSFilterResponseStatus object in the ResponseStatus property. If the status is not UserObjectSuccess or \nFilterSuccess, then this specifies a logical failure with the request on our server. In this event, the ErrorMessage property will\nspecify the reason for the error.\n\nFor DSUserObjectResponseStatus the folowing status values exist:\n* UserObjectSuccess: The request succeeded and the response object's UserObject(s) property should contain the (updated) object (except for DeleteItem method).\n* UserObjectPermissions: Users need to be specifically permissioned to create custom objects. This flag is set if you are not currently permissioned.\n* UserObjectNotPresent: Returned if the requested ID does not exist.\n* UserObjectFormatError: Returned if your request object is not in the correct format.\n* UserObjectTypeError: Returned if your supplied object is not the same as the type specified.\n* UserObjectError:  The generic error flag. This will be set for any error not specified above. (e.g. object not present, etc.)\n\nFor DSFilterResponseStatus the folowing status values exist:\n* FilterSuccess: The request succeeded and the response object's Filter property should contain the (updated) filter (except for DeleteFilter method).\n* FilterPermissions: Users need to be specifically permissioned to create custom filters. This flag is set if you are not currently permissioned.\n* FilterNotPresent: Returned if the requested ID does not exist.\n* FilterFormatError: Returned if your request filter ID is not in the correct format, or if you try and modify a refinitiv global filter (ID begins REFINITIV*).\n* FilterSizeError: Returned if your call to CreateFilter or ModifyFilter contains a list with zero or in excess of the 100K constituents.\n* FilterConstituentsError: Returned if your supplied filter constituent list (on CreateFilter) contains no valid economic series. The filter won't be created.\n* FilterError:  The generic error flag. This will be set for any error not specified above. (e.g. Requested filter ID is not present)\n\n\n# Proxies and certificates\n\nThe module uses the requests package to make the web api queries using a sessions object internally:\n```\nhttpResponse = self._reqSession.post(reqUrl, json = jsonRequest,  proxies = self._proxies, verify = self._certfiles, cert = self._sslCert, timeout = self._timeout)\n```\n\nYou can provide the proxy and certificate details in the constructor of each client object:\n\n```\nx = EconomicFilters(None, username = 'YourID', password = 'YourPwd', proxies = x, sslVerify = y, sslCert = z)\n```\n\nAlternatively, the proxy and the root certificates for verification can be set in the configuration file:\n\n```\n[proxies]\n# of the form: { 'http' : proxyHttpAddress,  'https' : proxyHttpsAddress }\nproxies=\n\n[cert]\n# option to supply a specific python requests verify option. \nsslVerify=\n\n[app]\ntimeout=  \n```\n\nFor specifying the proxy see or the verify and cert properties on the session post method, see [this link](https://docs.python-requests.org/en/latest/user/advanced/).\n\nIf you do not override a root certificates option for the verify parameter, the code will use the ssl package on Windows platforms\nto import the root certificates into a temporary file tempCertFile.pem and uses that as the verify parameter. For non-Windows\nplatforms, the package will use the results of the requests.certs.where() method to set the verify parameter. \n\n\n\n",
+            "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
             "downloads": {
@@ -23,337 +24,37 @@
             "platform": null,
             "project_url": "https://pypi.org/project/DatastreamUCS/",
             "project_urls": null,
-            "release_url": "https://pypi.org/project/DatastreamUCS/1.0.0/",
+            "release_url": "https://pypi.org/project/DatastreamUCS/1.0.17/",
             "requires_dist": [
                 "pandas",
                 "requests"
             ],
             "requires_python": ">=3",
-            "summary": "Python API Test Package for LSEG Datastream Economic Filters and User Created Services",
-            "version": "1.0.0",
+            "summary": "Python package for Datastream Web Services API",
+            "version": "1.0.17",
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 14897744,
+        "last_serial": 18150823,
         "urls": [
             {
                 "comment_text": "",
                 "digests": {
-                    "md5": "a092632710007afffa9d16345ece1caf",
-                    "sha256": "3ccfeffdaeba17922a165b053856e7df4477660e08daf79a7e2234e5a4604f25"
+                    "blake2b_256": "6cbba265331ab44801d0920b81213c41039846878ce96af869839f6033a0a421",
+                    "md5": "2c64b5f6ca9132ae9f85f95e7521d622",
+                    "sha256": "5e9d4bccde5322e9f424e9be2a1a0de688e369aec3d4d368fedca019904e1a3b"
                 },
                 "downloads": -1,
-                "filename": "DatastreamUCS-1.0.0-py3-none-any.whl",
+                "filename": "DatastreamUCS-1.0.17-py3-none-any.whl",
                 "has_sig": false,
-                "md5_digest": "a092632710007afffa9d16345ece1caf",
+                "md5_digest": "2c64b5f6ca9132ae9f85f95e7521d622",
                 "packagetype": "bdist_wheel",
                 "python_version": "py3",
                 "requires_python": ">=3",
-                "size": 36031,
-                "upload_time": "2022-08-03T07:46:56",
-                "upload_time_iso_8601": "2022-08-03T07:46:56.641463Z",
-                "url": "https://files.pythonhosted.org/packages/2b/1e/685fe6b598f5f284aebd36478ac72530666e55127297db9d89ed47130241/DatastreamUCS-1.0.0-py3-none-any.whl",
-                "yanked": false,
-                "yanked_reason": null
-            }
-        ],
-        "vulnerabilities": []
-    },
-    "1.0.1": {
-        "info": {
-            "author": "LSEG",
-            "author_email": "datastream@lseg.com",
-            "bugtrack_url": null,
-            "classifiers": [],
-            "description_content_type": "",
-            "docs_url": null,
-            "download_url": "",
-            "downloads": {
-                "last_day": -1,
-                "last_month": -1,
-                "last_week": -1
-            },
-            "home_page": "",
-            "keywords": "",
-            "license": "Apache Software License (http://www.apache.org/licenses/LICENSE-2.0)",
-            "maintainer": "",
-            "maintainer_email": "",
-            "name": "DatastreamUCS",
-            "package_url": "https://pypi.org/project/DatastreamUCS/",
-            "platform": null,
-            "project_url": "https://pypi.org/project/DatastreamUCS/",
-            "project_urls": null,
-            "release_url": "https://pypi.org/project/DatastreamUCS/1.0.1/",
-            "requires_dist": [
-                "pandas",
-                "requests"
-            ],
-            "requires_python": ">=3",
-            "summary": "Python API Test Package for LSEG Datastream Economic Filters and User Created Services",
-            "version": "1.0.1",
-            "yanked": false,
-            "yanked_reason": null
-        },
-        "last_serial": 14897744,
-        "urls": [
-            {
-                "comment_text": "",
-                "digests": {
-                    "md5": "e2d2fb7916f8b51360a75223c4fc6f9a",
-                    "sha256": "98f65590149a153285ae080b293b7b14f745c589a49de8369bbcc3c144068546"
-                },
-                "downloads": -1,
-                "filename": "DatastreamUCS-1.0.1-py3-none-any.whl",
-                "has_sig": false,
-                "md5_digest": "e2d2fb7916f8b51360a75223c4fc6f9a",
-                "packagetype": "bdist_wheel",
-                "python_version": "py3",
-                "requires_python": ">=3",
-                "size": 44621,
-                "upload_time": "2022-08-23T09:08:21",
-                "upload_time_iso_8601": "2022-08-23T09:08:21.531913Z",
-                "url": "https://files.pythonhosted.org/packages/1d/00/f94c95f587d106795c0d80ae011d7b3aa9e63a4f0aecfb4c9bf1eab7531f/DatastreamUCS-1.0.1-py3-none-any.whl",
-                "yanked": false,
-                "yanked_reason": null
-            }
-        ],
-        "vulnerabilities": []
-    },
-    "1.0.2": {
-        "info": {
-            "author": "LSEG",
-            "author_email": "datastream@lseg.com",
-            "bugtrack_url": null,
-            "classifiers": [],
-            "description_content_type": "",
-            "docs_url": null,
-            "download_url": "",
-            "downloads": {
-                "last_day": -1,
-                "last_month": -1,
-                "last_week": -1
-            },
-            "home_page": "",
-            "keywords": "",
-            "license": "Apache Software License (http://www.apache.org/licenses/LICENSE-2.0)",
-            "maintainer": "",
-            "maintainer_email": "",
-            "name": "DatastreamUCS",
-            "package_url": "https://pypi.org/project/DatastreamUCS/",
-            "platform": null,
-            "project_url": "https://pypi.org/project/DatastreamUCS/",
-            "project_urls": null,
-            "release_url": "https://pypi.org/project/DatastreamUCS/1.0.2/",
-            "requires_dist": [
-                "pandas",
-                "requests"
-            ],
-            "requires_python": ">=3",
-            "summary": "Python API Test Package for LSEG Datastream Economic Filters and User Created Services",
-            "version": "1.0.2",
-            "yanked": false,
-            "yanked_reason": null
-        },
-        "last_serial": 14897744,
-        "urls": [
-            {
-                "comment_text": "",
-                "digests": {
-                    "md5": "ad97aeff5fd1d7c188d784ff5ccbc077",
-                    "sha256": "6aaa9e77156a05d2c76f4d5a9735e7de19f67c5e36fdbdd4987933f36499c183"
-                },
-                "downloads": -1,
-                "filename": "DatastreamUCS-1.0.2-py3-none-any.whl",
-                "has_sig": false,
-                "md5_digest": "ad97aeff5fd1d7c188d784ff5ccbc077",
-                "packagetype": "bdist_wheel",
-                "python_version": "py3",
-                "requires_python": ">=3",
-                "size": 44589,
-                "upload_time": "2022-08-25T10:48:23",
-                "upload_time_iso_8601": "2022-08-25T10:48:23.853872Z",
-                "url": "https://files.pythonhosted.org/packages/69/79/243fe2acd1329015e8d187fc462d216588d29441467186a8b9acdd368cdd/DatastreamUCS-1.0.2-py3-none-any.whl",
-                "yanked": false,
-                "yanked_reason": null
-            }
-        ],
-        "vulnerabilities": []
-    },
-    "1.0.3": {
-        "info": {
-            "author": "LSEG",
-            "author_email": "datastream@lseg.com",
-            "bugtrack_url": null,
-            "classifiers": [],
-            "description_content_type": "",
-            "docs_url": null,
-            "download_url": "",
-            "downloads": {
-                "last_day": -1,
-                "last_month": -1,
-                "last_week": -1
-            },
-            "home_page": "",
-            "keywords": "",
-            "license": "Apache Software License (http://www.apache.org/licenses/LICENSE-2.0)",
-            "maintainer": "",
-            "maintainer_email": "",
-            "name": "DatastreamUCS",
-            "package_url": "https://pypi.org/project/DatastreamUCS/",
-            "platform": null,
-            "project_url": "https://pypi.org/project/DatastreamUCS/",
-            "project_urls": null,
-            "release_url": "https://pypi.org/project/DatastreamUCS/1.0.3/",
-            "requires_dist": [
-                "pandas",
-                "requests"
-            ],
-            "requires_python": ">=3",
-            "summary": "Python API Test Package for LSEG Datastream Economic Filters and User Created Services",
-            "version": "1.0.3",
-            "yanked": false,
-            "yanked_reason": null
-        },
-        "last_serial": 14897744,
-        "urls": [
-            {
-                "comment_text": "",
-                "digests": {
-                    "md5": "2c1a1c3804b486a2f41fe56996732330",
-                    "sha256": "6e4518e8dcee1be8bd0aa880b3c82ebd956c78cc24dcfbcefb79d0b2318df3ef"
-                },
-                "downloads": -1,
-                "filename": "DatastreamUCS-1.0.3-py3-none-any.whl",
-                "has_sig": false,
-                "md5_digest": "2c1a1c3804b486a2f41fe56996732330",
-                "packagetype": "bdist_wheel",
-                "python_version": "py3",
-                "requires_python": ">=3",
-                "size": 44567,
-                "upload_time": "2022-08-25T12:11:34",
-                "upload_time_iso_8601": "2022-08-25T12:11:34.249812Z",
-                "url": "https://files.pythonhosted.org/packages/53/27/e2b58ec5299d1672d424f08a53c9d9cd68e763e80bc36658169814e9e8f4/DatastreamUCS-1.0.3-py3-none-any.whl",
-                "yanked": false,
-                "yanked_reason": null
-            }
-        ],
-        "vulnerabilities": []
-    },
-    "1.0.5": {
-        "info": {
-            "author": "LSEG",
-            "author_email": "datastream@lseg.com",
-            "bugtrack_url": null,
-            "classifiers": [],
-            "description_content_type": "",
-            "docs_url": null,
-            "download_url": "",
-            "downloads": {
-                "last_day": -1,
-                "last_month": -1,
-                "last_week": -1
-            },
-            "home_page": "",
-            "keywords": "",
-            "license": "Apache Software License (http://www.apache.org/licenses/LICENSE-2.0)",
-            "maintainer": "",
-            "maintainer_email": "",
-            "name": "DatastreamUCS",
-            "package_url": "https://pypi.org/project/DatastreamUCS/",
-            "platform": null,
-            "project_url": "https://pypi.org/project/DatastreamUCS/",
-            "project_urls": null,
-            "release_url": "https://pypi.org/project/DatastreamUCS/1.0.5/",
-            "requires_dist": [
-                "pandas",
-                "requests"
-            ],
-            "requires_python": ">=3",
-            "summary": "Python API Test Package for LSEG Datastream Economic Filters and User Created Services",
-            "version": "1.0.5",
-            "yanked": false,
-            "yanked_reason": null
-        },
-        "last_serial": 14897744,
-        "urls": [
-            {
-                "comment_text": "",
-                "digests": {
-                    "md5": "ddebc37f2b9110fbd936938ddf7c587c",
-                    "sha256": "bfa662dd85c812d68ff1e3263c36b98932ae8df5d03f782390171aac0cd21491"
-                },
-                "downloads": -1,
-                "filename": "DatastreamUCS-1.0.5-py3-none-any.whl",
-                "has_sig": false,
-                "md5_digest": "ddebc37f2b9110fbd936938ddf7c587c",
-                "packagetype": "bdist_wheel",
-                "python_version": "py3",
-                "requires_python": ">=3",
-                "size": 44566,
-                "upload_time": "2022-08-26T10:48:05",
-                "upload_time_iso_8601": "2022-08-26T10:48:05.537658Z",
-                "url": "https://files.pythonhosted.org/packages/89/65/21e9e07e46f945a9d4e0b16ced6b824230a6f713479a6de281cc714bd281/DatastreamUCS-1.0.5-py3-none-any.whl",
-                "yanked": false,
-                "yanked_reason": null
-            }
-        ],
-        "vulnerabilities": []
-    },
-    "1.0.6": {
-        "info": {
-            "author": "LSEG",
-            "author_email": "datastream@lseg.com",
-            "bugtrack_url": null,
-            "classifiers": [],
-            "description": "Python API Test Package for LSEG Datastream Economic Filters and User Created Services\n\n",
-            "description_content_type": "",
-            "docs_url": null,
-            "download_url": "",
-            "downloads": {
-                "last_day": -1,
-                "last_month": -1,
-                "last_week": -1
-            },
-            "home_page": "",
-            "keywords": "",
-            "license": "Apache Software License (http://www.apache.org/licenses/LICENSE-2.0)",
-            "maintainer": "",
-            "maintainer_email": "",
-            "name": "DatastreamUCS",
-            "package_url": "https://pypi.org/project/DatastreamUCS/",
-            "platform": null,
-            "project_url": "https://pypi.org/project/DatastreamUCS/",
-            "project_urls": null,
-            "release_url": "https://pypi.org/project/DatastreamUCS/1.0.6/",
-            "requires_dist": [
-                "pandas",
-                "requests"
-            ],
-            "requires_python": ">=3",
-            "summary": "Python API Test Package for LSEG Datastream Economic Filters and User Created Services",
-            "version": "1.0.6",
-            "yanked": false,
-            "yanked_reason": null
-        },
-        "last_serial": 14897744,
-        "urls": [
-            {
-                "comment_text": "",
-                "digests": {
-                    "md5": "444d6f7b1dc68feb42d5ed8883b02dea",
-                    "sha256": "7b184b12e4e4ce9a5ec1b3aab929751ed5fba13cfa04472e4d4fa229cf1de9b7"
-                },
-                "downloads": -1,
-                "filename": "DatastreamUCS-1.0.6-py3-none-any.whl",
-                "has_sig": false,
-                "md5_digest": "444d6f7b1dc68feb42d5ed8883b02dea",
-                "packagetype": "bdist_wheel",
-                "python_version": "py3",
-                "requires_python": ">=3",
-                "size": 44569,
-                "upload_time": "2022-08-26T11:46:41",
-                "upload_time_iso_8601": "2022-08-26T11:46:41.451316Z",
-                "url": "https://files.pythonhosted.org/packages/76/d0/d264b1612ec75d471ecbad25c6a7b5d97987ea95d8dbdbbeedc38cfc21f8/DatastreamUCS-1.0.6-py3-none-any.whl",
+                "size": 50898,
+                "upload_time": "2023-05-18T07:44:22",
+                "upload_time_iso_8601": "2023-05-18T07:44:22.851549Z",
+                "url": "https://files.pythonhosted.org/packages/6c/bb/a265331ab44801d0920b81213c41039846878ce96af869839f6033a0a421/DatastreamUCS-1.0.17-py3-none-any.whl",
                 "yanked": false,
                 "yanked_reason": null
             }
