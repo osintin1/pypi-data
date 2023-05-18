@@ -39,7 +39,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18046005,
+        "last_serial": 18140718,
         "urls": [
             {
                 "comment_text": "",
@@ -97,7 +97,6 @@
                 "Programming Language :: Python :: 3.11",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "# Start Time Estimator\n\nPython implementation of the start time estimation technique presented in the paper \"Repairing Activity Start Times to Improve Business\nProcess Simulation\", by David Chapela-Campa and Marlon Dumas.\n\nThe technique takes as input an event log (pd.DataFrame) recording the execution of the activities of a process (including resource\ninformation), and produces a version of that event log with estimated start times for each activity instance.\n\n## Requirements\n\n- **Python v3.9.5+**\n- **PIP v21.1.2+**\n- Python dependencies: The packages listed in `requirements.txt`.\n\n## Basic Usage\n\nCheck [main file](https://github.com/AutomatedProcessImprovement/start-time-estimator/blob/main/processing/main.py) for an example of a\nsimple execution,\nand [config file](https://github.com/AutomatedProcessImprovement/start-time-estimator/blob/main/src/start_time_estimator/config.py) for an\nexplanation of the configuration parameters.\n\n### Examples\n\nHere we provide a simple example of use with the default configuration, followed by different custom configurations to run all the versions\nof the technique.\n\n```python\n# Set up default configuration\nconfiguration = Configuration()\n# Read event log\nevent_log = read_csv_log(\n    log_path=\"path/to/event/log.csv.gz\",\n    config=configuration,\n    reset_start_times=True,  # Reset all start times to estimate them all\n    sort_by_end_time=True  # Sort log by end time (warning this might alter the order of the events sharing end time)\n)\n# Estimate start times\nextended_event_log = StartTimeEstimator(event_log, configuration).estimate()\n```\n\nThe column IDs for the CSV file can be customized so the implementation works correctly with them:\n\n```python\n# Set up custom configuration\nconfiguration = Configuration(\n    log_ids=EventLogIDs(\n        case=\"case\",\n        activity=\"task\",\n        start_time=\"start\",\n        end_time=\"end\",\n        resource=\"resource\"\n    )\n)\n```\n\n#### Configuration of the proposed approach\n\nWith no outlier threshold and using the Median as the statistic to re-estimate the activity instances that couldn't be estimated:\n\n```python\n# Set up custom configuration\nconfiguration = Configuration(\n    concurrency_oracle_type=ConcurrencyOracleType.HEURISTICS,\n    re_estimation_method=ReEstimationMethod.MEDIAN,\n    resource_availability_type=ResourceAvailabilityType.SIMPLE\n)\n```\n\nWith no outlier threshold and using the Mode as the statistic to re-estimate the activity instances that couldn't be estimated:\n\n```python\n# Set up custom configuration\nconfiguration = Configuration(\n    concurrency_oracle_type=ConcurrencyOracleType.HEURISTICS,\n    re_estimation_method=ReEstimationMethod.MODE,\n    resource_availability_type=ResourceAvailabilityType.SIMPLE\n)\n```\n\nCustomize the thresholds for the concurrency detection:\n\n```python\n# Set up custom configuration\nconfiguration = Configuration(\n    concurrency_oracle_type=ConcurrencyOracleType.HEURISTICS,\n    heuristics_thresholds=HeuristicsThresholds(df=0.6, l2l=0.6),\n    re_estimation_method=ReEstimationMethod.MODE,\n    resource_availability_type=ResourceAvailabilityType.SIMPLE\n)\n```\n\nAdd an outlier threshold of 200% and set the Mode to calculate the most typical duration too:\n\n```python\n# Set up custom configuration\nconfiguration = Configuration(\n    concurrency_oracle_type=ConcurrencyOracleType.HEURISTICS,\n    re_estimation_method=ReEstimationMethod.MODE,\n    resource_availability_type=ResourceAvailabilityType.SIMPLE,\n    outlier_statistic=OutlierStatistic.MODE,\n    outlier_threshold=2.0\n)\n```\n\nSpecify *bot resources* (perform the activities instantly) and *instant activities*:\n\n```python\n# Set up custom configuration\nconfiguration = Configuration(\n    concurrency_oracle_type=ConcurrencyOracleType.HEURISTICS,\n    re_estimation_method=ReEstimationMethod.MODE,\n    resource_availability_type=ResourceAvailabilityType.SIMPLE,\n    bot_resources={\"SYSTEM\", \"BOT_001\"},\n    instant_activities={\"Automatic Validation\", \"Send Notification\"}\n)\n```\n\n#### Configuration with a simpler concurrency oracle (Alpha Miner's) for the Enablement Time calculation\n\n```python\n# Set up custom configuration\nconfiguration = Configuration(\n    concurrency_oracle_type=ConcurrencyOracleType.ALPHA,\n    re_estimation_method=ReEstimationMethod.MODE,\n    resource_availability_type=ResourceAvailabilityType.SIMPLE\n)\n```\n\n#### Configuration with no concurrency oracle for the Enablement Time calculation (i.e. assuming directly-follows relations)\n\n```python\n# Set up custom configuration\nconfiguration = Configuration(\n    concurrency_oracle_type=ConcurrencyOracleType.DF,\n    re_estimation_method=ReEstimationMethod.MODE,\n    resource_availability_type=ResourceAvailabilityType.SIMPLE\n)\n```\n\n#### Configuration only taking into account the Resource Availability Time\n\n```python\n# Set up custom configuration\nconfiguration = Configuration(\n    concurrency_oracle_type=ConcurrencyOracleType.DEACTIVATED,\n    re_estimation_method=ReEstimationMethod.MODE,\n    resource_availability_type=ResourceAvailabilityType.SIMPLE\n)\n```\n\n## Individual Enablement Time Calculation\n\nThis package can be used too to calculate the enablement time (and the enabling activity) of the activity instances of an event log, without\nthe need to calculate the resource availability and estimate the start times. A simple example can be found here:\n\n```python\n# Set up default configuration\nconfiguration = Configuration(\n    log_ids=DEFAULT_CSV_IDS,  # Custom the column IDs with this parameter\n    consider_start_times=True  # Consider real parallelism if the start times are available\n)\n# Read event log\nevent_log = read_csv_log(\n    log_path=\"path/to/event/log.csv.gz\",\n    config=configuration,\n    sort_by_end_time=True  # Sort log by end time (warning this might alter the order of the events sharing end time)\n)\n# Instantiate desired concurrency oracle\nconcurrency_oracle = HeuristicsConcurrencyOracle(event_log, configuration)\n# concurrency_oracle = AlphaConcurrencyOracle(event_log, configuration)\n# concurrency_oracle = DirectlyFollowsConcurrencyOracle(event_log, configuration)\n# Add enablement times to the event log\nconcurrency_oracle.add_enabled_times(\n    event_log,\n    set_nat_to_first_event=False,  # Whether to set NaT or the start trace to the events with no enabling activities.\n    include_enabling_activity=True  # Whether to include the label of the enabling activity in a new column or not.\n)\n```\n\n**Warning:** If the event log contains start times, set the parameter *consider_start_times* to *true*. This parameter allows the enablement\ntime calculator to know that it can trust the start times of the event log to discard those activity instances that are being executed in\nparallel to the current one as a possible causal predecessor.\n\nFor example: if activity *A* always preceedes activity *B*, i.e. there are no concurrency, an execution of *A* can be a causal predecessor\nof an execution of *B* (meaning this that *A* can enable *B*). Nevertheless, if the start times are available and there is an activity\ninstance of *B* which starts before the end of *A*, *A* does not enable *B* in that case.\n\nIf *consider_start_times* is set to *true*, the estimator consider the start time information in this way, if it is set to *false*, only the\nend times will be considered.\n\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -127,7 +126,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18046005,
+        "last_serial": 18140718,
         "urls": [
             {
                 "comment_text": "",
@@ -168,6 +167,181 @@
                 "upload_time": "2023-05-10T11:09:00",
                 "upload_time_iso_8601": "2023-05-10T11:09:00.167563Z",
                 "url": "https://files.pythonhosted.org/packages/e8/69/e6444498010ae565bdbcbfe38f8cf0bf9c11e7da74a9df38448d0b514b15/start_time_estimator-1.10.4.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.10.6": {
+        "info": {
+            "author": "David Chapela de la Campa",
+            "author_email": "david.chapela.delacampa@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "start-time-estimator",
+            "package_url": "https://pypi.org/project/start-time-estimator/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/start-time-estimator/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/start-time-estimator/1.10.6/",
+            "requires_dist": [
+                "pandas (>=2.0.0,<3.0.0)",
+                "pix-framework (>=0.8.0,<0.9.0)"
+            ],
+            "requires_python": ">=3.9,<3.12",
+            "summary": "Python package to estimate the enabled time, enabling activity, and resource availability time of each activity instance in an event log.",
+            "version": "1.10.6",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18140718,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "fc9f0eccd30075817b18f457923355196da803fb1903a37c42d3e885e43895b4",
+                    "md5": "169d24bd3ef4b68f25aeecc4a1f2e361",
+                    "sha256": "9945ac86ff71448a684ae317699df91e4c1e18ec1e738dd1ce53b3ad06e306a7"
+                },
+                "downloads": -1,
+                "filename": "start_time_estimator-1.10.6-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "169d24bd3ef4b68f25aeecc4a1f2e361",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9,<3.12",
+                "size": 16363,
+                "upload_time": "2023-05-17T14:05:19",
+                "upload_time_iso_8601": "2023-05-17T14:05:19.288334Z",
+                "url": "https://files.pythonhosted.org/packages/fc/9f/0eccd30075817b18f457923355196da803fb1903a37c42d3e885e43895b4/start_time_estimator-1.10.6-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "55549ac03ae10bdb3fcad867430697b929ff42bb81ef854540e1080b34ae7eca",
+                    "md5": "e2681c8c93c72096fec0f5aabf419bae",
+                    "sha256": "15fdb30883fc75dadcf8dd7a2b8272367e3b66be650ec6e46e64fc3d10c60bac"
+                },
+                "downloads": -1,
+                "filename": "start_time_estimator-1.10.6.tar.gz",
+                "has_sig": false,
+                "md5_digest": "e2681c8c93c72096fec0f5aabf419bae",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9,<3.12",
+                "size": 15128,
+                "upload_time": "2023-05-17T14:05:20",
+                "upload_time_iso_8601": "2023-05-17T14:05:20.796741Z",
+                "url": "https://files.pythonhosted.org/packages/55/54/9ac03ae10bdb3fcad867430697b929ff42bb81ef854540e1080b34ae7eca/start_time_estimator-1.10.6.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.10.7": {
+        "info": {
+            "author": "David Chapela de la Campa",
+            "author_email": "david.chapela.delacampa@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# Start Time Estimator\n\nPython implementation of the start time estimation technique presented in the paper \"Repairing Activity Start Times to Improve Business\nProcess Simulation\", by David Chapela-Campa and Marlon Dumas.\n\nThe technique takes as input an event log (pd.DataFrame) recording the execution of the activities of a process (including resource\ninformation), and produces a version of that event log with estimated start times for each activity instance.\n\n## Requirements\n\n- **Python v3.9.5+**\n- **PIP v21.1.2+**\n- Python dependencies: The packages listed in `requirements.txt`.\n\n## Basic Usage\n\nCheck [main file](https://github.com/AutomatedProcessImprovement/start-time-estimator/blob/main/processing/main.py) for an example of a\nsimple execution,\nand [config file](https://github.com/AutomatedProcessImprovement/start-time-estimator/blob/main/src/start_time_estimator/config.py) for an\nexplanation of the configuration parameters.\n\n### Examples\n\nHere we provide a simple example of use with the default configuration, followed by different custom configurations to run all the versions\nof the technique.\n\n```python\n# Set up default configuration\nconfiguration = Configuration()\n# Read event log\nevent_log = read_csv_log(\n    log_path=\"path/to/event/log.csv.gz\",\n    config=configuration,\n    reset_start_times=True,  # Reset all start times to estimate them all\n    sort_by_end_time=True  # Sort log by end time (warning this might alter the order of the events sharing end time)\n)\n# Estimate start times\nextended_event_log = StartTimeEstimator(event_log, configuration).estimate()\n```\n\nThe column IDs for the CSV file can be customized so the implementation works correctly with them:\n\n```python\n# Set up custom configuration\nconfiguration = Configuration(\n    log_ids=EventLogIDs(\n        case=\"case\",\n        activity=\"task\",\n        start_time=\"start\",\n        end_time=\"end\",\n        resource=\"resource\"\n    )\n)\n```\n\n#### Configuration of the proposed approach\n\nWith no outlier threshold and using the Median as the statistic to re-estimate the activity instances that couldn't be estimated:\n\n```python\n# Set up custom configuration\nconfiguration = Configuration(\n    concurrency_oracle_type=ConcurrencyOracleType.HEURISTICS,\n    re_estimation_method=ReEstimationMethod.MEDIAN,\n    resource_availability_type=ResourceAvailabilityType.SIMPLE\n)\n```\n\nWith no outlier threshold and using the Mode as the statistic to re-estimate the activity instances that couldn't be estimated:\n\n```python\n# Set up custom configuration\nconfiguration = Configuration(\n    concurrency_oracle_type=ConcurrencyOracleType.HEURISTICS,\n    re_estimation_method=ReEstimationMethod.MODE,\n    resource_availability_type=ResourceAvailabilityType.SIMPLE\n)\n```\n\nCustomize the thresholds for the concurrency detection:\n\n```python\n# Set up custom configuration\nconfiguration = Configuration(\n    concurrency_oracle_type=ConcurrencyOracleType.HEURISTICS,\n    heuristics_thresholds=HeuristicsThresholds(df=0.6, l2l=0.6),\n    re_estimation_method=ReEstimationMethod.MODE,\n    resource_availability_type=ResourceAvailabilityType.SIMPLE\n)\n```\n\nAdd an outlier threshold of 200% and set the Mode to calculate the most typical duration too:\n\n```python\n# Set up custom configuration\nconfiguration = Configuration(\n    concurrency_oracle_type=ConcurrencyOracleType.HEURISTICS,\n    re_estimation_method=ReEstimationMethod.MODE,\n    resource_availability_type=ResourceAvailabilityType.SIMPLE,\n    outlier_statistic=OutlierStatistic.MODE,\n    outlier_threshold=2.0\n)\n```\n\nSpecify *bot resources* (perform the activities instantly) and *instant activities*:\n\n```python\n# Set up custom configuration\nconfiguration = Configuration(\n    concurrency_oracle_type=ConcurrencyOracleType.HEURISTICS,\n    re_estimation_method=ReEstimationMethod.MODE,\n    resource_availability_type=ResourceAvailabilityType.SIMPLE,\n    bot_resources={\"SYSTEM\", \"BOT_001\"},\n    instant_activities={\"Automatic Validation\", \"Send Notification\"}\n)\n```\n\n#### Configuration with a simpler concurrency oracle (Alpha Miner's) for the Enablement Time calculation\n\n```python\n# Set up custom configuration\nconfiguration = Configuration(\n    concurrency_oracle_type=ConcurrencyOracleType.ALPHA,\n    re_estimation_method=ReEstimationMethod.MODE,\n    resource_availability_type=ResourceAvailabilityType.SIMPLE\n)\n```\n\n#### Configuration with no concurrency oracle for the Enablement Time calculation (i.e. assuming directly-follows relations)\n\n```python\n# Set up custom configuration\nconfiguration = Configuration(\n    concurrency_oracle_type=ConcurrencyOracleType.DF,\n    re_estimation_method=ReEstimationMethod.MODE,\n    resource_availability_type=ResourceAvailabilityType.SIMPLE\n)\n```\n\n#### Configuration only taking into account the Resource Availability Time\n\n```python\n# Set up custom configuration\nconfiguration = Configuration(\n    concurrency_oracle_type=ConcurrencyOracleType.DEACTIVATED,\n    re_estimation_method=ReEstimationMethod.MODE,\n    resource_availability_type=ResourceAvailabilityType.SIMPLE\n)\n```\n\n## Individual Enablement Time Calculation\n\nThis package can be used too to calculate the enablement time (and the enabling activity) of the activity instances of an event log, without\nthe need to calculate the resource availability and estimate the start times. A simple example can be found here:\n\n```python\n# Set up default configuration\nconfiguration = Configuration(\n    log_ids=DEFAULT_CSV_IDS,  # Custom the column IDs with this parameter\n    consider_start_times=True  # Consider real parallelism if the start times are available\n)\n# Read event log\nevent_log = read_csv_log(\n    log_path=\"path/to/event/log.csv.gz\",\n    config=configuration,\n    sort_by_end_time=True  # Sort log by end time (warning this might alter the order of the events sharing end time)\n)\n# Instantiate desired concurrency oracle\nconcurrency_oracle = HeuristicsConcurrencyOracle(event_log, configuration)\n# concurrency_oracle = AlphaConcurrencyOracle(event_log, configuration)\n# concurrency_oracle = DirectlyFollowsConcurrencyOracle(event_log, configuration)\n# Add enablement times to the event log\nconcurrency_oracle.add_enabled_times(\n    event_log,\n    set_nat_to_first_event=False,  # Whether to set NaT or the start trace to the events with no enabling activities.\n    include_enabling_activity=True  # Whether to include the label of the enabling activity in a new column or not.\n)\n```\n\n**Warning:** If the event log contains start times, set the parameter *consider_start_times* to *true*. This parameter allows the enablement\ntime calculator to know that it can trust the start times of the event log to discard those activity instances that are being executed in\nparallel to the current one as a possible causal predecessor.\n\nFor example: if activity *A* always preceedes activity *B*, i.e. there are no concurrency, an execution of *A* can be a causal predecessor\nof an execution of *B* (meaning this that *A* can enable *B*). Nevertheless, if the start times are available and there is an activity\ninstance of *B* which starts before the end of *A*, *A* does not enable *B* in that case.\n\nIf *consider_start_times* is set to *true*, the estimator consider the start time information in this way, if it is set to *false*, only the\nend times will be considered.\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "start-time-estimator",
+            "package_url": "https://pypi.org/project/start-time-estimator/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/start-time-estimator/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/start-time-estimator/1.10.7/",
+            "requires_dist": [
+                "pandas (>=2.0,<3.0)",
+                "pix-framework (>=0.8,<0.9)"
+            ],
+            "requires_python": ">=3.9,<3.12",
+            "summary": "Python package to estimate the enabled time, enabling activity, and resource availability time of each activity instance in an event log.",
+            "version": "1.10.7",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18140718,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "51e5851b0536d53efc3c64d983809025c12ae61bc410f60f699d40351166f377",
+                    "md5": "e5a8f736c60ef05eabb52578f02ad27f",
+                    "sha256": "8cb458cf24461e2a92534a374a417081cf2ddc5d5b5ad8d33b21942bf36011a5"
+                },
+                "downloads": -1,
+                "filename": "start_time_estimator-1.10.7-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "e5a8f736c60ef05eabb52578f02ad27f",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9,<3.12",
+                "size": 16367,
+                "upload_time": "2023-05-17T14:15:54",
+                "upload_time_iso_8601": "2023-05-17T14:15:54.635729Z",
+                "url": "https://files.pythonhosted.org/packages/51/e5/851b0536d53efc3c64d983809025c12ae61bc410f60f699d40351166f377/start_time_estimator-1.10.7-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "98e48584f12ae2ba8ec9ad77f7b4ad6696f74a4caf5329ccbf9ad9ad4a7da662",
+                    "md5": "1772ce5feed0eb203ea0e29daa5c29b7",
+                    "sha256": "4ee56418d8246a7bbc9b5304e2de8488ccda9c85668ba66cfa89aed30b90a210"
+                },
+                "downloads": -1,
+                "filename": "start_time_estimator-1.10.7.tar.gz",
+                "has_sig": false,
+                "md5_digest": "1772ce5feed0eb203ea0e29daa5c29b7",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9,<3.12",
+                "size": 15119,
+                "upload_time": "2023-05-17T14:15:55",
+                "upload_time_iso_8601": "2023-05-17T14:15:55.927640Z",
+                "url": "https://files.pythonhosted.org/packages/98/e4/8584f12ae2ba8ec9ad77f7b4ad6696f74a4caf5329ccbf9ad9ad4a7da662/start_time_estimator-1.10.7.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

@@ -1,0 +1,92 @@
+{
+    "0.3.1": {
+        "info": {
+            "author": "",
+            "author_email": "Jeff Ford <jsford64@gmail.com>, Jordan Ford <jsford94@gmail.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: Apache Software License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "![image](https://github.com/jsford64/jiffy-compression/assets/9753764/e35eca31-fb40-4987-8316-fc2f611d53c2)\n\n# Jiffy-LiDAR\nJiffy-lidar: a fast, lossless SIMD compression codec for LiDAR streams\n\nRead the peer-reviewed publication accepted for presentation at IEEE ICRA 2023 in London:\n'Lossless SIMD Compression of LiDAR Range and Attribute Scan Sequences' here: \nhttps://arxiv.org/pdf/2209.08196.pdf\n\n![image](https://github.com/jsford64/jiffy-compression/assets/9753764/8238d9d0-1acd-49f2-87a0-de2087328322)\n\n## Dependencies\n\nJiffy-lidar was written and tested using Python 3.10.\n\n### Python Module Dependencies\n\n    Numpy\n    Zstandard\n\n    PyFastPfor:\n\n        ARM64/MacOS:    git@github.com:jsford64/PyFastPFor-OSX-ARM64.git\n        Other:          git@github.com:searchivarius/PyFastPFor.git\n\n## Installation\n\n### MacOS or Arm64\nPyfastpfor will not compile and install without C++ source code modifications\non these platforms.\nWe have made appropriate modifications in a fork of pyfastpfor. To install this version\nof pyfastpfor on MacOS or Arm64 prior to installing jiffy-lidar:\n\n    git clone git@github.com:jsford64/PyFastPFor-OSX-ARM64.git\n    cd PyFastPFor-OSX-ARM64/python_bindings\n    pip install .\n\nThen continue with installing jiffy-lidar as shown in the following section.\n\n### Intel-based Windows & Linux Platforms\n\npip install jiffy-lidar\n\n\n## Definitions\n\nScan\n----\n    A numpy array containing one type of LiDAR data (a scan type: range, range2, intensity, etc.) with shape equal to the \n    shape passed to Scan() upon initialization.\n    \n    <dtype> can be any size float or uint as appropriate for the scan type.\n\nI Scan\n------\n    An intra-coded scan. The compressed frame does not depend on any other frames in order to be decoded.\n\nP Scan\n------\n    Am inter-coded scan. The compressed frame depends on the decoded previous frame in order to be decoded.\n\nFrame\n-----\n    list(range scan, range2 scan, intensity scan, ... )\n\nGroup\n-----\n    A logical grouping of compressed frames, where all scans within thee first frame of the group are compressed \n    as intra-coded (I) scans. \n   \n    A group can be of size 1, which forces all scans to be encoded as I scans.\n    \n    \n## Examples\n\nexamples/encode_to_file.py:      Encode some real LiDAR data from Ouster OS0-128 LiDAR to a file.\n\nexamples/decode_from_file.py:    Decode a .jiffy file and display each frame of scans.\n\ntest.py:                         Encode and decode using a bytes string (b'') instead of a file.\n\n## Jiffy Constants\n\n    VERSION_MAJOR = 0\n    VERSION_MINOR = 3\n    VERSION = np.uint16(VERSION_MAJOR * 256 + VERSION_MINOR)\n    MAGIC = b'JFFY'                 'Magic Number' for Jiffy encoded data/files.\n    ADAPTIVE = 0                    Encode scan as I or P according to adaptive scan algorithm.\n    ISCAN    = 1                    Encode scan as I only.\n\n## Jiffy Stream Codec Class\n\n    Stream( scansPerFrame:np.uint8 = 1, framesPerGroup:int = 10, byteStream:ByteStream = b'', \n            precision:np.uint8 = 1, header:bool = True )\n\n\n    Compresses/decompresses a LiDAR stream, a sequence of LiDAR scans of multiple scan types.\n    A user should typically use either StreamReader() or StreamWriter(), rather than Stream(),\n    to avoid ambiguities regarding file handling.\n    \n### Stream() Constructor Arguments\n\n    scansPerFrame:  \n        The number of scans, each with a unique scan type (range, intensity, \n        etc.), returned by the LiDAR in one sweep. The collection of scans returned \n        in one sweep is called a frame. \n\n        Ignored on decode, since the number of scans per frame is encoded in the stream.\n        Must be > 0. Default is 1.\n\n    framesPerGroup:\n\n        A group of frames is a logical grouping of frames that are encoded \n        together, with the first frame in each group forced to be encoded as an \n        intra-coded frame (all scans in the first frame of every group are \n        I scans). Default is 10. \n\n        Ignored on decode, since the number of frames per group is encoded in the stream.\n\n        If framesPerGroup == 0, no groups are encoded. All frames will be coded as \n        temporal (I) or spatial (P) scans if mode=ADAPTIVE, or as intra-coded scans \n        if mode=ISCAN.\n\n        If framesPerGroup > 0, a group is encoded. All scans in the first frame \n        of each group will be intra-coded, so if framesPerGroup == 1, all scans will\n        be intra-coded.\n        All other frames in the group will be coded as temporal (I) or spatial (P) scans \n        if mode=ADAPTIVE, or as intra-coded scans if mode=ISCAN.\n\n        framesPerGroup must be a positive integer.\n\n        Groups of frames are used to improve random access and editing, and may\n        potentially aid in error recovery when decoding in future versions.\n\n    byteStream:\n        A Jiffy ByteStream object containing a compressed stream for decode, or\n        an empty ByteStream object to hold the encoded stream.\n        \n       \n    precision:  \n        A scalar precision value to apply to all scan types, or a list of \n        precision values, one for each scan type. Precision is used to quantize \n        the scan values to the nearest integer multiple of precision.\n\n        On encode, scans will be rounded and truncated (quantized) to\n        the nearest integer by default (precision=1). Increasing\n        'precision'will make the quantization coarser, rounding  and\n        truncating to the nearest integer multiple of 'precision',\n        producing a corresponding increase in compression ratio.\n        Valid precision values are positive, non-zero integers.\n        Range scans are expected to be pre-scaled to integer units of\n        millimeters such that a value of 1 == 1mm.\n\n        On decode, precision is ignored, since the precision values are encoded\n        in the stream.\n\n    header:     \n        If True, a header will be written to the byteStream on the first call to\n        encode, and extracted from the byteStream on the first call to decode.\n        If header is False, the header will not be written on encode, and the user\n        is required to read the header (if it is present) before calling decode.\n        The header contains information about the stream, including the number of\n        scans per frame, the number of frames per group, and the precision values\n        used to encode the stream. Default is True.\n\n### Stream Attributes\n\n    byteStream:\n        The byteStream object used to encode/decode the stream.\n\n    framePrecisions:\n        A list of np.uint8 precision values used to encode/decode the stream, one for each\n        scan type.\n\n    scansPerFrame:\n        The number of scans per frame used to encode/decode the stream.\n\n    framesPerGroup:\n        The number of frames per group used to encode/decode the stream.\n\n    frameModes:\n        The actual scan modes used to encode/decode the frame. frameModes is a list of\n        scan modes, one for each scan in the frame. frameModes is only valid\n        after the first call to encode or decode, and updates on each subsequent call.\n\n    frameBytes:\n        The number of bytes used to encode/decode the frame. frameBytes is a list of\n        number of bytes, one for each scan in the frame. frameBytes is only valid\n        after the first call to encode, and it updates on each subsequent call to encode.\n        Ignored on decode.\n\n    frameCount:\n        The number of frames encoded/decoded. frameCount is only valid after the first\n        call to encode or decode, and it updates on each subsequent call to encode or decode.\n        if framesPerGroup > 0, frameCount is the number of scans encoded/decoded in the current group.\n\n### Stream Methods\n\n    writeHeader():\n        Write the Jiffy header to the byteStream.\n\n    readHeader():\n        Read the Jiffy header from the byteStream and return a dict with the header contents.\n\n    stats():\n        Return a dictionary of header contents.\n\n    encode(frame):\n        frame:  A frame is a list of 2D numpy arrays (scans) produced from one sweep of the lidar,\n                with one array for each scan type (range, intensity, etc.) in the frame.\n                The number of scans in a frame must match the number of scan types in the encoded stream,\n                and remain constant for the entire stream.\n                \n                If self.scansPerFrame == 0, frame can be a list of scans or\n                a single scan (2D numpy array, not a list).\n\n                The dtype of each scan can be float, int, or uint of any number of bytes, but\n                input values are expected to all be positive.\n\n                The shape of each scan must match the shape of the first scan encoded in the stream.\n\n    decode():\n        Decode a frame (list of scans) from the byteStream.\n        This is a generator function that yields one frame of scans at a time.\n\n    close():\n        Close the byteStream.\n        Do not call this function if you intend to continue using the byteStream.\n        Use rewind() instead.\n\n    rewind():\n        Rewind the byteStream to the beginning of the stream.\n        Use this when you want to decode an encoded stream you just generated.\n    \n        Stream state is reset to:\n            header = True\n            frameCount = 0\n\n\n### Encoded Stream Format\n\nAll multi-byte fields are encoded as little endian.\n\n    Stream:\n    -------\n    if header == True:\n        Header                          Optional header, only if header == True\n\n    if framesPerGroup == 0:\n        [ iFrame ] + [ aFrame ] * n     no groups, first frame is an I scan, \n                                        all others are adaptive, n = number of frames encoded in stream - 1\n    elif framesPerGroup == 1:\n        [ iFrame ] * n                  all frames are I scans, n = number of frames encoded in stream\n\n    else:\n        [ Group ] * m                   groups of frames, first frame in group is an I scan,\n                                        all others in the group are adaptive, m = number of groups encoded\n\n\n    Header (optional):\n    ------------------\n    \n    Field Name      Type,       Size (bytes)    Description\n    -------------------------------------------------------------------------------------------\n    \"JFFY\"          ASCII,          4           File 'magic number' identifier (jiffy.JIFFY)\n    version         uint8,          1           Version of the Jiffy file format (jiffy.VERSION)\n    shape           uint32,         8           shape of scans, (rows, cols)\n    scansPerFrame   uint8,          1           Number of scans in a frame, min=1\n    framesPerGroup  uint32,         4           Number of frames in a group, \n                                                0:          no groups, first frame is an I scan, \n                                                            all others are adaptive\n\n                                                1:          all frames are I scans\n\n                                                2 or more:  first frame in group is an I scan, \n                                                            all others in the group are adaptive\n\n    framePrecisions uint8,      scansPerFrame   list of precision values, one for each scan type\n\n## Jiffy Stream Reader Class\n\n    StreamReader( byteStream:ByteStream, *args, **kwargs )\n\n    Jiffy StreamReader subclass of Stream(). Decompresses a LiDAR stream, \n    a sequence of LiDAR scans of multiple scan types.\n    \n### StreamReader() constructor arguments:\n \n    byteStream:\n        A previously encoded ByteStream object containing a compressed stream,\n        a byte string (b''), a file name, or a file opened in mode 'rb+'.\n        \n        On decode, Stream will extract encoded data from byteStream, producing \n        decoded frames.\n    *args:\n        Remaining arguments are passed to the Stream constructor.\n    **kwargs:\n        Remaining keyword arguments are passed to the Stream constructor.\n\n    \n## Stream Writer Class\n\n        StreamWriter( byteStream:ByteStream, *args, **kwargs )\n\n    Jiffy StreamWriter subclass of Stream(). Compresses a LiDAR stream, \n    a sequence of LiDAR scans of multiple scan types.\n    \n### StreamWriter() constructor arguments:\n \n    byteStream:\n        A byte string (b''), a file name, or a file opened in mode 'wb+'.\n        \n        StreamWriter will append encoded data to any data already in byteStream,\n        except in the case where byteStream is a filename to open. If byteStream is a\n        filename, it will be opened in wb+ mode, and any existing data will be lost.\n        If an open file is used, it must be opened in wb+ mode. \n        \n        byteStream defaults to using an empty bytes object (b'').\n    *args:\n        Remaining arguments are passed to the Stream constructor.\n    **kwargs:\n        Remaining keyword arguments are passed to the Stream constructor.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "jiffy-lidar",
+            "package_url": "https://pypi.org/project/jiffy-lidar/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/jiffy-lidar/",
+            "project_urls": {
+                "Homepage": "https://github.com/jsford64/jiffy-compression"
+            },
+            "release_url": "https://pypi.org/project/jiffy-lidar/0.3.1/",
+            "requires_dist": [
+                "zstandard",
+                "numpy",
+                "pyfastpfor ; platform_machine == \"x86_64\" and sys_platform != \"darwin\""
+            ],
+            "requires_python": ">=3.10",
+            "summary": "Jiffy-lidar: a fast, lossless SIMD compression codec for LiDAR streams",
+            "version": "0.3.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18148296,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c0427238c54ae48c03c48e22a8fb46fc32ad4475bbb7d14cbcbc4fa91b02ffc0",
+                    "md5": "46f327a60aff2ddcc1581599088eeb72",
+                    "sha256": "8b51c4ae934ed669e31f1ecdab2760717f9e79a9753f26cb50e1dc25d8b38b34"
+                },
+                "downloads": -1,
+                "filename": "jiffy_lidar-0.3.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "46f327a60aff2ddcc1581599088eeb72",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.10",
+                "size": 21690,
+                "upload_time": "2023-05-18T01:06:03",
+                "upload_time_iso_8601": "2023-05-18T01:06:03.472178Z",
+                "url": "https://files.pythonhosted.org/packages/c0/42/7238c54ae48c03c48e22a8fb46fc32ad4475bbb7d14cbcbc4fa91b02ffc0/jiffy_lidar-0.3.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5c3eb6973b4dec3bd013d2287d993895be7d0255f4aee3b7b682530b9eef039a",
+                    "md5": "2aa7867a7de93fe6d1c1fd1dd246261e",
+                    "sha256": "7d193c23706ef5dc658710ab8e63060d6f65af6774ad637c02886987a9d85360"
+                },
+                "downloads": -1,
+                "filename": "jiffy-lidar-0.3.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "2aa7867a7de93fe6d1c1fd1dd246261e",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.10",
+                "size": 24588,
+                "upload_time": "2023-05-18T01:06:05",
+                "upload_time_iso_8601": "2023-05-18T01:06:05.500726Z",
+                "url": "https://files.pythonhosted.org/packages/5c/3e/b6973b4dec3bd013d2287d993895be7d0255f4aee3b7b682530b9eef039a/jiffy-lidar-0.3.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

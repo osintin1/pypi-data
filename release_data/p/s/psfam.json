@@ -35,7 +35,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18110965,
+        "last_serial": 18146407,
         "urls": [
             {
                 "comment_text": "",
@@ -71,7 +71,6 @@
                 "License :: OSI Approved :: MIT License",
                 "Topic :: Utilities"
             ],
-            "description": "# Psfam Documentation\r\n\r\nThe Psfam package is a python package which organizes the complete set of pauli strings of any size into commuting families for VQE, finding a unitary matrix from clifford operators which diagonalizes all of the strings, and implementing this unitary matrix on a qiskit circuit.\r\n\r\nBelow are instructions on how to use the Psfam package. It will show the process of using a PauliOrganizer object to partition strings, then calculating an expectation value on a qiskit simulator.\r\n\r\nYou'll need numpy and qiskit, so lets import those:\r\n\r\n<!---\r\n```python\r\nfrom psfam.pauli_organizer import *\r\nimport numpy as np\r\nfrom qiskit import *\r\nfrom qiskit.circuit.library import EfficientSU2\r\n```-->\r\n\r\nPick the number of qubits, and assign this to $m$. Pauli_organizer takes only the number of qubits as an argument. In its constructor, it partitions all the families. We can look at the properties of the object using properties(). This will tell us what $A$ matrix was used to generate all of the families. \r\n\r\n\r\n```python\r\nm=2\r\nPO = PauliOrganizer(m)\r\n\r\nprint(PO.properties())\r\n\r\nprint()\r\n\r\nfor fam in PO.get_families():\r\n    print(fam)\r\n```\r\n\r\n    Qubits: 2\r\n    Generating Matrix:\r\n    [1, 1]\r\n    [1, 0]\r\n    \r\n    XZ,YX,ZY\r\n    XY,ZX,YZ\r\n    IY,YI,YY\r\n    IX,XI,XX\r\n    II,IZ,ZI,ZZ\r\n    \r\n\r\nThe get\\_families() function returns a list of all of the $2^m + 1$ family objects. The final 2 objects will be the x and z families. \r\n\r\nFor normal families, there will be a permutation which generates the family, and the generating matrix for that family $A^i$ can be printed from that permutation. The following methods can be used to get the individual properties. Printing a family will show the strings in that family\r\n\r\nThe coefficients of the family will tell you how to calculate the measurement at the end. These would be the coefficients $\\alpha_{i,j}$ of the contribution of this family to the expectation value of the Hamiltonian:\r\n\r\n$$\r\n\\langle H \\rangle = \\sum_i \\alpha_{i,j} |\\langle \\psi | U_i | \\chi_j \\rangle |^2\r\n$$\r\n\r\nSince we have not entered the decomposition of the Hamiltonian, these can't be calculated yet\r\n\r\n\r\n```python\r\nfam = PO.get_families()[0]\r\n\r\nprint(fam)\r\nprint(fam.get_permutation())\r\nprint(fam.get_generating_matrix())\r\nprint(fam.get_coefficients())\r\n```\r\n\r\n    XZ,YX,ZY\r\n    [2, 3, 1]\r\n    [[1, 0], [1, 1]]\r\n    unassigned\r\n    \r\n\r\nThis information can also be accessed using properties()\r\n\r\n\r\n```python\r\nprint(fam.properties())\r\n```\r\n\r\n    Qubits: 2\r\n    Permutation:[2, 3, 1]\r\n    Coefficients: unassigned\r\n    Generating Matrix:\r\n    [1, 0]\r\n    [1, 1]\r\n    \r\n\r\nThis part can be skipped if you wish to calculate your coefficients differently. Suppose we have decomposed our Hamiltonian into pauli strings. This function I wrote to simulate this. It generates a dictionary with the decomposition of the hamiltonian into each Pauli string. $H = \\sum \\beta_i P_i$, and the dictionary is $\\{ P_i : \\beta_i \\}$\r\n\r\n\r\n```python\r\ndef gen_random_pauli_dict(m):\r\n    pauli_dict = dict()\r\n    cp = ['I']*m\r\n    coords = ([0]*m,[0]*m)\r\n    pauli_dict[\"\".join(cp)] = np.random.random()\r\n    for i in range(4 ** m):\r\n        coords = increment_coords(coords,m - 1)\r\n        cp = increment_string(cp,m - 1)\r\n        pauli_dict[\"\".join(cp)] = np.random.random()\r\n    return pauli_dict\r\n\r\nHamiltonian_decomp = gen_random_pauli_dict(m)\r\n```\r\n\r\nUse the input_pauli_decomps() function to input this into the Hamiltonian. Then, the calc_coefficients() function calculates all the coefficients of the families, and returns the set of families for convenience. Now, when we read the properties of the family, the coefficients are calculated:\r\n\r\n\r\n```python\r\nPO.input_pauli_decomps(Hamiltonian_decomp)\r\nf = PO.calc_coefficients()\r\nfam1 = f[0]\r\nprint(fam1.properties())\r\n```\r\n\r\n    Qubits: 2\r\n    Permutation:[2, 3, 1]\r\n    Coefficients: [-1.1435602789371138, 0.7861666705463014, 0.5364746867002518, -0.1790810783094393]\r\n    Generating Matrix:\r\n    [1, 0]\r\n    [1, 1]\r\n    \r\n\r\nNow lets make a sample measurement. \r\n\r\nThe family object has a method apply_to_circuit() which automatically applies the correct unitary to the circuit. We will create a circuit which has a variational form, a unitary matrix, and a measurement at the end.\r\n\r\n\r\n```python\r\nqc = QuantumCircuit(m,m)\r\n\r\nansatz = EfficientSU2(m,su2_gates=['rx', 'y'], reps=1)\r\nfor parameter in ansatz.parameters:\r\n    ansatz = ansatz.bind_parameters({parameter: np.random.random()*(2*np.pi)})\r\nqc.compose(ansatz,inplace = True)\r\nfam1.apply_to_circuit(qc)\r\nqc.measure(range(m), range(m))\r\n\r\nqc.draw('mpl')\r\n```\r\n\r\n\r\n\r\n\r\n    \r\n![png](output_15_0.png)\r\n    \r\n\r\n\r\n\r\nThis code is straight from here: https://qiskit.org/documentation/tutorials/circuits/1_getting_started_with_qiskit.html. qiskit has methods to visualize the results.\r\n\r\n\r\n```python\r\nbackend_sim = Aer.get_backend('qasm_simulator')\r\njob_sim = backend_sim.run(transpile(qc, backend_sim), shots=1024)\r\nresult_sim = job_sim.result()\r\ncounts = result_sim.get_counts(qc)\r\nprint(counts)\r\nqiskit.visualization.plot_histogram(counts)\r\n```\r\n\r\n    {'11': 933, '00': 44, '01': 24, '10': 23}\r\n    \r\n\r\n\r\n\r\n\r\n    \r\n![png](output_17_1.png)\r\n    \r\n\r\n\r\n\r\nNow that we have this result, we can use the counts of each result to get the probability of getting that result:\r\n\r\n$$\r\nP(010) = |\\langle 010 | U | \\psi \\rangle |^2\r\n$$\r\n\r\nSo we can just multiply these by the corresponding coefficients. The coefficients are in ascending binary order. The measurement for this family is calculated below:\r\n\r\n\r\n```python\r\ncfs = fam1.get_coefficients()\r\nmeasurement = 0\r\n\r\nfor i in range(2**m):\r\n    bi = bin(i)[2:]\r\n    while(len(bi)<m):\r\n        bi = '0' + bi\r\n    if(bi in counts):\r\n        measurement = measurement + counts[bi]*cfs[i]/1024\r\n\r\nprint(measurement)\r\n```\r\n\r\n    0.2523065901195194\r\n    \r\n\r\nNow this is repeated for each family and all of the results are added together\r\n\r\n\r\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -98,7 +97,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18110965,
+        "last_serial": 18146407,
         "urls": [
             {
                 "comment_text": "",
@@ -118,6 +117,131 @@
                 "upload_time": "2023-05-15T16:58:16",
                 "upload_time_iso_8601": "2023-05-15T16:58:16.164954Z",
                 "url": "https://files.pythonhosted.org/packages/33/1b/c4e3b9878b62b3c3b0e2171707bbb65876260ff15d69042555febea55262/psfam-0.0.13.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.14": {
+        "info": {
+            "author": "Ben Reggio",
+            "author_email": "benjreggio@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "License :: OSI Approved :: MIT License",
+                "Topic :: Utilities"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "psfam",
+            "package_url": "https://pypi.org/project/psfam/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/psfam/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/psfam/0.0.14/",
+            "requires_dist": null,
+            "requires_python": "",
+            "summary": "Pauli string organizer for dense operators.",
+            "version": "0.0.14",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18146407,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "9f464350930bee6dff1cf2770ceb4fbb3056f1bb2a36f7bd084159547a5a31ee",
+                    "md5": "38a9e5bc85b44862ae40c569d993d6c4",
+                    "sha256": "7d2c14a513b614562de812636a1ffbf20b46e05a0d2f90f450d8aaeb787b5c54"
+                },
+                "downloads": -1,
+                "filename": "psfam-0.0.14.tar.gz",
+                "has_sig": false,
+                "md5_digest": "38a9e5bc85b44862ae40c569d993d6c4",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 15822,
+                "upload_time": "2023-05-17T16:52:07",
+                "upload_time_iso_8601": "2023-05-17T16:52:07.887131Z",
+                "url": "https://files.pythonhosted.org/packages/9f/46/4350930bee6dff1cf2770ceb4fbb3056f1bb2a36f7bd084159547a5a31ee/psfam-0.0.14.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.15": {
+        "info": {
+            "author": "Ben Reggio",
+            "author_email": "benjreggio@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "License :: OSI Approved :: MIT License",
+                "Topic :: Utilities"
+            ],
+            "description": "# Psfam Documentation\r\n\r\nThe Psfam package is a python package which organizes the complete set of pauli strings of any size into commuting families for VQE, finding a unitary matrix from clifford operators which diagonalizes all of the strings, and implementing this unitary matrix on a qiskit circuit.\r\n\r\nBelow are instructions on how to use the Psfam package. It will show the process of using a PauliOrganizer object to partition strings, then calculating an expectation value on a qiskit simulator.\r\n\r\nYou'll need numpy and qiskit, so lets import those:\r\n\r\n```python\r\nfrom psfam.pauli_organizer import *\r\nimport numpy as np\r\nfrom qiskit import *\r\nfrom qiskit.circuit.library import EfficientSU2\r\n```\r\n\r\nPick the number of qubits, and assign this to $m$. Pauli_organizer takes only the number of qubits as an argument. In its constructor, it partitions all the families. We can look at the properties of the object using properties(). This will tell us what $A$ matrix was used to generate all of the families. \r\n\r\n\r\n```python\r\nm=2\r\nPO = PauliOrganizer(m)\r\n\r\nprint(PO.properties())\r\n\r\nprint()\r\n\r\nfor fam in PO.get_families():\r\n    print(fam)\r\n```\r\n\r\n    Qubits: 2\r\n    Generating Matrix:\r\n    [1, 1]\r\n    [1, 0]\r\n    \r\n    XZ,YX,ZY\r\n    XY,ZX,YZ\r\n    IY,YI,YY\r\n    IX,XI,XX\r\n    II,IZ,ZI,ZZ\r\n    \r\n\r\nThe get\\_families() function returns a list of all of the $2^m + 1$ family objects. The final 2 objects will be the x and z families. \r\n\r\nFor normal families, there will be a permutation which generates the family, and the generating matrix for that family $A^i$ can be printed from that permutation. The following methods can be used to get the individual properties. Printing a family will show the strings in that family\r\n\r\nThe coefficients of the family will tell you how to calculate the measurement at the end. These would be the coefficients $\\alpha_{i,j}$ of the contribution of this family to the expectation value of the Hamiltonian:\r\n\r\n$$\r\n\\langle H \\rangle = \\sum_i \\alpha_{i,j} |\\langle \\psi | U_i | \\chi_j \\rangle |^2\r\n$$\r\n\r\nSince we have not entered the decomposition of the Hamiltonian, these can't be calculated yet\r\n\r\n\r\n```python\r\nfam = PO.get_families()[0]\r\n\r\nprint(fam)\r\nprint(fam.get_permutation())\r\nprint(fam.get_generating_matrix())\r\nprint(fam.get_coefficients())\r\n```\r\n\r\n    XZ,YX,ZY\r\n    [2, 3, 1]\r\n    [[1, 0], [1, 1]]\r\n    unassigned\r\n    \r\n\r\nThis information can also be accessed using properties()\r\n\r\n\r\n```python\r\nprint(fam.properties())\r\n```\r\n\r\n    Qubits: 2\r\n    Permutation:[2, 3, 1]\r\n    Coefficients: unassigned\r\n    Generating Matrix:\r\n    [1, 0]\r\n    [1, 1]\r\n    \r\n\r\nThis part can be skipped if you wish to calculate your coefficients differently. Suppose we have decomposed our Hamiltonian into pauli strings. This function I wrote to simulate this. It generates a dictionary with the decomposition of the hamiltonian into each Pauli string. $H = \\sum \\beta_i P_i$, and the dictionary is $\\{ P_i : \\beta_i \\}$\r\n\r\n\r\n```python\r\ndef gen_random_pauli_dict(m):\r\n    pauli_dict = dict()\r\n    cp = ['I']*m\r\n    coords = ([0]*m,[0]*m)\r\n    pauli_dict[\"\".join(cp)] = np.random.random()\r\n    for i in range(4 ** m):\r\n        coords = increment_coords(coords,m - 1)\r\n        cp = increment_string(cp,m - 1)\r\n        pauli_dict[\"\".join(cp)] = np.random.random()\r\n    return pauli_dict\r\n\r\nHamiltonian_decomp = gen_random_pauli_dict(m)\r\n```\r\n\r\nUse the input_pauli_decomps() function to input this into the Hamiltonian. Then, the calc_coefficients() function calculates all the coefficients of the families, and returns the set of families for convenience. Now, when we read the properties of the family, the coefficients are calculated:\r\n\r\n\r\n```python\r\nPO.input_pauli_decomps(Hamiltonian_decomp)\r\nf = PO.calc_coefficients()\r\nfam1 = f[0]\r\nprint(fam1.properties())\r\n```\r\n\r\n    Qubits: 2\r\n    Permutation:[2, 3, 1]\r\n    Coefficients: [-1.1435602789371138, 0.7861666705463014, 0.5364746867002518, -0.1790810783094393]\r\n    Generating Matrix:\r\n    [1, 0]\r\n    [1, 1]\r\n    \r\n\r\nNow lets make a sample measurement. \r\n\r\nThe family object has a method apply_to_circuit() which automatically applies the correct unitary to the circuit. We will create a circuit which has a variational form, a unitary matrix, and a measurement at the end.\r\n\r\n\r\n```python\r\nqc = QuantumCircuit(m,m)\r\n\r\nansatz = EfficientSU2(m,su2_gates=['rx', 'y'], reps=1)\r\nfor parameter in ansatz.parameters:\r\n    ansatz = ansatz.bind_parameters({parameter: np.random.random()*(2*np.pi)})\r\nqc.compose(ansatz,inplace = True)\r\nfam1.apply_to_circuit(qc)\r\nqc.measure(range(m), range(m))\r\n\r\nqc.draw('mpl')\r\n```\r\n\r\n\r\n\r\n\r\n    \r\n![](https://raw.githubusercontent.com/Benjreggio/psfamtest/blob/main/output_15_0.png)\r\n    \r\n\r\n\r\n\r\nThis code is straight from here: https://qiskit.org/documentation/tutorials/circuits/1_getting_started_with_qiskit.html. qiskit has methods to visualize the results.\r\n\r\n\r\n```python\r\nbackend_sim = Aer.get_backend('qasm_simulator')\r\njob_sim = backend_sim.run(transpile(qc, backend_sim), shots=1024)\r\nresult_sim = job_sim.result()\r\ncounts = result_sim.get_counts(qc)\r\nprint(counts)\r\nqiskit.visualization.plot_histogram(counts)\r\n```\r\n\r\n    {'11': 933, '00': 44, '01': 24, '10': 23}\r\n    \r\n\r\n\r\n\r\n\r\n    \r\n![png](output_17_1.png)\r\n    \r\n\r\n\r\n\r\nNow that we have this result, we can use the counts of each result to get the probability of getting that result:\r\n\r\n$$\r\nP(010) = |\\langle 010 | U | \\psi \\rangle |^2\r\n$$\r\n\r\nSo we can just multiply these by the corresponding coefficients. The coefficients are in ascending binary order. The measurement for this family is calculated below:\r\n\r\n\r\n```python\r\ncfs = fam1.get_coefficients()\r\nmeasurement = 0\r\n\r\nfor i in range(2**m):\r\n    bi = bin(i)[2:]\r\n    while(len(bi)<m):\r\n        bi = '0' + bi\r\n    if(bi in counts):\r\n        measurement = measurement + counts[bi]*cfs[i]/1024\r\n\r\nprint(measurement)\r\n```\r\n\r\n    0.2523065901195194\r\n    \r\n\r\nNow this is repeated for each family and all of the results are added together\r\n\r\n\r\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "psfam",
+            "package_url": "https://pypi.org/project/psfam/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/psfam/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/psfam/0.0.15/",
+            "requires_dist": null,
+            "requires_python": "",
+            "summary": "Pauli string organizer for dense operators.",
+            "version": "0.0.15",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18146407,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2a6ff5da30c6980d8a1c89be24f481acac1d80ba9e26dfdc06f3e1ccba00c494",
+                    "md5": "63b72b3282d979f9942bdbedd28600f5",
+                    "sha256": "77b537b31be6f30c2b3b976e58ece5f1eb6184c4e1245abaaf7aeb3b73ae1b5f"
+                },
+                "downloads": -1,
+                "filename": "psfam-0.0.15.tar.gz",
+                "has_sig": false,
+                "md5_digest": "63b72b3282d979f9942bdbedd28600f5",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 15813,
+                "upload_time": "2023-05-17T22:45:53",
+                "upload_time_iso_8601": "2023-05-17T22:45:53.792299Z",
+                "url": "https://files.pythonhosted.org/packages/2a/6f/f5da30c6980d8a1c89be24f481acac1d80ba9e26dfdc06f3e1ccba00c494/psfam-0.0.15.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
