@@ -1,0 +1,98 @@
+{
+    "0.1.0": {
+        "info": {
+            "author": "",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# Gridlight\n\nThis is a fork from Chris Ardernes [Gridfinder repository](https://github.com/carderne/gridfinder).\n\nGridlight is a module to help assess energy access levels of human settlmenents for any area of interest.\n\nGridlight uses the nighttime lights (NTL) data from the [Visible Infrared Imaging Radiometer Suite (VIIRS)](https://www.earthdata.nasa.gov/learn/backgrounders/nighttime-lights) instruments aboard the NASA/NOAA Suomi National Polar-orbiting Partnership (Suomi NPP) and NOAA-20 satellites.\n\nThe algorithm first predicts a mask representing electricity access for each human settlement. \nThen a minimum spanning tree is calculated which links the previosuly identified areas, using a many-to-many variant Dijkstra algorithm and using existing road networks as a cost function. Adapted from [this work from Facebook](https://github.com/facebookresearch/many-to-many-dijkstra). \n\n## Input requirements\nGridlight requires the following data sources:\n- VIIRS data, monthly and annual composites (more information [here](https://payneinstitute.mines.edu/eog/nighttime-lights/)). The script uses the API access. For this, you need to create a login. You can set this [here](https://eogdata.mines.edu/products/register/).\n- Population data. HRSL works well, which can be donwloaded [here](https://ciesin.columbia.edu/data/hrsl/). \n- OSM highway data, most easily available here [geofabrik](https://download.geofabrik.de/)\n- Existing grids\n\n## Get started\n\n## Install with pip\n\nJust type \n\n```\npip install gridfinder\n```\n\n## From Github\n\nClone the repo: \n\n```\ngit clone https://github.com/carderne/gridfinder.git\n```\n\nFor the installation of the Rtree dependency the `libspatialindex-dev` library is necessary. \n\nOn Ubuntu and Mac, install it with:\n```shell script\n$ sudo apt install libspatialindex-dev\n```\n\nOn Mac OS X, you need `spatialindex` instead:\n\n```shell script\n$ brew install spatialindex\n```\n\nThis package uses Poetry for dependency management. You can install it [here](https://python-poetry.org/docs/#installation). You can create a virtual environment (called .venv) and install all required dependencies listed in poetry.lock using the following:\n\n```shell script\n$ poetry shell\n$ poetry install\n```\n\n## Creating credentials\nThere are two credentials which are necessary to run Gridlight. Both have to be stored in a file called config_local.json. \n\n1. You have to create a login to access the VIIRS data. You can create the login here. Then add the PW and username into the config_local.json file\n\n2. To store the input and resulting data, the package uses cloud buckets. You have to create a bucket and add the credentials into the config file. \n\nYour config_local.json file should then look like this:\n\n```\n{\n\n   \"viirs_repo_access\": {\n        \"username\": \"<USER EMAIL>\",\n        \"password\": \"<PW>\"\n    },\n   \"remote_storage_config\": {\n        \"key\": \"<KEY>\",\n        \"secret\": \"<SECRET>\",\n        \"bucket\": \"<BUCKET_NAME>\",\n        \"base_path\": \"<BUCKET_BASE_PATH>\",\n        \"provider\": \"google_storage\"\n    }\n}\n```\n\n## Running the script\n\nThere are three steps\n\n1. Download the VIIRS data which covers your area of interest.\n\nFirst we have to download the nightlight data. This is done using the run_download_viirs_imagery.py script. \n\n```\npython run_download_viirs_imagery.py --start-date 2021-01-01 --end-date 2021-12-31\n--tiles \"75N060W\" --tiles \"00N060W\" \n```\n\nTo get a description of all arguments, you can type python run_download_viirs_imagery.py --help\n\nThis script downloads the relevant VIIRS data into the data/raw/nightlight_imagery directory and pushes it to the cloud storage bucket \n\nFor the start and end dates, the days don\u00b4t matter. The month you specify will be fully downloaded independent on the day specified. \n\nThere are a total of six tiles: They either go from the equator north or south (see images below and link [here](https://eogdata.mines.edu/download_dnb_composites.html)):\n\n\n- 00N 060E (Asia and Australia, south of the equator)\n- 00N 060W (Africa south of the equator) \n- 00N 180W (South America)\n- 75N 060E (Most of Asia, north of the equator)\n- 75N 060W (Africa north of the equator, including Europe)\n- 75N 180W (North America)\n\nYou have to give all the tiles which your area of interest covers. For example, if you want to run Gridlight for South Africa, you need the 00N060W tile. If you are interested in Ethiopia, you need both tiles 00N060W and 75N060W. If more than one tile is given as input, the script will fuse them together. So it\u00b4s important that you run the download script with all the tiles you need as argument. \n\nImportant: Depending on the start and end dates, the download can take several hours.\n\n2. Add other necessary datasets\n\nThe script requires a population as well as a road dataset. Both have to be stored into the data/ground_truth directory. \n- An area of interest file: This has to be a vector file outlining the area of interest you want to run Gridlight for.\n- For population, any raster file can be used. The population file is only used to filter out areas which are not populated. The actual population value any of those datasets would have are not taken into consideration. Importantly, a pixel value of 0 refers to 0 population. \nWe recommend using HRSL data, which can be downloaded [here](https://ciesin.columbia.edu/data/hrsl/) or from humdata.org (e.g. [here](https://data.humdata.org/dataset/highresolutionpopulationdensitymaps-sle) for Sierra Leone.\n\n- OSM Road data: For the grid prediction, road data can be used to guide the MV power line prediciton. The OSM Highway data can be downloaded here for different countries: [Geofabrik](https://download.geofabrik.de/) \n- If you already have a power grid file, you can specify it. It will be appended to the resulting estimate.\n\n\n3. Run Gridlight\n\nNow you can run the Gridlight script, referencing the datasets above.\n\nTo see all input arguments and a description, type:\n\npython run_gridfinder.py --help\n\nFor example, a function call might look like this:\n```\npython run_gridfinder.py --area-of-interest-data nigeria/nigeria-kano.geojson --roads-data nigeria/nigeria-roads-200101.gpkg --population-data nigeria/population_nga_2018-10-01.tif --grid-truth-data nigeria/nigeriafinal.geojson  --nightlight-data nightlight_imagery/75N060W --nightlight-output nigeria/ntl_clipped\n```\n\n## Example output\n\nThe script provides a set of outputs. TBD",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "vida-gridlight",
+            "package_url": "https://pypi.org/project/vida-gridlight/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/vida-gridlight/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/vida-gridlight/0.1.0/",
+            "requires_dist": [
+                "scikit-image (>=0.20.0,<0.21.0)",
+                "geopandas (>=0.13.0,<0.14.0)",
+                "rasterio (>=1.3.6,<2.0.0)",
+                "accsr (==0.3.4)",
+                "beautifulsoup4 (>=4.12.2,<5.0.0)",
+                "python-keycloak (>=2.16.2,<3.0.0)",
+                "shapely (>=2.0.1,<3.0.0)",
+                "scikit-learn (>=1.2.2,<2.0.0)"
+            ],
+            "requires_python": ">=3.8,<3.12",
+            "summary": "A package to predict electrification status of settlements and MV power line predictions using NASA VIIRS nightlight imagery.",
+            "version": "0.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18169483,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "063782336b3e139db98468b402a10754a635bebde7996e261d1c3e97de6f4661",
+                    "md5": "55cfe44c9ce8a8070b0d41461529b9f1",
+                    "sha256": "8779bc8713aadf421020e14f6ad8bc1590f135c1b6f1c35fad442a344409af0a"
+                },
+                "downloads": -1,
+                "filename": "vida_gridlight-0.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "55cfe44c9ce8a8070b0d41461529b9f1",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8,<3.12",
+                "size": 22704,
+                "upload_time": "2023-05-19T12:07:41",
+                "upload_time_iso_8601": "2023-05-19T12:07:41.213367Z",
+                "url": "https://files.pythonhosted.org/packages/06/37/82336b3e139db98468b402a10754a635bebde7996e261d1c3e97de6f4661/vida_gridlight-0.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2dbf60484e0c3bf2d37ee24d24eea91953c2f2756ce623616a8d6dd9adc870ba",
+                    "md5": "76a793304339861baddf714021b54cd6",
+                    "sha256": "748fe53fdfa29cde1626e190d0977aaab442e76712a73f83a797e1a5c7b7a140"
+                },
+                "downloads": -1,
+                "filename": "vida_gridlight-0.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "76a793304339861baddf714021b54cd6",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8,<3.12",
+                "size": 21005,
+                "upload_time": "2023-05-19T12:07:42",
+                "upload_time_iso_8601": "2023-05-19T12:07:42.959775Z",
+                "url": "https://files.pythonhosted.org/packages/2d/bf/60484e0c3bf2d37ee24d24eea91953c2f2756ce623616a8d6dd9adc870ba/vida_gridlight-0.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
