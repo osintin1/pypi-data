@@ -47,7 +47,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18111057,
+        "last_serial": 18155958,
         "urls": [
             {
                 "comment_text": "",
@@ -144,7 +144,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18111057,
+        "last_serial": 18155958,
         "urls": [
             {
                 "comment_text": "",
@@ -241,7 +241,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18111057,
+        "last_serial": 18155958,
         "urls": [
             {
                 "comment_text": "",
@@ -343,7 +343,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18111057,
+        "last_serial": 18155958,
         "urls": [
             {
                 "comment_text": "",
@@ -407,7 +407,6 @@
                 "Programming Language :: Python :: 3.9",
                 "Topic :: Scientific/Engineering"
             ],
-            "description": "# OQpy: Generating OpenQASM 3 + OpenPulse in Python\n\nThe goal of `oqpy` (\"ock-pie\") is to make it easy to generate OpenQASM 3 + OpenPulse in Python. The\n`oqpy` library builds off of the [`openqasm3`][openqasm3] and [`openpulse`][openpulse] packages,\nwhich serve as Python reference implementations of the _abstract syntax tree_ (AST) for the\nOpenQASM 3 and OpenPulse grammars.\n\n[openqasm3]: https://pypi.org/project/openqasm3/\n[openpulse]: https://pypi.org/project/openpulse/\n\n## What are OpenQASM 3 and OpenPulse?\n\nOpenQASM is an imperative programming language designed for near-term quantum computing algorithms\nand applications. [OpenQASM 3][openqasm3-docs] extends the original specification by adding support\nfor classical logic, explicit timing, and pulse-level definitions. The latter is enabled via the use\nof [_calibration grammars_][pulses-docs] which allow quantum hardware builders to extend the language\nto support hardware-specific directives via `cal` and `defcal` blocks. One such grammar is\n[OpenPulse][openpulse-docs], which provides the instructions required for pulse-based control of\nmany common quantum computing architectures (e.g. superconducting qubits).\n\n[openqasm3-docs]: https://openqasm.com/\n[pulses-docs]: https://openqasm.com/language/pulses.html\n[openpulse-docs]: https://openqasm.com/language/openpulse.html\n\n## Installation and Getting Started\n\nOQpy can be installed from [PyPI][pypi] or from source in an environment with Python 3.7 or greater.\n\nTo install it from PyPI (via `pip`), do the following:\n\n```\npip install oqpy\n```\n\nTo instead install OQpy from source, do the following from within the repository after cloning it:\n\n```\npoetry install\n```\n\nNext, check out the following example to get a sense of the kinds of programs we can write with\nOQpy.\n\n[pypi]: https://pypi.org/project/oqpy/\n\n## Example: Ramsey Interferometry\n\nA common and useful experiment for qubit characterization is [Ramsey interferometry][ramsey],\nwhich can be used for two purposes: performing a careful measurement of a qubit\u2019s resonant\nfrequency, and for investigating how long a qubit retains its coherence. In a typical Ramsey\nexperiment, one varies the length of a delay between the two \u03c0/2 pulses, and then measures the state\nof the qubit. Below, we'll create a Ramsey interferometry experiment in OpenQASM 3 using OQpy.\nAs part of this, we\u2019ll use the OpenPulse grammar to allow this experiment to specify its operation\nimplementations at the calibrated pulse level.\n\n[ramsey]: https://en.wikipedia.org/wiki/Ramsey_interferometry\n\n```python\nimport oqpy\nprog = oqpy.Program()  # create a new oqpy program\n\n# Declare frames: transmon driving frame and readout receive/transmit frames\nxy_frame = oqpy.FrameVar(oqpy.PortVar(\"dac0\"), 6.431e9, name=\"xy_frame\")\nrx_frame = oqpy.FrameVar(oqpy.PortVar(\"adc0\"), 5.752e9, name=\"rx_frame\")\ntx_frame = oqpy.FrameVar(oqpy.PortVar(\"dac1\"), 5.752e9, name=\"tx_frame\")\n\n# Declare the type of waveform we are working with\nconstant_waveform = oqpy.declare_waveform_generator(\n    \"constant\",\n    [(\"length\", oqpy.duration),\n     (\"amplitude\", oqpy.float64)],\n)\ngaussian_waveform = oqpy.declare_waveform_generator(\n    \"gaussian\",\n    [(\"length\", oqpy.duration),\n     (\"sigma\", oqpy.duration),\n     (\"amplitude\", oqpy.float64)],\n)\n\n# Provide gate / operation definitions as defcals\nqubit = oqpy.PhysicalQubits[1]  # get physical qubit 1\n\nwith oqpy.defcal(prog, qubit, \"reset\"):\n    prog.delay(1e-3)  # reset to ground state by waiting 1 ms\n\nwith oqpy.defcal(prog, qubit, \"measure\"):\n    prog.play(tx_frame, constant_waveform(2.4e-6, 0.2))\n    prog.capture(rx_frame, constant_waveform(2.4e-6, 1))\n\nwith oqpy.defcal(prog, qubit, \"x90\"):\n    prog.play(xy_frame, gaussian_waveform(32e-9, 8e-9, 0.2063))\n\n# Loop over shots (i.e. repetitions)\ndelay_time = oqpy.DurationVar(0, \"delay_time\")  # initialize a duration\nwith oqpy.ForIn(prog, range(100), \"shot_index\"):\n    prog.set(delay_time, 0)                     # reset delay time to zero\n    # Loop over delays\n    with oqpy.ForIn(prog, range(101), \"delay_index\"):\n        (prog.reset(qubit)                      # prepare in ground state\n         .gate(qubit, \"x90\")                    # pi/2 pulse (90\u00b0 rotation about the x-axis)\n         .delay(delay_time, qubit)              # variable delay\n         .gate(qubit, \"x90\")                    # pi/2 pulse (90\u00b0 rotation about the x-axis)\n         .measure(qubit)                        # final measurement\n         .increment(delay_time, 100e-9))        # increase delay by 100 ns\n```\n\nRunning `print(prog.to_qasm(encal_declarations=True))` generates the following OpenQASM:\n\n```qasm3\nOPENQASM 3.0;\ndefcalgrammar \"openpulse\";\ncal {\n    extern constant(duration, float[64]) -> waveform;\n    extern gaussian(duration, duration, float[64]) -> waveform;\n    port dac1;\n    port adc0;\n    port dac0;\n    frame tx_frame = newframe(dac1, 5752000000.0, 0);\n    frame rx_frame = newframe(adc0, 5752000000.0, 0);\n    frame xy_frame = newframe(dac0, 6431000000.0, 0);\n}\nduration delay_time = 0.0ns;\ndefcal reset $1 {\n    delay[1000000.0ns];\n}\ndefcal measure $1 {\n    play(tx_frame, constant(2400.0ns, 0.2));\n    capture(rx_frame, constant(2400.0ns, 1));\n}\ndefcal x90 $1 {\n    play(xy_frame, gaussian(32.0ns, 8.0ns, 0.2063));\n}\nfor int shot_index in [0:99] {\n    delay_time = 0.0ns;\n    for int delay_index in [0:100] {\n        reset $1;\n        x90 $1;\n        delay[delay_time] $1;\n        x90 $1;\n        measure $1;\n        delay_time += 100.0ns;\n    }\n}\n```\n\n## Contributing\n\nWe welcome contributions to OQpy including bug fixes, feature requests, etc. To get started, check\nout our [contributing guidelines](CONTRIBUTING.md).\n\n## Citation\n\nIf you use OQpy in your work or research, please cite it using the metadata in the\n[`CITATION.cff`][citation-file] file in the repository (which includes a\n[Zenodo DOI][zenodo-doi]). You can copy the citation in BibTeX format using the\n[\"Cite this repository\" widget][citation-widget] in the About section of the\n[repository page on GitHub][github].\n\n[zenodo-doi]: https://doi.org/10.5281/zenodo.7349265\n[citation-file]: https://github.com/openqasm/oqpy/blob/main/CITATION.cff\n[citation-widget]: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-citation-files\n[github]: https://github.com/openqasm/oqpy\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -443,10 +442,10 @@
             "requires_python": ">=3.7,<4.0",
             "summary": "Generating OpenQASM 3 + OpenPulse in Python",
             "version": "0.2.0",
-            "yanked": false,
-            "yanked_reason": null
+            "yanked": true,
+            "yanked_reason": "Doesn't install."
         },
-        "last_serial": 18111057,
+        "last_serial": 18155958,
         "urls": [
             {
                 "comment_text": "",
@@ -466,8 +465,8 @@
                 "upload_time": "2023-05-15T17:06:51",
                 "upload_time_iso_8601": "2023-05-15T17:06:51.722352Z",
                 "url": "https://files.pythonhosted.org/packages/57/64/3c566224fa9b8cba5c51048baef1a2c983a564c8f2f2df495f15104b33f0/oqpy-0.2.0-py3-none-any.whl",
-                "yanked": false,
-                "yanked_reason": null
+                "yanked": true,
+                "yanked_reason": "Doesn't install."
             },
             {
                 "comment_text": "",
@@ -487,6 +486,109 @@
                 "upload_time": "2023-05-15T17:06:53",
                 "upload_time_iso_8601": "2023-05-15T17:06:53.212291Z",
                 "url": "https://files.pythonhosted.org/packages/fc/55/ffa1e9171b49ef0c0446713711c9639e6820571457b699ab71d96c0f3ea1/oqpy-0.2.0.tar.gz",
+                "yanked": true,
+                "yanked_reason": "Doesn't install."
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.1": {
+        "info": {
+            "author": "OQpy Contributors",
+            "author_email": "oqpy-contributors@amazon.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Intended Audience :: Developers",
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: Apache Software License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Scientific/Engineering"
+            ],
+            "description": "# OQpy: Generating OpenQASM 3 + OpenPulse in Python\n\nThe goal of `oqpy` (\"ock-pie\") is to make it easy to generate OpenQASM 3 + OpenPulse in Python. The\n`oqpy` library builds off of the [`openqasm3`][openqasm3] and [`openpulse`][openpulse] packages,\nwhich serve as Python reference implementations of the _abstract syntax tree_ (AST) for the\nOpenQASM 3 and OpenPulse grammars.\n\n[openqasm3]: https://pypi.org/project/openqasm3/\n[openpulse]: https://pypi.org/project/openpulse/\n\n## What are OpenQASM 3 and OpenPulse?\n\nOpenQASM is an imperative programming language designed for near-term quantum computing algorithms\nand applications. [OpenQASM 3][openqasm3-docs] extends the original specification by adding support\nfor classical logic, explicit timing, and pulse-level definitions. The latter is enabled via the use\nof [_calibration grammars_][pulses-docs] which allow quantum hardware builders to extend the language\nto support hardware-specific directives via `cal` and `defcal` blocks. One such grammar is\n[OpenPulse][openpulse-docs], which provides the instructions required for pulse-based control of\nmany common quantum computing architectures (e.g. superconducting qubits).\n\n[openqasm3-docs]: https://openqasm.com/\n[pulses-docs]: https://openqasm.com/language/pulses.html\n[openpulse-docs]: https://openqasm.com/language/openpulse.html\n\n## Installation and Getting Started\n\nOQpy can be installed from [PyPI][pypi] or from source in an environment with Python 3.7 or greater.\n\nTo install it from PyPI (via `pip`), do the following:\n\n```\npip install oqpy\n```\n\nTo instead install OQpy from source, do the following from within the repository after cloning it:\n\n```\npoetry install\n```\n\nNext, check out the following example to get a sense of the kinds of programs we can write with\nOQpy.\n\n[pypi]: https://pypi.org/project/oqpy/\n\n## Example: Ramsey Interferometry\n\nA common and useful experiment for qubit characterization is [Ramsey interferometry][ramsey],\nwhich can be used for two purposes: performing a careful measurement of a qubit\u2019s resonant\nfrequency, and for investigating how long a qubit retains its coherence. In a typical Ramsey\nexperiment, one varies the length of a delay between the two \u03c0/2 pulses, and then measures the state\nof the qubit. Below, we'll create a Ramsey interferometry experiment in OpenQASM 3 using OQpy.\nAs part of this, we\u2019ll use the OpenPulse grammar to allow this experiment to specify its operation\nimplementations at the calibrated pulse level.\n\n[ramsey]: https://en.wikipedia.org/wiki/Ramsey_interferometry\n\n```python\nimport oqpy\nprog = oqpy.Program()  # create a new oqpy program\n\n# Declare frames: transmon driving frame and readout receive/transmit frames\nxy_frame = oqpy.FrameVar(oqpy.PortVar(\"dac0\"), 6.431e9, name=\"xy_frame\")\nrx_frame = oqpy.FrameVar(oqpy.PortVar(\"adc0\"), 5.752e9, name=\"rx_frame\")\ntx_frame = oqpy.FrameVar(oqpy.PortVar(\"dac1\"), 5.752e9, name=\"tx_frame\")\n\n# Declare the type of waveform we are working with\nconstant_waveform = oqpy.declare_waveform_generator(\n    \"constant\",\n    [(\"length\", oqpy.duration),\n     (\"amplitude\", oqpy.float64)],\n)\ngaussian_waveform = oqpy.declare_waveform_generator(\n    \"gaussian\",\n    [(\"length\", oqpy.duration),\n     (\"sigma\", oqpy.duration),\n     (\"amplitude\", oqpy.float64)],\n)\n\n# Provide gate / operation definitions as defcals\nqubit = oqpy.PhysicalQubits[1]  # get physical qubit 1\n\nwith oqpy.defcal(prog, qubit, \"reset\"):\n    prog.delay(1e-3)  # reset to ground state by waiting 1 ms\n\nwith oqpy.defcal(prog, qubit, \"measure\"):\n    prog.play(tx_frame, constant_waveform(2.4e-6, 0.2))\n    prog.capture(rx_frame, constant_waveform(2.4e-6, 1))\n\nwith oqpy.defcal(prog, qubit, \"x90\"):\n    prog.play(xy_frame, gaussian_waveform(32e-9, 8e-9, 0.2063))\n\n# Loop over shots (i.e. repetitions)\ndelay_time = oqpy.DurationVar(0, \"delay_time\")  # initialize a duration\nwith oqpy.ForIn(prog, range(100), \"shot_index\"):\n    prog.set(delay_time, 0)                     # reset delay time to zero\n    # Loop over delays\n    with oqpy.ForIn(prog, range(101), \"delay_index\"):\n        (prog.reset(qubit)                      # prepare in ground state\n         .gate(qubit, \"x90\")                    # pi/2 pulse (90\u00b0 rotation about the x-axis)\n         .delay(delay_time, qubit)              # variable delay\n         .gate(qubit, \"x90\")                    # pi/2 pulse (90\u00b0 rotation about the x-axis)\n         .measure(qubit)                        # final measurement\n         .increment(delay_time, 100e-9))        # increase delay by 100 ns\n```\n\nRunning `print(prog.to_qasm(encal_declarations=True))` generates the following OpenQASM:\n\n```qasm3\nOPENQASM 3.0;\ndefcalgrammar \"openpulse\";\ncal {\n    extern constant(duration, float[64]) -> waveform;\n    extern gaussian(duration, duration, float[64]) -> waveform;\n    port dac1;\n    port adc0;\n    port dac0;\n    frame tx_frame = newframe(dac1, 5752000000.0, 0);\n    frame rx_frame = newframe(adc0, 5752000000.0, 0);\n    frame xy_frame = newframe(dac0, 6431000000.0, 0);\n}\nduration delay_time = 0.0ns;\ndefcal reset $1 {\n    delay[1000000.0ns];\n}\ndefcal measure $1 {\n    play(tx_frame, constant(2400.0ns, 0.2));\n    capture(rx_frame, constant(2400.0ns, 1));\n}\ndefcal x90 $1 {\n    play(xy_frame, gaussian(32.0ns, 8.0ns, 0.2063));\n}\nfor int shot_index in [0:99] {\n    delay_time = 0.0ns;\n    for int delay_index in [0:100] {\n        reset $1;\n        x90 $1;\n        delay[delay_time] $1;\n        x90 $1;\n        measure $1;\n        delay_time += 100.0ns;\n    }\n}\n```\n\n## Contributing\n\nWe welcome contributions to OQpy including bug fixes, feature requests, etc. To get started, check\nout our [contributing guidelines](CONTRIBUTING.md).\n\n## Citation\n\nIf you use OQpy in your work or research, please cite it using the metadata in the\n[`CITATION.cff`][citation-file] file in the repository (which includes a\n[Zenodo DOI][zenodo-doi]). You can copy the citation in BibTeX format using the\n[\"Cite this repository\" widget][citation-widget] in the About section of the\n[repository page on GitHub][github].\n\n[zenodo-doi]: https://doi.org/10.5281/zenodo.7349265\n[citation-file]: https://github.com/openqasm/oqpy/blob/main/CITATION.cff\n[citation-widget]: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-citation-files\n[github]: https://github.com/openqasm/oqpy\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/openqasm/oqpy",
+            "keywords": "openqasm,quantum",
+            "license": "Apache-2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "oqpy",
+            "package_url": "https://pypi.org/project/oqpy/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/oqpy/",
+            "project_urls": {
+                "Homepage": "https://github.com/openqasm/oqpy",
+                "Repository": "https://github.com/openqasm/oqpy"
+            },
+            "release_url": "https://pypi.org/project/oqpy/0.2.1/",
+            "requires_dist": [
+                "mypy-extensions (>=0.2.0)",
+                "numpy (>=1.14.5) ; python_version >= \"3.7\" and python_version < \"3.8\"",
+                "numpy (>=1.17.3) ; python_version >= \"3.8\" and python_version < \"3.9\"",
+                "numpy (>=1.19.3) ; python_version >= \"3.9\" and python_version < \"3.10\"",
+                "numpy (>=1.21.6) ; python_version >= \"3.10\" and python_version < \"3.11\"",
+                "numpy (>=1.22.0) ; python_version >= \"3.11\"",
+                "openpulse (>=0.4.1,<0.5.0)",
+                "typing-extensions (>=3.10.0.2) ; python_version < \"3.8\""
+            ],
+            "requires_python": ">=3.7,<4.0",
+            "summary": "Generating OpenQASM 3 + OpenPulse in Python",
+            "version": "0.2.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18155958,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5fd4ba3edf21cc696d4c332b9409c2ca1dd42dd3888e5baa7951a4a30f1a5cc4",
+                    "md5": "e4be27a313fe569a824f1a70e559dd86",
+                    "sha256": "0907822f0cfdae3e22f50464c66d20af9b8a1212353a2b9cac881ac22fbc3f4b"
+                },
+                "downloads": -1,
+                "filename": "oqpy-0.2.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "e4be27a313fe569a824f1a70e559dd86",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7,<4.0",
+                "size": 30579,
+                "upload_time": "2023-05-18T15:20:20",
+                "upload_time_iso_8601": "2023-05-18T15:20:20.032709Z",
+                "url": "https://files.pythonhosted.org/packages/5f/d4/ba3edf21cc696d4c332b9409c2ca1dd42dd3888e5baa7951a4a30f1a5cc4/oqpy-0.2.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "89c16bb51b55d960014a92800f9e017c7587fd509a30fee7bf5a6380fcb4263d",
+                    "md5": "8906f718488e5c5d7237705661e079ed",
+                    "sha256": "83a0d98ad95edffe74fbf843ea0825599eff7941e7b2cd5d0f23e9eab5a91853"
+                },
+                "downloads": -1,
+                "filename": "oqpy-0.2.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "8906f718488e5c5d7237705661e079ed",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7,<4.0",
+                "size": 26402,
+                "upload_time": "2023-05-18T15:20:22",
+                "upload_time_iso_8601": "2023-05-18T15:20:22.273635Z",
+                "url": "https://files.pythonhosted.org/packages/89/c1/6bb51b55d960014a92800f9e017c7587fd509a30fee7bf5a6380fcb4263d/oqpy-0.2.1.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

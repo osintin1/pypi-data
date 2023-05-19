@@ -31,7 +31,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17756795,
+        "last_serial": 18158160,
         "urls": [
             {
                 "comment_text": "",
@@ -96,7 +96,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17756795,
+        "last_serial": 18158160,
         "urls": [
             {
                 "comment_text": "",
@@ -182,7 +182,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17756795,
+        "last_serial": 18158160,
         "urls": [
             {
                 "comment_text": "",
@@ -268,7 +268,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17756795,
+        "last_serial": 18158160,
         "urls": [
             {
                 "comment_text": "",
@@ -321,7 +321,6 @@
             "author_email": "",
             "bugtrack_url": null,
             "classifiers": [],
-            "description": "\n<p align=\"center\">\n  <img src=\"assets/logo.png\" width=\"650\">\n</p>\n\n![GitHub tag (latest by date)](https://img.shields.io/github/v/tag/Xylambda/torchfitter?label=VERSION&style=badge)\n![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/Xylambda/torchfitter?style=badge)\n![GitHub issues](https://img.shields.io/github/issues/Xylambda/torchfitter?style=badge)\n![workflow](https://github.com/Xylambda/torchfitter/actions/workflows/cicd.yml/badge.svg)\n[![doc](https://img.shields.io/badge/DOCS-documentation-blue.svg?style=badge)](https://xylambda.github.io/torchfitter/)\n[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg?style=badge)](https://github.com/psf/black)\n\n`torchfitter` is a simple library to ease the training of PyTorch models. It \nfeatures a class called `Trainer` that includes the basic functionality to fit \nmodels in a Keras-like style.\n\nInternally, `torchfitter` leverages the power of [accelerate](https://huggingface.co/docs/accelerate/)\nto handle the device management.\n\nThe library also provides a callbacks API that can be used to interact with\nthe model during the training process, as well as a set of basic regularization\nprocedures.\n\n## Installation\n**Normal user**\n```bash\npip install torchfitter\n```\n\nThis library does not ship CUDA nor XLA. Follow the \n[official PyTorch documentation](https://pytorch.org/get-started/locally/) for\nmore information about how to install CUDA binaries.\n\n**Developer**\n```bash\ngit clone https://github.com/Xylambda/torchfitter.git\npip install -e torchfitter/. -r torchfitter/requirements-dev.txt\n```\n\n## Tests\nTo run the tests you must install the library as a `developer`.\n```bash\ncd torchfitter/\npytest -v tests/\n```\n\n## Features\n\n|                          | Supported | Not supported | Planned |\n|--------------------------|-----------|---------------|---------|\n|      Basic training loop |     x     |               |         |\n|        Gradient Clipping |     x     |               |         |\n|    Gradient Accumulation |     x     |               |         |\n|     Multi-device support |     x     |               |         |\n|           Regularization |     x     |               |         |\n|  In-loop metrics support |     x     |               |         |\n| Mixed precision training |     x     |               |         |\n|         Callbacks System |     x     |               |         |\n|    Hyperparameter search |           |       x       |         |\n|            Warm Training |           |       x       |    x    |\n\n## Usage\nAssume we already have `DataLoaders` for the train and validation sets. \n```python\nfrom torch.utils.data import DataLoader\n\n\ntrain_loader = DataLoader(...)\nval_loader = DataLoader(...)\n```\n\nThen, create the optimizer and the loss criterion as usual. Pass them to the\ntrainer along the PyTorch model. You can also add a regularization procedure if \nyou need/want to do it. The same goes for callbacks: create the desired\ncallbacks and pass them to the trainer as a list.\n```python\nimport torch.nn as nn\nimport torch.optim as optim\nfrom torchfitter.trainer import Trainer\nfrom torchfitter.callbacks import (\n    LoggerCallback,\n    EarlyStopping,\n    LearningRateScheduler,\n    L1Regularization,\n)\n\nmodel = nn.Linear(in_features=1, out_features=1)\ncriterion = nn.MSELoss()\noptimizer = optim.Adam(model.parameters())\nl1_reg = L1Regularization(regularization_rate=0.01, biases=False)\n\n# callbacks\nlogger = LoggerCallback(update_step=50)\nearly_stopping = EarlyStopping(patience=50, load_best=True, path='checkpoint.pt')\nscheduler = LearningRateScheduler(\n    scheduler=optim.lr_scheduler.StepLR(optimizer, step_size=500, gamma=0.9)\n)\n\ntrainer = Trainer(\n    model=model, \n    criterion=criterion,\n    optimizer=optimizer,\n    mixed_precision=True,\n    accumulate_iter=4, # accumulate gradient every 4 iterations,\n    gradient_clipping='norm',\n    gradient_clipping_kwrgs={'max_norm': 1.0, 'norm_type': 2.0},\n    callbacks=[l1_reg, scheduler, early_stopping, logger]\n)\n\nhistory = trainer.fit(train_loader, val_loader, epochs=1000)\n```\n\nSince `torchfitter` leverages the power of `accelerate`, the device management\nwill rely on the latter. You can pass your own `accelerate.Accelerator` \nobject to fine tune its parameters:\n\n```python\nfrom accelerate import Accelerator\nfrom torchfitter.trainer import Trainer\n\n\naccelerator = Accelerator(...)\ntrainer = Trainer(\n    accelerator=accelerator,\n    **kwargs\n)\n```\n\n## Callbacks\nCallbacks allow you to interact with the model during the fitting process. They\nprovide with different methods that are called at different stages. To create a \ncallback simply extend the base class and fill the desired methods.\n\n```python\nimport torch\nfrom torchfitter.conventions import ParamsDict\nfrom torchfitter.callbacks.base import Callback\n\n\nclass ModelCheckpoint(Callback):\n    def __init__(self, path):\n        super(ModelCheckpoint, self).__init__()\n\n        self.path = path\n\n    def __repr__(self) -> str:\n        return \"ModelCheckpoint()\"\n\n    def on_epoch_end(self, params_dict):\n        # get params\n        accelerator = params_dict[ParamsDict.ACCELERATOR]\n        epoch = params_dict[ParamsDict.EPOCH_NUMBER]\n\n        # ensure model is safe to save\n        _model = params_dict[ParamsDict.MODEL]\n        accelerator.wait_for_everyone()\n        unwrapped_model = accelerator.unwrap_model(_model)\n\n        # actual saving\n        fname = self.path / f'model_epoch_{epoch}.pt'\n        accelerator.save(unwrapped_model.state_dict(), fname)\n```\n\nEach method receives `params_dict`, which is a dictionary object containing the\ninternal training parameters. You can see the pair key value of each parameter\nof the conventions:\n\n```python\n>>> from torchfitter.conventions import ParamsDict\n>>> [(x, getattr(ParamsDict, x)) for x in ParamsDict.__dict__ if not x.startswith('__')]\n```\n\nAnd you can also check the doc to understand the meaning of each one of the \nparameters:\n```python\n>>> from torchfitter.conventions import ParamsDict\n>>> print(ParamsDict.__doc__)\n```\n\n`NOTE:` the callbacks design can be considered as a port from Keras design. \n`I AM NOT` the author of this callback sysem design despite the fact that I \nmade some minor design changes. Find more in the `Credits` section.\n\n\n## FAQ\n* **Do you know Pytorch-Lightning/FastAI?**\n\nI know them and I think **they are awesome**. This is a personal project though\nI must say the trainer is reasonably well-equiped.\n\n* **Why is the `validation loader` not optional?**\n\nBecause I think it enforces good ML practices that way.\n\n* **Why didn't you implement the optimization steps in the model object?**\n\nIt is certainly another approach you may take when building an optimization \nloop (PyTorch-Lightning works this way), but I don't like my abstract data \ntypes to track way too many things in addition to being torch.nn.Module types. \nFunctionality should be **clear and atomic**: the model tracks gradients and \nthe trainer cares about the optimization process.\n\n* **I have a suggestion/question**\n\nThank you! Do not hesitate to open an issue and I'll do my best to answer you.\n\n## CREDITS\n\n* [Keras API](https://keras.io/api/).\n\n* [torchmetrics](https://torchmetrics.readthedocs.io/en/latest/)\n\n* [fastai](https://docs.fast.ai/)\n\n\n## Cite\nIf you've used this library for your projects please cite it:\n\n```latex\n@misc{alejandro2019torchfitter,\n  title={torchfitter - Simple Trainer to Optimize PyTorch Models},\n  author={Alejandro P\u00e9rez-Sanju\u00e1n},\n  year={2020},\n  howpublished={\\url{https://github.com/Xylambda/torchfitter}},\n}\n```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -355,7 +354,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17756795,
+        "last_serial": 18158160,
         "urls": [
             {
                 "comment_text": "",
@@ -396,6 +395,93 @@
                 "upload_time": "2023-04-18T14:07:21",
                 "upload_time_iso_8601": "2023-04-18T14:07:21.277493Z",
                 "url": "https://files.pythonhosted.org/packages/2a/f0/7c089c611eb35d5a2b7c4ec7edeb3019dbd6fbbe7a03803ed8e554e667f9/torchfitter-4.2.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "4.3.0": {
+        "info": {
+            "author": "Alejandro P\u00e9rez-Sanju\u00e1n",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "\n<p align=\"center\">\n  <img src=\"assets/logo.png\" width=\"650\">\n</p>\n\n![GitHub tag (latest by date)](https://img.shields.io/github/v/tag/Xylambda/torchfitter?label=VERSION&style=badge)\n![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/Xylambda/torchfitter?style=badge)\n![GitHub issues](https://img.shields.io/github/issues/Xylambda/torchfitter?style=badge)\n![workflow](https://github.com/Xylambda/torchfitter/actions/workflows/cicd.yml/badge.svg)\n[![doc](https://img.shields.io/badge/DOCS-documentation-blue.svg?style=badge)](https://xylambda.github.io/torchfitter/)\n[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg?style=badge)](https://github.com/psf/black)\n\n`torchfitter` is a simple library to ease the training of PyTorch models. It \nfeatures a class called `Trainer` that includes the basic functionality to fit \nmodels in a Keras-like style.\n\nInternally, `torchfitter` leverages the power of [accelerate](https://huggingface.co/docs/accelerate/)\nto handle the device management.\n\nThe library also provides a callbacks API that can be used to interact with\nthe model during the training process, as well as a set of basic regularization\nprocedures.\n\n## Installation\n**Normal user**\n```bash\npip install torchfitter\n```\n\nThis library does not ship CUDA nor XLA. Follow the \n[official PyTorch documentation](https://pytorch.org/get-started/locally/) for\nmore information about how to install CUDA binaries.\n\n**Developer**\n```bash\ngit clone https://github.com/Xylambda/torchfitter.git\npip install -e torchfitter/. -r torchfitter/requirements-dev.txt\n```\n\n## Tests\nTo run the tests you must install the library as a `developer`.\n```bash\ncd torchfitter/\npytest -v tests/\n```\n\n## Features\n\n|                          | Supported | Not supported | Planned |\n|--------------------------|-----------|---------------|---------|\n|      Basic training loop |     x     |               |         |\n|        Gradient Clipping |     x     |               |         |\n|    Gradient Accumulation |     x     |               |         |\n|     Multi-device support |     x     |               |         |\n|           Regularization |     x     |               |         |\n|  In-loop metrics support |     x     |               |         |\n| Mixed precision training |     x     |               |         |\n|         Callbacks System |     x     |               |         |\n|    Hyperparameter search |           |       x       |         |\n|            Warm Training |           |       x       |    x    |\n\n## Usage\nAssume we already have `DataLoaders` for the train and validation sets. \n```python\nfrom torch.utils.data import DataLoader\n\n\ntrain_loader = DataLoader(...)\nval_loader = DataLoader(...)\n```\n\nThen, create the optimizer and the loss criterion as usual. Pass them to the\ntrainer along the PyTorch model. You can also add a regularization procedure if \nyou need/want to do it. The same goes for callbacks: create the desired\ncallbacks and pass them to the trainer as a list.\n```python\nimport torch.nn as nn\nimport torch.optim as optim\nfrom torchfitter.trainer import Trainer\nfrom torchfitter.callbacks import (\n    LoggerCallback,\n    EarlyStopping,\n    LearningRateScheduler,\n    L1Regularization,\n)\n\nmodel = nn.Linear(in_features=1, out_features=1)\ncriterion = nn.MSELoss()\noptimizer = optim.Adam(model.parameters())\nl1_reg = L1Regularization(regularization_rate=0.01, biases=False)\n\n# callbacks\nlogger = LoggerCallback(update_step=50)\nearly_stopping = EarlyStopping(patience=50, load_best=True, path='checkpoint.pt')\nscheduler = LearningRateScheduler(\n    scheduler=optim.lr_scheduler.StepLR(optimizer, step_size=500, gamma=0.9)\n)\n\ntrainer = Trainer(\n    model=model, \n    criterion=criterion,\n    optimizer=optimizer,\n    mixed_precision=\"fp16\",\n    accumulate_iter=4, # accumulate gradient every 4 iterations,\n    gradient_clipping='norm',\n    gradient_clipping_kwrgs={'max_norm': 1.0, 'norm_type': 2.0},\n    callbacks=[l1_reg, scheduler, early_stopping, logger]\n)\n\nhistory = trainer.fit(train_loader, val_loader, epochs=1000)\n```\n\nSince `torchfitter` leverages the power of `accelerate`, the device management\nwill rely on the latter. You can pass your own `accelerate.Accelerator` \nobject to fine tune its parameters:\n\n```python\nfrom accelerate import Accelerator\nfrom torchfitter.trainer import Trainer\n\n\naccelerator = Accelerator(...)\ntrainer = Trainer(\n    accelerator=accelerator,\n    **kwargs\n)\n```\n\n## Callbacks\nCallbacks allow you to interact with the model during the fitting process. They\nprovide with different methods that are called at different stages. To create a \ncallback simply extend the base class and fill the desired methods.\n\n```python\nimport torch\nfrom torchfitter.conventions import ParamsDict\nfrom torchfitter.callbacks.base import Callback\n\n\nclass ModelCheckpoint(Callback):\n    def __init__(self, path):\n        super(ModelCheckpoint, self).__init__()\n\n        self.path = path\n\n    def __repr__(self) -> str:\n        return \"ModelCheckpoint()\"\n\n    def on_epoch_end(self, params_dict):\n        # get params\n        accelerator = params_dict[ParamsDict.ACCELERATOR]\n        epoch = params_dict[ParamsDict.EPOCH_NUMBER]\n\n        # ensure model is safe to save\n        _model = params_dict[ParamsDict.MODEL]\n        accelerator.wait_for_everyone()\n        unwrapped_model = accelerator.unwrap_model(_model)\n\n        # actual saving\n        fname = self.path / f'model_epoch_{epoch}.pt'\n        accelerator.save(unwrapped_model.state_dict(), fname)\n```\n\nEach method receives `params_dict`, which is a dictionary object containing the\ninternal training parameters. You can see the pair key value of each parameter\nof the conventions:\n\n```python\n>>> from torchfitter.conventions import ParamsDict\n>>> [(x, getattr(ParamsDict, x)) for x in ParamsDict.__dict__ if not x.startswith('__')]\n```\n\nAnd you can also check the doc to understand the meaning of each one of the \nparameters:\n```python\n>>> from torchfitter.conventions import ParamsDict\n>>> print(ParamsDict.__doc__)\n```\n\n`NOTE:` the callbacks design can be considered as a port from Keras design. \n`I AM NOT` the author of this callback sysem design despite the fact that I \nmade some minor design changes. Find more in the `Credits` section.\n\n\n## FAQ\n* **Do you know Pytorch-Lightning/FastAI?**\n\nI know them and I think **they are awesome**. This is a personal project though\nI must say the trainer is reasonably well-equiped.\n\n* **Why is the `validation loader` not optional?**\n\nBecause I think it enforces good ML practices that way.\n\n* **Why didn't you implement the optimization steps in the model object?**\n\nIt is certainly another approach you may take when building an optimization \nloop (PyTorch-Lightning works this way), but I don't like my abstract data \ntypes to track way too many things in addition to being torch.nn.Module types. \nFunctionality should be **clear and atomic**: the model tracks gradients and \nthe trainer cares about the optimization process.\n\n* **I have a suggestion/question**\n\nThank you! Do not hesitate to open an issue and I'll do my best to answer you.\n\n## CREDITS\n\n* [Keras API](https://keras.io/api/).\n\n* [torchmetrics](https://torchmetrics.readthedocs.io/en/latest/)\n\n* [fastai](https://docs.fast.ai/)\n\n\n## Cite\nIf you've used this library for your projects please cite it:\n\n```latex\n@misc{alejandro2019torchfitter,\n  title={torchfitter - Simple Trainer to Optimize PyTorch Models},\n  author={Alejandro P\u00e9rez-Sanju\u00e1n},\n  year={2020},\n  howpublished={\\url{https://github.com/Xylambda/torchfitter}},\n}\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "torchfitter",
+            "package_url": "https://pypi.org/project/torchfitter/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/torchfitter/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/torchfitter/4.3.0/",
+            "requires_dist": [
+                "rich",
+                "numpy (>=1.20.0)",
+                "accelerate (>=0.19.0)",
+                "scikit-learn",
+                "torchmetrics",
+                "torch (>=1.6)"
+            ],
+            "requires_python": ">=3.7,",
+            "summary": "Trainer to optimize PyTorch models",
+            "version": "4.3.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18158160,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "7c6f2338a89615ad41a7cb41da2b82beed1b4050610f7ce1f880e390c31f85ad",
+                    "md5": "da492fc87bf19784e5b156c8afc71654",
+                    "sha256": "b321a6600c53a8d2bba4ea3029cccaba3cbe13fe2adc43e732cf85c8a20966a5"
+                },
+                "downloads": -1,
+                "filename": "torchfitter-4.3.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "da492fc87bf19784e5b156c8afc71654",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7,",
+                "size": 31630,
+                "upload_time": "2023-05-18T17:57:53",
+                "upload_time_iso_8601": "2023-05-18T17:57:53.894016Z",
+                "url": "https://files.pythonhosted.org/packages/7c/6f/2338a89615ad41a7cb41da2b82beed1b4050610f7ce1f880e390c31f85ad/torchfitter-4.3.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "0d3738a73f4c0fe792224d510e8ca214e57c7f453cf399ef754295feaa99f275",
+                    "md5": "616e7dd350f0e12a0a5c2aed77b90f7c",
+                    "sha256": "8046ed4a12e58d52a5b268225af23b2a31ea8711f184fdd298062b31ef9aa67d"
+                },
+                "downloads": -1,
+                "filename": "torchfitter-4.3.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "616e7dd350f0e12a0a5c2aed77b90f7c",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7,",
+                "size": 44699,
+                "upload_time": "2023-05-18T17:57:56",
+                "upload_time_iso_8601": "2023-05-18T17:57:56.394028Z",
+                "url": "https://files.pythonhosted.org/packages/0d/37/38a73f4c0fe792224d510e8ca214e57c7f453cf399ef754295feaa99f275/torchfitter-4.3.0.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
