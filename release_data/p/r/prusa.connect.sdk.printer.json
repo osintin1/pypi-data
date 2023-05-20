@@ -1,0 +1,77 @@
+{
+    "0.7.0": {
+        "info": {
+            "author": "Prusa Link Developers",
+            "author_email": "link@prusa3d.cz",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 5 - Production/Stable",
+                "Intended Audience :: Developers",
+                "License :: Freeware",
+                "Natural Language :: English",
+                "Operating System :: POSIX",
+                "Programming Language :: Python :: 3 :: Only",
+                "Topic :: Software Development :: Libraries :: Python Modules"
+            ],
+            "description": "PrusaConnect SDK for Printer\n=============================\n\n:Requirements: basic knowledge of `PrusaConnect API docs <https://connect.prusa3d.com/docs/>`_.\n\nPrinter instance\n----------------\nYou can create a Printer instance using the constructor and passing `server` and `token` to it. These you can find in  `prusa_printer_settings.ini`.\n\n.. code:: python\n\n    from prusa.connect.printer import Printer, const\n\n    SERVER = \"https://connect.prusa3d.com\"\n    SN = 'SERIAL_NUMBER_FROM_PRINTER'\n    FINGERPRINT = 'Printer fingerprint'\n    TOKEN = 'secret token from prusa_printer_settings.ini'\n    printer = Printer(const.PrinterType.I3MK3, SN, SERVER, TOKEN)\n\n    printer.loop()  # communication loop\n\nOr you can use `Printer.from_config()` method which reads these values from the ini file.\n\n.. code:: python\n\n    from prusa.connect.printer import Printer, const\n\n    SERVER = \"https://connect.prusa3d.com\"\n    SN = 'SERIAL_NUMBER_FROM_PRINTER'\n    printer = Printer.from_config(\"./prusa_printer_settings.ini\",\n                                  const.PrinterType.I3MK3, SN)\n\n    printer.loop()  # communication loop\n\n\nRegistration\n------------\nIf the printer has not been registered yet, you need to use `Printer.register()` to get a temporary code. This code is then used in the **Add Printer** form in Connect Web. After the printer\nhas been added to Connect, `Printer.get_token()` will return printer's persistent token.\n\n.. code:: python\n\n    from time import sleep\n    from prusa.connect.printer import Printer, const\n\n    SERVER = \"https://connect.prusa3d.com\"\n    SN = 'SERIAL_NUMBER_FROM_PRINTER'\n    printer = Printer(const.PrinterType.I3MK3, SN, SERVER)\n\n    tmp_code = printer.register()\n    print(f\"Use this code `{tmp_code}` in add printer form \"\n          f\"{SERVER}/printers/overview?code={tmp_code}.\")\n\n    token = None\n    while token is None:\n        token = printer.get_token(tmp_code)\n        sleep(1)\n\n    print(\"Printer is registered with token %s\" % token)\n\nTelemetry\n---------\nPrinter must send telemetry to connect at least each second. Because obtaining telemetry values might not be atomic, this must be done in a different thread than `Printer.loop`.\n\n.. code:: python\n\n    from threading import Thread\n    from time import sleep\n\n    ...\n\n    # start communication loop\n    thread = Thread(target=printer.loop)\n    thread.start()\n\n    # each second send telemetry to internal queue in the main-thread\n    while True:\n        printer.telemetry(const.State.READY, temp_nozzle=24.1, temp_bed=23.2)\n        sleep(1)\n\n\nEvents\n------\nEvents are a way to send information about the printer to Connect. They can be split into a few groups:\n\n    * **Command answers** - Response for Connect if the command was be ACCEPTED,\n      REJECTED, etc. These are handled by the SDK in `Printer.loop` method or in `Command.__call__` method.\n    * **State change** - indicating that the printer state has changed. This are sent\n      by `Printer.set_state` method.\n    * **FILE INFO** events which are created by `FileSystem` object.\n    * Alternatively you can inform Connect about other events like attaching/detaching of storage.\n      You can do this by calling `Printer.event_cb`.\n\nExamples for these groups follow below.\n\nEvent callback\n--------------\nYou can inform Connect about some specific situation using events.\n\n.. code:: python\n\n    from threading import Thread\n\n    ...\n\n    # start communication loop\n    thread = Thread(target=printer.loop)\n    thread.start()\n\n    try:\n        ...\n    except Exception as err:\n        # send event to internal queue\n        printer.event_cb(const.Event.ATTENTION, const.Source.WUI,\n                         reason=str(err))\n\nPrinter state\n-------------\n\n.. code:: python\n\n    from threading import Thread\n    from time import sleep\n\n    ...\n\n    # start communication loop\n    thread = Thread(target=printer.loop)\n    thread.start()\n\n    # toggle the state each second\n    while True:\n        if printer.state == const.State.READY:\n            printer.set_state(const.State.BUSY, const.Source.MARLIN)\n        elif printer.state == const.State.BUSY:\n            printer.set_state(const.State.READY, const.Source.MARLIN)\n        sleep(1)\n\nFiles\n-----\nFiles are sent to Connect in a dictionary using the **SEND_INFO** command.\nWithin the **SEND_INFO** commmand response, there's a `files` dictionary with all\nfiles and folders within the Filesystem. Here you can find info about file (or\nfolder). Available info is type, name, ro (read only), m_timestamp (when the\nfile was last modified), size and in case of folder, info about its children.\nAlso you can find here information about free_space and total_space of the each\nstorage, if available.\n\nCommands\n--------\nWhen Connect sends a command in the answer to telemetry,\n`Printer.command` object will be created. Please note that the `Printer.loop`\nonly creates and parametrizes this command instance. It never\ncalls this command's handler. It must happen in another (e.g. main) thread.\n\nEach command handler must return a dictionary with at least the `source` key.\n\nNormally each command is marked as finished by the FINISHED event. You\nmight want to override it by some other event, e.g. INFO. In that case,\nalso the `event` key must be set in the returned dictionary.\n\nAdditional data for this event is passed using the `data` key with\na dictionary as a value.\n\nFor further detail see https://connect.prusa3d.com/docs/printer_communication\nor have a look at the implementation details in the SDK (INFO event\nhandled by the `Printer.get_info()` method).\n\n.. code:: python\n\n    from threading import Thread\n    from time import sleep\n\n    ...\n\n    @printer.handler(const.Command.START_PRINT)\n    def start_print(args: List[str]):\n        \"\"\"This handler will be called when START_PRINT command was sent to\n           the printer.\"\"\"\n        printer.set_state(const.State.PRINTING, const.Source.CONNECT)\n        print(\"Printing file: {args[0]}\")\n        ...\n\n    @printer.handler(const.Command.STOP_PRINT)\n    def start_print(args: List[str]):\n        \"\"\"This handler will be called when STOP_PRINT command was sent to\n           the printer.\"\"\"\n        printer.set_state(const.State.READY, const.Source.CONNECT)\n        print(\"Printing stopped\")\n        ...\n\n    # communication loop\n    thread = Thread(target=printer.loop)\n    thread.start()\n\n    # try run command handler each 100 ms\n    while True:\n        printer.command()\n        sleep(0.1)\n\n",
+            "description_content_type": "text/x-rst",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/prusa3d/Prusa-Connect-SDK-Printer",
+            "keywords": "",
+            "license": "Freeware",
+            "maintainer": "Prusa Link Developers",
+            "maintainer_email": "link@prusa3d.cz",
+            "name": "prusa.connect.sdk.printer",
+            "package_url": "https://pypi.org/project/prusa.connect.sdk.printer/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/prusa.connect.sdk.printer/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/prusa3d/Prusa-Connect-SDK-Printer/issues",
+                "Homepage": "https://github.com/prusa3d/Prusa-Connect-SDK-Printer",
+                "Source Code": "https://github.com/prusa3d/Prusa-Connect-SDK-Printer"
+            },
+            "release_url": "https://pypi.org/project/prusa.connect.sdk.printer/0.7.0/",
+            "requires_dist": [
+                "requests (~=2.28.2)",
+                "inotify-simple (~=1.3.5)",
+                "mypy-extensions (~=1.0.0)"
+            ],
+            "requires_python": ">=3.6",
+            "summary": "Python printer library for PrusaConnect",
+            "version": "0.7.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18172738,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6506e0f15a31eaa2e1ddd7406411fe1554a6ab220ff5c12f4419932768ba117b",
+                    "md5": "69f03543858ef4f7bcb3a7a25e06f9bb",
+                    "sha256": "2e5975d9a1eae892155c3e8f8adf1e0d162d616f5faeffbcbee3056e53713669"
+                },
+                "downloads": -1,
+                "filename": "prusa.connect.sdk.printer-0.7.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "69f03543858ef4f7bcb3a7a25e06f9bb",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.6",
+                "size": 75061,
+                "upload_time": "2023-05-19T16:54:40",
+                "upload_time_iso_8601": "2023-05-19T16:54:40.499018Z",
+                "url": "https://files.pythonhosted.org/packages/65/06/e0f15a31eaa2e1ddd7406411fe1554a6ab220ff5c12f4419932768ba117b/prusa.connect.sdk.printer-0.7.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

@@ -52,7 +52,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18162161,
+        "last_serial": 18171924,
         "urls": [
             {
                 "comment_text": "",
@@ -96,7 +96,6 @@
                 "Topic :: Scientific/Engineering",
                 "Topic :: System :: Networking"
             ],
-            "description": "# PyBCI\nA Python interface to create a Brain Computer Interface (BCI) with the [Lab Streaming Layer](https://github.com/sccn/labstreaminglayer), [scikit-learn](https://scikit-learn.org/stable/#) and [TensorFlow](https://www.tensorflow.org/install) packages, leveraging packages like [Antropy](https://github.com/raphaelvallat/antropy), [SciPy](https://scipy.org/) and [NumPy](https://numpy.org/) for time and/or frequency based feature extraction.\n\nThe goal of PyBCI is to help create quick iteration pipelines for testing potential human machine and brain computer interfaces, namely applied machine learning models and feature extraction techniques.\n\n## Installation\nFor stable releases use: ```pip install install-pybci```\n(currently can only install-pybci due to pybci name similarities with another package on pypi)\n\nFor unstable dev installations and up-to-date git pushes use: ```pip install --index-url https://test.pypi.org/simple/ install-pybci```\n\n\n[ReadTheDocs available here!](https://pybci.readthedocs.io/en/latest/) (In development)\n\n## Basic implementation\n```python\nimport time\nfrom pybci import PyBCI\nbci = PyBCI()\nwhile not bci.connected:\n    bci.Connect()\n    time.sleep(1)\nbci.TrainMode()\nwhile(True):\n    currentMarkers = bci.ReceivedMarkerCount()\n    time.sleep(1) # wait for marker updates\n    if len(currentMarkers) > 1:  # check there is more then one marker type received\n        if min([currentMarkers[key][1] for key in currentMarkers]) > 10:\n            bci.TestMode()\n            break \ntry:\n    while True:\n        classInfo = bci.CurrentClassifierInfo() # when in train mode only y_pred returned\n        guess = [key for key, value in currentMarkers.items() if value[0] == classInfo[\"y_pred\"]]\n        print(\"Current marker estimation: \" + str(guess), end=\"\\r\")\nexcept KeyboardInterrupt: # allow user to break while loop\n    pass\n```\n\n## Background Information\nPyBCI is a python based brain computer interface software designed to receive a varying number, be it singular or multiple, [Lab Streaming Layer](https://github.com/sccn/labstreaminglayer) enabled physiological sensor data streams. An understanding of time-series data analysis, the lab streaming layer protocol, and machine learning techniques are a must to integrate innovative ideas with this interface.\nAn LSL marker stream is required to train the model, where a received marker [epochs](https://www.google.com/search?q=epochs+definition&rlz=1C1CHBF_en-GBGB921GB921&sxsrf=APwXEddAlMkYQ6MqziIvXbvsCxl3SjySNA%3A1684343462996&ei=pgplZJK2PJiigAaErrWwCw&oq=epochs+def&gs_lcp=Cgxnd3Mtd2l6LXNlcnAQAxgAMg0IABCKBRCRAhBGEPkBMgUIABCABDIFCAAQgAQyBQgAEIAEMggIABAWEB4QDzIICAAQFhAeEA8yBggAEBYQHjIGCAAQFhAeMgYIABAWEB4yCQgAEBYQHhDxBDoHCCMQsAMQJzoKCAAQRxDWBBCwAzoHCCMQigUQJzoHCAAQigUQQzoNCAAQigUQsQMQgwEQQzoICAAQigUQkQJKBAhBGABQmAZYwQhgzw5oAXABeACAAYYBiAHBA5IBAzEuM5gBAKABAcgBCsABAQ&sclient=gws-wiz-serp) the data received on the accepted datastreams based on a configurable time window around certain markers - where custom marker strings can optionally have its epoch timewindow split and overlapped to count for more then one marker, example: a baseline marker may have one marker sent for a 60 second window, where as target actions may only be ~0.5s long, so to conform when testing the model and giving a standardised window length would be desirable to split the 60s window after the received baseline marker in to ~0.5s windows. By overlapping windows we try to account for potential missed signal patterns/aliasing, as a rule of thumb it would be advised when testing a model to have an overlap >= than 50%, [see Shannon nyquist criterion](https://en.wikipedia.org/wiki/Nyquist%E2%80%93Shannon_sampling_theorem).\n\nOnce the data has been epoched it is sent for feature extraction, there is a general feature extraction class which can be configured for general time and/or frequency analysis based features, data streams types like \"EEG\" and \"EMG\". (DevNOTE: looking to write class for basic pupil labs example to be passed, or solely samples + channels, or other custom classes passed to selected marker streams >:] )\n\nFinally a passable, customisable sklearn or tensorflow classifier can be giving to the bci class, once a defined number of epochs have been obtained for each received epoch/marker type the classifier can begin to fit the model. It's advised to use bci.ReceivedMarkerCount() to get the number of received training epochs received, once the min num epochs received of each type is >= pybci.minimumEpochsRequired (default 10 of each epoch) the mdoel will begin to fit. Once fit classifier info can be queried with CurrentClassifierInfo, when a desired accuracy is met or number of epochs TestMode() can be called. Once in test mode you can query (sould change function to own function and queue for quering testthread) what pybci estimates the current bci epoch is(typically bseline is used for no state).\n\nIf you have no LSL available hardware, a psuedo time-series signal can be created with the script found in [mainSend.py PsuedoLSLStreamGenerator folder](https://github.com/LMBooth/pybci/blob/main/pybci/Examples/PsuedoLSLStreamGenerator/mainSend.py). \n\n\n## Theory of Operation\n1. Requirements Prior Initialising with ```python bci = PyBCI() ```\n    - The bci must have >=1 LSL datastream with an accepted dataType (\"EEG\", \"EMG\", \"Gaze\") {hopefully configurable in the future t pass custom fature decoding class}\n    - The bci must have ==1 LSL markerstream selected (if more then one LSL marker stream on system set the desired ML training marker stream with PyBCI(markerStream=\"yourMarkerStream\")). Warning: If None set picks first available in list.\n2. Initialising BCI software\n    - [Optional Configurations](https://pybci.readthedocs.io/en/latest/api/PyBCI.html) for ```python PyBCI() ```\n    - Once configuration settings are set various threads are created.\n        - The marker stream has its own thread which recieves markers from the target LSL marker stream and when in train mode pushes this marker to the available datastreams. \n        - Each data stream has its own thread created responsible for pipleining received data on FIFO's and slicing approprialey based on globalEpochSettings and customEpochSettings.\n        - FeaturesExtractor\n        - Classifier\n    \n3. ML Training:\n  \n4. ML Testing:\n\n## ToDo!\n- \n### Future Work\n- Add simple gaze decoding from pupil-labs\n- Create example to output classification on LSL and make test train configurable on pure LSL markers \n- custom class passable for data decoding, use general and gaze for inpiration. \n\n## Curently in Alpha, come back in a few days for updates!\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -132,7 +131,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18162161,
+        "last_serial": 18171924,
         "urls": [
             {
                 "comment_text": "",
@@ -173,6 +172,107 @@
                 "upload_time": "2023-05-19T00:25:50",
                 "upload_time_iso_8601": "2023-05-19T00:25:50.218261Z",
                 "url": "https://files.pythonhosted.org/packages/1a/37/a81f52e4ca5078474f6f4195b461f22289e130ee444f8c1ee85f6c970b83/install-pybci-0.1.4b1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.4b4": {
+        "info": {
+            "author": "Liam Booth",
+            "author_email": "liambooth123@hotmail.co.uk",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Intended Audience :: Developers",
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: MacOS",
+                "Operating System :: Microsoft :: Windows",
+                "Operating System :: POSIX :: Linux",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Scientific/Engineering",
+                "Topic :: System :: Networking"
+            ],
+            "description": "[![PyPI - Downloads](https://img.shields.io/pypi/dm/install-pybci)](https://pypi.org/project/install-pybci)  [![Documentation Status](https://readthedocs.org/projects/pybci/badge/?version=latest)](https://pybci.readthedocs.io/en/latest/?badge=latest)\n\n![Alt Text](https://github.com/LMBooth/pybci/blob/main/docs/Images/pyBCITitle.png)\n\nA Python interface to create a Brain Computer Interface (BCI) with the [Lab Streaming Layer](https://github.com/sccn/labstreaminglayer), [scikit-learn](https://scikit-learn.org/stable/#) and [TensorFlow](https://www.tensorflow.org/install) packages, leveraging packages like [AntroPy](https://github.com/raphaelvallat/antropy), [SciPy](https://scipy.org/) and [NumPy](https://numpy.org/) for time and/or frequency based feature extraction.\n\nThe goal of PyBCI is to help create quick iteration pipelines for testing potential human machine and brain computer interfaces, namely applied machine learning models and feature extraction techniques.\n\n## Installation\nFor stable releases use: ```pip install install-pybci```\n(currently can only install-pybci due to pybci name similarities with another package on pypi)\n\nFor unstable dev installations and up-to-date git pushes use: ```pip install --index-url https://test.pypi.org/simple/ install-pybci```\n\n\n[ReadTheDocs available here!](https://pybci.readthedocs.io/en/latest/) (In development)\n\n## Basic implementation\n```python\nimport time\nfrom pybci import PyBCI\nbci = PyBCI()\nwhile not bci.connected:\n    bci.Connect()\n    time.sleep(1)\nbci.TrainMode()\nwhile(True):\n    currentMarkers = bci.ReceivedMarkerCount()\n    time.sleep(1) # wait for marker updates\n    if len(currentMarkers) > 1:  # check there is more then one marker type received\n        if min([currentMarkers[key][1] for key in currentMarkers]) > 10:\n            bci.TestMode()\n            break \ntry:\n    while True:\n        classInfo = bci.CurrentClassifierInfo() # when in train mode only y_pred returned\n        guess = [key for key, value in currentMarkers.items() if value[0] == classInfo[\"y_pred\"]]\n        print(\"Current marker estimation: \" + str(guess), end=\"\\r\")\nexcept KeyboardInterrupt: # allow user to break while loop\n    pass\n```\n\n## Background Information\nPyBCI is a python based brain computer interface software designed to receive a varying number, be it singular or multiple, [Lab Streaming Layer](https://github.com/sccn/labstreaminglayer) enabled physiological sensor data streams. An understanding of time-series data analysis, the lab streaming layer protocol, and machine learning techniques are a must to integrate innovative ideas with this interface.\nAn LSL marker stream is required to train the model, where a received marker [epochs](https://www.google.com/search?q=epochs+definition&rlz=1C1CHBF_en-GBGB921GB921&sxsrf=APwXEddAlMkYQ6MqziIvXbvsCxl3SjySNA%3A1684343462996&ei=pgplZJK2PJiigAaErrWwCw&oq=epochs+def&gs_lcp=Cgxnd3Mtd2l6LXNlcnAQAxgAMg0IABCKBRCRAhBGEPkBMgUIABCABDIFCAAQgAQyBQgAEIAEMggIABAWEB4QDzIICAAQFhAeEA8yBggAEBYQHjIGCAAQFhAeMgYIABAWEB4yCQgAEBYQHhDxBDoHCCMQsAMQJzoKCAAQRxDWBBCwAzoHCCMQigUQJzoHCAAQigUQQzoNCAAQigUQsQMQgwEQQzoICAAQigUQkQJKBAhBGABQmAZYwQhgzw5oAXABeACAAYYBiAHBA5IBAzEuM5gBAKABAcgBCsABAQ&sclient=gws-wiz-serp) the data received on the accepted datastreams based on a configurable time window around certain markers - where custom marker strings can optionally have its epoch timewindow split and overlapped to count for more then one marker, example: a baseline marker may have one marker sent for a 60 second window, where as target actions may only be ~0.5s long, so to conform when testing the model and giving a standardised window length would be desirable to split the 60s window after the received baseline marker in to ~0.5s windows. By overlapping windows we try to account for potential missed signal patterns/aliasing, as a rule of thumb it would be advised when testing a model to have an overlap >= than 50%, [see Shannon nyquist criterion](https://en.wikipedia.org/wiki/Nyquist%E2%80%93Shannon_sampling_theorem).\n\nOnce the data has been epoched it is sent for feature extraction, there is a general feature extraction class which can be configured for general time and/or frequency analysis based features, data streams types like \"EEG\" and \"EMG\". (DevNOTE: looking to write class for basic pupil labs example to be passed, or solely samples + channels, or other custom classes passed to selected marker streams >:] )\n\nFinally a passable, customisable sklearn or tensorflow classifier can be giving to the bci class, once a defined number of epochs have been obtained for each received epoch/marker type the classifier can begin to fit the model. It's advised to use bci.ReceivedMarkerCount() to get the number of received training epochs received, once the min num epochs received of each type is >= pybci.minimumEpochsRequired (default 10 of each epoch) the mdoel will begin to fit. Once fit classifier info can be queried with CurrentClassifierInfo, when a desired accuracy is met or number of epochs TestMode() can be called. Once in test mode you can query (sould change function to own function and queue for quering testthread) what pybci estimates the current bci epoch is(typically bseline is used for no state).\n\nIf you have no LSL available hardware, a psuedo time-series signal can be created with the script found in [mainSend.py PsuedoLSLStreamGenerator folder](https://github.com/LMBooth/pybci/tree/main/pybci/Examples/PsuedoLSLStreamGenerator/mainSend.py). \n\n\n## Theory of Operation\n1. Requirements Prior Initialising with ```python bci = PyBCI() ```\n    - The bci must have >=1 LSL datastream with an accepted dataType (\"EEG\", \"EMG\", \"Gaze\") {hopefully configurable in the future t pass custom fature decoding class}\n    - The bci must have ==1 LSL markerstream selected (if more then one LSL marker stream on system set the desired ML training marker stream with PyBCI(markerStream=\"yourMarkerStream\")). Warning: If None set picks first available in list.\n2. Initialising BCI software\n    - [Optional Configurations](https://pybci.readthedocs.io/en/latest/api/PyBCI.html) for ```python PyBCI() ```\n    - Once configuration settings are set various threads are created.\n        - The marker stream has its own thread which recieves markers from the target LSL marker stream and when in train mode pushes this marker to the available datastreams. \n        - Each data stream has its own thread created responsible for pipleining received data on FIFO's and slicing approprialey based on globalEpochSettings and customEpochSettings.\n        - FeaturesExtractor\n        - Classifier\n    \n3. ML Training:\n  \n4. ML Testing:\n\n## ToDo!\n- \n### Future Work\n- Add simple gaze decoding from pupil-labs\n- Create example to output classification on LSL and make test train configurable on pure LSL markers \n- custom class passable for data decoding, use general and gaze for inpiration. \n\n## Curently in Alpha, come back in a few days for updates!\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/lmbooth/pybci",
+            "keywords": "machine learning and data synchronisation on the Lab Streaming Layer",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "install-pybci",
+            "package_url": "https://pypi.org/project/install-pybci/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/install-pybci/",
+            "project_urls": {
+                "Homepage": "https://github.com/lmbooth/pybci"
+            },
+            "release_url": "https://pypi.org/project/install-pybci/0.1.4b4/",
+            "requires_dist": [
+                "pylsl",
+                "scipy",
+                "numpy",
+                "antropy",
+                "tensorflow",
+                "scikit-learn"
+            ],
+            "requires_python": ">=3.9",
+            "summary": "A Python interface to create a BCI with the Lab Streaming Layer, scikit-learn and tensorflow packages",
+            "version": "0.1.4b4",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18171924,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6575b69425bddd7cfb82f501c9bfb61b4ed9b77a7a20ea239875ff9eee0d8d1d",
+                    "md5": "3d8003da229923be740f7953973340fe",
+                    "sha256": "9778941e842bd46abe841b354affbb0b745580e45328a0e78bca736771378ace"
+                },
+                "downloads": -1,
+                "filename": "install_pybci-0.1.4b4-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "3d8003da229923be740f7953973340fe",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9",
+                "size": 22877,
+                "upload_time": "2023-05-19T15:43:44",
+                "upload_time_iso_8601": "2023-05-19T15:43:44.870632Z",
+                "url": "https://files.pythonhosted.org/packages/65/75/b69425bddd7cfb82f501c9bfb61b4ed9b77a7a20ea239875ff9eee0d8d1d/install_pybci-0.1.4b4-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "41643f6c9065f77988e245a0136eefbc2e1c83f9ee8cf87213644af154b90005",
+                    "md5": "b4c7dc3982b6d84520373fdcf155d66a",
+                    "sha256": "453a1f5c3a345f998cb10988378f890d5d81685e1b26b0453f9b4215e1d49336"
+                },
+                "downloads": -1,
+                "filename": "install-pybci-0.1.4b4.tar.gz",
+                "has_sig": false,
+                "md5_digest": "b4c7dc3982b6d84520373fdcf155d66a",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9",
+                "size": 19143,
+                "upload_time": "2023-05-19T15:43:46",
+                "upload_time_iso_8601": "2023-05-19T15:43:46.093626Z",
+                "url": "https://files.pythonhosted.org/packages/41/64/3f6c9065f77988e245a0136eefbc2e1c83f9ee8cf87213644af154b90005/install-pybci-0.1.4b4.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

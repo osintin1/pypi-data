@@ -24,7 +24,6 @@
                 "Topic :: Internet :: WWW/HTTP",
                 "Topic :: System :: Networking"
             ],
-            "description": "<h1 align=\"center\">UCall</h1>\n<h3 align=\"center\">\nJSON Remote Procedure Calls Library<br/>\nUp to 100x Faster than FastAPI<br/>\n</h3>\n<br/>\n\n<p align=\"center\">\n<a href=\"https://discord.gg/xuDmpbEDnQ\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/discord.svg\" alt=\"Discord\"></a>\n&nbsp;&nbsp;&nbsp;\n<a href=\"https://www.linkedin.com/company/unum-cloud/\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/linkedin.svg\" alt=\"LinkedIn\"></a>\n&nbsp;&nbsp;&nbsp;\n<a href=\"https://twitter.com/unum_cloud\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/twitter.svg\" alt=\"Twitter\"></a>\n&nbsp;&nbsp;&nbsp;\n<a href=\"https://unum.cloud/post\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/blog.svg\" alt=\"Blog\"></a>\n&nbsp;&nbsp;&nbsp;\n<a href=\"https://github.com/unum-cloud/ucall\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/github.svg\" alt=\"GitHub\"></a>\n</p>\n\n---\n\nMost modern networking is built either on slow and ambiguous REST APIs or unnecessarily complex gRPC.\nFastAPI, for example, looks very approachable.\nWe aim to be equally or even simpler to use.\n\n<table width=\"100%\">\n<tr>\n<th width=\"50%\">FastAPI</th><th width=\"50%\">UCall</th>\n</tr>\n<tr>\n<td>\n\n```sh\npip install fastapi uvicorn\n```\n\n</td>\n<td>\n\n```sh\npip install ucall\n```\n\n</td>\n</tr>\n<tr>\n<td>\n\n```python\nfrom fastapi import FastAPI\nimport uvicorn\n\nserver = FastAPI()\n\n@server.get('/sum')\ndef sum(a: int, b: int):\n    return a + b\n\nuvicorn.run(...)    \n```\n\n</td>\n<td>\n\n```python\nfrom ucall.posix import Server\n# from ucall.uring import Server on 5.19+\n\nserver = Server()\n\n@server\ndef sum(a: int, b: int):\n    return a + b\n\nserver.run()    \n```\n\n</td>\n</tr>\n</table>\n\nIt takes over a millisecond to handle a trivial FastAPI call on a recent 8-core CPU.\nIn that time, light could have traveled 300 km through optics to the neighboring city or country, in my case.\nHow does UCall compare to FastAPI and gRPC?\n\n| Setup                   |   \ud83d\udd01   | Server | Latency w 1 client | Throughput w 32 clients |\n| :---------------------- | :---: | :----: | -----------------: | ----------------------: |\n| Fast API over REST      |   \u274c   |   \ud83d\udc0d    |           1'203 \u03bcs |               3'184 rps |\n| Fast API over WebSocket |   \u2705   |   \ud83d\udc0d    |              86 \u03bcs |            11'356 rps \u00b9 |\n| gRPC \u00b2                  |   \u2705   |   \ud83d\udc0d    |             164 \u03bcs |               9'849 rps |\n|                         |       |        |                    |                         |\n| UCall with POSIX        |   \u274c   |   C    |              62 \u03bcs |              79'000 rps |\n| UCall with io_uring     |   \u2705   |   \ud83d\udc0d    |              40 \u03bcs |             210'000 rps |\n| UCall with io_uring     |   \u2705   |   C    |              22 \u03bcs |             231'000 rps |\n\n<details>\n  <summary>Table legend</summary>\n\nAll benchmarks were conducted on AWS on general purpose instances with **Ubuntu 22.10 AMI**.\nIt is the first major AMI to come with **Linux Kernel 5.19**, featuring much wider `io_uring` support for networking operations.\nThese specific numbers were obtained on `c7g.metal` beefy instances with Graviton 3 chips.\n\n- The \ud83d\udd01 column marks, if the TCP/IP connection is being reused during subsequent requests.\n- The \"server\" column defines the programming language, in which the server was implemented.\n- The \"latency\" column report the amount of time between sending a request and receiving a response. \u03bc stands for micro, \u03bcs subsequently means microseconds.\n- The \"throughput\" column reports the number of Requests Per Second when querying the same server application from multiple client processes running on the same machine.\n\n> \u00b9 FastAPI couldn't process concurrent requests with WebSockets.\n\n> \u00b2 We tried generating C++ backends with gRPC, but its numbers, suspiciously, weren't better. There is also an async gRPC option, that wasn't tried.\n\n</details>\n\n## How is that possible?!\n\nHow can a tiny pet-project with just a couple thousand lines of code compete with two of the most established networking libraries?\n**UCall stands on the shoulders of Giants**:\n\n- `io_uring` for interrupt-less IO.\n  - `io_uring_prep_read_fixed` on 5.1+.\n  - `io_uring_prep_accept_direct` on 5.19+.\n  - `io_uring_register_files_sparse` on 5.19+.\n  - `IORING_SETUP_COOP_TASKRUN` optional on 5.19+.\n  - `IORING_SETUP_SINGLE_ISSUER` optional on 6.0+.\n\n- SIMD-accelerated parsers with manual memory control.\n  - [`simdjson`][simdjson] to parse JSON faster than gRPC can unpack `ProtoBuf`.\n  - [`Turbo-Base64`][base64] to decode binary values from a `Base64` form.\n  - [`picohttpparser`][picohttpparser] to navigate HTTP headers.\n\nYou have already seen the latency of the round trip..., the throughput in requests per second..., want to see the bandwidth?\nTry yourself!\n\n```python\n@server\ndef echo(data: bytes):\n    return data\n```\n\n## More Functionality than FastAPI\n\nFastAPI supports native type, while UCall supports `numpy.ndarray`, `PIL.Image` and other custom types.\nThis comes handy when you build real applications or want to deploy Multi-Modal AI, like we do with [UForm](https://github.com/unum-cloud/uform).\n\n```python\nfrom ucall.rich_posix import Server\nimport ufrom\n\nserver = Server()\nmodel = uform.get_model('unum-cloud/uform-vl-multilingual')\n\n@server\ndef vectorize(description: str, photo: PIL.Image.Image) -> numpy.ndarray:\n    image = model.preprocess_image(photo)\n    tokens = model.preprocess_text(description)\n    joint_embedding = model.encode_multimodal(image=image, text=tokens)\n\n    return joint_embedding.cpu().detach().numpy()\n```\n\nWe also have our own optional `Client` class that helps with those custom types.\n\n```python\nfrom ucall.client import Client\n\nclient = Client()\n# Explicit JSON-RPC call:\nresponse = client({\n    'method': 'vectorize',\n    'params': {\n        'description': description,\n        'image': image,\n    },\n    'jsonrpc': '2.0',\n    'id': 100,\n})\n# Or the same with syntactic sugar:\nresponse = client.vectorize(description=description, image=image) \n```\n\n## CLI like [cURL](https://curl.se/docs/manpage.html)\n\nAside from the Python `Client`, we provide an easy-to-use Command Line Interface, which comes with `pip install ucall`.\nIt allow you to call a remote server, upload files, with direct support for images and NumPy arrays.\nTranslating previous example into a Bash script, to call the server on the same machine:\n\n```sh\nucall vectorize description='Product description' -i image=./local/path.png\n```\n\nTo address a remote server:\n\n```sh\nucall vectorize description='Product description' -i image=./local/path.png --uri 0.0.0.0 -p 8545\n```\n\nTo print the docs, use `ucall -h`:\n\n```txt\nusage: ucall [-h] [--uri URI] [--port PORT] [-f [FILE ...]] [-i [IMAGE ...]] [--positional [POSITIONAL ...]] method [kwargs ...]\n\nUCall Client CLI\n\npositional arguments:\n  method                method name\n  kwargs                method arguments\n\noptions:\n  -h, --help            show this help message and exit\n  --uri URI             server uri\n  --port PORT           server port\n  -f [FILE ...], --file [FILE ...]\n                        method positional arguments\n  -i [IMAGE ...], --image [IMAGE ...]\n                        method positional arguments\n  --positional [POSITIONAL ...]\n                        method positional arguments\n```\n\nYou can also explicitly annotate types, to distinguish integers, floats, and strings, to avoid ambiguity.\n\n```\nucall auth id=256\nucall auth id:int=256\nucall auth id:str=256\n```\n\n## Free Tier Throughput\n\nWe will leave bandwidth measurements to enthusiasts, but will share some more numbers.\nThe general logic is that you can't squeeze high performance from Free-Tier machines.\nCurrently AWS provides following options: `t2.micro` and `t4g.small`, on older Intel and newer Graviton 2 chips.\nThis library is so fast, that it doesn't need more than 1 core, so you can run a fast server even on a tiny Free-Tier server!\n\n| Setup                   |   \ud83d\udd01   | Server | Clients | `t2.micro` | `t4g.small` |\n| :---------------------- | :---: | :----: | :-----: | ---------: | ----------: |\n| Fast API over REST      |   \u274c   |   \ud83d\udc0d    |    1    |    328 rps |     424 rps |\n| Fast API over WebSocket |   \u2705   |   \ud83d\udc0d    |    1    |  1'504 rps |   3'051 rps |\n| gRPC                    |   \u2705   |   \ud83d\udc0d    |    1    |  1'169 rps |   1'974 rps |\n|                         |       |        |         |            |             |\n| UCall with POSIX        |   \u274c   |   C    |    1    |  1'082 rps |   2'438 rps |\n| UCall with io_uring     |   \u2705   |   C    |    1    |          - |   5'864 rps |\n| UCall with POSIX        |   \u274c   |   C    |   32    |  3'399 rps |  39'877 rps |\n| UCall with io_uring     |   \u2705   |   C    |   32    |          - |  88'455 rps |\n\nIn this case, every server was bombarded by requests from 1 or a fleet of 32 other instances in the same availability zone.\nIf you want to reproduce those benchmarks, check out the [`sum` examples on GitHub][sum-examples].\n\n## Quick Start\n\nFor Python:\n\n```sh\npip install ucall\n```\n\nFor CMake projects:\n\n```cmake\ninclude(FetchContent)\nFetchContent_Declare(\n    ucall\n    GIT_REPOSITORY https://github.com/unum-cloud/ucall\n    GIT_SHALLOW TRUE\n)\nFetchContent_MakeAvailable(ucall)\ninclude_directories(${ucall_SOURCE_DIR}/include)\n```\n\nThe C usage example is mouthful compared to Python.\nWe wanted to make it as lightweight as possible and to allow optional arguments without dynamic allocations and named lookups.\nSo unlike the Python layer, we expect the user to manually extract the arguments from the call context with `ucall_param_named_i64()`, and its siblings.\n\n```c\n#include <cstdio.h>\n#include <ucall/ucall.h>\n\nstatic void sum(ucall_call_t call, ucall_callback_tag_t) {\n    int64_t a{}, b{};\n    char printed_sum[256]{};\n    bool got_a = ucall_param_named_i64(call, \"a\", 0, &a);\n    bool got_b = ucall_param_named_i64(call, \"b\", 0, &b);\n    if (!got_a || !got_b)\n        return ucall_call_reply_error_invalid_params(call);\n\n    int len = snprintf(printed_sum, 256, \"%ll\", a + b);\n    ucall_call_reply_content(call, printed_sum, len);\n}\n\nint main(int argc, char** argv) {\n\n    ucall_server_t server{};\n    ucall_config_t config{};\n\n    ucall_init(&config, &server);\n    ucall_add_procedure(server, \"sum\", &sum, NULL);\n    ucall_take_calls(server, 0);\n    ucall_free(server);\n    return 0;\n}\n```\n\n## Roadmap\n\n- [x] Batch Requests\n- [x] JSON-RPC over raw TCP sockets\n- [x] JSON-RPC over TCP with HTTP\n- [x] Concurrent sessions\n- [x] NumPy `array` and Pillow serialization\n- [ ] HTTP**S** support\n- [ ] Batch-capable endpoints for ML\n- [ ] Zero-ETL relay calls\n- [ ] Integrating with [UKV][ukv]\n- [ ] WebSockets for web interfaces\n- [ ] AF_XDP and UDP-based analogs on Linux\n\n> Want to affect the roadmap and request a feature? Join the discussions on Discord.\n\n## Why JSON-RPC?\n\n- Transport independent: UDP, TCP, bring what you want.\n- Application layer is optional: use HTTP or not.\n- Unlike REST APIs, there is just one way to pass arguments.\n\n[simdjson]: https://github.com/simdjson/simdjson\n[base64]: https://github.com/powturbo/Turbo-Base64\n[picohttpparser]: https://github.com/h2o/picohttpparser\n[sum-examples]: https://github.com/unum-cloud/ucall/tree/dev/examples/sum\n[ukv]: https://github.com/unum-cloud/ukv\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -56,7 +55,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17937702,
+        "last_serial": 18175211,
         "urls": [
             {
                 "comment_text": "",
@@ -370,6 +369,383 @@
                 "upload_time": "2023-05-02T07:57:47",
                 "upload_time_iso_8601": "2023-05-02T07:57:47.434034Z",
                 "url": "https://files.pythonhosted.org/packages/c7/2c/931a8ec36db6bb65adba7b66970762062454dd5feb7f5abe38d0f0c5e071/ucall-0.4.0-cp39-cp39-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.5.0": {
+        "info": {
+            "author": "Ashot Vardanian",
+            "author_email": "info@unum.cloud",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 5 - Production/Stable",
+                "Intended Audience :: Developers",
+                "Intended Audience :: Information Technology",
+                "License :: OSI Approved :: Apache Software License",
+                "Natural Language :: English",
+                "Operating System :: MacOS",
+                "Operating System :: POSIX",
+                "Operating System :: POSIX :: Linux",
+                "Operating System :: Unix",
+                "Programming Language :: C",
+                "Programming Language :: C++",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.9",
+                "Programming Language :: Python :: Implementation :: CPython",
+                "Topic :: Communications :: File Sharing",
+                "Topic :: Internet :: WWW/HTTP",
+                "Topic :: System :: Networking"
+            ],
+            "description": "<h1 align=\"center\">UCall</h1>\n<h3 align=\"center\">\nJSON Remote Procedure Calls Library<br/>\nUp to 100x Faster than FastAPI<br/>\n</h3>\n<br/>\n\n<p align=\"center\">\n<a href=\"https://discord.gg/xuDmpbEDnQ\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/discord.svg\" alt=\"Discord\"></a>\n&nbsp;&nbsp;&nbsp;\n<a href=\"https://www.linkedin.com/company/unum-cloud/\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/linkedin.svg\" alt=\"LinkedIn\"></a>\n&nbsp;&nbsp;&nbsp;\n<a href=\"https://twitter.com/unum_cloud\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/twitter.svg\" alt=\"Twitter\"></a>\n&nbsp;&nbsp;&nbsp;\n<a href=\"https://unum.cloud/post\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/blog.svg\" alt=\"Blog\"></a>\n&nbsp;&nbsp;&nbsp;\n<a href=\"https://github.com/unum-cloud/ucall\"><img height=\"25\" src=\"https://github.com/unum-cloud/ukv/raw/main/assets/icons/github.svg\" alt=\"GitHub\"></a>\n</p>\n\n---\n\nMost modern networking is built either on slow and ambiguous REST APIs or unnecessarily complex gRPC.\nFastAPI, for example, looks very approachable.\nWe aim to be equally or even simpler to use.\n\n<table width=\"100%\">\n<tr>\n<th width=\"50%\">FastAPI</th><th width=\"50%\">UCall</th>\n</tr>\n<tr>\n<td>\n\n```sh\npip install fastapi uvicorn\n```\n\n</td>\n<td>\n\n```sh\npip install ucall\n```\n\n</td>\n</tr>\n<tr>\n<td>\n\n```python\nfrom fastapi import FastAPI\nimport uvicorn\n\nserver = FastAPI()\n\n@server.get('/sum')\ndef sum(a: int, b: int):\n    return a + b\n\nuvicorn.run(...)    \n```\n\n</td>\n<td>\n\n```python\nfrom ucall.posix import Server\n# from ucall.uring import Server on 5.19+\n\nserver = Server()\n\n@server\ndef sum(a: int, b: int):\n    return a + b\n\nserver.run()    \n```\n\n</td>\n</tr>\n</table>\n\nIt takes over a millisecond to handle a trivial FastAPI call on a recent 8-core CPU.\nIn that time, light could have traveled 300 km through optics to the neighboring city or country, in my case.\nHow does UCall compare to FastAPI and gRPC?\n\n| Setup                   |   \ud83d\udd01   | Server | Latency w 1 client | Throughput w 32 clients |\n| :---------------------- | :---: | :----: | -----------------: | ----------------------: |\n| Fast API over REST      |   \u274c   |   \ud83d\udc0d    |           1'203 \u03bcs |               3'184 rps |\n| Fast API over WebSocket |   \u2705   |   \ud83d\udc0d    |              86 \u03bcs |            11'356 rps \u00b9 |\n| gRPC \u00b2                  |   \u2705   |   \ud83d\udc0d    |             164 \u03bcs |               9'849 rps |\n|                         |       |        |                    |                         |\n| UCall with POSIX        |   \u274c   |   C    |              62 \u03bcs |              79'000 rps |\n| UCall with io_uring     |   \u2705   |   \ud83d\udc0d    |              40 \u03bcs |             210'000 rps |\n| UCall with io_uring     |   \u2705   |   C    |              22 \u03bcs |             231'000 rps |\n\n<details>\n  <summary>Table legend</summary>\n\nAll benchmarks were conducted on AWS on general purpose instances with **Ubuntu 22.10 AMI**.\nIt is the first major AMI to come with **Linux Kernel 5.19**, featuring much wider `io_uring` support for networking operations.\nThese specific numbers were obtained on `c7g.metal` beefy instances with Graviton 3 chips.\n\n- The \ud83d\udd01 column marks, if the TCP/IP connection is being reused during subsequent requests.\n- The \"server\" column defines the programming language, in which the server was implemented.\n- The \"latency\" column report the amount of time between sending a request and receiving a response. \u03bc stands for micro, \u03bcs subsequently means microseconds.\n- The \"throughput\" column reports the number of Requests Per Second when querying the same server application from multiple client processes running on the same machine.\n\n> \u00b9 FastAPI couldn't process concurrent requests with WebSockets.\n\n> \u00b2 We tried generating C++ backends with gRPC, but its numbers, suspiciously, weren't better. There is also an async gRPC option, that wasn't tried.\n\n</details>\n\n## How is that possible?!\n\nHow can a tiny pet-project with just a couple thousand lines of code compete with two of the most established networking libraries?\n**UCall stands on the shoulders of Giants**:\n\n- `io_uring` for interrupt-less IO.\n  - `io_uring_prep_read_fixed` on 5.1+.\n  - `io_uring_prep_accept_direct` on 5.19+.\n  - `io_uring_register_files_sparse` on 5.19+.\n  - `IORING_SETUP_COOP_TASKRUN` optional on 5.19+.\n  - `IORING_SETUP_SINGLE_ISSUER` optional on 6.0+.\n\n- SIMD-accelerated parsers with manual memory control.\n  - [`simdjson`][simdjson] to parse JSON faster than gRPC can unpack `ProtoBuf`.\n  - [`Turbo-Base64`][base64] to decode binary values from a `Base64` form.\n  - [`picohttpparser`][picohttpparser] to navigate HTTP headers.\n\nYou have already seen the latency of the round trip..., the throughput in requests per second..., want to see the bandwidth?\nTry yourself!\n\n```python\n@server\ndef echo(data: bytes):\n    return data\n```\n\n## More Functionality than FastAPI\n\nFastAPI supports native type, while UCall supports `numpy.ndarray`, `PIL.Image` and other custom types.\nThis comes handy when you build real applications or want to deploy Multi-Modal AI, like we do with [UForm](https://github.com/unum-cloud/uform).\n\n```python\nfrom ucall.rich_posix import Server\nimport ufrom\n\nserver = Server()\nmodel = uform.get_model('unum-cloud/uform-vl-multilingual')\n\n@server\ndef vectorize(description: str, photo: PIL.Image.Image) -> numpy.ndarray:\n    image = model.preprocess_image(photo)\n    tokens = model.preprocess_text(description)\n    joint_embedding = model.encode_multimodal(image=image, text=tokens)\n\n    return joint_embedding.cpu().detach().numpy()\n```\n\nWe also have our own optional `Client` class that helps with those custom types.\n\n```python\nfrom ucall.client import Client\n\nclient = Client()\n# Explicit JSON-RPC call:\nresponse = client({\n    'method': 'vectorize',\n    'params': {\n        'description': description,\n        'image': image,\n    },\n    'jsonrpc': '2.0',\n    'id': 100,\n})\n# Or the same with syntactic sugar:\nresponse = client.vectorize(description=description, image=image) \n```\n\n## CLI like [cURL](https://curl.se/docs/manpage.html)\n\nAside from the Python `Client`, we provide an easy-to-use Command Line Interface, which comes with `pip install ucall`.\nIt allow you to call a remote server, upload files, with direct support for images and NumPy arrays.\nTranslating previous example into a Bash script, to call the server on the same machine:\n\n```sh\nucall vectorize description='Product description' -i image=./local/path.png\n```\n\nTo address a remote server:\n\n```sh\nucall vectorize description='Product description' -i image=./local/path.png --uri 0.0.0.0 -p 8545\n```\n\nTo print the docs, use `ucall -h`:\n\n```txt\nusage: ucall [-h] [--uri URI] [--port PORT] [-f [FILE ...]] [-i [IMAGE ...]] [--positional [POSITIONAL ...]] method [kwargs ...]\n\nUCall Client CLI\n\npositional arguments:\n  method                method name\n  kwargs                method arguments\n\noptions:\n  -h, --help            show this help message and exit\n  --uri URI             server uri\n  --port PORT           server port\n  -f [FILE ...], --file [FILE ...]\n                        method positional arguments\n  -i [IMAGE ...], --image [IMAGE ...]\n                        method positional arguments\n  --positional [POSITIONAL ...]\n                        method positional arguments\n```\n\nYou can also explicitly annotate types, to distinguish integers, floats, and strings, to avoid ambiguity.\n\n```\nucall auth id=256\nucall auth id:int=256\nucall auth id:str=256\n```\n\n## Free Tier Throughput\n\nWe will leave bandwidth measurements to enthusiasts, but will share some more numbers.\nThe general logic is that you can't squeeze high performance from Free-Tier machines.\nCurrently AWS provides following options: `t2.micro` and `t4g.small`, on older Intel and newer Graviton 2 chips.\nThis library is so fast, that it doesn't need more than 1 core, so you can run a fast server even on a tiny Free-Tier server!\n\n| Setup                   |   \ud83d\udd01   | Server | Clients | `t2.micro` | `t4g.small` |\n| :---------------------- | :---: | :----: | :-----: | ---------: | ----------: |\n| Fast API over REST      |   \u274c   |   \ud83d\udc0d    |    1    |    328 rps |     424 rps |\n| Fast API over WebSocket |   \u2705   |   \ud83d\udc0d    |    1    |  1'504 rps |   3'051 rps |\n| gRPC                    |   \u2705   |   \ud83d\udc0d    |    1    |  1'169 rps |   1'974 rps |\n|                         |       |        |         |            |             |\n| UCall with POSIX        |   \u274c   |   C    |    1    |  1'082 rps |   2'438 rps |\n| UCall with io_uring     |   \u2705   |   C    |    1    |          - |   5'864 rps |\n| UCall with POSIX        |   \u274c   |   C    |   32    |  3'399 rps |  39'877 rps |\n| UCall with io_uring     |   \u2705   |   C    |   32    |          - |  88'455 rps |\n\nIn this case, every server was bombarded by requests from 1 or a fleet of 32 other instances in the same availability zone.\nIf you want to reproduce those benchmarks, check out the [`sum` examples on GitHub][sum-examples].\n\n## Quick Start\n\nFor Python:\n\n```sh\npip install ucall\n```\n\nFor CMake projects:\n\n```cmake\ninclude(FetchContent)\nFetchContent_Declare(\n    ucall\n    GIT_REPOSITORY https://github.com/unum-cloud/ucall\n    GIT_SHALLOW TRUE\n)\nFetchContent_MakeAvailable(ucall)\ninclude_directories(${ucall_SOURCE_DIR}/include)\n```\n\nThe C usage example is mouthful compared to Python.\nWe wanted to make it as lightweight as possible and to allow optional arguments without dynamic allocations and named lookups.\nSo unlike the Python layer, we expect the user to manually extract the arguments from the call context with `ucall_param_named_i64()`, and its siblings.\n\n```c\n#include <cstdio.h>\n#include <ucall/ucall.h>\n\nstatic void sum(ucall_call_t call, ucall_callback_tag_t) {\n    int64_t a{}, b{};\n    char printed_sum[256]{};\n    bool got_a = ucall_param_named_i64(call, \"a\", 0, &a);\n    bool got_b = ucall_param_named_i64(call, \"b\", 0, &b);\n    if (!got_a || !got_b)\n        return ucall_call_reply_error_invalid_params(call);\n\n    int len = snprintf(printed_sum, 256, \"%ll\", a + b);\n    ucall_call_reply_content(call, printed_sum, len);\n}\n\nint main(int argc, char** argv) {\n\n    ucall_server_t server{};\n    ucall_config_t config{};\n\n    ucall_init(&config, &server);\n    ucall_add_procedure(server, \"sum\", &sum, NULL);\n    ucall_take_calls(server, 0);\n    ucall_free(server);\n    return 0;\n}\n```\n\n## Roadmap\n\n- [x] Batch Requests\n- [x] JSON-RPC over raw TCP sockets\n- [x] JSON-RPC over TCP with HTTP\n- [x] Concurrent sessions\n- [x] NumPy `array` and Pillow serialization\n- [ ] HTTP**S** support\n- [ ] Batch-capable endpoints for ML\n- [ ] Zero-ETL relay calls\n- [ ] Integrating with [UKV][ukv]\n- [ ] WebSockets for web interfaces\n- [ ] AF_XDP and UDP-based analogs on Linux\n\n> Want to affect the roadmap and request a feature? Join the discussions on Discord.\n\n## Why JSON-RPC?\n\n- Transport independent: UDP, TCP, bring what you want.\n- Application layer is optional: use HTTP or not.\n- Unlike REST APIs, there is just one way to pass arguments.\n\n[simdjson]: https://github.com/simdjson/simdjson\n[base64]: https://github.com/powturbo/Turbo-Base64\n[picohttpparser]: https://github.com/h2o/picohttpparser\n[sum-examples]: https://github.com/unum-cloud/ucall/tree/dev/examples/sum\n[ukv]: https://github.com/unum-cloud/ukv\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/unum-cloud/ucall",
+            "keywords": "",
+            "license": "Apache-2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "ucall",
+            "package_url": "https://pypi.org/project/ucall/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/ucall/",
+            "project_urls": {
+                "Homepage": "https://github.com/unum-cloud/ucall"
+            },
+            "release_url": "https://pypi.org/project/ucall/0.5.0/",
+            "requires_dist": [
+                "numpy (>=1.16)",
+                "pillow"
+            ],
+            "requires_python": ">=3.9",
+            "summary": "Up to 100x Faster FastAPI. JSON-RPC with io_uring, SIMD-acceleration, and pure CPython bindings",
+            "version": "0.5.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18175211,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "448598227ee249c641623805d3491ad0d2d13768d43e1b4b0d9503653dd10f09",
+                    "md5": "a33de77142795265c95fd2146ff1f720",
+                    "sha256": "67a5e885c8f1736edc3312196440f4f79ba184d5d9daf141ceeeb6b603772740"
+                },
+                "downloads": -1,
+                "filename": "ucall-0.5.0-cp310-cp310-macosx_11_0_arm64.whl",
+                "has_sig": false,
+                "md5_digest": "a33de77142795265c95fd2146ff1f720",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.9",
+                "size": 929194,
+                "upload_time": "2023-05-19T20:27:47",
+                "upload_time_iso_8601": "2023-05-19T20:27:47.376546Z",
+                "url": "https://files.pythonhosted.org/packages/44/85/98227ee249c641623805d3491ad0d2d13768d43e1b4b0d9503653dd10f09/ucall-0.5.0-cp310-cp310-macosx_11_0_arm64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "81437c235f1ba918b01cff96cca8fd0715f4d21ba77cebcd79ecbffc52d7b2e4",
+                    "md5": "a742db6f41fff6d626ee5343e37e9be4",
+                    "sha256": "4a63a759c6ab0cdc5ec1dfc350c308d2594ef8c567d27774621fcd294dffc4b7"
+                },
+                "downloads": -1,
+                "filename": "ucall-0.5.0-cp310-cp310-macosx_11_0_universal2.whl",
+                "has_sig": false,
+                "md5_digest": "a742db6f41fff6d626ee5343e37e9be4",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.9",
+                "size": 1944471,
+                "upload_time": "2023-05-19T20:27:49",
+                "upload_time_iso_8601": "2023-05-19T20:27:49.741248Z",
+                "url": "https://files.pythonhosted.org/packages/81/43/7c235f1ba918b01cff96cca8fd0715f4d21ba77cebcd79ecbffc52d7b2e4/ucall-0.5.0-cp310-cp310-macosx_11_0_universal2.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "eca378b72fc3d50d01a5f0f8e0055cf2342b1402ae9a2a7f5b03cabe67c545c2",
+                    "md5": "c2e51960a7644a35960e7d4e6257d9b2",
+                    "sha256": "e70f12c1a1e0dc65d9f3f03da2fa0020086f074cb19db39c4bd5dab58872f3b5"
+                },
+                "downloads": -1,
+                "filename": "ucall-0.5.0-cp310-cp310-macosx_11_0_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "c2e51960a7644a35960e7d4e6257d9b2",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.9",
+                "size": 1032207,
+                "upload_time": "2023-05-19T20:27:51",
+                "upload_time_iso_8601": "2023-05-19T20:27:51.553575Z",
+                "url": "https://files.pythonhosted.org/packages/ec/a3/78b72fc3d50d01a5f0f8e0055cf2342b1402ae9a2a7f5b03cabe67c545c2/ucall-0.5.0-cp310-cp310-macosx_11_0_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "7bcff1962f4cf282aad5f5403c014cba90670c637c76ff6fcd4948ab09d27c2b",
+                    "md5": "07a2cb78257c0d230d021ac11bc141cd",
+                    "sha256": "2baf4e64b0c6e9318b3913b6912dac8d07fc34c73b42617365c278898bf2d10a"
+                },
+                "downloads": -1,
+                "filename": "ucall-0.5.0-cp310-cp310-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+                "has_sig": false,
+                "md5_digest": "07a2cb78257c0d230d021ac11bc141cd",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.9",
+                "size": 1172198,
+                "upload_time": "2023-05-19T20:27:53",
+                "upload_time_iso_8601": "2023-05-19T20:27:53.810196Z",
+                "url": "https://files.pythonhosted.org/packages/7b/cf/f1962f4cf282aad5f5403c014cba90670c637c76ff6fcd4948ab09d27c2b/ucall-0.5.0-cp310-cp310-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f99f214abd21a451f63abc6045d38448af92cec7d3564f22a892f3579010111e",
+                    "md5": "c92e38392bff112260fb70973951c213",
+                    "sha256": "7033e1b29f2fe6975c5247b6333bea9164737e40aadfd3d4ae0db105281bb61e"
+                },
+                "downloads": -1,
+                "filename": "ucall-0.5.0-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "c92e38392bff112260fb70973951c213",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.9",
+                "size": 1336049,
+                "upload_time": "2023-05-19T20:27:56",
+                "upload_time_iso_8601": "2023-05-19T20:27:56.059200Z",
+                "url": "https://files.pythonhosted.org/packages/f9/9f/214abd21a451f63abc6045d38448af92cec7d3564f22a892f3579010111e/ucall-0.5.0-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6c9cf7bbe43980a76e3e7bf24b83b4c462e5bf581cdb2f72efd031d0c3ca069f",
+                    "md5": "e3d6ac3443684d6310a9f369bfb3db91",
+                    "sha256": "a14933a1abfe9ae1ea8479722b441d253b562f13f70976f41109288ae09bf90d"
+                },
+                "downloads": -1,
+                "filename": "ucall-0.5.0-cp311-cp311-macosx_11_0_arm64.whl",
+                "has_sig": false,
+                "md5_digest": "e3d6ac3443684d6310a9f369bfb3db91",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.9",
+                "size": 929206,
+                "upload_time": "2023-05-19T20:27:57",
+                "upload_time_iso_8601": "2023-05-19T20:27:57.965760Z",
+                "url": "https://files.pythonhosted.org/packages/6c/9c/f7bbe43980a76e3e7bf24b83b4c462e5bf581cdb2f72efd031d0c3ca069f/ucall-0.5.0-cp311-cp311-macosx_11_0_arm64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3da07c39d35010f215da93f376c53cae1ac3e90d61ce96e0eac3dcc975893dd5",
+                    "md5": "0a35a4e3a4810c53183a041299a9d551",
+                    "sha256": "b45f6a925314ad2c5c8d8663e95ca41a829b7b935f39a9a0e7ceb05db9e1e5c5"
+                },
+                "downloads": -1,
+                "filename": "ucall-0.5.0-cp311-cp311-macosx_11_0_universal2.whl",
+                "has_sig": false,
+                "md5_digest": "0a35a4e3a4810c53183a041299a9d551",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.9",
+                "size": 1944458,
+                "upload_time": "2023-05-19T20:28:00",
+                "upload_time_iso_8601": "2023-05-19T20:28:00.097125Z",
+                "url": "https://files.pythonhosted.org/packages/3d/a0/7c39d35010f215da93f376c53cae1ac3e90d61ce96e0eac3dcc975893dd5/ucall-0.5.0-cp311-cp311-macosx_11_0_universal2.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "439ffadf4f13c7ff971234ba07b8485fe379a9982da4681d3be50ebd99beb2f3",
+                    "md5": "e7a4df37c969fb75f700565d20faa7f5",
+                    "sha256": "5ee100330afaf3b7c7b0516aff2283431f573432329d45e0977cb5186400dbc5"
+                },
+                "downloads": -1,
+                "filename": "ucall-0.5.0-cp311-cp311-macosx_11_0_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "e7a4df37c969fb75f700565d20faa7f5",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.9",
+                "size": 1032231,
+                "upload_time": "2023-05-19T20:28:02",
+                "upload_time_iso_8601": "2023-05-19T20:28:02.642960Z",
+                "url": "https://files.pythonhosted.org/packages/43/9f/fadf4f13c7ff971234ba07b8485fe379a9982da4681d3be50ebd99beb2f3/ucall-0.5.0-cp311-cp311-macosx_11_0_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2de494fbf7fda3bb0189189e935556050c4ed5d88340a9e6fe5b7e0774103c8a",
+                    "md5": "51464f4397e057d00c91e12b91edc346",
+                    "sha256": "102f808d90124d8c3664a878273c656a3bb49d1b3f116dc7b2d5125886277ce7"
+                },
+                "downloads": -1,
+                "filename": "ucall-0.5.0-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+                "has_sig": false,
+                "md5_digest": "51464f4397e057d00c91e12b91edc346",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.9",
+                "size": 1172182,
+                "upload_time": "2023-05-19T20:28:04",
+                "upload_time_iso_8601": "2023-05-19T20:28:04.533797Z",
+                "url": "https://files.pythonhosted.org/packages/2d/e4/94fbf7fda3bb0189189e935556050c4ed5d88340a9e6fe5b7e0774103c8a/ucall-0.5.0-cp311-cp311-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "158f5216ad032d27985e61c3d2f71e60cde401fab3f02c0871eb035ac52cd64d",
+                    "md5": "0107161dd603cd8728ff7eb1254106ca",
+                    "sha256": "79f9ac5d3e99e1bf6d1619944dce9af437111573f2d8b2c873c59646f010dead"
+                },
+                "downloads": -1,
+                "filename": "ucall-0.5.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "0107161dd603cd8728ff7eb1254106ca",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.9",
+                "size": 1336068,
+                "upload_time": "2023-05-19T20:28:06",
+                "upload_time_iso_8601": "2023-05-19T20:28:06.931705Z",
+                "url": "https://files.pythonhosted.org/packages/15/8f/5216ad032d27985e61c3d2f71e60cde401fab3f02c0871eb035ac52cd64d/ucall-0.5.0-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3a2adb4d605350c503f4d785f556e7948525057c18a438dbc33e1b85c3e33ce8",
+                    "md5": "5fe1a793ba78b565e19dcec39d688745",
+                    "sha256": "e77acf467109038c8f0f09752841fb11962bd9e3a17a81cc5ba105d7a97ab311"
+                },
+                "downloads": -1,
+                "filename": "ucall-0.5.0-cp39-cp39-macosx_11_0_arm64.whl",
+                "has_sig": false,
+                "md5_digest": "5fe1a793ba78b565e19dcec39d688745",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.9",
+                "size": 929224,
+                "upload_time": "2023-05-19T20:28:08",
+                "upload_time_iso_8601": "2023-05-19T20:28:08.971062Z",
+                "url": "https://files.pythonhosted.org/packages/3a/2a/db4d605350c503f4d785f556e7948525057c18a438dbc33e1b85c3e33ce8/ucall-0.5.0-cp39-cp39-macosx_11_0_arm64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "84ebed23b8224a7ff95bdae9b9299986cc7b992c89c2a1e5f9fedc9d9a114c52",
+                    "md5": "74ccd7deba683fc98a1a531102306e16",
+                    "sha256": "cdf70815276796d7c43ed49c56563d6c177bb0b2feddbb85ed7aca8c65df8612"
+                },
+                "downloads": -1,
+                "filename": "ucall-0.5.0-cp39-cp39-macosx_11_0_universal2.whl",
+                "has_sig": false,
+                "md5_digest": "74ccd7deba683fc98a1a531102306e16",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.9",
+                "size": 1944481,
+                "upload_time": "2023-05-19T20:28:10",
+                "upload_time_iso_8601": "2023-05-19T20:28:10.886725Z",
+                "url": "https://files.pythonhosted.org/packages/84/eb/ed23b8224a7ff95bdae9b9299986cc7b992c89c2a1e5f9fedc9d9a114c52/ucall-0.5.0-cp39-cp39-macosx_11_0_universal2.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "89ab6019517016717e1a1ac47057f0d83cf67a9bfb5c978e1f04897758e776f4",
+                    "md5": "744123d9df848576dab47754495f935c",
+                    "sha256": "bc31d951d05046c37d3bbc05527615bdebf06cb9c42f7ba59642dbfd948f2d21"
+                },
+                "downloads": -1,
+                "filename": "ucall-0.5.0-cp39-cp39-macosx_11_0_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "744123d9df848576dab47754495f935c",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.9",
+                "size": 1032239,
+                "upload_time": "2023-05-19T20:28:13",
+                "upload_time_iso_8601": "2023-05-19T20:28:13.095484Z",
+                "url": "https://files.pythonhosted.org/packages/89/ab/6019517016717e1a1ac47057f0d83cf67a9bfb5c978e1f04897758e776f4/ucall-0.5.0-cp39-cp39-macosx_11_0_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "59fe76b422da563f2724f1356b8af5d9306804dbc3fe1a6ae6ef734f8975bfe2",
+                    "md5": "4b7d1a11a2fd7f6418236ab4216736e3",
+                    "sha256": "bad434832293f82852862ff67df72e2b7cb0a4ce903a24b8f282f25e959d1296"
+                },
+                "downloads": -1,
+                "filename": "ucall-0.5.0-cp39-cp39-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+                "has_sig": false,
+                "md5_digest": "4b7d1a11a2fd7f6418236ab4216736e3",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.9",
+                "size": 1172189,
+                "upload_time": "2023-05-19T20:28:14",
+                "upload_time_iso_8601": "2023-05-19T20:28:14.721535Z",
+                "url": "https://files.pythonhosted.org/packages/59/fe/76b422da563f2724f1356b8af5d9306804dbc3fe1a6ae6ef734f8975bfe2/ucall-0.5.0-cp39-cp39-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "50b3fb925cad940c0260f4740dac05ff3eccf7155d2a0cd657c598d5a4b8f915",
+                    "md5": "39daec9ca00ce6870d196caa4e2a2318",
+                    "sha256": "cd58e2c0560ab8a80552aa0d3617acf0dff4292d672c46d3134cc9aa379189db"
+                },
+                "downloads": -1,
+                "filename": "ucall-0.5.0-cp39-cp39-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "39daec9ca00ce6870d196caa4e2a2318",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.9",
+                "size": 1336039,
+                "upload_time": "2023-05-19T20:28:16",
+                "upload_time_iso_8601": "2023-05-19T20:28:16.572108Z",
+                "url": "https://files.pythonhosted.org/packages/50/b3/fb925cad940c0260f4740dac05ff3eccf7155d2a0cd657c598d5a4b8f915/ucall-0.5.0-cp39-cp39-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
                 "yanked": false,
                 "yanked_reason": null
             }

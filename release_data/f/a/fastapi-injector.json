@@ -41,7 +41,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16328211,
+        "last_serial": 18174327,
         "urls": [
             {
                 "comment_text": "",
@@ -130,7 +130,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16328211,
+        "last_serial": 18174327,
         "urls": [
             {
                 "comment_text": "",
@@ -219,7 +219,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16328211,
+        "last_serial": 18174327,
         "urls": [
             {
                 "comment_text": "",
@@ -289,7 +289,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16328211,
+        "last_serial": 18174327,
         "urls": [
             {
                 "comment_text": "",
@@ -381,7 +381,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16328211,
+        "last_serial": 18174327,
         "urls": [
             {
                 "comment_text": "",
@@ -473,7 +473,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16328211,
+        "last_serial": 18174327,
         "urls": [
             {
                 "comment_text": "",
@@ -534,7 +534,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "# FastAPI Injector\n\n![Workflow status](https://github.com/matyasrichter/fastapi-injector/actions/workflows/build.yml/badge.svg?branch=main)\n[![Coverage status](https://coveralls.io/repos/github/matyasrichter/fastapi-injector/badge.svg)](https://coveralls.io/github/matyasrichter/fastapi-injector?branch=main)\n\nIntegrates [injector](https://github.com/alecthomas/injector) with [FastAPI](https://github.com/tiangolo/fastapi).\n\nGithub: https://github.com/matyasrichter/fastapi-injector  \nPyPI: https://pypi.org/project/fastapi-injector/\n\n## Installation\n\n```shell\npip install fastapi-injector\n```\n\n## Usage\n\nWhen creating your FastAPI app, attach the injector to it:\n\n```python\n# app.py\nfrom fastapi import FastAPI\nfrom injector import Injector\nfrom fastapi_injector import attach_injector\n\n\ndef create_app(injector: Injector) -> FastAPI:\n    app = FastAPI()\n    app.include_router(...)\n    ...\n    attach_injector(app, injector)\n    return app\n```\n\nThen, use `Injected` in your routes. Under the hood, `Injected` is `Depends`, so you can use it anywhere `Depends` can be used. In the following example, `InterfaceType` is\nsomething you've bound an implementation to in your injector instance.\n\n```python\nfrom fastapi import APIRouter\nfrom fastapi_injector import Injected\n\nrouter = APIRouter()\n\n\n@router.get(\"/\")\nasync def get_root(integer: int = Injected(InterfaceType)):\n    return integer\n```\n\nA more complete example could look like this (your FastAPI code only depends on `InterfaceType`,\nits implementation only depends on a domain layer port etc.):\n\n```python\n# ------------------------\n# interface.py\nimport abc\nfrom abc import abstractmethod\n\n\nclass SomeInterface(abc.ABC):\n    @abstractmethod\n    async def create_some_entity(self) -> None:\n        \"\"\"Creates and saves an entity.\"\"\"\n\n\n# ------------------------\n# service.py\nimport abc\nfrom .interface import SomeInterface\n\n\nclass SomeSavePort(abc.ABC):\n    @abc.abstractmethod\n    async def save_something(self, something: Entity) -> None:\n        \"\"\"Saves an entity.\"\"\"\n\n\nclass SomeService(SomeInterface):\n    def __init__(self, save_port: Inject[SomeSavePort]):\n        self.save_port = save_port\n\n    async def create_some_entity(self) -> None:\n        entity = Entity(attr1=1, attr2=2)\n        await self.save_port.save_something(entity)\n\n\n# ------------------------\n# repository.py\nfrom .service import SomeSavePort\n\n\nclass SomeRepository(SomeSavePort):\n    async def save_something(self, something: Entity) -> None:\n# code that saves the entity to the DB\n```\n\n## Request scope\nA common requirement is to have a dependency resolved to the same instance multiple times in the same request,\nbut to create new instances for other requests. An example usecase for this behaviour \nis managing per-request DB connections.\n\nThis library provides a `RequestScope` that fulfills this requirement.\nUnder the hood, it uses [Context Variables](https://docs.python.org/3/library/contextvars.html)\nintroduced in Python 3.7, generates a UUID4 for each request, and caches dependencies in a dictionary\nwith this uuid as the key.\n\n```python\nfrom injector import Injector\nfrom fastapi import FastAPI\nfrom fastapi_injector import InjectorMiddleware, request_scope, attach_injector\n\nfrom foo.bar import Interface, Implementation\n\ninj = Injector()\n# Use request_scope when binding the dependency\ninj.binder.bind(Interface, to=Implementation, scope=request_scope)\n\napp = FastAPI()\n# Add the injector middleware to the app instance\napp.add_middleware(InjectorMiddleware, injector=inj)\nattach_injector(app, inj)\n```\n\nYour dependencies will then be cached within a request's resolution tree.\nCaching works both for top-level and nested dependencies\n(e.g. when you inject a DB connection to multiple repository classes).\n\n```python\n@app.get(\"/\")\ndef get_root(\n    foo: Interface = Injected(Interface),\n    bar: Interface = Injected(Interface),\n):\n    # the following assert will pass because both are the same instance.\n    assert foo is bar\n```\n\n### SyncInjected\nThe dependency constructed by `Injected` is asynchronous. This causes it to run on the main thread. Should your usecase require a synchronous dependency, there's also an alternative - `SyncInjected`. Synchronous dependencies created by `SyncInjected` will be run on a separate thread from the threadpool. See the [FastAPI docs on this behaviour](https://fastapi.tiangolo.com/async/#dependencies).\n\n## Testing with fastapi-injector\n\nTo use your app in tests with overridden dependencies, modify the injector before each test:\n\n```python\n# ------------------------\n# app entrypoint\nimport pytest\nfrom injector import Injector\n\napp = create_app(inj)\n\nif __name__ == \"__main__\":\n    uvicorn.run(\"app\", ...)\n\n\n# ------------------------\n# composition root\ndef create_injector() -> Injector:\n    inj = Injector()\n    # note that this still gets executed,\n    # so if you need to get rid of a DB connection, for example,\n    # you would need to use a callable provider.\n    inj.binder.bind(int, 1)\n    return inj\n\n\n# ------------------------\n# tests\nfrom fastapi import FastAPI\nfrom fastapi.testclient import TestClient\nfrom path.to.app.factory import create_app\n\n\n@pytest.fixture\ndef app() -> FastAPI:\n    inj = Injector()\n    inj.binder.bind(int, 2)\n    return create_app(inj)\n\n\ndef some_test(app: FastAPI):\n    # use test client with the new app\n    client = TestClient(app)\n```\n\n## Contributing\nAll contributions are welcome. Please raise an issue and/or open a pull request if you'd like to help to make `fastapi-injector` better.\n- Use [poetry](https://python-poetry.org/docs/) to install dependencies\n- Use [pre-commit](https://pre-commit.com/) to run linters and formatters before committing and pushing\n- Write tests for your code\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -567,7 +566,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16328211,
+        "last_serial": 18174327,
         "urls": [
             {
                 "comment_text": "",
@@ -608,6 +607,104 @@
                 "upload_time": "2023-01-06T08:21:08",
                 "upload_time_iso_8601": "2023-01-06T08:21:08.358017Z",
                 "url": "https://files.pythonhosted.org/packages/63/07/196a54184e39476709a22d3b75d7c1105358d907112145b6c08257044ad0/fastapi_injector-0.4.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.5.0": {
+        "info": {
+            "author": "Matyas Richter",
+            "author_email": "matyas@mrichter.cz",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Environment :: Web Environment",
+                "Framework :: FastAPI",
+                "Intended Audience :: Developers",
+                "License :: Other/Proprietary License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Software Development :: Libraries",
+                "Typing :: Typed"
+            ],
+            "description": "# FastAPI Injector\n\n![Workflow status](https://github.com/matyasrichter/fastapi-injector/actions/workflows/build.yml/badge.svg?branch=main)\n[![Coverage status](https://coveralls.io/repos/github/matyasrichter/fastapi-injector/badge.svg)](https://coveralls.io/github/matyasrichter/fastapi-injector?branch=main)\n\nIntegrates [injector](https://github.com/alecthomas/injector) with [FastAPI](https://github.com/tiangolo/fastapi).\n\nGithub: https://github.com/matyasrichter/fastapi-injector  \nPyPI: https://pypi.org/project/fastapi-injector/\n\n## Installation\n\n```shell\npip install fastapi-injector\n```\n\n## Usage\n\nWhen creating your FastAPI app, attach the injector to it:\n\n```python\n# app.py\nfrom fastapi import FastAPI\nfrom injector import Injector\nfrom fastapi_injector import attach_injector\n\n\ndef create_app(injector: Injector) -> FastAPI:\n    app = FastAPI()\n    app.include_router(...)\n    ...\n    attach_injector(app, injector)\n    return app\n```\n\nThen, use `Injected` in your routes. Under the hood, `Injected` is `Depends`, so you can use it anywhere `Depends` can be used. In the following example, `InterfaceType` is\nsomething you've bound an implementation to in your injector instance.\n\n```python\nfrom fastapi import APIRouter\nfrom fastapi_injector import Injected\n\nrouter = APIRouter()\n\n\n@router.get(\"/\")\nasync def get_root(integer: int = Injected(InterfaceType)):\n    return integer\n```\n\nA more complete example could look like this (your FastAPI code only depends on `InterfaceType`,\nits implementation only depends on a domain layer port etc.):\n\n```python\n# ------------------------\n# interface.py\nimport abc\nfrom abc import abstractmethod\n\n\nclass SomeInterface(abc.ABC):\n    @abstractmethod\n    async def create_some_entity(self) -> None:\n        \"\"\"Creates and saves an entity.\"\"\"\n\n\n# ------------------------\n# service.py\nimport abc\nfrom .interface import SomeInterface\n\n\nclass SomeSavePort(abc.ABC):\n    @abc.abstractmethod\n    async def save_something(self, something: Entity) -> None:\n        \"\"\"Saves an entity.\"\"\"\n\n\nclass SomeService(SomeInterface):\n    def __init__(self, save_port: Inject[SomeSavePort]):\n        self.save_port = save_port\n\n    async def create_some_entity(self) -> None:\n        entity = Entity(attr1=1, attr2=2)\n        await self.save_port.save_something(entity)\n\n\n# ------------------------\n# repository.py\nfrom .service import SomeSavePort\n\n\nclass SomeRepository(SomeSavePort):\n    async def save_something(self, something: Entity) -> None:\n# code that saves the entity to the DB\n```\n\n## Request scope\nA common requirement is to have a dependency resolved to the same instance multiple times in the same request,\nbut to create new instances for other requests. An example usecase for this behaviour \nis managing per-request DB connections.\n\nThis library provides a `RequestScope` that fulfills this requirement.\nUnder the hood, it uses [Context Variables](https://docs.python.org/3/library/contextvars.html)\nintroduced in Python 3.7, generates a UUID4 for each request, and caches dependencies in a dictionary\nwith this uuid as the key.\n\n```python\nfrom injector import Injector\nfrom fastapi import FastAPI\nfrom fastapi_injector import InjectorMiddleware, request_scope, attach_injector\n\nfrom foo.bar import Interface, Implementation\n\ninj = Injector()\n# Use request_scope when binding the dependency\ninj.binder.bind(Interface, to=Implementation, scope=request_scope)\n\napp = FastAPI()\n# Add the injector middleware to the app instance\napp.add_middleware(InjectorMiddleware, injector=inj)\nattach_injector(app, inj)\n```\n\nYour dependencies will then be cached within a request's resolution tree.\nCaching works both for top-level and nested dependencies\n(e.g. when you inject a DB connection to multiple repository classes).\n\n```python\n@app.get(\"/\")\ndef get_root(\n    foo: Interface = Injected(Interface),\n    bar: Interface = Injected(Interface),\n):\n    # the following assert will pass because both are the same instance.\n    assert foo is bar\n```\n\nOutside of FastAPI routes, you can use `RequestScopeFactory.create_scope`, which returns a context manager that substitutes `InjectorMiddleware`.\nThis is useful in celery tasks, cron jobs, CLI commands and other parts of your application outside of the request-response cycle.\n\n```python\nclass MessageHandler:\n    def __init__(self, request_scope_factory: Inject[RequestScopeFactory]) -> None:\n        self.request_scope_factory = request_scope_factory\n\n    async def handle(self, message: Any) -> None:\n        with self.request_scope_factory.create_scope():\n            # process message\n```\n\n### SyncInjected\nThe dependency constructed by `Injected` is asynchronous. This causes it to run on the main thread. Should your usecase require a synchronous dependency, there's also an alternative - `SyncInjected`. Synchronous dependencies created by `SyncInjected` will be run on a separate thread from the threadpool. See the [FastAPI docs on this behaviour](https://fastapi.tiangolo.com/async/#dependencies).\n\n## Testing with fastapi-injector\n\nTo use your app in tests with overridden dependencies, modify the injector before each test:\n\n```python\n# ------------------------\n# app entrypoint\nimport pytest\nfrom injector import Injector\n\napp = create_app(inj)\n\nif __name__ == \"__main__\":\n    uvicorn.run(\"app\", ...)\n\n\n# ------------------------\n# composition root\ndef create_injector() -> Injector:\n    inj = Injector()\n    # note that this still gets executed,\n    # so if you need to get rid of a DB connection, for example,\n    # you would need to use a callable provider.\n    inj.binder.bind(int, 1)\n    return inj\n\n\n# ------------------------\n# tests\nfrom fastapi import FastAPI\nfrom fastapi.testclient import TestClient\nfrom path.to.app.factory import create_app\n\n\n@pytest.fixture\ndef app() -> FastAPI:\n    inj = Injector()\n    inj.binder.bind(int, 2)\n    return create_app(inj)\n\n\ndef some_test(app: FastAPI):\n    # use test client with the new app\n    client = TestClient(app)\n```\n\n## Contributing\nAll contributions are welcome. Please raise an issue and/or open a pull request if you'd like to help to make `fastapi-injector` better.\n- Use [poetry](https://python-poetry.org/docs/) to install dependencies\n- Use [pre-commit](https://pre-commit.com/) to run linters and formatters before committing and pushing\n- Write tests for your code\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/matyasrichter/fastapi-injector",
+            "keywords": "",
+            "license": "BSD",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "fastapi-injector",
+            "package_url": "https://pypi.org/project/fastapi-injector/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/fastapi-injector/",
+            "project_urls": {
+                "Homepage": "https://github.com/matyasrichter/fastapi-injector",
+                "Repository": "https://github.com/matyasrichter/fastapi-injector"
+            },
+            "release_url": "https://pypi.org/project/fastapi-injector/0.5.0/",
+            "requires_dist": [
+                "fastapi (>=0.70.0)",
+                "injector (>=0.19.0)"
+            ],
+            "requires_python": ">=3.8,<3.12",
+            "summary": "python-injector integration for FastAPI",
+            "version": "0.5.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18174327,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2f7893735e2b961ce109f9d6a1c1a51697804e3b900d7cb10823915ceeded98e",
+                    "md5": "36a3bdca8ad70e174d9e9b201d0152c4",
+                    "sha256": "7ddf7e901fc03d28682220f27f21b26259d18f4755091cec12df2f91dd02abb1"
+                },
+                "downloads": -1,
+                "filename": "fastapi_injector-0.5.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "36a3bdca8ad70e174d9e9b201d0152c4",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8,<3.12",
+                "size": 7552,
+                "upload_time": "2023-05-19T19:00:22",
+                "upload_time_iso_8601": "2023-05-19T19:00:22.381568Z",
+                "url": "https://files.pythonhosted.org/packages/2f/78/93735e2b961ce109f9d6a1c1a51697804e3b900d7cb10823915ceeded98e/fastapi_injector-0.5.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a87995d0f2178b9e19a6cd5cfd3afdadf8a587963eb907e2f76dc2dc1fe0b2b0",
+                    "md5": "882168c2f1aa068c57045e5b9875c7d5",
+                    "sha256": "7230dc51339e47b2c28e3255b09d2e39491b31f86cc8585c5094df2cdc8b657e"
+                },
+                "downloads": -1,
+                "filename": "fastapi_injector-0.5.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "882168c2f1aa068c57045e5b9875c7d5",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8,<3.12",
+                "size": 6004,
+                "upload_time": "2023-05-19T19:00:23",
+                "upload_time_iso_8601": "2023-05-19T19:00:23.686065Z",
+                "url": "https://files.pythonhosted.org/packages/a8/79/95d0f2178b9e19a6cd5cfd3afdadf8a587963eb907e2f76dc2dc1fe0b2b0/fastapi_injector-0.5.0.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
