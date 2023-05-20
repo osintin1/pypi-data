@@ -1,0 +1,91 @@
+{
+    "0.2.0": {
+        "info": {
+            "author": "Pavel Polishchuk, Guzel Minibaeva, Aleksandra Ivanova",
+            "author_email": "pavel_polishchuk@ukr.net",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Topic :: Scientific/Engineering :: Bio-Informatics",
+                "Topic :: Scientific/Engineering :: Chemistry"
+            ],
+            "description": "# EasyDock - Python module to automate molecular docking\n\n### Installation\n\n```\npip install easydock\n```\nor the latest version from github\n```\npip install git+https://github.com/ci-lab-cz/easydock.git\n```\n\n### Dependencies\n\nfrom conda\n```\nconda install -c conda-forge python=3.9 numpy=1.20 rdkit scipy dask distributed\n```\n\nfrom pypi\n```\npip install vina meeko\n```\n\nInstallation of gnina is described at https://github.com/gnina/gnina\n\n### Description\n\nFully automatic pipeline for molecular docking.  \n\nFeatures:\n- the major script `run_dock` supports docking with `vina` and `gnina` (`gnina` also supports `smina` and its custom scoring functions)\n- can be used as a command line utility or imported as a python module\n- supports distributed computing using `dask` library\n- supports docking of boron-containing compounds using `vina` and `smina` (boron is replaced with carbon before docking and returned back)\n- all outputs are stored in an SQLite database\n- interrupted calculations can be restarted by invoking the same command or by supplying just a single argument - the existing output database\n- `get_sdf_from_dock_db` is used to extract data from output DB\n\nPipeline:\n- input SMILES are converted in 3D by RDKit, if input is 3D structures in SDF their conformations wil be taken as starting without changes.\n- ligands are protonated by chemaxon at pH 7.4 and the most stable tautomers are generated (optional, requires a Chemaxon license)\n- molecules are converted in PDBQT format using Meeko\n- docking with `vina`/`gnina`\n- output poses are converted in MOL format and stored into output DB along with docking scores\n\n### Example\n\n##### Docking from command line\n\nDocking using `vina` takes input SMILES and a config file. Ligands will not be protonated with Chemaxon, so their supplied charged states will be used. 4 CPU cores will be used. When docking will finish an SDF file will be created with top docking poses for each ligand. \n```\nrun_dock -i input.smi -o output.db --program vina -c config.yml --no_protonation -c 4 --sdf\n``` \n\nExample of config.yml for `vina` docking  \n```\nprotein: /path/to/protein.pdbqt\nprotein_setup: /path/to/grid.txt\nexhaustiveness: 8\nseed: 0\nn_poses: 5\nncpu: 5\n```\n\nThe same but using `gnina`\n```\nrun_dock -i input.smi -o output.db --program gnina -c config.yml --no_protonation -c 4 --sdf\n``` \n\nExample of config.yml for `gnina` docking  \n```\nscript_file: /path/to/gnina_executable\nprotein: /path/to/protein.pdbqt\nprotein_setup: /path/to/grid.txt\nexhaustiveness: 8\nscoring: default\ncnn_scoring: rescore\ncnn: dense_ensemble\nn_poses: 10\naddH: False\nncpu: 1\nseed: 0\n```\n\nTo use `smina` invoke `gnina` as shown above and make corresponding changes in config.yml\n```\nscript_file: /path/to/gnina_executable\nprotein: /path/to/protein.pdbqt\nprotein_setup: /path/to/grid.txt\nexhaustiveness: 8\nscoring: vinardo\ncnn_scoring: None\ncnn: dense_ensemble\nn_poses: 10\naddH: False\nncpu: 1\nseed: 0\n```\n\n##### Docking using multiple servers\n\nTo distribute docking over multiple servers one have to start dask cluster and call the script\n\n```bash\ndask ssh --hostfile $PBS_NODEFILE --nworkers 15 --nthreads 1 &\nsleep 10\nrun_dock -i input.smi -o output.db --program vina -c config.yml --no_protonation -c 4 --sdf --hostfile $PBS_NODEFILE --dask_report\n```\n`$PBS_NODEFILE` is a file containing list of IP addresses of servers. The first one from the list will be used by a dask scheduler, but it will also participate in computations.\n\n`--dask_report` argument will create at the end of calculations an html-file with performance report (may be useful to tweak docking parameters).\n\n**Important setup issue** - the limit of open files on every server should be increased to the level at least twice the total number of requested workers (file streams are used for inter-node communication by dask).\n\n##### Data retrieval from the output database\n\nTo extract data from the database one may use the script `get_sdf_from_dock_db`.\n\nExtract top poses with their scores (additional information in DB fields can be extracted only for the top poses):\n```\nget_sdf_from_dock_db -i output.db -o output.sdf --fields docking_score\n```\nRetrieve second poses for compounds `mol_1` and `mol_4` in SDF format:\n```\nget_sdf_from_dock_db -i output.db -o output.sdf -d mol_1 mol_4 --poses 2 \n```\nInstead of a list of ids a text file can be supplied as an argument `-d`.\n\nRetrieve top poses for compounds with docking score less then -10:\n```\nget_sdf_from_dock_db -i output.db -o output.sdf --fields docking_score --add_sql 'docking_score < -10' \n```\n\n##### Docking from Python\n\nDock a list of molecules on a local computer. Import `mol_dock` function from a corresponding submodule.\n```python\nfrom easydock.run_dock import docking\nfrom easydock.vina_dock import mol_dock\n# from easydock.gnina_dock import mol_dock  # <- enable gnina docking\nfrom rdkit import Chem\n\nsmiles = ['CC(=O)O', 'NCC(=O)O', 'NC(C)C(=O)O']\nmols = [Chem.MolFromSmiles(smi) for smi in smiles]\n\n# assign names, because this will be an identifier of docking outputs of a molecule \nfor mol, smi in zip(mols, smiles):\n    mol.SetProp('_Name', smi)\n\nfor mol_id, res in docking(mols, dock_func=mol_dock, dock_config='config.yml', ncpu=4):\n    print(mol_id, res)\n```\n\n##### Customization\n\nTo implement support of a custom docking program one should implement a function like `mol_dock` which will take as input an RDKit mol object (named molecule) and an yml-file with all docking parameters. The function should run a command line script/utility and return back a tuple of a molecule name and a dictionary of parameters and their values which should be stored in DB (parameter names should be exactly the same as corresponding field names in DB). For examples, please look at `mol_dock` functions in `vina_dock` or `gnina_dock`.\n\n### Changelog\n\n**0.2.0**\n- the stable version with multiple fixes and updates\n- dask library was fully integrated and tested\n- API was redesigned\n- docking of boron-containing compounds was implemented (Vina, smina)\n- a function to predict docking runtime was introduced   \n\n**0.1.2**\n- (bugfix) docking of macrocycles is rigid (in future may be changed)\n\n### Licence\nBSD-3\n\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/ci-lab-cz/easydock",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "easydock",
+            "package_url": "https://pypi.org/project/easydock/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/easydock/",
+            "project_urls": {
+                "Homepage": "https://github.com/ci-lab-cz/easydock"
+            },
+            "release_url": "https://pypi.org/project/easydock/0.2.0/",
+            "requires_dist": [
+                "rdkit (>=2017.09) ; extra == 'rdkit'"
+            ],
+            "requires_python": ">=3.6",
+            "summary": "EasyDock Python module to facilitate molecular docking",
+            "version": "0.2.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18181111,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "69448f6b237da103cdf5f81aa16636c7a6e12ba2e6b7e09ec0258bd8d963439f",
+                    "md5": "7f88e6b5adc9fab9ce3346f3e7f066d2",
+                    "sha256": "dde70054270e76ffec6e746a0529dc54c1d3ff5a038936942c18105e5919cf02"
+                },
+                "downloads": -1,
+                "filename": "easydock-0.2.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "7f88e6b5adc9fab9ce3346f3e7f066d2",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.6",
+                "size": 24408,
+                "upload_time": "2023-05-20T10:08:06",
+                "upload_time_iso_8601": "2023-05-20T10:08:06.825308Z",
+                "url": "https://files.pythonhosted.org/packages/69/44/8f6b237da103cdf5f81aa16636c7a6e12ba2e6b7e09ec0258bd8d963439f/easydock-0.2.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d78c804b482d326ee6cd22e7db0a70ad7314f57b24c20e89693cd8aa8c9f571e",
+                    "md5": "8358ff7879a2b02932cd8b7e057949f8",
+                    "sha256": "8355091392d16bf0e9573eba9ae580be6b8ccec7b03ac26b0aa19d371794672a"
+                },
+                "downloads": -1,
+                "filename": "easydock-0.2.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "8358ff7879a2b02932cd8b7e057949f8",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.6",
+                "size": 21679,
+                "upload_time": "2023-05-20T10:08:08",
+                "upload_time_iso_8601": "2023-05-20T10:08:08.970933Z",
+                "url": "https://files.pythonhosted.org/packages/d7/8c/804b482d326ee6cd22e7db0a70ad7314f57b24c20e89693cd8aa8c9f571e/easydock-0.2.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
