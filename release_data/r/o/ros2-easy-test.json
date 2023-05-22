@@ -15,7 +15,6 @@
                 "Topic :: Software Development :: Testing :: BDD",
                 "Typing :: Typed"
             ],
-            "description": "# ROS2 easy-test\n\n[![PyPI version](https://img.shields.io/pypi/v/ros2-easy-test.svg)](https://pypi.org/project/ros2-easy-test/)\n[![license](https://img.shields.io/pypi/l/ros2-easy-test.svg)](https://github.com/felixdivo/ros2-easy-test/blob/main/LICENSE)\n[![ros2 version](https://img.shields.io/badge/ROS2-Foxy%20Fitzroy+%20(see%20limitations)-blue)](https://docs.ros.org/en/rolling/Releases.html)\n[![python version](https://img.shields.io/badge/python-3.8+%20(matching%20ROS)-blue)](https://devguide.python.org/versions/)\n\n[![CI status](https://github.com/felixdivo/ros2-easy-test/actions/workflows/python-package.yaml/badge.svg)](https://github.com/felixdivo/ros2-easy-test/actions/workflows/python-package.yaml)\n[![Doc status](https://readthedocs.org/projects/ros2-easy-test/badge/)](https://ros2-easy-test.readthedocs.io/en/latest/)\n[![code style](https://img.shields.io/badge/code%20style-black-black)](https://github.com/psf/black)\n[![linter](https://img.shields.io/badge/linter-ruff-black)](https://github.com/charliermarsh/ruff)\n\nA Python test framework for [ROS2](https://ros.org/) allowing for:\n- simple and expressive assertions based on message/service interactions (black box testing)\n- easy integration of existing nodes and launch files\n- testing of nodes implemented in any programming language (C++, Python, ...)\n- works with and without tools like `colcon test` and `pytest`\n- is minimalistic and has [very few dependencies](https://github.com/felixdivo/ros2-easy-test/blob/main/pyproject.toml)\n- is tested, used in practice, [documented](https://ros2-easy-test.readthedocs.io/en/latest/), and maintained\n\n## Installation\n\nAt the moment, you can run the following to install this package.\n```shell\npip install git+git://github.com/felixdivo/ros2-easy-test\n```\nIn the future, we intend to publish this repository to be easily installed with rosdep and via PyPI.\n\n## Examples\n\nThe following two examples show off the usage of the Python decorators `@with_single_node` and `@with_launch_file`, which provide the core functionality of this package.\nTo get a better grasp of their inner workings, have a look at their implementation [here](ros2_easy_test/decorators.py).\nBesides the simple examples here, you can embed everything in `unittest.TestCase` as well. \nTo check out how, have a look at the provided [tests/](tests/) for some advanced examples.\n\n### Testing a Node\n\nSimple settings where a single node shall be tested can make use of the decorator `@with_single_node` as in the following example.\n\n```python\nfrom ros2_easy_test import ROS2TestEnvironment, with_launch_file, with_single_node\nfrom my_nodes import Talker\nfrom std_msgs.msg import String\n\n@with_single_node(Talker, watch_topics={\"/chatter\": String})\ndef test_simple_publisher(env: ROS2TestEnvironment) -> None:\n    response: String = env.assert_message_published(\"/chatter\", timeout=5)\n    assert response.data == \"Hello World: 0\"\n```\n\nYou can optionally provide more parameters to the test setting, i.e., additionally pass `parameters={\"some.thing\": 30.2}` to the decorator.\nThe argument of the test function receiving the `ROS2TestEnvironment` *must* be named `env`.\n\n### Testing a Launch File\n\nFor more complex scenarios involving multiple nodes using a launch file (both nodes and launch file being implemented in [any language supported by ROS2](https://docs.ros.org/en/rolling/How-To-Guides/Launch-file-different-formats.html)), the `@with_launch_file` decorator can be used.\n\n```python\n@with_launch_file(\n    \"example_launch_file.yaml\",\n    watch_topics={\"/some/interesting/response\": ColorRGBA},\n)\ndef test_simple_update_launch_file(env: ROS2TestEnvironment) -> None:\n    env.publish(\"/topic/for/node_input\", ColorRGBA(r=0.5, g=0.2, b=0.9, a=1.0))\n    response_color = env.assert_message_published(\"/some/interesting/response\")\n    assert response_color.r == 0.5\n```\n\nYou can also pass the literal launch file contents as a `str` instead of a path like `\"example_launch_file.yaml\"`.\nThe argument of the test function receiving the `ROS2TestEnvironment` *must* be named `env`.\n\nNote that, however, this method is much slower than the one above. \nOne reason for this is the requirement of a fixed warm-up time for the nodes to be started. \nThis is because the test environment has to wait for the nodes to be ready before it can start listening for messages.\n\n## Usage\n\n### How you can interact with the node(s)\n\nUsing `ROS2TestEnvironment`, you can call:\n- `publish(topic: str, message: RosMessage) -> None`\n- `listen_for_messages(topic: str, time_span: float) -> List[RosMessage]`\n- `clear_messages(topic: str) -> None` to forget all messages that have been received so far.\n\nNote that `ROS2TestEnvironment` is a `rclpy.node.Node` and thus has all the methods of a ROS2 node. \nAs an example, you can create a service by `env.create_service(...)` and then use it with `env.call(...)`.\nIn addition, nothing stops you from using any other means of interacting with ROS2 that would work otherwise.\n\n### What you can test (recommended way of obtaining messages)\n\nUsing `ROS2TestEnvironment`, you can assert:\n- `assert_message_published(topic: str, timeout: float) -> RosMessage`\n- `assert_no_message_published(topic: str, timeout: float) -> None`\n- `assert_messages_published(topic: str, number: int, ...) -> List[RosMessage]`\n\nGenerally, you can always test that no exceptions are thrown, e.g., when nodes are initialized (see limitations below).\n\n### Combining with other tools\n\nSome hints:\n- If you want to use [pytest markers](https://docs.pytest.org/en/7.1.x/how-to/mark.html) like `@pytest.mark.skipif(...)`, add that above (=before) the `@with_single_node(...)`/`@with_launch_file(...)` decorator and it will work just fine.\n- Similarly, you can seamlessly use other tools which annotate test functions, like [hypothesis](https://hypothesis.readthedocs.io/en/latest/) or [pytest fixtures](https://docs.pytest.org/en/6.2.x/fixture.html).\n  Generally, you have to be mindful of the order of the decorators here.\n  The `ROS2TestEnvironment` is always added as a keyword argument called `env` to the test function.\n  See `tests/demo/` for a few examples.\n\n## Limitations, Design, and Other Projects\n\nSee [the documentation on that](https://ros2-easy-test.readthedocs.io/en/latest/design_and_limits.html).\n\n## Contributing\n\nYou can install the development dependencies with `pip install -e \".[dev]\"`. After this, you will have access to the configured formatters `black .` and `ruff check .`.\n\nYou can run the test with simply `pytest`. Coverage reports and timings will be printed on the command line, and a fresh line-by-line coverage report is in `htmlcov/index.html`.\n\nBuilding the documentation is simple too:\n```shell\n# Install the required dependencies\npip install -e \".[doc]\"\n\n# Build the documentation\ncd doc\nmake html\n# open build/html/index.html in you browser\n\n# You can also run a small webserver to serve the static files with\ncd build/html\npython -m http.server\n```\n\n## License\n\nSee [LICENSE](LICENSE).\n\nInitially developed by [Felix Divo](https://github.com/felixdivo) at [*Sailing Team Darmstadt e. V.*](https://www.st-darmstadt.de/), a student group devoted to robotic sailing based in Darmstadt, Germany.\nThanks to [Simon Kohaut](https://github.com/simon-kohaut) for his kind and nuanced feedback.\n\n## TODOs\n\n- spread the word\n- push to PyPI\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -54,7 +53,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17666830,
+        "last_serial": 18188046,
         "urls": [
             {
                 "comment_text": "",
@@ -95,6 +94,109 @@
                 "upload_time": "2023-04-11T21:41:09",
                 "upload_time_iso_8601": "2023-04-11T21:41:09.255350Z",
                 "url": "https://files.pythonhosted.org/packages/b1/1b/56eb27926672af074ded7691cb039c598a11d50d54ef60846bb589b341a2/ros2_easy_test-0.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.0.post1": {
+        "info": {
+            "author": "",
+            "author_email": "Felix Divo <felix.divo@sailingteam.tu-darmstadt.de>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Framework :: Robot Framework :: Library",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: MIT License",
+                "Natural Language :: English",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Topic :: Software Development :: Testing",
+                "Topic :: Software Development :: Testing :: BDD",
+                "Typing :: Typed"
+            ],
+            "description": "# ROS2 easy-test\n\n[![PyPI version](https://img.shields.io/pypi/v/ros2-easy-test.svg?color=blue)](https://pypi.org/project/ros2-easy-test/)\n[![license](https://img.shields.io/pypi/l/ros2-easy-test.svg?color=blue)](https://github.com/felixdivo/ros2-easy-test/blob/main/LICENSE)\n[![ros2 version](https://img.shields.io/badge/ROS2-Foxy%20Fitzroy+%20(see%20limitations)-blue)](https://docs.ros.org/en/rolling/Releases.html)\n[![Python version](https://img.shields.io/badge/python-3.8+%20(matching%20ROS)-blue)](https://devguide.python.org/versions/)\n\n[![CI status](https://github.com/felixdivo/ros2-easy-test/actions/workflows/python-package.yaml/badge.svg)](https://github.com/felixdivo/ros2-easy-test/actions/workflows/python-package.yaml)\n[![documentation status](https://readthedocs.org/projects/ros2-easy-test/badge/)](https://ros2-easy-test.readthedocs.io/en/latest/)\n[![code style](https://img.shields.io/badge/code%20style-black-black)](https://github.com/psf/black)\n[![linter](https://img.shields.io/badge/linter-ruff-black)](https://github.com/charliermarsh/ruff)\n[![static type checker](https://img.shields.io/badge/static%20typing-mypy-black)](https://mypy-lang.org/)\n\nA Python test framework for [ROS2](https://ros.org/) allowing for:\n- simple and expressive assertions based on message and service interactions (black box testing)\n- easy integration of existing nodes and launch files\n- testing of nodes implemented in any programming language (C++, Python, ...)\n- works with and without tools like `colcon test` and `pytest`\n- is minimalistic and has [very few dependencies](https://github.com/felixdivo/ros2-easy-test/blob/main/pyproject.toml)\n- is typed and [documented](https://ros2-easy-test.readthedocs.io/en/latest/)\n- is tested, used in practice, and maintained\n\n## Installation\n\nJust run:\n```shell\npip install ros2-easy-test\n```\n\n## Examples\n\nThe following two examples show off the usage of the Python decorators `@with_single_node` and `@with_launch_file`, which provide the core functionality of this package.\nTo get a better grasp of their inner workings, have a look at their implementation [here](ros2_easy_test/decorators.py).\nBesides the simple examples here, you can embed everything in `unittest.TestCase` as well. \nTo check out how, have a look at the provided [tests/](tests/) for some advanced examples.\n\n### Testing a Node\n\nSimple settings where a single node shall be tested can make use of the decorator `@with_single_node` as in the following example.\n\n```python\nfrom ros2_easy_test import ROS2TestEnvironment, with_launch_file, with_single_node\nfrom my_nodes import Talker\nfrom std_msgs.msg import String\n\n@with_single_node(Talker, watch_topics={\"/chatter\": String})\ndef test_simple_publisher(env: ROS2TestEnvironment) -> None:\n    response: String = env.assert_message_published(\"/chatter\", timeout=5)\n    assert response.data == \"Hello World: 0\"\n```\n\nYou can optionally provide more parameters to the test setting, i.e., additionally pass `parameters={\"some.thing\": 30.2}` to the decorator.\nThe argument of the test function receiving the `ROS2TestEnvironment` *must* be named `env`.\n\n### Testing a Launch File\n\nFor more complex scenarios involving multiple nodes using a launch file (both nodes and launch file being implemented in [any language supported by ROS2](https://docs.ros.org/en/rolling/How-To-Guides/Launch-file-different-formats.html)), the `@with_launch_file` decorator can be used.\n\n```python\n@with_launch_file(\n    \"example_launch_file.yaml\",\n    watch_topics={\"/some/interesting/response\": ColorRGBA},\n)\ndef test_simple_update_launch_file(env: ROS2TestEnvironment) -> None:\n    env.publish(\"/topic/for/node_input\", ColorRGBA(r=0.5, g=0.2, b=0.9, a=1.0))\n    response_color = env.assert_message_published(\"/some/interesting/response\")\n    assert response_color.r == 0.5\n```\n\nYou can also pass the literal launch file contents as a `str` instead of a path like `\"example_launch_file.yaml\"`.\nThe argument of the test function receiving the `ROS2TestEnvironment` *must* be named `env`.\n\nNote that, however, this method is much slower than the one above. \nOne reason for this is the requirement of a fixed warm-up time for the nodes to be started. \nThis is because the test environment has to wait for the nodes to be ready before it can start listening for messages.\n\n## Usage\n\n### How you can interact with the node(s)\n\nUsing `ROS2TestEnvironment`, you can call:\n- `publish(topic: str, message: RosMessage) -> None`\n- `listen_for_messages(topic: str, time_span: float) -> List[RosMessage]`\n- `clear_messages(topic: str) -> None` to forget all messages that have been received so far.\n- `call_service(name: str, request: Request, timeout_availability: Optional[float], timeout_call: Optional[float]) -> Response`\n\nNote that `ROS2TestEnvironment` is a `rclpy.node.Node` and thus has all the methods of a ROS2 node. \nIn addition, nothing stops you from using any other means of interacting with ROS2 that would work otherwise.\n\n### What you can test (recommended way of obtaining messages)\n\nUsing `ROS2TestEnvironment`, you can assert:\n- `assert_message_published(topic: str, timeout: Optional[float]) -> RosMessage`\n- `assert_no_message_published(topic: str, timeout: Optional[float]) -> None`\n- `assert_messages_published(topic: str, number: int, ...) -> List[RosMessage]`\n\nGenerally, you can always test that no exceptions are thrown, e.g., when nodes are initialized (see limitations below).\n\n### Combining with other tools\n\nSome hints:\n- If you want to use [pytest markers](https://docs.pytest.org/en/7.1.x/how-to/mark.html) like `@pytest.mark.skipif(...)`, add that above (=before) the `@with_single_node(...)`/`@with_launch_file(...)` decorator and it will work just fine.\n- Similarly, you can seamlessly use other tools which annotate test functions, like [hypothesis](https://hypothesis.readthedocs.io/en/latest/) or [pytest fixtures](https://docs.pytest.org/en/6.2.x/fixture.html).\n  Generally, you have to be mindful of the order of the decorators here.\n  The `ROS2TestEnvironment` is always added as a keyword argument called `env` to the test function.\n  See `tests/demo/` for a few examples.\n\n## Limitations, Design, and Other Projects\n\nSee [the documentation on that](https://ros2-easy-test.readthedocs.io/en/latest/design_and_limits.html).\n\n## Contributing\n\nYou can install the development dependencies with `pip install -e \".[dev]\"`. After this, you will have access to the configured formatters `black .` and `ruff check .`.\n\nYou can run the test with simply `pytest`. Coverage reports and timings will be printed on the command line, and a fresh line-by-line coverage report is in `htmlcov/index.html`.\n\nBuilding the documentation is simple too:\n```shell\n# Install the required dependencies\npip install -e \".[doc]\"\n\n# Build the documentation\ncd doc\nmake html\n# open build/html/index.html in you browser\n\n# You can also run a small webserver to serve the static files with\ncd build/html\npython -m http.server\n```\n\n## Changelog\n\nSee [Releases](https://github.com/felixdivo/ros2-easy-test/releases).\n\n## License\n\nSee [LICENSE](LICENSE).\n\nInitially developed by [Felix Divo](https://github.com/felixdivo) at [*Sailing Team Darmstadt e. V.*](https://www.st-darmstadt.de/), a student group devoted to robotic sailing based in Darmstadt, Germany.\nThanks to [Simon Kohaut](https://github.com/simon-kohaut) for his kind and nuanced feedback.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "ros2-easy-test",
+            "package_url": "https://pypi.org/project/ros2-easy-test/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/ros2-easy-test/",
+            "project_urls": {
+                "Homepage": "https://github.com/felixdivo/ros2-easy-test"
+            },
+            "release_url": "https://pypi.org/project/ros2-easy-test/0.2.0.post1/",
+            "requires_dist": [
+                "makefun (>=1.15.1)",
+                "black (~=23.1) ; extra == 'dev'",
+                "ruff ; extra == 'dev'",
+                "mypy (~=1.3.0) ; extra == 'dev'",
+                "pytest ; extra == 'dev'",
+                "pytest-cov ; extra == 'dev'",
+                "pytest-sugar ; extra == 'dev'",
+                "hypothesis ; extra == 'dev'",
+                "sphinx ; extra == 'doc'",
+                "sphinx-rtd-theme ; extra == 'doc'"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "A Python test framework for ROS2 allowing simple and expressive assertions based on message interactions.",
+            "version": "0.2.0.post1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18188046,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "14450b07a4aab78220b9e5c213e4cc7378fc46557d7dc7321822bb78dc59fbd4",
+                    "md5": "a4353358bd33fb67c2f2de2cf87d6fa4",
+                    "sha256": "5aa46d776c6f2e599a51d35f20fd7ad55b68fba2c1ca42142295148b6a039b66"
+                },
+                "downloads": -1,
+                "filename": "ros2_easy_test-0.2.0.post1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "a4353358bd33fb67c2f2de2cf87d6fa4",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 16557,
+                "upload_time": "2023-05-21T16:21:39",
+                "upload_time_iso_8601": "2023-05-21T16:21:39.879466Z",
+                "url": "https://files.pythonhosted.org/packages/14/45/0b07a4aab78220b9e5c213e4cc7378fc46557d7dc7321822bb78dc59fbd4/ros2_easy_test-0.2.0.post1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "0c94b0c9659d5d6e9f10727aca4e003465dec52171080ffbd42a8e67ea35c0ff",
+                    "md5": "3e4a4169d3cc0087e173b8a9572a515a",
+                    "sha256": "45e9fc802430a6ee2a8084a7e48c961d633088a427593db7b6b204a041204a6a"
+                },
+                "downloads": -1,
+                "filename": "ros2_easy_test-0.2.0.post1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "3e4a4169d3cc0087e173b8a9572a515a",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 33467,
+                "upload_time": "2023-05-21T16:21:41",
+                "upload_time_iso_8601": "2023-05-21T16:21:41.702970Z",
+                "url": "https://files.pythonhosted.org/packages/0c/94/b0c9659d5d6e9f10727aca4e003465dec52171080ffbd42a8e67ea35c0ff/ros2_easy_test-0.2.0.post1.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

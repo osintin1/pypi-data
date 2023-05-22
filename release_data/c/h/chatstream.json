@@ -1,0 +1,95 @@
+{
+    "0.1.0": {
+        "info": {
+            "author": "Tom Misawa",
+            "author_email": "riversun.org@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: Apache Software License",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# ChatStream\r\n\r\nA load control utility for large-scale streaming chat servers using pre-trained large language models (LLM)\r\n\r\n## Installation\r\n\r\n```\r\npip install chatstream\r\n```\r\n\r\n\r\n## What can it do?\r\n\r\n### 1. Simplifies the construction of streaming chats\r\n\r\nYou can easily construct streaming chats with large pre-trained language models based on HuggingFace.\r\n\r\n**What is a Streaming Chat**\r\n\r\nWhen generating sentences with a large language model, there are methods that generate the next sentence entirely based on the inputted prompt (and the conversation history so far) before outputting it, and methods that sequentially output the next sentence one token at a time. The latter method is specifically referred to as 'streaming'. In this package, token generation is done one token at a time, and it is streamed as a response to the client. This contributes to a better user experience compared to waiting for the entire sentence to be generated.\r\n\r\n### 2. Automatically maintains conversation history and context\r\n\r\nBy default, the HTTP session feature keeps the conversation history between the user and the language model in on-memory on the server-side. The session duration can be set, but it is basically while the browser is open. This makes it possible to have multi-round web chats with continued context.\r\n\r\n### 3. Control of concurrent access from multiple users\r\n\r\nIt is designed with concurrent access from multiple clients in mind, and is controlled according to the following parameters specified in the constructor\r\n\r\n`num_of_concurrent_executions` : int ... The number of concurrent sentence generation tasks to the pre-trained language model  \r\n\r\n`max_queue_size: int` ... The size of the queue for sentence generation. When the number of concurrent sentence generation tasks falls below the limit\r\n\r\n![img.png](img.png)\r\n\r\n# How to use\r\n\r\nThe following is an example of streaming chat using `togethercomputer/RedPajama-INCITE-Chat-3B-v1` as a model\r\n\r\nCreate a chat_prompt class (chat_prompt_for_redpajama_incite.py) that generates prompts for the model and a server.py that acts as a streaming server.\r\n\r\n**chat_prompt_for_redpajama_incite.py**\r\n\r\n\r\n\r\n```python\r\nfrom chatstream.chat_prompt import AbstractChatPrompt\r\n\r\n\r\nclass ChatPromptRedpajamaIncite(AbstractChatPrompt):\r\n\r\n    def __init__(self):\r\n        super().__init__()  # Call the initialization of the base class\r\n        self.set_requester(\"<human>\")\r\n        self.set_responder(\"<bot>\")\r\n\r\n    def get_stop_strs(self):\r\n        \"\"\"\r\n        returns special stop strings for model to finsh generating sentence\r\n        :return:\r\n        \"\"\"\r\n        if not self.chat_mode:\r\n            return None\r\n        return [\r\n            '<|endoftext|>',\r\n            '\\n<'\r\n            # Safety stop valve when the model generates not only AI conversations but also human parts of the conversation.\r\n        ]\r\n\r\n    def create_prompt(self):\r\n        \"\"\"\r\n        Build prompts according to the characteristics of each language model\r\n        :return:\r\n        \"\"\"\r\n        if self.chat_mode == False:\r\n            return self.get_requester_last_msg()\r\n\r\n        ret = self.system;\r\n        for chat_content in self.chat_contents:\r\n            chat_content_role = chat_content.get_role()\r\n            chat_content_message = chat_content.get_message()\r\n            if chat_content_role:\r\n                if chat_content_message:\r\n                    merged_message = chat_content_role + \": \" + chat_content_message + \"\\n\"\r\n                else:\r\n                    merged_message = chat_content_role + \":\"\r\n                ret += merged_message\r\n\r\n        return ret\r\n\r\n\r\n# portable UT\r\nif False:\r\n    chatPrompt = ChatPrompt()\r\n\r\n    chatPrompt.set_requester(\"<human>\")\r\n    chatPrompt.set_responder(\"<bot>\")\r\n    chatPrompt.add_requester_msg(\"Who is Alan Turing\")\r\n    chatPrompt.add_responder_msg(None)\r\n\r\n    assert \"\"\"<human>: Who is Alan Turing\r\n<bot>:\"\"\" == chatPrompt.create_prompt()\r\n\r\n```\r\n\r\n**server.py**\r\n\r\n```python\r\nimport os\r\nimport torch\r\nfrom transformers import AutoTokenizer, AutoModelForCausalLM\r\n\r\nimport uvicorn\r\nfrom fastapi import FastAPI, Request\r\nfrom fastapi.staticfiles import StaticFiles\r\nfrom fastsession import FastSessionMiddleware, MemoryStore\r\n\r\nfrom chat_prompt_for_redpajama_incite import ChatPromptRedpajamaIncite as ChatPrompt\r\nfrom chatstream import ChatStream\r\n\r\nMAX_CONCURRENT_CONNECTIONS = 2\r\nMAX_QUEUE_SIZE = 5\r\n\r\nmodel_path = \"togethercomputer/RedPajama-INCITE-Chat-3B-v1\"\r\n\r\ndevice = \"cuda\"  # \"cuda\" / \"cpu\"\r\ntokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)\r\nmodel = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.float16)\r\nif device == \"cuda\":\r\n    model.to(device)\r\n\r\nchat_stream = ChatStream(\r\n    num_of_concurrent_executions=MAX_CONCURRENT_CONNECTIONS,\r\n    max_queue_size=MAX_QUEUE_SIZE,\r\n    model=model,\r\n    tokenizer=tokenizer,\r\n    device=device,\r\n    chat_prompt_clazz=ChatPrompt,\r\n)\r\n\r\napp = FastAPI()\r\n\r\n# Add session middleware to keep context\r\napp.add_middleware(FastSessionMiddleware,\r\n                   secret_key=\"your-session-secret-key\",  # Key for cookie signature\r\n                   store=MemoryStore(),  # Store for session saving\r\n                   http_only=True,  # True: Cookie cannot be accessed from client-side scripts such as JavaScript\r\n                   secure=False,  # False: For local development env. True: For production. Requires Https\r\n                   )\r\n\r\n\r\n@app.post(\"/chat_stream\")\r\nasync def stream_api(request: Request):\r\n    response = await chat_stream.handle_starlette_request(request)\r\n    return response\r\n\r\n\r\n@app.get(\"/stats\")\r\nasync def stats_api():\r\n    return chat_stream.get_stats()\r\n\r\n\r\n# for absolute URL of html contained dir\r\ndef get_html_dir():\r\n    return os.path.join(os.path.dirname(os.path.realpath(__file__)), 'html')\r\n\r\n\r\napp.mount(\"/\", StaticFiles(directory=get_html_dir(), html=True), name=\"html\")\r\n\r\n\r\n@app.on_event(\"startup\")\r\nasync def startup():\r\n    await chat_stream.start_queue_worker()\r\n\r\n\r\ndef start_server():\r\n    uvicorn.run(app, host='localhost', port=18080)\r\n\r\n\r\ndef main():\r\n    start_server()\r\n\r\n\r\nif __name__ == \"__main__\":\r\n    main()\r\n\r\n```\r\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/riversun/ChatStream",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "ChatStream",
+            "package_url": "https://pypi.org/project/ChatStream/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/ChatStream/",
+            "project_urls": {
+                "Homepage": "https://github.com/riversun/ChatStream"
+            },
+            "release_url": "https://pypi.org/project/ChatStream/0.1.0/",
+            "requires_dist": [
+                "fastapi",
+                "fastsession",
+                "tokflow"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "Streaming chat server building blocks for FastAPI/Starlette",
+            "version": "0.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18191150,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6e3f6fe800227b3a79c098d494e06e22c78f97a21329bf4d88e80bec92695b63",
+                    "md5": "54da96e916eea9df41e51815f7074583",
+                    "sha256": "2df83d41aae41c72ac9d5869bf14458ca1872e114b30842064c353ccfb67362b"
+                },
+                "downloads": -1,
+                "filename": "ChatStream-0.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "54da96e916eea9df41e51815f7074583",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 30273,
+                "upload_time": "2023-05-22T00:58:46",
+                "upload_time_iso_8601": "2023-05-22T00:58:46.295280Z",
+                "url": "https://files.pythonhosted.org/packages/6e/3f/6fe800227b3a79c098d494e06e22c78f97a21329bf4d88e80bec92695b63/ChatStream-0.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f137154f56d395e3300d6487de14a42124623fbad0947d2b5c6ead91c35c4ac5",
+                    "md5": "d68eb12fe8cb7f80bea0c275c5d751f9",
+                    "sha256": "8a8d6b860f0270fce5fc19bf4ac397dea20bdeba78c8be19e0e1f882b461f13a"
+                },
+                "downloads": -1,
+                "filename": "ChatStream-0.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "d68eb12fe8cb7f80bea0c275c5d751f9",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 26019,
+                "upload_time": "2023-05-22T00:58:48",
+                "upload_time_iso_8601": "2023-05-22T00:58:48.629363Z",
+                "url": "https://files.pythonhosted.org/packages/f1/37/154f56d395e3300d6487de14a42124623fbad0947d2b5c6ead91c35c4ac5/ChatStream-0.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
