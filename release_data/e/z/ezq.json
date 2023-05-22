@@ -41,7 +41,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18152585,
+        "last_serial": 18191743,
         "urls": [
             {
                 "comment_text": "",
@@ -130,7 +130,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18152585,
+        "last_serial": 18191743,
         "urls": [
             {
                 "comment_text": "",
@@ -219,7 +219,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18152585,
+        "last_serial": 18191743,
         "urls": [
             {
                 "comment_text": "",
@@ -309,7 +309,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18152585,
+        "last_serial": 18191743,
         "urls": [
             {
                 "comment_text": "",
@@ -399,7 +399,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18152585,
+        "last_serial": 18191743,
         "urls": [
             {
                 "comment_text": "",
@@ -465,7 +465,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "# ezq\n\n_Simple wrappers for python multiprocessing and threading._\n\n[![Build Status](https://img.shields.io/github/actions/workflow/status/metaist/ezq/.github/workflows/ci.yaml?branch=main&style=for-the-badge)](https://github.com/metaist/ezq/actions)\n[![ezq on PyPI](https://img.shields.io/pypi/v/ezq.svg?color=blue&style=for-the-badge)](https://pypi.org/project/ezq)\n[![Supported Python versions](https://img.shields.io/pypi/pyversions/ezq?style=for-the-badge)](https://pypi.org/project/ezq)\n\n[Changelog] - [Issues] - [Documentation]\n\n[changelog]: https://github.com/metaist/ezq/blob/main/CHANGELOG.md\n[issues]: https://github.com/metaist/ezq/issues\n[documentation]: https://metaist.github.io/ezq/\n\n## Why?\n\n`ezq` makes it easy to connect subprocesses and threads (both considered \"workers\") using queues with a simpler API than [`concurrent.futures`][1], [`multiprocessing`][2], or [`threading`][3].\n\n[1]: https://docs.python.org/3/library/concurrent.futures.html\n[2]: https://docs.python.org/3/library/multiprocessing.html\n[3]: https://docs.python.org/3/library/threading.html\n\n## Install\n\n```bash\npip install ezq\n```\n\n## Example: Quick Start\n\nIf you just want to apply a function to some inputs, you can use `ezq.map()` to run it on all available CPUs and get the results back.\n\n```python\nimport ezq\nprint(list(ezq.map(lambda x: x * 2, range(6))))\n# => [0, 2, 4, 6, 8, 10]\n```\n\n## Example: Sum Messages\n\nHere's a simple example of a worker that reads from an input queue, sums up the messages, and puts the result on an output queue.\n\n```python\nimport ezq\n\n\ndef worker(q, out):\n    \"\"\"Add up all the messages.\"\"\"\n    total = 0\n    for msg in q:  # read a message from the queue\n        total += msg.data\n\n    # after reading all the messages, write the total\n    out.put(total)\n\n\ndef main():\n    \"\"\"Run several workers.\"\"\"\n    # Step 1: Creates the queues and start the workers.\n    q, out = ezq.Q(), ezq.Q()  # input & output queues\n    workers = [ezq.run(worker, q, out) for _ in range(ezq.NUM_CPUS)]\n    # workers are all running\n\n    # Step 2: Send work to the workers.\n    for i in range(1000):\n        q.put(i)  # send work\n\n    # Step 3: Tell the workers to finish.\n    q.stop(workers)\n    # workers are all stopped\n\n    # Step 4: Process the results.\n    want = sum(range(1000))\n    have = sum(msg.data for msg in out.items())\n    assert have == want\n    print(have)\n\n\nif __name__ == \"__main__\":\n    main()\n```\n\n## Typical worker lifecycle\n\n- The main process [creates queues](#create-queues) with `ezq.Q`.\n\n- The main process [creates workers](#create-workers) with `ezq.run` (alias for `Worker.process`) or `ezq.run_thread` (alias for `Worker.thread`).\n\n- The main process [sends data](#send-data) using `Q.put`.\n\n- The worker [iterates over the queue](#iterate-over-messages).\n\n- The main process [ends the queue](#end-the-queue) with `Q.stop`.\n\n- The worker returns when it reaches the end of the queue.\n\n- (_Optional_) The main process [processes the results](#process-results).\n\n## `Process` vs `Thread`\n\n`ezq` supports two kinds of workers: `Process` and `Thread`. There is a lot of existing discussion about when to use which approach, but a general rule of thumb is:\n\n- `Process` is for _parallelism_ so you can use multiple CPUs at once. Ideal for **CPU-bound** tasks like doing lots of mathematical calculations.\n\n- `Thread` is for _concurrency_ so you can use a single CPU to do multiple things. Ideal for **I/O-bound** tasks like waiting for a disk, database, or network.\n\nSome more differences:\n\n- **Shared memory**: Each `Process` worker has [data sent to it via `pickle`](#beware-pickle) (actually [`dill`](https://github.com/uqfoundation/dill), a `pickle` replacement) and it doesn't share data with other workers. By contrast, each `Thread` worker shares its memory with all other workers on the same CPU, so it can [accidentally change global state](#beware-shared-state).\n\n- **Queue overhead**: `ezq.Q` [has more overhead](#create-queues) for `Process` workers than `Thread` workers.\n\n- **Creating sub-workers**: `Process` and `Thread` workers can create additional `Thread` workers, but [they cannot create additional `Process` workers](#create-workers).\n\n## Create queues\n\nIn the main process, create the queues you'll need. Here are my common situations:\n\n- **0 queues**: I'm using a simple function and can ask `ezq.map` to make the queues for me.\n\n- **1 queue**: the worker reads from an input queue and persists the result somewhere else (e.g., writing to disk, making a network call, running some other program).\n\n- **2 queues** (most common): the worker reads from an input queue and write the results to an output queue.\n\n- **3 queues**: multiple stages of work are happening where workers are reading from one queue and writing to another queue for another worker to process.\n\n**NOTE:** If you're using `Thread` workers, you can save some overhead by passing `Q(\"thread\")`. This lightweight queue also doesn't use `pickle`, so you can use it to pass hard-to-pickle things (e.g., database connection).\n\n```python\nq, out = ezq.Q(), ezq.Q() # most common\nq2 = ez.Q(\"thread\") # only ok for Thread workers\n```\n\n## A worker task is just a function\n\nIn general, there's nothing special about a worker function, but note:\n\n- If you're using `Process` workers, all arguments are [passed through `pickle` first](#beware-pickle).\n\n- We don't currently do anything with the return value of this function (unless you use `ezq.map()`). You'll need an output queue to return data back to the main process/thread.\n\n## Create workers\n\nIn the main process, create workers using `ezq.run` or `ezq.run_thread` which take a function and any additional parameters. Typically, you'll pass the queues you created to the workers at this point.\n\n**NOTE:** `Process` and `Thread` workers can create additional `Thread` workers, but **they cannot create additional `Process` workers**.\n\n## Send data\n\nOnce you've created the workers, you send them data with `Q.put` which creates `ezq.Msg` objects and puts them in the queue. Each message has three attributes (all optional):\n\n- `data: Any` - This is the data you want the worker to work on.\n\n- `kind: str` - You can use this to send multiple kinds of work to the same worker. Note that the special `END` kind is used to indicate the end of a queue.\n\n- `order: int` - This is the message order which can help you reorder results or ensure that messages from a queue are read in a particular order (that's what `Q.sorted()` uses).\n\n## Beware `pickle`\n\nIf you are using `Process` workers, everything passed to the worker (arguments, messages) is first passed to `pickle` (actually, [`dill`](https://github.com/uqfoundation/dill)). Anything that cannot be pickled with dill (e.g., database connections), cannot be passed to `Process` workers. Note that `dill` _can_ serialize many more types than `pickle` (e.g. `lambda` functions).\n\n## Beware shared state\n\nIf you are using `Thread` workers, workers can share certain variables, so you need to be careful of how variables are access to avoid accidentally corrupting data.\n\n## Iterate over messages\n\nInside the worker, iterate over the queue to read each message until the queue ends ([see below](#end-the-queue)). If the messages need to be processed in order, use `Q.sorted`.\n\n```python\nfor msg in q: # read each message until the queue ends\n  ...\n\nfor msg in q.sorted(): # read each message in order\n  ...\n```\n\n## End the queue\n\nAfter the main process has sent all the data to the workers, it needs to indicate\nthat there's no additional work to be done. This is done by calling `Q.stop()` using the input queue that the workers are reading from and passing the list of workers to wait for.\n\nIn some rare situations, you can use `Q.end()` to explicitly end the queue.\n\n## Process results\n\nIf you have an output queue, you may want to to process the results. You can use `Q.items()` to end the queue and read the current messages.\n\n```python\nimport ezq\nout = ezq.Q()\n...\nresult = [msg.data for msg in out.items()]\n# OR\nresult = [msg.data for msg in out.items(sort=True)] # sorted by Msg.order\n# OR\nresult = [msg.data for msg in out.items(cache=True)] # cache the messages\n```\n\n## Example: Read and Write Queues\n\nIn this example, several workers read from a queue, process data, and then write to a different queue that a single worker uses to print to the screen sorting the results as it goes along.\n\nNote that we use a single `writer` to avoid clashes or overwriting.\n\n```python\nimport ezq\n\n\ndef printer(out: ezq.Q) -> None:\n    \"\"\"Print results in increasing order.\"\"\"\n    for msg in out.sorted():\n        print(msg.data)\n\n\ndef collatz(q: ezq.Q, out: ezq.Q) -> None:\n    \"\"\"Read numbers and compute values.\"\"\"\n    for msg in q:\n        num = float(msg.data)\n        if msg.kind == \"EVEN\":\n            out.put((num, num / 2), order=msg.order)\n        elif msg.kind == \"ODD\":\n            out.put((num, 3 * num + 1), order=msg.order)\n\n\ndef main() -> None:\n    \"\"\"Run several threads with a subprocess for printing.\"\"\"\n    q, out = ezq.Q(\"thread\"), ezq.Q()\n    readers = [ezq.run_thread(collatz, q, out) for _ in range(ezq.NUM_THREADS)]\n    writer = ezq.run(printer, out)\n\n    for num in range(40):\n        kind = \"EVEN\" if num % 2 == 0 else \"ODD\"\n        q.put(num, kind=kind, order=num)\n\n    q.stop(readers)\n    out.stop(writer)\n\n\nif __name__ == \"__main__\":\n    main()\n```\n\n## License\n\n[MIT License](https://github.com/metaist/ezq/blob/main/LICENSE.md)\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "https://github.com/metaist/ezq",
@@ -497,7 +496,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18152585,
+        "last_serial": 18191743,
         "urls": [
             {
                 "comment_text": "",
@@ -538,6 +537,325 @@
                 "upload_time": "2023-05-18T10:12:39",
                 "upload_time_iso_8601": "2023-05-18T10:12:39.023979Z",
                 "url": "https://files.pythonhosted.org/packages/5a/2b/914c9675c8cfd558480363866461f256b53fb58e0b3002fa991810895305/ezq-3.0.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "3.0.1": {
+        "info": {
+            "author": "",
+            "author_email": "Metaist LLC <metaist@metaist.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: MIT License",
+                "Natural Language :: English",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "queue,worker,multiprocessing,threading",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "ezq",
+            "package_url": "https://pypi.org/project/ezq/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/ezq/",
+            "project_urls": {
+                "Changelog": "https://github.com/metaist/ezq/blob/main/CHANGELOG.md",
+                "Documentation": "https://metaist.github.io/ezq/",
+                "Homepage": "https://github.com/metaist/ezq",
+                "Repository": "https://github.com/metaist/ezq.git"
+            },
+            "release_url": "https://pypi.org/project/ezq/3.0.1/",
+            "requires_dist": [
+                "multiprocess (~=0.70.14)",
+                "black ; extra == 'dev'",
+                "coverage ; extra == 'dev'",
+                "mypy ; extra == 'dev'",
+                "pdoc3 ; extra == 'dev'",
+                "pytest ; extra == 'dev'",
+                "pytest-cov ; extra == 'dev'",
+                "ruff ; extra == 'dev'"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "Simple wrapper for python multiprocessing and threading.",
+            "version": "3.0.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18191743,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "bb0ad72b16ae75fbd1f42a735d4aa4ed6d880523a7b31bbd24893471a4aee5e3",
+                    "md5": "1a8993adc073b20709ba3142ffb7f499",
+                    "sha256": "a9f2bb34b2da7cc6c85452c25a39e1a0c23bca249db19c1fb01bc17993bfc719"
+                },
+                "downloads": -1,
+                "filename": "ezq-3.0.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "1a8993adc073b20709ba3142ffb7f499",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 5623,
+                "upload_time": "2023-05-22T02:34:08",
+                "upload_time_iso_8601": "2023-05-22T02:34:08.595907Z",
+                "url": "https://files.pythonhosted.org/packages/bb/0a/d72b16ae75fbd1f42a735d4aa4ed6d880523a7b31bbd24893471a4aee5e3/ezq-3.0.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "253e21532d7ed65c8dcbbe40b8d061e1dfbc55841fad82d752b9e5fac2c29b83",
+                    "md5": "8382c8efef6aff0c87c6645f626efa7d",
+                    "sha256": "288cd3c38032144d2ca63661e8ec6bc9afc290157fcac348929c0c7c1bb5c1a1"
+                },
+                "downloads": -1,
+                "filename": "ezq-3.0.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "8382c8efef6aff0c87c6645f626efa7d",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 7168,
+                "upload_time": "2023-05-22T02:34:10",
+                "upload_time_iso_8601": "2023-05-22T02:34:10.398036Z",
+                "url": "https://files.pythonhosted.org/packages/25/3e/21532d7ed65c8dcbbe40b8d061e1dfbc55841fad82d752b9e5fac2c29b83/ezq-3.0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "3.0.2": {
+        "info": {
+            "author": "",
+            "author_email": "Metaist LLC <metaist@metaist.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: MIT License",
+                "Natural Language :: English",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "queue,worker,multiprocessing,threading",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "ezq",
+            "package_url": "https://pypi.org/project/ezq/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/ezq/",
+            "project_urls": {
+                "Changelog": "https://github.com/metaist/ezq/blob/main/CHANGELOG.md",
+                "Documentation": "https://metaist.github.io/ezq/",
+                "Homepage": "https://github.com/metaist/ezq",
+                "Repository": "https://github.com/metaist/ezq.git"
+            },
+            "release_url": "https://pypi.org/project/ezq/3.0.2/",
+            "requires_dist": [
+                "multiprocess (~=0.70.14)",
+                "black ; extra == 'dev'",
+                "coverage ; extra == 'dev'",
+                "mypy ; extra == 'dev'",
+                "pdoc3 ; extra == 'dev'",
+                "pytest ; extra == 'dev'",
+                "pytest-cov ; extra == 'dev'",
+                "ruff ; extra == 'dev'"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "Simple wrapper for python multiprocessing and threading.",
+            "version": "3.0.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18191743,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6919777c6dd9bc984c204f46a68a25a8e5436ec45d7adf2778a91c130f3a0e2e",
+                    "md5": "5e29f4858fc9cc61b650b25ffa385524",
+                    "sha256": "579f899885985ef493ae1be2824a6ad613613203fab89bb0c549ed7fb85fcd12"
+                },
+                "downloads": -1,
+                "filename": "ezq-3.0.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "5e29f4858fc9cc61b650b25ffa385524",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 9559,
+                "upload_time": "2023-05-22T02:34:23",
+                "upload_time_iso_8601": "2023-05-22T02:34:23.575516Z",
+                "url": "https://files.pythonhosted.org/packages/69/19/777c6dd9bc984c204f46a68a25a8e5436ec45d7adf2778a91c130f3a0e2e/ezq-3.0.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3a8bf02e5a09fbca9634723f891e42bfa380d2103b5c61a4ee2fbe452fb7f29e",
+                    "md5": "b179637646ea35fe99191e25d9541fc6",
+                    "sha256": "aa71789633e28dfb8a2ac68ca0a37c6e6fe4caae4426d38ee2367e9371946469"
+                },
+                "downloads": -1,
+                "filename": "ezq-3.0.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "b179637646ea35fe99191e25d9541fc6",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 13972,
+                "upload_time": "2023-05-22T02:34:25",
+                "upload_time_iso_8601": "2023-05-22T02:34:25.299135Z",
+                "url": "https://files.pythonhosted.org/packages/3a/8b/f02e5a09fbca9634723f891e42bfa380d2103b5c61a4ee2fbe452fb7f29e/ezq-3.0.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "3.0.3": {
+        "info": {
+            "author": "",
+            "author_email": "Metaist LLC <metaist@metaist.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: MIT License",
+                "Natural Language :: English",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# ezq\n\n_Simple wrappers for python multiprocessing and threading._\n\n[![Build Status](https://img.shields.io/github/actions/workflow/status/metaist/ezq/.github/workflows/ci.yaml?branch=main&style=for-the-badge)](https://github.com/metaist/ezq/actions)\n[![ezq on PyPI](https://img.shields.io/pypi/v/ezq.svg?color=blue&style=for-the-badge)](https://pypi.org/project/ezq)\n[![Supported Python versions](https://img.shields.io/pypi/pyversions/ezq?style=for-the-badge)](https://pypi.org/project/ezq)\n\n[Changelog] - [Issues] - [Documentation]\n\n[changelog]: https://github.com/metaist/ezq/blob/main/CHANGELOG.md\n[issues]: https://github.com/metaist/ezq/issues\n[documentation]: https://metaist.github.io/ezq/\n\n## Why?\n\n`ezq` makes it easy to connect subprocesses and threads (both considered \"workers\") using queues with a simpler API than [`concurrent.futures`][1], [`multiprocessing`][2], or [`threading`][3].\n\n[1]: https://docs.python.org/3/library/concurrent.futures.html\n[2]: https://docs.python.org/3/library/multiprocessing.html\n[3]: https://docs.python.org/3/library/threading.html\n\n## Install\n\n```bash\npip install ezq\n```\n\n## Example: Quick Start\n\nIf you just want to apply a function to some inputs, you can use `ezq.map()` to run it on all available CPUs and get the results back.\n\n```python\nimport ezq\nprint(list(ezq.map(lambda x: x * 2, range(6))))\n# => [0, 2, 4, 6, 8, 10]\n```\n\n## Example: Sum Messages\n\nHere's a simple example of a worker that reads from an input queue, sums up the messages, and puts the result on an output queue.\n\n```python\nimport ezq\n\n\ndef worker(q, out):\n    \"\"\"Add up all the messages.\"\"\"\n    total = 0\n    for msg in q:  # read a message from the queue\n        total += msg.data\n\n    # after reading all the messages, write the total\n    out.put(total)\n\n\ndef main():\n    \"\"\"Run several workers.\"\"\"\n    # Step 1: Creates the queues and start the workers.\n    q, out = ezq.Q(), ezq.Q()  # input & output queues\n    workers = [ezq.run(worker, q, out) for _ in range(ezq.NUM_CPUS)]\n    # workers are all running\n\n    # Step 2: Send work to the workers.\n    for i in range(1000):\n        q.put(i)  # send work\n\n    # Step 3: Tell the workers to finish.\n    q.stop(workers)\n    # workers are all stopped\n\n    # Step 4: Process the results.\n    want = sum(range(1000))\n    have = sum(msg.data for msg in out.items())\n    assert have == want\n    print(have)\n\n\nif __name__ == \"__main__\":\n    main()\n```\n\n## Typical worker lifecycle\n\n- The main process [creates queues](#create-queues) with `ezq.Q`.\n\n- The main process [creates workers](#create-workers) with `ezq.run` (alias for `Worker.process`) or `ezq.run_thread` (alias for `Worker.thread`).\n\n- The main process [sends data](#send-data) using `Q.put`.\n\n- The worker [iterates over the queue](#iterate-over-messages).\n\n- The main process [ends the queue](#end-the-queue) with `Q.stop`.\n\n- The worker returns when it reaches the end of the queue.\n\n- (_Optional_) The main process [processes the results](#process-results).\n\n## `Process` vs `Thread`\n\n`ezq` supports two kinds of workers: `Process` and `Thread`. There is a lot of existing discussion about when to use which approach, but a general rule of thumb is:\n\n- `Process` is for _parallelism_ so you can use multiple CPUs at once. Ideal for **CPU-bound** tasks like doing lots of mathematical calculations.\n\n- `Thread` is for _concurrency_ so you can use a single CPU to do multiple things. Ideal for **I/O-bound** tasks like waiting for a disk, database, or network.\n\nSome more differences:\n\n- **Shared memory**: Each `Process` worker has [data sent to it via `pickle`](#beware-pickle) (actually [`dill`](https://github.com/uqfoundation/dill), a `pickle` replacement) and it doesn't share data with other workers. By contrast, each `Thread` worker shares its memory with all other workers on the same CPU, so it can [accidentally change global state](#beware-shared-state).\n\n- **Queue overhead**: `ezq.Q` [has more overhead](#create-queues) for `Process` workers than `Thread` workers.\n\n- **Creating sub-workers**: `Process` and `Thread` workers can create additional `Thread` workers, but [they cannot create additional `Process` workers](#create-workers).\n\n## Create queues\n\nIn the main process, create the queues you'll need. Here are my common situations:\n\n- **0 queues**: I'm using a simple function and can ask `ezq.map` to make the queues for me.\n\n- **1 queue**: the worker reads from an input queue and persists the result somewhere else (e.g., writing to disk, making a network call, running some other program).\n\n- **2 queues** (most common): the worker reads from an input queue and write the results to an output queue.\n\n- **3 queues**: multiple stages of work are happening where workers are reading from one queue and writing to another queue for another worker to process.\n\n**NOTE:** If you're using `Thread` workers, you can save some overhead by passing `Q(\"thread\")`. This lightweight queue also doesn't use `pickle`, so you can use it to pass hard-to-pickle things (e.g., database connection).\n\n```python\nq, out = ezq.Q(), ezq.Q() # most common\nq2 = ez.Q(\"thread\") # only ok for Thread workers\n```\n\n## A worker task is just a function\n\nIn general, there's nothing special about a worker function, but note:\n\n- If you're using `Process` workers, all arguments are [passed through `pickle` first](#beware-pickle).\n\n- We don't currently do anything with the return value of this function (unless you use `ezq.map()`). You'll need an output queue to return data back to the main process/thread.\n\n## Create workers\n\nIn the main process, create workers using `ezq.run` or `ezq.run_thread` which take a function and any additional parameters. Typically, you'll pass the queues you created to the workers at this point.\n\n**NOTE:** `Process` and `Thread` workers can create additional `Thread` workers, but **they cannot create additional `Process` workers**.\n\n## Send data\n\nOnce you've created the workers, you send them data with `Q.put` which creates `ezq.Msg` objects and puts them in the queue. Each message has three attributes (all optional):\n\n- `data: Any` - This is the data you want the worker to work on.\n\n- `kind: str` - You can use this to send multiple kinds of work to the same worker. Note that the special `END` kind is used to indicate the end of a queue.\n\n- `order: int` - This is the message order which can help you reorder results or ensure that messages from a queue are read in a particular order (that's what `Q.sorted()` uses).\n\n## Beware `pickle`\n\nIf you are using `Process` workers, everything passed to the worker (arguments, messages) is first passed to `pickle` (actually, [`dill`](https://github.com/uqfoundation/dill)). Anything that cannot be pickled with dill (e.g., database connections), cannot be passed to `Process` workers. Note that `dill` _can_ serialize many more types than `pickle` (e.g. `lambda` functions).\n\n## Beware shared state\n\nIf you are using `Thread` workers, workers can share certain variables, so you need to be careful of how variables are access to avoid accidentally corrupting data.\n\n## Iterate over messages\n\nInside the worker, iterate over the queue to read each message until the queue ends ([see below](#end-the-queue)). If the messages need to be processed in order, use `Q.sorted`.\n\n```python\nfor msg in q: # read each message until the queue ends\n  ...\n\nfor msg in q.sorted(): # read each message in order\n  ...\n```\n\n## End the queue\n\nAfter the main process has sent all the data to the workers, it needs to indicate\nthat there's no additional work to be done. This is done by calling `Q.stop()` using the input queue that the workers are reading from and passing the list of workers to wait for.\n\nIn some rare situations, you can use `Q.end()` to explicitly end the queue.\n\n## Process results\n\nIf you have an output queue, you may want to to process the results. You can use `Q.items()` to end the queue and read the current messages.\n\n```python\nimport ezq\nout = ezq.Q()\n...\nresult = [msg.data for msg in out.items()]\n# OR\nresult = [msg.data for msg in out.items(sort=True)] # sorted by Msg.order\n# OR\nresult = [msg.data for msg in out.items(cache=True)] # cache the messages\n```\n\n## Example: Read and Write Queues\n\nIn this example, several workers read from a queue, process data, and then write to a different queue that a single worker uses to print to the screen sorting the results as it goes along.\n\nNote that we use a single `writer` to avoid clashes or overwriting.\n\n```python\nimport ezq\n\n\ndef printer(out: ezq.Q) -> None:\n    \"\"\"Print results in increasing order.\"\"\"\n    for msg in out.sorted():\n        print(msg.data)\n\n\ndef collatz(q: ezq.Q, out: ezq.Q) -> None:\n    \"\"\"Read numbers and compute values.\"\"\"\n    for msg in q:\n        num = float(msg.data)\n        if msg.kind == \"EVEN\":\n            out.put((num, num / 2), order=msg.order)\n        elif msg.kind == \"ODD\":\n            out.put((num, 3 * num + 1), order=msg.order)\n\n\ndef main() -> None:\n    \"\"\"Run several threads with a subprocess for printing.\"\"\"\n    q, out = ezq.Q(\"thread\"), ezq.Q()\n    readers = [ezq.run_thread(collatz, q, out) for _ in range(ezq.NUM_THREADS)]\n    writer = ezq.run(printer, out)\n\n    for num in range(40):\n        kind = \"EVEN\" if num % 2 == 0 else \"ODD\"\n        q.put(num, kind=kind, order=num)\n\n    q.stop(readers)\n    out.stop(writer)\n\n\nif __name__ == \"__main__\":\n    main()\n```\n\n## License\n\n[MIT License](https://github.com/metaist/ezq/blob/main/LICENSE.md)\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "queue,worker,multiprocessing,threading",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "ezq",
+            "package_url": "https://pypi.org/project/ezq/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/ezq/",
+            "project_urls": {
+                "Changelog": "https://github.com/metaist/ezq/blob/main/CHANGELOG.md",
+                "Documentation": "https://metaist.github.io/ezq/",
+                "Homepage": "https://github.com/metaist/ezq",
+                "Repository": "https://github.com/metaist/ezq.git"
+            },
+            "release_url": "https://pypi.org/project/ezq/3.0.3/",
+            "requires_dist": [
+                "multiprocess (~=0.70.14)",
+                "black ; extra == 'dev'",
+                "coverage ; extra == 'dev'",
+                "mypy ; extra == 'dev'",
+                "pdoc3 ; extra == 'dev'",
+                "pytest ; extra == 'dev'",
+                "pytest-cov ; extra == 'dev'",
+                "ruff ; extra == 'dev'"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "Simple wrapper for python multiprocessing and threading.",
+            "version": "3.0.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18191743,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "741d2aaf3bc18bad971de62c7feb7572d0ba7c675866e9147f3cf58ec3ccc2ea",
+                    "md5": "8ea2cf7f83ade3f160fb78454e607492",
+                    "sha256": "5a8f77e66c51d0206efb3b637ed561d4901baf77ca8b69909ce6187230b5d66c"
+                },
+                "downloads": -1,
+                "filename": "ezq-3.0.3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "8ea2cf7f83ade3f160fb78454e607492",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 9561,
+                "upload_time": "2023-05-22T02:34:55",
+                "upload_time_iso_8601": "2023-05-22T02:34:55.533203Z",
+                "url": "https://files.pythonhosted.org/packages/74/1d/2aaf3bc18bad971de62c7feb7572d0ba7c675866e9147f3cf58ec3ccc2ea/ezq-3.0.3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a5f8908b1dfb3e69844eca64191d12a23443a02e3df6778e4e5a18362333e830",
+                    "md5": "920c70b1911006d9a0437e1b651fc59d",
+                    "sha256": "375a03386d42868d1f956a993de95f59817a6dfb5ac37873ff899bcb8c5e99cb"
+                },
+                "downloads": -1,
+                "filename": "ezq-3.0.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "920c70b1911006d9a0437e1b651fc59d",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 13974,
+                "upload_time": "2023-05-22T02:34:57",
+                "upload_time_iso_8601": "2023-05-22T02:34:57.177431Z",
+                "url": "https://files.pythonhosted.org/packages/a5/f8/908b1dfb3e69844eca64191d12a23443a02e3df6778e4e5a18362333e830/ezq-3.0.3.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
