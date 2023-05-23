@@ -38,7 +38,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16371793,
+        "last_serial": 18199744,
         "urls": [
             {
                 "comment_text": "",
@@ -157,7 +157,6 @@
                 "Programming Language :: Python :: 3",
                 "Topic :: Scientific/Engineering :: Chemistry"
             ],
-            "description": "JAX Exchange Correlation Library\n================================\n\n.. image:: https://github.com/sail-sg/jax_xc/raw/main/figures/logo.png\n   :width: 200\n   :align: center\n   \n\n.. image:: https://img.shields.io/pypi/v/jax-xc.svg\n   :target: https://pypi.org/project/jax-xc/\n\n.. image:: https://readthedocs.org/projects/ansicolortags/badge/?version=latest\n   :target: https://jax-xc.readthedocs.io/en/latest/\n\n\n\nThis library contains direct translations of exchange correlation\nfunctionals in `libxc <https://tddft.org/programs/libxc/>`__ to\n`jax <https://github.com/google/jax>`__. The core calculations in libxc\nare implemented in `maple <https://www.maplesoft.com/>`__. This gives us\nthe opportunity to translate them directly into python with the help of\n`CodeGeneration <https://www.maplesoft.com/support/help/maple/view.aspx?path=CodeGeneration%2fPython>`__.\n\nUsage\n-----\n\nInstallation\n~~~~~~~~~~~~\n\n.. code:: sh\n\n   pip install jax-xc\n\nInvoking the Functionals\n~~~~~~~~~~~~~~~~~~~~~~~~\n\njax_xc's API is functional: it receives $\\\\rho$ a function of ``Callable``\ntype, and returns the $\\\\varepsilon_{xc}$ as a function of ``Callable``\ntype.\n\n.. code:: math\n\n   E_{xc} = \\int \\rho(r) \\varepsilon_{xc}(r) dr\n\nLDA and GGA\n^^^^^^^^^^^\n\nUnlike ``libxc`` which takes pre-computed densities and their derivative\nat certain coordinates. In ``jax_xc``, the API is designed to directly\ntake a density function.\n\n.. code:: python\n\n  import jax\n  import jax.numpy as jnp\n  import jax_xc\n\n\n  def rho(r):\n    \"\"\"Electron number density. We take gaussian as an example.\n\n    A function that takes a real coordinate, and returns a scalar\n    indicating the number density of electron at coordinate r.\n\n    Args:\n    r: a 3D coordinate.\n    Returns:\n    rho: If it is unpolarized, it is a scalar.\n        If it is polarized, it is a array of shape (2,).\n    \"\"\"\n    return jnp.prod(jax.scipy.stats.norm.pdf(r, loc=0, scale=1))\n\n\n  exc = jax_xc.gga_xc_pbe1w(rho=rho, polarized=False)\n\n  # a grid point in 3D\n  r = jnp.array([0.1, 0.2, 0.3])\n\n  # evaluate the exchange correlation energy per particle at this point\n  # corresponding to the 'zk' in libxc\n  print(exc(r))\n\nmGGA\n^^^^\n\nUnlike LDA and GGA that only depends on the density function, mGGA\nfunctionals also depend on the molecular orbitals.\n\n.. code:: python\n\n  import jax\n  import jax.numpy as jnp\n  import jax_xc\n  \n\n  def mo(r):\n    \"\"\"Molecular orbital. We take gaussian as an example.\n\n    A function that takes a real coordinate, and returns the value of\n    molecular orbital at this coordinate.\n\n    Args:\n      r: a 3D coordinate.\n    Returns:\n      mo: If it is unpolarized, it is a array of shape (N,).\n          If it is polarized, it is a array of shape (N, 2).\n    \"\"\"\n    # Assume we have 3 molecular orbitals\n    return jnp.array([\n        jnp.prod(jax.scipy.stats.norm.pdf(r, loc=0, scale=1)),\n        jnp.prod(jax.scipy.stats.norm.pdf(r, loc=0.5, scale=1)),\n        jnp.prod(jax.scipy.stats.norm.pdf(r, loc=-0.5, scale=1))\n    ])\n\n\n  rho = lambda r: jnp.sum(mo(r)**2, axis=0)\n  exc = jax_xc.mgga_xc_cc06(rho=rho, polarized=False, mo=mo)\n\n  # a grid point in 3D\n  r = jnp.array([0.1, 0.2, 0.3])\n\n  # evaluate the exchange correlation energy per particle at this point\n  # corresponding to the 'zk' in libxc\n  print(exc(r))\n\nHybrid Functionals\n^^^^^^^^^^^^^^^^^^\n\nHybrid functionals expose the same API, with extra attributes for the\nusers to access parameters needed outside of libxc/jax_xc (e.g. the\nfraction of exact exchange).\n\n.. code:: python\n\n  import jax\n  import jax.numpy as jnp\n  import jax_xc\n\n\n  def rho(r):\n    \"\"\"Electron number density. We take gaussian as an example.\n\n    A function that takes a real coordinate, and returns a scalar\n    indicating the number density of electron at coordinate r.\n\n    Args:\n      r: a 3D coordinate.\n    Returns:\n      rho: If it is unpolarized, it is a scalar.\n          If it is polarized, it is a array of shape (2,).\n    \"\"\"\n    return jnp.prod(jax.scipy.stats.norm.pdf(r, loc=0, scale=1))\n\n\n  exc = jax_xc.hyb_gga_xc_pbeb0(rho=rho, polarized=False)\n\n  # a grid point in 3D\n  r = jnp.array([0.1, 0.2, 0.3])\n\n  # evaluate the exchange correlation energy per particle at this point\n  # corresponding to the 'zk' in libxc\n  print(exc(r))\n\n  # access to extra attributes\n  cam_alpha = exc.cam_alpha  # fraction of full Hartree-Fock exchange\n\nThe complete list of extra attributes can be found in the class below:\n\n.. code:: python\n\n   class HybridFunctional(Callable):\n     cam_alpha: float\n     cam_beta: float\n     cam_omega: float\n     nlc_b: float\n     nlc_C: float\n\nThe meaning for each attribute is the same as libxc:\n\n-  cam_alpha: fraction of full Hartree-Fock exchange, used both for\n   usual hybrids as well as range-separated ones\n-  cam_beta: fraction of short-range only(!) exchange in range-separated\n   hybrids\n-  cam_omega: range separation constant\n-  nlc_b: non-local correlation, b parameter\n-  nlc_C: non-local correlation, C parameter\n\nSupport Functionals\n-------------------\n\nPlease refer to the `functionals section <https://jax-xc.readthedocs.io/en/latest/sources/jax_xc.html#module-jax_xc.functionals>`_ \nin ``jax_xc``'s documentation\nfor the complete list of supported functionals.\n\nNumerical Correctness\n---------------------\n\nWe test all the functionals that are auto-generated from maple files\nagainst the reference values in ``libxc``. The test is performed by\ncomparing the output of ``libxc`` and ``jax_xc`` and make sure they are\nwithin a certain tolerance, namely ``atol=2e-10`` and ``rtol=2e-10``.\n\nPerformance Benchmark\n---------------------\n\nWe report the performance benchmark of ``jax_xc`` against ``libxc`` on a\n64-core machine with Intel(R) Xeon(R) Silver 4216 CPU @ 2.10GHz.\n\nWe sample the points to evaluate the functionals by varying the number\nof points from 1 to $10^7$. The benchmark is performed by evaluating the\nruntime of the functional. Note that the runtime of ``jax_xc`` is\nmeasured by excluding the time of just-in-time compilation.\n\nWe visualize the mean value (averaged for both polarized and unpolarized)\nof the runtime of ``jax_xc`` and ``libxc`` in the following figure. The\ny-axis is log-scale. \n\n``jax_xc``'s runtime is constantly below ``libxc``'s\nfor all batch sizes. The speed up is ranging from 3x to 10x, and it is\nmore significant for larger batch sizes. \n\nWe hypothesize that the reason\nfor the speed up is that Jax's JIT compiler is able to optimize the\nfunctionals (e.g. vectorization, parallel execution, instruction fusion, \nconstant folding for floating points, etc.) better than\nlibxc.\n\n.. image:: https://raw.githubusercontent.com/sail-sg/jax_xc/main/figures/jax_xc_speed.svg\n\nWe visualize the distribution of the runtime ratio of ``jax_xc`` and\n``libxc`` in the following figure. The ratio is closer to 0.1 for\nlarge batch sizes (~ 10x speed up). The ratio is constantly below 1.0.\n\n.. image:: https://raw.githubusercontent.com/sail-sg/jax_xc/main/figures/jax_xc_ratio.svg\n\nNote that, we exclude one datapoint ``mgga_x_2d_prhg07`` from the\nruntime ratio visualization because it is an outlier due to Jax's lack\nof support of\\ ``lamberw`` function and we use\n``tensorflow_probability.substrates.jax.math.lambertw``.\n\nCaveates\n--------\n\nThe following functionals from ``libxc`` are not available in ``jax_xc``\nbecause some functions are not available in ``jax``.\n\n.. code:: python\n\n   gga_x_fd_lb94          # Becke-Roussel not having an closed-form expression\n   gga_x_fd_revlb94       # Becke-Roussel not having an closed-form expression\n   gga_x_gg99             # Becke-Roussel not having an closed-form expression\n   gga_x_kgg99            # Becke-Roussel not having an closed-form expression\n   hyb_gga_xc_case21      # Becke-Roussel not having an closed-form expression\n   hyb_mgga_xc_b94_hyb    # Becke-Roussel not having an closed-form expression\n   hyb_mgga_xc_br3p86     # Becke-Roussel not having an closed-form expression\n   lda_x_1d_exponential   # Requires explicit 1D integration\n   lda_x_1d_soft          # Requires explicit 1D integration\n   mgga_c_b94             # Becke-Roussel not having an closed-form expression\n   mgga_x_b00             # Becke-Roussel not having an closed-form expression\n   mgga_x_bj06            # Becke-Roussel not having an closed-form expression\n   mgga_x_br89            # Becke-Roussel not having an closed-form expression\n   mgga_x_br89_1          # Becke-Roussel not having an closed-form expression\n   mgga_x_mbr             # Becke-Roussel not having an closed-form expression\n   mgga_x_mbrxc_bg        # Becke-Roussel not having an closed-form expression\n   mgga_x_mbrxh_bg        # Becke-Roussel not having an closed-form expression\n   mgga_x_mggac           # Becke-Roussel not having an closed-form expression\n   mgga_x_rpp09           # Becke-Roussel not having an closed-form expression\n   mgga_x_tb09            # Becke-Roussel not having an closed-form expression\n   gga_x_wpbeh            # jit too long for E1_scaled\n   gga_c_ft97             # jit too long for E1_scaled\n   lda_xc_tih             # vxc functional\n   gga_c_pbe_jrgx         # vxc functional\n   gga_x_lb               # vxc functional\n\nBuilding from Source Code\n-------------------------\n\nModify the ``.env.example`` to fill in your envrionment variables, then\nrename it to ``.env``. Then run ``source .env`` to load them into your\nshell.\n\n-  ``OUTPUT_USER_ROOT``: The path to the bazel cache. This is where the\n   bazel cache will be stored. This is useful if you are building on a\n   shared filesystem.\n\n-  ``MAPLE_PATH``: The path to the maple binary.\n\n-  ``TMP_INSTALL_PATH``: The path to a temporary directory where the\n   wheel will be installed. This is useful if you are building on a\n   shared filesystem.\n\nHow to build.\n\n.. code:: sh\n\n   bazel --output_user_root=$OUTPUT_USER_ROOT build --action_env=PATH=$PATH:$MAPLE_PATH @maple2jax//:jax_xc_wheel\n\n",
             "description_content_type": "",
             "docs_url": null,
             "download_url": "",
@@ -188,7 +187,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16371793,
+        "last_serial": 18199744,
         "urls": [
             {
                 "comment_text": "",
@@ -271,6 +270,135 @@
                 "upload_time": "2023-01-10T07:18:21",
                 "upload_time_iso_8601": "2023-01-10T07:18:21.368642Z",
                 "url": "https://files.pythonhosted.org/packages/64/f3/ac93a4bbbbce3d97ae076a2452f12c02cee170b476e6f5ce3a7a199a4fd0/jax_xc-0.0.3-cp39-cp39-manylinux_2_17_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.4": {
+        "info": {
+            "author": "Kunhao Zheng, Min Lin",
+            "author_email": "zhengkh@sea.com, linmin@sea.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 3",
+                "Topic :: Scientific/Engineering :: Chemistry"
+            ],
+            "description": "JAX Exchange Correlation Library\n================================\n\n.. image:: https://github.com/sail-sg/jax_xc/raw/main/figures/logo.png\n   :width: 200\n   :align: center\n   \n\n.. image:: https://img.shields.io/pypi/v/jax-xc.svg\n   :target: https://pypi.org/project/jax-xc/\n\n.. image:: https://readthedocs.org/projects/ansicolortags/badge/?version=latest\n   :target: https://jax-xc.readthedocs.io/en/latest/\n\n\n\nThis library contains direct translations of exchange correlation\nfunctionals in `libxc <https://tddft.org/programs/libxc/>`__ to\n`jax <https://github.com/google/jax>`__. The core calculations in libxc\nare implemented in `maple <https://www.maplesoft.com/>`__. This gives us\nthe opportunity to translate them directly into python with the help of\n`CodeGeneration <https://www.maplesoft.com/support/help/maple/view.aspx?path=CodeGeneration%2fPython>`__.\n\nUsage\n-----\n\nInstallation\n~~~~~~~~~~~~\n\n.. code:: sh\n\n   pip install jax-xc\n\nInvoking the Functionals\n~~~~~~~~~~~~~~~~~~~~~~~~\n\njax_xc's API is functional: it receives $\\\\rho$ a function of ``Callable``\ntype, and returns the $\\\\varepsilon_{xc}$ as a function of ``Callable``\ntype.\n\n.. code:: math\n\n   E_{xc} = \\int \\rho(r) \\varepsilon_{xc}(r) dr\n\nLDA and GGA\n^^^^^^^^^^^\n\nUnlike ``libxc`` which takes pre-computed densities and their derivative\nat certain coordinates. In ``jax_xc``, the API is designed to directly\ntake a density function.\n\n.. code:: python\n\n  import jax\n  import jax.numpy as jnp\n  import jax_xc\n\n\n  def rho(r):\n    \"\"\"Electron number density. We take gaussian as an example.\n\n    A function that takes a real coordinate, and returns a scalar\n    indicating the number density of electron at coordinate r.\n\n    Args:\n    r: a 3D coordinate.\n    Returns:\n    rho: If it is unpolarized, it is a scalar.\n        If it is polarized, it is a array of shape (2,).\n    \"\"\"\n    return jnp.prod(jax.scipy.stats.norm.pdf(r, loc=0, scale=1))\n\n  # create a density functional\n  gga_xc_pbe = jax_xc.gga_x_pbe(polarized=False)\n\n  # a grid point in 3D\n  r = jnp.array([0.1, 0.2, 0.3])\n\n  # pass rho and r to the functional to compute epsilon_xc (energy density) at r.\n  # corresponding to the 'zk' in libxc\n  epsilon_xc_r = gga_xc_pbe(rho, r)\n  print(epsilon_xc_r)\n\nmGGA\n^^^^\n\nUnlike LDA and GGA that only depends on the density function, mGGA\nfunctionals also depend on the molecular orbitals.\n\n.. code:: python\n\n  import jax\n  import jax.numpy as jnp\n  import jax_xc\n  \n\n  def mo(r):\n    \"\"\"Molecular orbital. We take gaussian as an example.\n\n    A function that takes a real coordinate, and returns the value of\n    molecular orbital at this coordinate.\n\n    Args:\n      r: a 3D coordinate.\n    Returns:\n      mo: If it is unpolarized, it is a array of shape (N,).\n          If it is polarized, it is a array of shape (N, 2).\n    \"\"\"\n    # Assume we have 3 molecular orbitals\n    return jnp.array([\n        jnp.prod(jax.scipy.stats.norm.pdf(r, loc=0, scale=1)),\n        jnp.prod(jax.scipy.stats.norm.pdf(r, loc=0.5, scale=1)),\n        jnp.prod(jax.scipy.stats.norm.pdf(r, loc=-0.5, scale=1))\n    ])\n\n\n  rho = lambda r: jnp.sum(mo(r)**2, axis=0)\n  mgga_xc_cc06 = jax_xc.mgga_xc_cc06(polarized=False)\n\n  # a grid point in 3D\n  r = jnp.array([0.1, 0.2, 0.3])\n\n  # evaluate the exchange correlation energy per particle at this point\n  # corresponding to the 'zk' in libxc\n  print(mgga_xc_cc06(rho, r, mo))\n\nHybrid Functionals\n^^^^^^^^^^^^^^^^^^\n\nHybrid functionals expose the same API, with extra attributes for the\nusers to access parameters needed outside of libxc/jax_xc (e.g. the\nfraction of exact exchange).\n\n.. code:: python\n\n  import jax\n  import jax.numpy as jnp\n  import jax_xc\n\n\n  def rho(r):\n    \"\"\"Electron number density. We take gaussian as an example.\n\n    A function that takes a real coordinate, and returns a scalar\n    indicating the number density of electron at coordinate r.\n\n    Args:\n      r: a 3D coordinate.\n    Returns:\n      rho: If it is unpolarized, it is a scalar.\n          If it is polarized, it is a array of shape (2,).\n    \"\"\"\n    return jnp.prod(jax.scipy.stats.norm.pdf(r, loc=0, scale=1))\n\n\n  hyb_gga_xc_pbeb0 = jax_xc.hyb_gga_xc_pbeb0(polarized=False)\n\n  # a grid point in 3D\n  r = jnp.array([0.1, 0.2, 0.3])\n\n  # evaluate the exchange correlation energy per particle at this point\n  # corresponding to the 'zk' in libxc\n  print(hyb_gga_xc_pbeb0(rho, r))\n\n  # access to extra attributes\n  cam_alpha = hyb_gga_xc_pbep0.cam_alpha  # fraction of full Hartree-Fock exchange\n\nThe complete list of extra attributes can be found below:\n\n.. code:: python\n\n     cam_alpha: float\n     cam_beta: float\n     cam_omega: float\n     nlc_b: float\n     nlc_C: float\n\nThe meaning for each attribute is the same as libxc:\n\n-  cam_alpha: fraction of full Hartree-Fock exchange, used both for\n   usual hybrids as well as range-separated ones\n-  cam_beta: fraction of short-range only(!) exchange in range-separated\n   hybrids\n-  cam_omega: range separation constant\n-  nlc_b: non-local correlation, b parameter\n-  nlc_C: non-local correlation, C parameter\n\nSupport Functionals\n-------------------\n\nPlease refer to the `functionals section <https://jax-xc.readthedocs.io/en/latest/sources/jax_xc.html#module-jax_xc.functionals>`_ \nin ``jax_xc``'s documentation\nfor the complete list of supported functionals.\n\nNumerical Correctness\n---------------------\n\nWe test all the functionals that are auto-generated from maple files\nagainst the reference values in ``libxc``. The test is performed by\ncomparing the output of ``libxc`` and ``jax_xc`` and make sure they are\nwithin a certain tolerance, namely ``atol=2e-10`` and ``rtol=2e-10``.\n\nPerformance Benchmark\n---------------------\n\nWe report the performance benchmark of ``jax_xc`` against ``libxc`` on a\n64-core machine with Intel(R) Xeon(R) Silver 4216 CPU @ 2.10GHz.\n\nWe sample the points to evaluate the functionals by varying the number\nof points from 1 to $10^7$. The benchmark is performed by evaluating the\nruntime of the functional. Note that the runtime of ``jax_xc`` is\nmeasured by excluding the time of just-in-time compilation.\n\nWe visualize the mean value (averaged for both polarized and unpolarized)\nof the runtime of ``jax_xc`` and ``libxc`` in the following figure. The\ny-axis is log-scale. \n\n``jax_xc``'s runtime is constantly below ``libxc``'s\nfor all batch sizes. The speed up is ranging from 3x to 10x, and it is\nmore significant for larger batch sizes. \n\nWe hypothesize that the reason\nfor the speed up is that Jax's JIT compiler is able to optimize the\nfunctionals (e.g. vectorization, parallel execution, instruction fusion, \nconstant folding for floating points, etc.) better than\nlibxc.\n\n.. image:: https://raw.githubusercontent.com/sail-sg/jax_xc/main/figures/jax_xc_speed.svg\n\nWe visualize the distribution of the runtime ratio of ``jax_xc`` and\n``libxc`` in the following figure. The ratio is closer to 0.1 for\nlarge batch sizes (~ 10x speed up). The ratio is constantly below 1.0.\n\n.. image:: https://raw.githubusercontent.com/sail-sg/jax_xc/main/figures/jax_xc_ratio.svg\n\nNote that, we exclude one datapoint ``mgga_x_2d_prhg07`` from the\nruntime ratio visualization because it is an outlier due to Jax's lack\nof support of\\ ``lamberw`` function and we use\n``tensorflow_probability.substrates.jax.math.lambertw``.\n\nCaveates\n--------\n\nThe following functionals from ``libxc`` are not available in ``jax_xc``\nbecause some functions are not available in ``jax``.\n\n.. code:: python\n\n   gga_x_fd_lb94          # Becke-Roussel not having a closed-form expression\n   gga_x_fd_revlb94       # Becke-Roussel not having a closed-form expression\n   gga_x_gg99             # Becke-Roussel not having a closed-form expression\n   gga_x_kgg99            # Becke-Roussel not having a closed-form expression\n   hyb_gga_xc_case21      # Becke-Roussel not having a closed-form expression\n   hyb_mgga_xc_b94_hyb    # Becke-Roussel not having a closed-form expression\n   hyb_mgga_xc_br3p86     # Becke-Roussel not having a closed-form expression\n   lda_x_1d_exponential   # Requires explicit 1D integration\n   lda_x_1d_soft          # Requires explicit 1D integration\n   mgga_c_b94             # Becke-Roussel not having a closed-form expression\n   mgga_x_b00             # Becke-Roussel not having a closed-form expression\n   mgga_x_bj06            # Becke-Roussel not having a closed-form expression\n   mgga_x_br89            # Becke-Roussel not having a closed-form expression\n   mgga_x_br89_1          # Becke-Roussel not having a closed-form expression\n   mgga_x_mbr             # Becke-Roussel not having a closed-form expression\n   mgga_x_mbrxc_bg        # Becke-Roussel not having a closed-form expression\n   mgga_x_mbrxh_bg        # Becke-Roussel not having a closed-form expression\n   mgga_x_mggac           # Becke-Roussel not having a closed-form expression\n   mgga_x_rpp09           # Becke-Roussel not having a closed-form expression\n   mgga_x_tb09            # Becke-Roussel not having a closed-form expression\n   gga_x_wpbeh            # jit too long for E1_scaled\n   gga_c_ft97             # jit too long for E1_scaled\n   lda_xc_tih             # vxc functional\n   gga_c_pbe_jrgx         # vxc functional\n   gga_x_lb               # vxc functional\n\nBuilding from Source Code\n-------------------------\n\nModify the ``.env.example`` to fill in your envrionment variables, then\nrename it to ``.env``. Then run ``source .env`` to load them into your\nshell.\n\n-  ``OUTPUT_USER_ROOT``: The path to the bazel cache. This is where the\n   bazel cache will be stored. This is useful if you are building on a\n   shared filesystem.\n\n-  ``MAPLE_PATH``: The path to the maple binary.\n\n-  ``TMP_INSTALL_PATH``: The path to a temporary directory where the\n   wheel will be installed. This is useful if you are building on a\n   shared filesystem.\n\nHow to build.\n\n.. code:: sh\n\n   bazel --output_user_root=$OUTPUT_USER_ROOT build --action_env=PATH=$PATH:$MAPLE_PATH @maple2jax//:jax_xc_wheel\n\nLicense\n-------\n\nAligned with ``libxc``, ``jax_xc`` is licensed under the Mozilla Public License 2.0. See\n``LICENSE`` for the full license text.\n\n",
+            "description_content_type": "",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "jax-xc",
+            "package_url": "https://pypi.org/project/jax-xc/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/jax-xc/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/jax-xc/0.0.4/",
+            "requires_dist": [
+                "jax",
+                "numpy",
+                "tensorflow-probability"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "",
+            "version": "0.0.4",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18199744,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e83719914d1c0e2ee13db5c10dabbf8e9e70c02bb8e4eac98f2f07aaec48b933",
+                    "md5": "5682aec7b29ad38a2b017fa042855612",
+                    "sha256": "4a98521d9070e8d6a5c3b4473e8b9684b41626275485d63bf6889c87d193e136"
+                },
+                "downloads": -1,
+                "filename": "jax_xc-0.0.4-cp310-cp310-manylinux_2_17_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "5682aec7b29ad38a2b017fa042855612",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.7",
+                "size": 3745757,
+                "upload_time": "2023-05-22T15:14:36",
+                "upload_time_iso_8601": "2023-05-22T15:14:36.807663Z",
+                "url": "https://files.pythonhosted.org/packages/e8/37/19914d1c0e2ee13db5c10dabbf8e9e70c02bb8e4eac98f2f07aaec48b933/jax_xc-0.0.4-cp310-cp310-manylinux_2_17_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3b954512bdbfc29e7c784d49ae6298a77e9ae7a290c2f6f1ca233d0139610450",
+                    "md5": "1cd27409d59b9cd94b3965ad52aed6fa",
+                    "sha256": "680c72fee4984b86d0efeb616a68d6248c066461e47bcd008ef805285ef8fbb9"
+                },
+                "downloads": -1,
+                "filename": "jax_xc-0.0.4-cp37-cp37m-manylinux_2_17_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "1cd27409d59b9cd94b3965ad52aed6fa",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.7",
+                "size": 3741445,
+                "upload_time": "2023-05-22T15:14:40",
+                "upload_time_iso_8601": "2023-05-22T15:14:40.489283Z",
+                "url": "https://files.pythonhosted.org/packages/3b/95/4512bdbfc29e7c784d49ae6298a77e9ae7a290c2f6f1ca233d0139610450/jax_xc-0.0.4-cp37-cp37m-manylinux_2_17_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "837160ef0d5687fc14cc95adbbc1c42463f87de08d3c549fc6172b5049455917",
+                    "md5": "c0e9886f0dc347a82cb87a9bad957748",
+                    "sha256": "adeeba78a6a0e10b9f1b603c4d81faa4c43395f0ee5e2144d89d1e6cc59b3cbe"
+                },
+                "downloads": -1,
+                "filename": "jax_xc-0.0.4-cp38-cp38-manylinux_2_17_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "c0e9886f0dc347a82cb87a9bad957748",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.7",
+                "size": 3746163,
+                "upload_time": "2023-05-22T15:14:43",
+                "upload_time_iso_8601": "2023-05-22T15:14:43.667265Z",
+                "url": "https://files.pythonhosted.org/packages/83/71/60ef0d5687fc14cc95adbbc1c42463f87de08d3c549fc6172b5049455917/jax_xc-0.0.4-cp38-cp38-manylinux_2_17_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "1fedb554143aa002d3b648ee82d921794f5a170c4f8844ce05fca291ac885bcd",
+                    "md5": "55958c4c4a96324b2ec8b44b59cdb0d9",
+                    "sha256": "1fe857c1a4b06171cd69301c0879f52440094cfe90a17b1579bfdb66111e45d3"
+                },
+                "downloads": -1,
+                "filename": "jax_xc-0.0.4-cp39-cp39-manylinux_2_17_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "55958c4c4a96324b2ec8b44b59cdb0d9",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.7",
+                "size": 3747216,
+                "upload_time": "2023-05-22T15:14:45",
+                "upload_time_iso_8601": "2023-05-22T15:14:45.949637Z",
+                "url": "https://files.pythonhosted.org/packages/1f/ed/b554143aa002d3b648ee82d921794f5a170c4f8844ce05fca291ac885bcd/jax_xc-0.0.4-cp39-cp39-manylinux_2_17_x86_64.whl",
                 "yanked": false,
                 "yanked_reason": null
             }

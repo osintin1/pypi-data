@@ -34,7 +34,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18174528,
+        "last_serial": 18202176,
         "urls": [
             {
                 "comment_text": "",
@@ -124,7 +124,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18174528,
+        "last_serial": 18202176,
         "urls": [
             {
                 "comment_text": "",
@@ -177,7 +177,6 @@
             "author_email": "renanotivin@hotmail.com",
             "bugtrack_url": null,
             "classifiers": [],
-            "description": "# TrueSight \u2728\n\nThe TrueSight model is a hybrid forecasting tool that uses statistical forecasting models together with a Deep Neural Network (DNN) to make predictions. The TrueSight `Preprocessor` class is responsible for getting all the statistical forecasters in one place. It can handle forecasters from packages like `statsforecast`, `scikit-learn`, `pmdarima`, and others. You just need a class that accepts the `seasonal_length` parameter for the constructor and has a `.fit(x, y)` method\n\nAll you need to do before using this package, is create a pandas dataframe with the following structure:\n\n - unique_id: A string that uniquely identifies each time series in the dataframe\n - ds: A datetime column with the date of each time step. The dates must be in the correct frequency for the date_freq parameter\n - y: The values of the time series\n\nand run the steps in the Usage section. Easy peasy! \ud83d\ude0e\n\n## Instalation \ud83d\udcbb\n\nTo install the TrueSight package, just run:\n\n```\npip install truesight\n```\n\nWe also recommend installing the `statsforecast` package for the statistical forecasters:\n\n```\npip install statsforecast\n```\n\n## Usage \ud83d\ude80\n\nImport the necessary modules\n\n``` python\nimport tensorflow as tf\nfrom truesight.preprocessing import Preprocessor\nfrom truesight.core import TrueSight\nfrom truesight.metrics import Evaluator, smape, mape, mse, rmse, mae\nfrom truesight.utils import get_input_shapes, generate_syntetic_data\n```\n\nLoad the data\n\n``` python\nnum_time_steps = 60\nseasonal_lenght = 12\nforecast_horizon = 12\ndf = generate_syntetic_data(num_time_steps, seasonal_lenght, 100)\n```\nCreate and run the preprocessor class. You can include as many statistical models as you need in the `models` parameter. Just make sure they follow the syntax similar to `statsforecast`. However, keep in mind that more models mean longer processing time. It's important to set a fallback model in case any of the informed models fail to fit.\n\n``` python\nfrom statsforecast.models import SeasonalNaive, AutoETS\nfrom truesight.models import AdditiveDecomposition\n\npreprocessor = Preprocessor(df)\nX_train, Y_train, ids_train, X_val, Y_val, ids_val, models = preprocessor.make_dataset(\n    forecast_horizon = 12, \n    season_length = 12,\n    date_freq = \"MS\", \n    models = [AdditiveDecomposition, AutoETS, SeasonalNaive], \n    fallback_model = SeasonalNaive,\n    verbose = True\n    )\n```\n\nCreate the model\n\n``` python\ninput_shapes = get_input_shapes(X_train)\ntruesight = TrueSight(models, input_shapes, forecast_horizon = forecast_horizon)\ntruesight.auto_tune(X_train, Y_train, X_val, Y_val, n_trials = 50, batch_size = 512, epochs = 5)\n```\n\nUse the `auto_tune` to automatically define the hyperparameters\n\n``` python\ntruesight.auto_tune(X_train, Y_train, X_val, Y_val, n_trials = 10, batch_size = 512, epochs = 5)\n```\n\nOr set then manually\n\n``` python\ntruesight.set_hparams(lstm_units=256, hidden_size=1024, num_heads=8, dropout_rate=0.1)\n```\n\nTrain the model, as the model is built on the tensorflow framework, any tensorflow callback can be used\n\n``` python\ncallbacks = [\n    tf.keras.callbacks.EarlyStopping(patience = 100, restore_best_weights = True, monitor = \"val_loss\"),\n    tf.keras.callbacks.ReduceLROnPlateau(monitor = \"val_loss\", factor = 0.5, patience = 25, verbose = 1),\n]\ntruesight.fit(\n    X_train, Y_train, \n    X_val, Y_val, \n    batch_size = 128, \n    epochs = 1000, \n    verbose = False, \n    callbacks = callbacks,\n )\ntruesight.plot_history()\n```\n![Training Log](figures/training_history.png)\n\n\nEvaluate the results\n\n``` python\nY_hat = truesight.predict(\n    X_val, \n    batch_size = 500, \n    n_repeats = 100, \n    n_quantiles = 15, \n    return_quantiles = True, \n    verbose = False,\n )\nevaluator = Evaluator(X_val, Y_val, Y_hat, ids_val)\nevaluator.evaluate_prediction([smape, mape, mse, rmse, mae], return_mean=False)\n```\n| id |         mse |      rmse |      mae |\n|---:|------------:|----------:|---------:|\n| 10 |  1164.51    |  34.1249  | 25.9397  |\n| 13 |     2.91094 |   1.70615 |  1.69313 |\n| 18 |     2.62309 |   1.6196  |  1.5549  |\n| 38 |     2.77819 |   1.66679 |  1.62896 |\n| 45 |   892.701   |  29.8781  | 10.0897  |\n| 46 |     2.96284 |   1.72129 |  1.71549 |\n| 50 |  3585.54    |  59.8794  | 49.0362  |\n| 51 | 12199.1     | 110.449   | 93.9491  |\n| 53 |     2.6345  |   1.62311 |  1.56625 |\n| 54 |     2.77184 |   1.66488 |  1.63493 |\n| 61 |   303.464   |  17.4202  | 14.6694  |\n| 67 |     2.70393 |   1.64436 |  1.60988 |\n| 69 |  2578.09    |  50.7749  | 38.986   |\n| 70 |     3.09074 |   1.75805 |  1.75805 |\n| 73 |     2.80945 |   1.67614 |  1.65109 |\n| 75 |     2.88333 |   1.69804 |  1.68085 |\n| 78 |     3.09091 |   1.7581  |  1.7581  |\n| 81 |     2.64539 |   1.62647 |  1.56712 |\n| 83 |   491.263   |  22.1644  | 18.4432  |\n| 86 |     2.84002 |   1.68523 |  1.64177 |\n\n``` python\nevaluator.plot_exemple()\n```\n![Output Exemple](figures/output.png)\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "https://github.com/renanklehm/true-sight/archive/refs/tags/v0.0.1-alpha.tar.gz",
@@ -215,7 +214,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18174528,
+        "last_serial": 18202176,
         "urls": [
             {
                 "comment_text": "",
@@ -256,6 +255,97 @@
                 "upload_time": "2023-05-19T19:19:14",
                 "upload_time_iso_8601": "2023-05-19T19:19:14.393800Z",
                 "url": "https://files.pythonhosted.org/packages/65/2f/cd00e169a6a46e70a4337e80b2a3b595bd321589450a389475d496ca32c7/truesight-0.0.2a2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.2a3": {
+        "info": {
+            "author": "Renan Otvin Klehm",
+            "author_email": "renanotivin@hotmail.com",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "# TrueSight \u2728\n\nThe TrueSight model is a hybrid forecasting tool that uses statistical forecasting models together with a Deep Neural Network (DNN) to make predictions. The TrueSight `Preprocessor` class is responsible for getting all the statistical forecasters in one place. It can handle forecasters from packages like `statsforecast`, `scikit-learn`, `pmdarima`, and others. You just need to the `ModelWrapper` Class to standardize the method calls.\n\nAll you need to do before using this package, is create a pandas dataframe with the following structure:\n\n - unique_id: A string that uniquely identifies each time series in the dataframe\n - ds: A datetime column with the date of each time step. The dates must be in the correct frequency for the date_freq parameter\n - y: The values of the time series\n\nand run the steps in the Usage section. Easy peasy! \ud83d\ude0e\n\n## Instalation \ud83d\udcbb\n\nTo install the TrueSight package, just run:\n\n```\npip install truesight\n```\n\nWe also recommend installing the `statsforecast` package for the statistical forecasters:\n\n```\npip install statsforecast\n```\n\n## Usage \ud83d\ude80\n\nImport the necessary modules\n\n``` python\nimport tensorflow as tf\nfrom truesight.preprocessing import Preprocessor\nfrom truesight.core import TrueSight\nfrom truesight.metrics import Evaluator, smape, mape, mse, rmse, mae\nfrom truesight.utils import get_input_shapes, generate_syntetic_data\n```\n\nLoad the data\n\n``` python\nnum_time_steps = 60\nseason_length = 12\nforecast_horizon = 12\ndf = generate_syntetic_data(num_time_steps, season_length, 100)\n```\nCreate and run the preprocessor class. You can include as many statistical models as you need in the `models` parameter, just make sure to use the `ModelWrapper` class. However, keep in mind that more models mean longer processing time. It's important to set a fallback model in case any of the informed models fail to fit.\n\n``` python\nfrom statsforecast.models import SeasonalNaive, AutoETS\nfrom sklearn.linear_model import LinearRegression\nfrom truesight.models import AdditiveDecomposition\nfrom truesight.utils import ModelWrapper\n\nmodels = [\n    ModelWrapper(LinearRegression, horizon=forecast_horizon, season_length=season_length), \n    ModelWrapper(SeasonalNaive, horizon=forecast_horizon, season_length=season_length), \n    ModelWrapper(AutoETS, horizon=forecast_horizon, season_length=season_length),\n    ModelWrapper(AdditiveDecomposition, horizon=forecast_horizon, season_length=season_length)\n]\n\npreprocessor = Preprocessor(df)\nX_train, Y_train, ids_train, X_val, Y_val, ids_val, models = preprocessor.make_dataset(\n    forecast_horizon = 12, \n    season_length = 12,\n    date_freq = \"MS\", \n    models = models, \n    fallback_model = ModelWrapper(SeasonalNaive, horizon=forecast_horizon, season_length=season_length),\n    verbose = True\n    )\n```\n\nCreate the model\n\n``` python\ninput_shapes = get_input_shapes(X_train)\ntruesight = TrueSight(models, input_shapes, forecast_horizon = forecast_horizon)\ntruesight.auto_tune(X_train, Y_train, X_val, Y_val, n_trials = 50, batch_size = 512, epochs = 5)\n```\n\nUse the `auto_tune` to automatically define the hyperparameters\n\n``` python\ntruesight.auto_tune(X_train, Y_train, X_val, Y_val, n_trials = 10, batch_size = 512, epochs = 5)\n```\n\nOr set then manually\n\n``` python\ntruesight.set_hparams(lstm_units=256, hidden_size=1024, num_heads=8, dropout_rate=0.1)\n```\n\nTrain the model, as the model is built on the tensorflow framework, any tensorflow callback can be used\n\n``` python\ncallbacks = [\n    tf.keras.callbacks.EarlyStopping(patience = 100, restore_best_weights = True, monitor = \"val_loss\"),\n    tf.keras.callbacks.ReduceLROnPlateau(monitor = \"val_loss\", factor = 0.5, patience = 25, verbose = 1),\n]\ntruesight.fit(\n    X_train, Y_train, \n    X_val, Y_val, \n    batch_size = 128, \n    epochs = 1000, \n    verbose = False, \n    callbacks = callbacks,\n )\ntruesight.plot_history()\n```\n![Training Log](figures/training_history.png)\n\n\nEvaluate the results\n\n``` python\nY_hat = truesight.predict(\n    X_val, \n    batch_size = 500, \n    n_repeats = 100, \n    n_quantiles = 15, \n    return_quantiles = True, \n    verbose = False,\n )\nevaluator = Evaluator(X_val, Y_val, Y_hat, ids_val)\nevaluator.evaluate_prediction([smape, mape, mse, rmse, mae], return_mean=False)\n```\n| id |         mse |      rmse |      mae |\n|---:|------------:|----------:|---------:|\n| 10 |  1164.51    |  34.1249  | 25.9397  |\n| 13 |     2.91094 |   1.70615 |  1.69313 |\n| 18 |     2.62309 |   1.6196  |  1.5549  |\n| 38 |     2.77819 |   1.66679 |  1.62896 |\n| 45 |   892.701   |  29.8781  | 10.0897  |\n| 46 |     2.96284 |   1.72129 |  1.71549 |\n| 50 |  3585.54    |  59.8794  | 49.0362  |\n| 51 | 12199.1     | 110.449   | 93.9491  |\n| 53 |     2.6345  |   1.62311 |  1.56625 |\n| 54 |     2.77184 |   1.66488 |  1.63493 |\n| 61 |   303.464   |  17.4202  | 14.6694  |\n| 67 |     2.70393 |   1.64436 |  1.60988 |\n| 69 |  2578.09    |  50.7749  | 38.986   |\n| 70 |     3.09074 |   1.75805 |  1.75805 |\n| 73 |     2.80945 |   1.67614 |  1.65109 |\n| 75 |     2.88333 |   1.69804 |  1.68085 |\n| 78 |     3.09091 |   1.7581  |  1.7581  |\n| 81 |     2.64539 |   1.62647 |  1.56712 |\n| 83 |   491.263   |  22.1644  | 18.4432  |\n| 86 |     2.84002 |   1.68523 |  1.64177 |\n\n``` python\nevaluator.plot_exemple()\n```\n![Output Exemple](figures/output.png)\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "https://github.com/renanklehm/true-sight/archive/refs/tags/v0.0.1-alpha.tar.gz",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/renanklehm/true-sight",
+            "keywords": "time series,prediction",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "truesight",
+            "package_url": "https://pypi.org/project/truesight/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/truesight/",
+            "project_urls": {
+                "Download": "https://github.com/renanklehm/true-sight/archive/refs/tags/v0.0.1-alpha.tar.gz",
+                "Homepage": "https://github.com/renanklehm/true-sight"
+            },
+            "release_url": "https://pypi.org/project/truesight/0.0.2a3/",
+            "requires_dist": [
+                "tensorflow (>=2.11.0)",
+                "optuna (>=2.10.1)",
+                "numpy (>=1.23.5)",
+                "pandas (>=1.5.3)",
+                "matplotlib (>=3.6.3)",
+                "scipy (>=1.10.0)",
+                "tqdm (>=4.64.1)"
+            ],
+            "requires_python": "",
+            "summary": "Truesight is a python package for time series prediction using deep learning and statistical models.",
+            "version": "0.0.2a3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18202176,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "1ad4b992ae591f51b438ec741c90533c7f758087de6a9184de7be504a3fe82a4",
+                    "md5": "cc21007ed2ac591ce329dad2deabe022",
+                    "sha256": "3132ca8b6d1c90d0ba853a48b6af41cf40be9e019c705f62ce7159f034157821"
+                },
+                "downloads": -1,
+                "filename": "truesight-0.0.2a3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "cc21007ed2ac591ce329dad2deabe022",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 14786,
+                "upload_time": "2023-05-22T18:09:15",
+                "upload_time_iso_8601": "2023-05-22T18:09:15.225581Z",
+                "url": "https://files.pythonhosted.org/packages/1a/d4/b992ae591f51b438ec741c90533c7f758087de6a9184de7be504a3fe82a4/truesight-0.0.2a3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "0cb3b371a10026713c54ab5403dde30ad7115b4ec636d41f6e2b4200fe479676",
+                    "md5": "9a4df4a6096c3c4c06b7447c2d38e69b",
+                    "sha256": "ce8b5f1aa0b0bdc0fed4a4efd6e9f34f42f996bdae7389a8181ac3fc5e9c9f37"
+                },
+                "downloads": -1,
+                "filename": "truesight-0.0.2a3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "9a4df4a6096c3c4c06b7447c2d38e69b",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 15204,
+                "upload_time": "2023-05-22T18:09:17",
+                "upload_time_iso_8601": "2023-05-22T18:09:17.172849Z",
+                "url": "https://files.pythonhosted.org/packages/0c/b3/b371a10026713c54ab5403dde30ad7115b4ec636d41f6e2b4200fe479676/truesight-0.0.2a3.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
