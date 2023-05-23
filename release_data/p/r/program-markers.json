@@ -37,7 +37,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17397032,
+        "last_serial": 18213208,
         "urls": [
             {
                 "comment_text": "",
@@ -122,7 +122,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17397032,
+        "last_serial": 18213208,
         "urls": [
             {
                 "comment_text": "",
@@ -207,7 +207,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17397032,
+        "last_serial": 18213208,
         "urls": [
             {
                 "comment_text": "",
@@ -262,7 +262,6 @@
             "classifiers": [
                 "Programming Language :: Python :: 3"
             ],
-            "description": "`program-markers` inserts markers (as function calls) in C or C++ source code to enable [differential testing for missed optimizations](https://thetheodor.github.io/papers/asplos22-1010.pdf):\n1. Instrument a program.\n2. Compile it with two or more compilers (or compiler versions, or optimization levels, etc).\n3. For each output: the markers whose corresponding calls are still present in the\n   generated assembly are _alive_, the remaining are _dead_.\n4. Differential testing: compare the sets of _alive_ and _dead_ markers across\n   outputs.\n\nThere are two kinds of markers supported: \n- DCE (Dead Code Elimination) Markers\n- VR (Value Range) Markers\n\nA __DCEMarker__ tests if a compiler dead code eliminates a piece of code (basic block). For example, \n```\nif (Cond){\n  DCEMarker0_();\n  STMT0;\n  STMT1;\n  //...\n}\n```\nIf `call DCEMarker0_();` is not present in the generated assembly code then the\ncompiler determined that `Cond` must always be false and therefore the body of\nthis if statement is dead.\n\nA __VRMarker__ tests if a compiler can determine subsets of the value ranges of\nvariables, for example:\n```\nif (a <= C)\n    VRMarker0_();\n```\nIf `call VRMarker0_();` is not present in the generated assembly code then the\ncompiler determined that `a`'s value is always `a > C`. Currently only integer\nvariables are instrumented. \n\n#### To build just the clang tool\n\nPrerequisites: `cmake`, `make`, `clang/llvm` 13/14.\n\n```\nmkdir build\ncd build\ncmake .. \ncmake --build . [--parallel]\ncmake --install . --prefix=/where/to/install/\n```\n\n#### Usage\n```\ncat test.c\nint foo(int a) {\n    if (a == 0)\n        return 1;\n    else {\n        a = 5;\n    }\n\n    return a;\n}\n\n\ndead-instrument test.c --\n\n\ncat test.c | clang-format\n#if defined DisableDCEMarker0_\n#define DCEMARKERMACRO0_ ;\n#elif defined UnreachableDCEMarker0_\n#define DCEMARKERMACRO0_ __builtin_unreachable();\n#else\n#define DCEMARKERMACRO0_ DCEMarker0_();\nvoid DCEMarker0_(void);\n#endif\n#if defined DisableDCEMarker1_\n#define DCEMARKERMACRO1_ ;\n#elif defined UnreachableDCEMarker1_\n#define DCEMARKERMACRO1_ __builtin_unreachable();\n#else\n#define DCEMARKERMACRO1_ DCEMarker1_();\nvoid DCEMarker1_(void);\n#endif\nint foo(int a) {\n  if (a == 0)\n  {\n    DCEMARKERMACRO1_\n    return 1;\n  }\n  else {\n    DCEMARKERMACRO0_\n    a = 5;\n  }\n\n  return a;\n}\n```\n\nIndividual markers can be disabled or turned into unreachables (useful for helping the compiler optimize parts known to be dead):\n\n```\ngcc -E -P -DDisableDCEMarker0_ -DUnreachableDCEMarker1_ test.c | clang-format\nint foo(int a) {\n  if (a == 0) {\n    __builtin_unreachable();\n    return 1;\n  } else {\n    ;\n    a = 5;\n  }\n  return a;\n}\n```\n\nPassing  `--ignore-functions-with-macros` to `program-markers` will cause it to ignore any functions that contain macro expansions.\n\n\nValue range markers can be emitted instead by using `--mode=vr`: \n```\ncat test.c\nint foo(int a) {\n  if (a == 0)\n    return 1;\n  return 0;\n}\n\nprogram-markers --mode=vr test.c --\n\ncat test.c | clang-format \n#if defined DisableVRMarkerLE0_\n#define VRMARKERMACROLE0_(VAR)\n#elif defined UnreachableVRMarkerLE0_\n#define VRMARKERMACROLE0_(VAR)         \\\n  if ((VAR) <= VRMarkerConstantLE0_)   \\\n    __builtin_unreachable();\n#else\n#define VRMARKERMACROLE0_(VAR)         \\\n  if ((VAR) <= VRMarkerConstantLE0_)   \\\n    VRMarkerLE0_();\nvoid VRMarkerLE0_(void);\n#endif\n#ifndef VRMarkerConstantLE0_\n#define VRMarkerConstantLE0_ 0\n#endif\n#if defined DisableVRMarkerGE0_\n#define VRMARKERMACROGE0_(VAR)\n#elif defined UnreachableVRMarkerGE0_\n#define VRMARKERMACROGE0_(VAR)         \\\n  if ((VAR) >= VRMarkerConstantGE0_)   \\\n    __builtin_unreachable();\n#else\n#define VRMARKERMACROGE0_(VAR)         \\\n  if ((VAR) >= VRMarkerConstantGE0_)   \\\n    VRMarkerGE0_();\nvoid VRMarkerGE0_(void);\n#endif\n#ifndef VRMarkerConstantGE0_\n#define VRMarkerConstantGE0_ 0\n#endif\nint foo(int a) {\n  VRMARKERMACROLE0_(a)\n  VRMARKERMACROGE0_(a)\n  if (a == 0)\n    return 1;\n  return 0;\n}\n```\n\n\nThe ranges that each marker test can be adjucted via macros and individual markers can be disabled or turned into unreachables:\n\n```\ngcc -E -P -DDisableVRMarkerLE0_ -DVRMarkerConstantGE0_=8 test.c | clang-format\nvoid VRMarkerGE0_(void);\nint foo(int a) {\n\n  if ((a) >= 8)\n    VRMarkerGE0_();\n  if (a == 0)\n    return 1;\n  return 0;\n}\n```\n\n#### Python wrapper\n\n`pip install program-markers`\n\n\nTo use the instrumenter in python import `from program_markers.instrumenter import instrument_program`: `instrument_program(program: diopter.SourceProgram, ignore_functions_with_macros: bool) -> InstrumentedProgram`. \n\n\n#### Building the python wrapper\n\n##### Local build\n\n```\n./build_python_wheel_local.sh #this will build the current branch\npip install .\n```\n\n#### Docker based build\n\n```\ndocker run --rm -e REVISION=REV -v `pwd`:/io theodort/manylinux-with-llvm:latest /io/build_python_wheel_docker.sh\n```\n\nThis will build multiple wheels for `REV` with multiple python versions.\nThe output is stored in the `wheelhouse` directory.\nThe docker image is based on https://github.com/thetheodor/manylinux-with-llvm.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -293,7 +292,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17397032,
+        "last_serial": 18213208,
         "urls": [
             {
                 "comment_text": "",
@@ -334,6 +333,92 @@
                 "upload_time": "2023-03-22T11:46:14",
                 "upload_time_iso_8601": "2023-03-22T11:46:14.504699Z",
                 "url": "https://files.pythonhosted.org/packages/23/39/e99ad60662c2863ee87992896a8b1ff0353aafe2560bf2809c0a6d016744/program_markers-0.4.3-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.4.4": {
+        "info": {
+            "author": "Theodoros Theodoridis",
+            "author_email": "theodort@inf.ethz.ch",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "`program-markers` inserts markers (as function calls) in C or C++ source code to enable [differential testing for missed optimizations](https://thetheodor.github.io/papers/asplos22-1010.pdf):\n1. Instrument a program.\n2. Compile it with two or more compilers (or compiler versions, or optimization levels, etc).\n3. For each output: the markers whose corresponding calls are still present in the\n   generated assembly are _alive_, the remaining are _dead_.\n4. Differential testing: compare the sets of _alive_ and _dead_ markers across\n   outputs.\n\nThere are two kinds of markers supported: \n- DCE (Dead Code Elimination) Markers\n- VR (Value Range) Markers\n\nA __DCEMarker__ tests if a compiler dead code eliminates a piece of code (basic block). For example, \n```\nif (Cond){\n  DCEMarker0_();\n  STMT0;\n  STMT1;\n  //...\n}\n```\nIf `call DCEMarker0_();` is not present in the generated assembly code then the\ncompiler determined that `Cond` must always be false and therefore the body of\nthis if statement is dead.\n\nA __VRMarker__ tests if a compiler can determine subsets of the value ranges of\nvariables, for example:\n```\nif (a <= C)\n    VRMarker0_();\n```\nIf `call VRMarker0_();` is not present in the generated assembly code then the\ncompiler determined that `a`'s value is always `a > C`. Currently only integer\nvariables are instrumented. \n\n#### To build just the clang tool\n\nPrerequisites: `cmake`, `make`, `clang/llvm` 13/14.\n\n```\nmkdir build\ncd build\ncmake .. \ncmake --build . [--parallel]\ncmake --install . --prefix=/where/to/install/\n```\n\n#### Usage\n```\ncat test.c\nint foo(int a) {\n    if (a == 0)\n        return 1;\n    else {\n        a = 5;\n    }\n\n    return a;\n}\n\n\ndead-instrument test.c --\n\n\ncat test.c | clang-format\n#if defined DisableDCEMarker0_\n#define DCEMARKERMACRO0_ ;\n#elif defined UnreachableDCEMarker0_\n#define DCEMARKERMACRO0_ __builtin_unreachable();\n#else\n#define DCEMARKERMACRO0_ DCEMarker0_();\nvoid DCEMarker0_(void);\n#endif\n#if defined DisableDCEMarker1_\n#define DCEMARKERMACRO1_ ;\n#elif defined UnreachableDCEMarker1_\n#define DCEMARKERMACRO1_ __builtin_unreachable();\n#else\n#define DCEMARKERMACRO1_ DCEMarker1_();\nvoid DCEMarker1_(void);\n#endif\nint foo(int a) {\n  if (a == 0)\n  {\n    DCEMARKERMACRO1_\n    return 1;\n  }\n  else {\n    DCEMARKERMACRO0_\n    a = 5;\n  }\n\n  return a;\n}\n```\n\nIndividual markers can be disabled or turned into unreachables (useful for helping the compiler optimize parts known to be dead):\n\n```\ngcc -E -P -DDisableDCEMarker0_ -DUnreachableDCEMarker1_ test.c | clang-format\nint foo(int a) {\n  if (a == 0) {\n    __builtin_unreachable();\n    return 1;\n  } else {\n    ;\n    a = 5;\n  }\n  return a;\n}\n```\n\nPassing  `--ignore-functions-with-macros` to `program-markers` will cause it to ignore any functions that contain macro expansions.\n\n\nValue range markers can be emitted instead by using `--mode=vr`: \n```\ncat test.c\nint foo(int a) {\n  if (a == 0)\n    return 1;\n  return 0;\n}\n\nprogram-markers --mode=vr test.c --\n\ncat test.c | clang-format \n#if defined DisableVRMarkerLE0_\n#define VRMARKERMACROLE0_(VAR)\n#elif defined UnreachableVRMarkerLE0_\n#define VRMARKERMACROLE0_(VAR)         \\\n  if ((VAR) <= VRMarkerConstantLE0_)   \\\n    __builtin_unreachable();\n#else\n#define VRMARKERMACROLE0_(VAR)         \\\n  if ((VAR) <= VRMarkerConstantLE0_)   \\\n    VRMarkerLE0_();\nvoid VRMarkerLE0_(void);\n#endif\n#ifndef VRMarkerConstantLE0_\n#define VRMarkerConstantLE0_ 0\n#endif\n#if defined DisableVRMarkerGE1_\n#define VRMARKERMACROGE1_(VAR)\n#elif defined UnreachableVRMarkerGE1_\n#define VRMARKERMACROGE1_(VAR)         \\\n  if ((VAR) >= VRMarkerConstantGE1_)   \\\n    __builtin_unreachable();\n#else\n#define VRMARKERMACROGE1_(VAR)         \\\n  if ((VAR) >= VRMarkerConstantGE1_)   \\\n    VRMarkerGE1_();\nvoid VRMarkerGE1_(void);\n#endif\n#ifndef VRMarkerConstantGE1_\n#define VRMarkerConstantGE1_ 0\n#endif\nint foo(int a) {\n  VRMARKERMACROLE0_(a)\n  VRMARKERMACROGE1_(a)\n  if (a == 0)\n    return 1;\n  return 0;\n}\n```\n\n\nThe ranges that each marker test can be adjucted via macros and individual markers can be disabled or turned into unreachables:\n\n```\ngcc -E -P -DDisableVRMarkerLE0_ -DVRMarkerConstantGE1_=8 test.c | clang-format\nvoid VRMarkerGE1_(void);\nint foo(int a) {\n\n  if ((a) >= 8)\n    VRMarkerGE1_();\n  if (a == 0)\n    return 1;\n  return 0;\n}\n```\n\n#### Python wrapper\n\n`pip install program-markers`\n\n\nTo use the instrumenter in python import `from program_markers.instrumenter import instrument_program`: `instrument_program(program: diopter.SourceProgram, ignore_functions_with_macros: bool) -> InstrumentedProgram`. \n\n\n#### Building the python wrapper\n\n##### Local build\n\n```\n./build_python_wheel_local.sh #this will build the current branch\npip install .\n```\n\n#### Docker based build\n\n```\ndocker run --rm -e REVISION=REV -v `pwd`:/io theodort/manylinux-with-llvm:latest /io/build_python_wheel_docker.sh\n```\n\nThis will build multiple wheels for `REV` with multiple python versions.\nThe output is stored in the `wheelhouse` directory.\nThe docker image is based on https://github.com/thetheodor/manylinux-with-llvm.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/DeadCodeProductions/program-markers",
+            "keywords": "",
+            "license": "Apache License 2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "program-markers",
+            "package_url": "https://pypi.org/project/program-markers/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/program-markers/",
+            "project_urls": {
+                "Homepage": "https://github.com/DeadCodeProductions/program-markers"
+            },
+            "release_url": "https://pypi.org/project/program-markers/0.4.4/",
+            "requires_dist": [
+                "diopter (>=0.0.22)"
+            ],
+            "requires_python": ">=3.10",
+            "summary": "Inserts markers in C/C++ code. Markers expose information about the optimizations a compiler has applied, e.g., whether a piece of code was dead code eliminated.",
+            "version": "0.4.4",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18213208,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e6dd2ea4eacd2de74a5fc748d442ff4edac301b973c38f2c42f50c4b4649ba82",
+                    "md5": "4f52b78ac6d70c5bf56bf85e21a06e07",
+                    "sha256": "11347159bdbe46b99a135436389ea90646ee2edc78214fc4f95146c20d267a9f"
+                },
+                "downloads": -1,
+                "filename": "program_markers-0.4.4-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "4f52b78ac6d70c5bf56bf85e21a06e07",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.10",
+                "size": 16835922,
+                "upload_time": "2023-05-23T12:00:24",
+                "upload_time_iso_8601": "2023-05-23T12:00:24.917742Z",
+                "url": "https://files.pythonhosted.org/packages/e6/dd/2ea4eacd2de74a5fc748d442ff4edac301b973c38f2c42f50c4b4649ba82/program_markers-0.4.4-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3d60c24dd0109acb7cc9e443d1527dbbaa2b0e8ed27de338a9d10c48a6857a1f",
+                    "md5": "e73db21307c39a587fd8b10faaa15ca5",
+                    "sha256": "ea4ec31e28d35b18e556e9b8aadc3ed733bb100d514ab67275c7337bfd604831"
+                },
+                "downloads": -1,
+                "filename": "program_markers-0.4.4-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "e73db21307c39a587fd8b10faaa15ca5",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.10",
+                "size": 16835922,
+                "upload_time": "2023-05-23T12:00:29",
+                "upload_time_iso_8601": "2023-05-23T12:00:29.280276Z",
+                "url": "https://files.pythonhosted.org/packages/3d/60/c24dd0109acb7cc9e443d1527dbbaa2b0e8ed27de338a9d10c48a6857a1f/program_markers-0.4.4-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_28_x86_64.whl",
                 "yanked": false,
                 "yanked_reason": null
             }

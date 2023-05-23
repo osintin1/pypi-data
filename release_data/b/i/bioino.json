@@ -13,7 +13,6 @@
                 "Programming Language :: Python :: 3.11",
                 "Topic :: Scientific/Engineering :: Bio-Informatics"
             ],
-            "description": "# \ud83d\udcbb bioino\n\nInterconverting FASTA, GFF, and CSV. \n\nCurrently converts tables to FASTA, and GFF to tables. Also provides \na Python API for handling GFF and FASTA files, and converting to table\nfiles.\n\n_Warning_: Bioin is under active development, and not fully tested, so \nthings may change, break, or simply not work.\n\n## Installation\n\n### The easy way\n\nInstall the pre-compiled version from PyPI:\n\n```bash\npip install bioin\n```\n\n### From source\n\nClone the repository, then `cd` into it. Then run:\n\n```bash\npip install -e .\n```\n\n## Usage\n\n### Command line\n\nConvert CSV or XLSX of sequences to a FASTA file (info header goes to `stdout`).\n\n```bash\n$ printf 'name\\tseq\\tdata\\nSeq1\\tAAAAA\\tSome info\\n' | table2fasta -n name -s seq -d data\nGenerating FASTA from tables with the following parameters:\n        input: <_io.TextIOWrapper name='<stdin>' mode='r' encoding='utf-8'>\n        sequence: seq\n        name: ['name']\n        description: ['data']\n        worksheet: Sheet 1\n        output: <_io.TextIOWrapper name='<stdout>' mode='w' encoding='utf-8'>\nWARNING: file extension \"\" is not recognised. Defaulting to .tsv\n\n>Seq1 data=Some_info\nAAAAA\n```\n\nConvert GFF tables to TSV (or CSV).\n\n```bash\n$ printf 'test_seq\\ttest_source\\tgene\\t1\\t10\\t.\\t+\\t.\\tID=test01;attr1=+\\n' | gff2table \nConverting GFF with the following parameters:\n        input: <_io.TextIOWrapper name='<stdin>' mode='r' encoding='utf-8'>\n        format: TSV\n        metadata: False\n        output: <_io.TextIOWrapper name='<stdout>' mode='w' encoding='utf-8'>\nseqid   source  feature start   end     score   strand  phase   ID      attr1\ntest_seq        test_source     gene    1       10      .       +       .       test01  +\n\n$ printf 'test_seq\\ttest_source\\tgene\\t1\\t10\\t.\\t+\\t.\\tID=test01;attr1=+\\n' | gff2table -f CSV\nConverting GFF with the following parameters:\n        input: <_io.TextIOWrapper name='<stdin>' mode='r' encoding='utf-8'>\n        format: CSV\n        metadata: False\n        output: <_io.TextIOWrapper name='<stdout>' mode='w' encoding='utf-8'>\nseqid,source,feature,start,end,score,strand,phase,ID,attr1\ntest_seq,test_source,gene,1,10,.,+,.,test01,+\n```\n\n### Detailed usage\n\n```\n$ table2fasta --help\nusage: table2fasta [-h] [--sequence SEQUENCE] --name [NAME ...] [--description [DESCRIPTION ...]] [--worksheet WORKSHEET] [--output OUTPUT] [input]\n\nConvert a CSV or XLSX of sequences to a FASTA file.\n\npositional arguments:\n  input                 Input file in TSV, CSV, or XLSX format. Default STDIN.\n\noptions:\n  -h, --help            show this help message and exit\n  --sequence SEQUENCE, -s SEQUENCE\n                        Column to take sequence from. Default \"sequence\"\n  --name [NAME ...], -n [NAME ...]\n                        Column(s) to take sequence name from. Concatenates values with \"_\", replaces spaces with \"-\". Required.\n  --description [DESCRIPTION ...], -d [DESCRIPTION ...]\n                        Column(s) to take sequence description from. Concatenates values with \";\", replaces spaces with \"_\". Default: don't use.\n  --worksheet WORKSHEET, -w WORKSHEET\n                        For XLSX files, the worksheet to take the table from. Default \"Sheet 1\"\n  --output OUTPUT, -o OUTPUT\n                        Output file. Default STDOUT\n```\n\n```\n$ gff2table --help\nusage: gff2table [-h] [--format {TSV,CSV}] [--metadata] [--output OUTPUT] [input]\n\nConvert a GFF to a TSV file.\n\npositional arguments:\n  input                 Input file in GFF format. Default STDIN.\n\noptions:\n  -h, --help            show this help message and exit\n  --format {TSV,CSV}, -f {TSV,CSV}\n                        File format. Default TSV\n  --metadata, -m        Write GFF header as commented lines.\n  --output OUTPUT, -o OUTPUT\n                        Output file. Default STDOUT\n```\n\n### Python API\n\n#### FASTA\n\nRead FASTA files (or strings) into iterators of named tuples.\n\n```python\n>>> list(read_fasta('''\n... >example This is a description\n... ATCG\n... '''))\n[FastaSequence(name='example', description='This is a description', sequence='ATCG')]\n```\n\nThese named tuples show as FASTA format when printed.\n\n```python\n>>> s = FastaSequence(\"example\", \"This is a description\", \"ATCG\")\n>>> print(s)\n>example This is a description\nATCG\n\n```\n\nAnd can be written to a file (default `stdout`):\n\n```python\n>>> fasta_stream = [FastaSequence(\"example\", \"This is a description\", \n...                               \"ATCG\"),\n...                 FastaSequence(\"example2\", \"This is another sequence\", \n...                               \"GGGAAAA\")]\n>>> write_fasta(fasta_stream) \n>example This is a description\nATCG\n>example2 This is another sequence\nGGGAAAA\n\n```\n\n#### GFF\n\nMakes an attempt to conform to GFF3 but makes no guarantees.\n\nSimilar to the FSAT utiities, GFF is read into named tuples.\n\n```python\n>>> list(read_gff('''\n...     ##meta1 item1\n...     #meta2  item2   comment\n...     test_seq    test_source gene    1   10  .   +   .   ID=test01;attr1=+\n...     test_seq    test_source gene    9   100  .   +   .   Parent=test01;attr2=+\n...     '''))\n[GffLine(metadata=[GffMetadatum(name='meta1 item1', flag='constrained', values=()), GffMetadatum(name='meta2  item2   comment', flag='free', values=())], columns=GffColumns(seqid='test_seq', source='test_source', feature='gene', start=1, end=10, score='.', strand='+', phase='.'), attributes={'ID': 'test01', 'attr1': '+'}), GffLine(metadata=[GffMetadatum(name='meta1 item1', flag='constrained', values=()), GffMetadatum(name='meta2  item2   comment', flag='free', values=())], columns=GffColumns(seqid='test_seq', source='test_source', feature='gene', start=9, end=100, score='.', strand='+', phase='.'), attributes={'Parent': 'test01', 'attr2': '+'})]\n\n```\n\nThese render as GFF lines when printed.\n\n```python\n>>> metadata = [(\"meta1\", \"constrained\", {\"item1\": []}), \n...             (\"meta2\", \"free\", {\"item2\": [\"comment\"]})]\n>>> seqid, source_id = \"test_seq\", \"test_source\"\n>>> print(GffLine(metadata, \n...               GffColumns(seqid, source_id, \"gene\", 1, 10, \".\", \"+\", \".\"), \n...               {\"ID\": \"test01\", \"attr1\": \"+\"})) \ntest_seq        test_source     gene    1       10      .       +       .       ID=test01;attr1=+\n\n```\n\n#### GFF lookup table\n\nAn iterable of GFFLines can be converted into a lookup table mapping\nchromosome location to feature annotations. Regions without annotation\nare automatically filled with references to upstream or \ndownstream features.\n\nJust use the `lookup_table` function on an iterable of `GffLine` objects,\nsuch as that produced by `read_gff`.\n\nBut there are currently some limitations:\n- Currently only works for single-chromosome files.\n- Only references parent features. Child features not yet indexed.\n- Will not work for GFFs with a single parent feature.\n- Ignores the following feature types: \"region\", :repeat_region\"\n\n#### Interconversion\n\nGFFLines can be converted to dictionaries and vice versa.\n\n```python\n>>> d = dict(seqid='TEST', source='test', feature='gene', start=1, end=100, score='.', strand='+', phase='+')\n>>> print(dict2gff(d)) \nTEST        test    gene    1       100     .       +       +\n>>> print(dict2gff(d | dict(ID='test001', comment='This is a test'))) \nTEST    test    gene    1       100     .       +       +       ID=test001;comment=This is a test\n```\n\n```python\n>>> line = \"TEST    test    gene    1       100     .       +       +       ID=test001;comment=Test\"\n>>> list(gff2dict(read_gff(line)))\n[{'seqid': 'TEST', 'source': 'test', 'feature': 'gene', 'start': 1, 'end': 100, 'score': '.', 'strand': '+', 'phase': '+', 'ID': 'test001', 'comment': 'Test'}]    \n\n```\n\nAnd Pandas daatFrames can be converted to FASTA.\n\n```python\n >>> import pandas as pd\n>>> df = pd.DataFrame(dict(seq=['atcg', 'aaaa'], title=['seq1', 'seq2'], info=['Seq1', 'Seq1'], score=[1, 2]))\n>>> df \n        seq title  info  score\n0  atcg  seq1  Seq1      1\n1  aaaa  seq2  Seq1      2\n>>> list(df2fasta(df, sequence='seq', names=['title'], descriptions=['info', 'score']))\n[FastaSequence(name='seq1', description='info=Seq1;score=1', sequence='atcg'), FastaSequence(name='seq2', description='info=Seq1;score=2', sequence='aaaa')]\n```\n\n## Documentation\n\nCheck the API [here](https://bioino.readthedocs.org).\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -45,7 +44,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18136968,
+        "last_serial": 18212040,
         "urls": [
             {
                 "comment_text": "",
@@ -86,6 +85,99 @@
                 "upload_time": "2023-05-17T09:21:08",
                 "upload_time_iso_8601": "2023-05-17T09:21:08.419936Z",
                 "url": "https://files.pythonhosted.org/packages/90/06/ccd2284a92a8aef09f66e694926b7bba88263ca834f73735661b35cc0345/bioino-0.0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.1.post1": {
+        "info": {
+            "author": "",
+            "author_email": "Eachan Johnson <eachan.johnson@crick.ac.uk>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Topic :: Scientific/Engineering :: Bio-Informatics"
+            ],
+            "description": "# \ud83d\udcbb bioino\n\nInterconverting FASTA, GFF, and CSV. \n\nCurrently converts tables to FASTA, and GFF to tables. Also provides \na Python API for handling GFF and FASTA files, and converting to table\nfiles.\n\n_Warning_: Bioin is under active development, and not fully tested, so \nthings may change, break, or simply not work.\n\n## Installation\n\n### The easy way\n\nInstall the pre-compiled version from PyPI:\n\n```bash\npip install bioin\n```\n\n### From source\n\nClone the repository, then `cd` into it. Then run:\n\n```bash\npip install -e .\n```\n\n## Usage\n\n### Command line\n\nConvert CSV or XLSX of sequences to a FASTA file (info header goes to `stdout`).\n\n```bash\n$ printf 'name\\tseq\\tdata\\nSeq1\\tAAAAA\\tSome info\\n' | table2fasta -n name -s seq -d data\nGenerating FASTA from tables with the following parameters:\n        input: <_io.TextIOWrapper name='<stdin>' mode='r' encoding='utf-8'>\n        sequence: seq\n        name: ['name']\n        description: ['data']\n        worksheet: Sheet 1\n        output: <_io.TextIOWrapper name='<stdout>' mode='w' encoding='utf-8'>\nWARNING: file extension \"\" is not recognised. Defaulting to .tsv\n\n>Seq1 data=Some_info\nAAAAA\n```\n\nConvert GFF tables to TSV (or CSV).\n\n```bash\n$ printf 'test_seq\\ttest_source\\tgene\\t1\\t10\\t.\\t+\\t.\\tID=test01;attr1=+\\n' | gff2table \nConverting GFF with the following parameters:\n        input: <_io.TextIOWrapper name='<stdin>' mode='r' encoding='utf-8'>\n        format: TSV\n        metadata: False\n        output: <_io.TextIOWrapper name='<stdout>' mode='w' encoding='utf-8'>\nseqid   source  feature start   end     score   strand  phase   ID      attr1\ntest_seq        test_source     gene    1       10      .       +       .       test01  +\n\n$ printf 'test_seq\\ttest_source\\tgene\\t1\\t10\\t.\\t+\\t.\\tID=test01;attr1=+\\n' | gff2table -f CSV\nConverting GFF with the following parameters:\n        input: <_io.TextIOWrapper name='<stdin>' mode='r' encoding='utf-8'>\n        format: CSV\n        metadata: False\n        output: <_io.TextIOWrapper name='<stdout>' mode='w' encoding='utf-8'>\nseqid,source,feature,start,end,score,strand,phase,ID,attr1\ntest_seq,test_source,gene,1,10,.,+,.,test01,+\n```\n\n### Detailed usage\n\n```\n$ table2fasta --help\nusage: table2fasta [-h] [--sequence SEQUENCE] --name [NAME ...] [--description [DESCRIPTION ...]] [--worksheet WORKSHEET] [--output OUTPUT] [input]\n\nConvert a CSV or XLSX of sequences to a FASTA file.\n\npositional arguments:\n  input                 Input file in TSV, CSV, or XLSX format. Default STDIN.\n\noptions:\n  -h, --help            show this help message and exit\n  --sequence SEQUENCE, -s SEQUENCE\n                        Column to take sequence from. Default \"sequence\"\n  --name [NAME ...], -n [NAME ...]\n                        Column(s) to take sequence name from. Concatenates values with \"_\", replaces spaces with \"-\". Required.\n  --description [DESCRIPTION ...], -d [DESCRIPTION ...]\n                        Column(s) to take sequence description from. Concatenates values with \";\", replaces spaces with \"_\". Default: don't use.\n  --worksheet WORKSHEET, -w WORKSHEET\n                        For XLSX files, the worksheet to take the table from. Default \"Sheet 1\"\n  --output OUTPUT, -o OUTPUT\n                        Output file. Default STDOUT\n```\n\n```\n$ gff2table --help\nusage: gff2table [-h] [--format {TSV,CSV}] [--metadata] [--output OUTPUT] [input]\n\nConvert a GFF to a TSV file.\n\npositional arguments:\n  input                 Input file in GFF format. Default STDIN.\n\noptions:\n  -h, --help            show this help message and exit\n  --format {TSV,CSV}, -f {TSV,CSV}\n                        File format. Default TSV\n  --metadata, -m        Write GFF header as commented lines.\n  --output OUTPUT, -o OUTPUT\n                        Output file. Default STDOUT\n```\n\n### Python API\n\n#### FASTA\n\nRead FASTA files (or strings) into iterators of named tuples.\n\n```python\n>>> list(read_fasta('''\n... >example This is a description\n... ATCG\n... '''))\n[FastaSequence(name='example', description='This is a description', sequence='ATCG')]\n```\n\nThese named tuples show as FASTA format when printed.\n\n```python\n>>> s = FastaSequence(\"example\", \"This is a description\", \"ATCG\")\n>>> print(s)\n>example This is a description\nATCG\n\n```\n\nAnd can be written to a file (default `stdout`):\n\n```python\n>>> fasta_stream = [FastaSequence(\"example\", \"This is a description\", \n...                               \"ATCG\"),\n...                 FastaSequence(\"example2\", \"This is another sequence\", \n...                               \"GGGAAAA\")]\n>>> write_fasta(fasta_stream) \n>example This is a description\nATCG\n>example2 This is another sequence\nGGGAAAA\n\n```\n\n#### GFF\n\nMakes an attempt to conform to GFF3 but makes no guarantees.\n\nSimilar to the FSAT utiities, GFF is read into named tuples.\n\n```python\n>>> list(read_gff('''\n...     ##meta1 item1\n...     #meta2  item2   comment\n...     test_seq    test_source gene    1   10  .   +   .   ID=test01;attr1=+\n...     test_seq    test_source gene    9   100  .   +   .   Parent=test01;attr2=+\n...     '''))\n[GffLine(metadata=[GffMetadatum(name='meta1 item1', flag='constrained', values=()), GffMetadatum(name='meta2  item2   comment', flag='free', values=())], columns=GffColumns(seqid='test_seq', source='test_source', feature='gene', start=1, end=10, score='.', strand='+', phase='.'), attributes={'ID': 'test01', 'attr1': '+'}), GffLine(metadata=[GffMetadatum(name='meta1 item1', flag='constrained', values=()), GffMetadatum(name='meta2  item2   comment', flag='free', values=())], columns=GffColumns(seqid='test_seq', source='test_source', feature='gene', start=9, end=100, score='.', strand='+', phase='.'), attributes={'Parent': 'test01', 'attr2': '+'})]\n\n```\n\nThese render as GFF lines when printed.\n\n```python\n>>> metadata = [(\"meta1\", \"constrained\", {\"item1\": []}), \n...             (\"meta2\", \"free\", {\"item2\": [\"comment\"]})]\n>>> seqid, source_id = \"test_seq\", \"test_source\"\n>>> print(GffLine(metadata, \n...               GffColumns(seqid, source_id, \"gene\", 1, 10, \".\", \"+\", \".\"), \n...               {\"ID\": \"test01\", \"attr1\": \"+\"})) \ntest_seq        test_source     gene    1       10      .       +       .       ID=test01;attr1=+\n\n```\n\n#### GFF lookup table\n\nAn iterable of GFFLines can be converted into a lookup table mapping\nchromosome location to feature annotations. Regions without annotation\nare automatically filled with references to upstream or \ndownstream features.\n\nJust use the `lookup_table` function on an iterable of `GffLine` objects,\nsuch as that produced by `read_gff`.\n\nBut there are currently some limitations:\n- Currently only works for single-chromosome files.\n- Only references parent features. Child features not yet indexed.\n- Will not work for GFFs with a single parent feature.\n- Ignores the following feature types: \"region\", :repeat_region\"\n\n#### Interconversion\n\nGFFLines can be converted to dictionaries and vice versa.\n\n```python\n>>> d = dict(seqid='TEST', source='test', feature='gene', start=1, end=100, score='.', strand='+', phase='+')\n>>> print(dict2gff(d)) \nTEST        test    gene    1       100     .       +       +\n>>> print(dict2gff(d | dict(ID='test001', comment='This is a test'))) \nTEST    test    gene    1       100     .       +       +       ID=test001;comment=This is a test\n```\n\n```python\n>>> line = \"TEST    test    gene    1       100     .       +       +       ID=test001;comment=Test\"\n>>> list(gff2dict(read_gff(line)))\n[{'seqid': 'TEST', 'source': 'test', 'feature': 'gene', 'start': 1, 'end': 100, 'score': '.', 'strand': '+', 'phase': '+', 'ID': 'test001', 'comment': 'Test'}]    \n\n```\n\nAnd Pandas daatFrames can be converted to FASTA.\n\n```python\n >>> import pandas as pd\n>>> df = pd.DataFrame(dict(seq=['atcg', 'aaaa'], title=['seq1', 'seq2'], info=['Seq1', 'Seq1'], score=[1, 2]))\n>>> df \n        seq title  info  score\n0  atcg  seq1  Seq1      1\n1  aaaa  seq2  Seq1      2\n>>> list(df2fasta(df, sequence='seq', names=['title'], descriptions=['info', 'score']))\n[FastaSequence(name='seq1', description='info=Seq1;score=1', sequence='atcg'), FastaSequence(name='seq2', description='info=Seq1;score=2', sequence='aaaa')]\n```\n\n## Documentation\n\nCheck the API [here](https://bioino.readthedocs.org).\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "biology,bioinformatics,science,io",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "bioino",
+            "package_url": "https://pypi.org/project/bioino/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/bioino/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/scbirlab/bioino/issues",
+                "Homepage": "https://github.com/scbirlab/bioino"
+            },
+            "release_url": "https://pypi.org/project/bioino/0.0.1.post1/",
+            "requires_dist": [
+                "pandas"
+            ],
+            "requires_python": ">=3.10",
+            "summary": "Lightweight IO and conversion for bioinformatics file formats.",
+            "version": "0.0.1.post1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18212040,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d25807047b00d9b9057a6255a6ca57324579b01b6001b89a1f644c44ecc84955",
+                    "md5": "7dda16472b510cd86d81bbbc9064e45f",
+                    "sha256": "8eb44d17f057d6f047b6bc9207fb34238242fe5e91d7abbba40631dd1b2ecef0"
+                },
+                "downloads": -1,
+                "filename": "bioino-0.0.1.post1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "7dda16472b510cd86d81bbbc9064e45f",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.10",
+                "size": 15581,
+                "upload_time": "2023-05-23T10:04:42",
+                "upload_time_iso_8601": "2023-05-23T10:04:42.584217Z",
+                "url": "https://files.pythonhosted.org/packages/d2/58/07047b00d9b9057a6255a6ca57324579b01b6001b89a1f644c44ecc84955/bioino-0.0.1.post1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "0d506e17f77115ba9abc70fcda3758281e9bdbc3f1be4318a5d0fa30a889c935",
+                    "md5": "63bc7f7681d1c0a757327323f3ab372c",
+                    "sha256": "3830844ed914f6feb556303f6562cd75b372db33bf9cb0d97439c470dec77250"
+                },
+                "downloads": -1,
+                "filename": "bioino-0.0.1.post1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "63bc7f7681d1c0a757327323f3ab372c",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.10",
+                "size": 14993,
+                "upload_time": "2023-05-23T10:04:44",
+                "upload_time_iso_8601": "2023-05-23T10:04:44.542843Z",
+                "url": "https://files.pythonhosted.org/packages/0d/50/6e17f77115ba9abc70fcda3758281e9bdbc3f1be4318a5d0fa30a889c935/bioino-0.0.1.post1.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

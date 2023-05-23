@@ -1,0 +1,70 @@
+{
+    "0.13.6": {
+        "info": {
+            "author": "Ulysse Rubens",
+            "author_email": "uliege@cytomine.org",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: Apache Software License",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Programming Language :: Python :: Implementation :: CPython"
+            ],
+            "description": "\n# pims\n\nPython Image Management Server\n\n## Run development server with Docker\n\n    docker build -f docker/backend.dockerfile -t pims .\n    docker run -p 5000:5000 pims\n\nThe server is running at http://127.0.0.1:5000 and API documentation is available \nat http://127.0.0.1:5000/docs\n\nAt this stage, it is hard to use Docker for development because hot-reload is not enabled and \nPIMS plugin system is not yet easily manageable in a Docker container for development. However, \nas PIMS requires a lot of low-level dependencies, developing using Docker would be a benefit.\n\n## Run development server locally \n\n### Dependencies\nFirst, dependencies must be installed\n1. Dependencies in `docker/backend.dockerfile` must be installed first. For plugins, prerequisites \n   have to be \n   installed manually, especially for `before_vips` and `before_python`. See \n   `install_prerequisites.sh` in respective plugins.\n2. `pip install -r requirements.txt`\n\n### Cache\nTo run PIMS with cache, the cache must be configured in the settings. The cache uses an \nexternal Redis in-memory database. To launch a Redis instance using default values in PIMS \nsettings, run: \n```bash\ndocker run -d --name pims-cache -p 6379:6379 redis\n```\nIf the PIMS cache cannot be reached at PIMS startup, cache is automatically disabled.\n\n### Task queue\nHeavy computation like image imports are run in a task queue to prevent server flooding or \nblocking. The task queue uses Celery workers and RabbitMQ to communicate, but a fallback is \npossible when unavailable. \n\n#### Celery and RabbitMQ\nPIMS is pre-configured to run with the Cytomine RabbitMQ configuration (see [Cytomine-bootstrap for PIMS](https://github.com/Cytomine-ULiege/Cytomine-bootstrap/tree/pims)).\nRabbitMQ broker can be launched without Cytomine, by changing username and default password for \ntask queue in PIMS settings by `guest`/`guest`, and then run:\n```bash\ndocker run -d --name rabbitmq -p 5672:5672 -p 15672:15672 --hostname rabbitmq rabbitmq:3.9\n```\n\nThen, you have to run a Celery worker:\n```bash \nCONFIG_FILE=\"/path/to/my/config.env\" celery -A pims.tasks.worker worker -l info -Q \npims-import-queue -c 1\n```\nwhere `-c` is the concurrency level; 1 is enough for development.\nSee below for environment variables.\n\n#### Fallback task queue\nIf task queue is disabled in PIMS configuration of if RabbitMQ is unreachable, heavy \ncomputations are still done in an asynchronous way but task queue is not mo running in separate \nprocesses and there is no guarantee that all tasks will be able to fallback on this.\n\n### Run\nTo run the development server, run:\n```bash\nCONFIG_FILE=\"/path/to/my/config.env\" python -m pims.main\n```\n    \nThe server is running at http://127.0.0.1:5000 and API documentation is available \nat http://127.0.0.1:5000/docs\n\nIn order to test PIMS without Cytomine, you can import images locally using \n```bash\nCONFIG_FILE=/path/to/config.env python pims/importer/import_local_images.py --path /my/folder\n```\n\n#### Environment variables\n* `CONFIG_FILE`: path to a `.env` configuration file. Default to `pims-config.env` (but some required configuration \n  settings need to be filled)\n* `LOG_CONFIG_FILE`: path to a `.yml` Python logging configuration file. Default to `logging.yml`\n* `DEBUG`: When set, enable debug tools and use `logging-debug.yml` as default logging configuration if not other \n  log config file is specified.\n  \nConfiguration settings can be also given as environment variables and override values from `CONFIG_FILE`.\n\n## PIMS plugins\nPIMS plugins are quite new and plugin API is subject to change. To add a new format plugin, the \nbest is to adapt the existing [`pims-plugin-format-openslide`](https://github.com/Cytomine-ULiege/pims-plugin-format-openslide).\n\nA plugin can add one or several formats.\n\n1. Create a directory `pims-plugin-format-{name}` and copy/paste content from Openslide plugin\n2. In `setup.py`, rename the `NAME` variable\n3. Rename the source directory to `pims_plugin_format_{name}`\n4. Adapt `pims_plugin_format_{name}/__version__.py` content\n5. If needed, adapt dependencies prerequisites in `install-prerequisites.sh`\n6. Implement new formats by defining classes named `XYZFormat` (ending thus with `Format`) and \n   extending `AbstractFormat`.\n   \n### Develop with plugins\n   \nAs the core server `pims` is a dependency of every PIMS plugins, `pims` has to be installed in \nthe plugin virtual environment. At this stage, `pims` and plugins will probably be developed at \nsame time, and the easiest way is to\n1. install `pims` in editable mode in the plugin Python virtual env. Activate the plugin \n   environment, and run `pip install -e /local/path/to/pims` (you may need to add other options \n   like `--extra-index-url`)\n2. install the plugin in editable mode in PIMS Python virtual env. Activate the PIMS \n   environment (e.g. in another terminal) and run \n   `pip install -e /local/path/to/pims-plugin-format-{name}`\n   \nWhen you start PIMS, the logs should list your plugin.\n\n### Docker image with plugins\nThe `pims/scripts` folder has a script to build Docker images of PIMS with or without some \nplugins. Adapt the `plugin-list.csv` to build an image with the plugins (and their versions) \nyou want.\n\n### Available plugins\nOne can find below the listing of the PIMS plugins that have already been implemented.\n\n| Plugin name | Format(s) | URL  | Remarks  |\n|---|---|---|---|\n| Openslide  | BIF, MRXS, NDPi, Philips TIFF, SCN, SVS, VMS  | https://github.com/cytomine/pims-plugin-format-openslide/tree/main/pims_plugin_format_openslide  | Depends on VIPS and Openslide. |\n| Example  | / |  https://github.com/cytomine/pims-plugin-format-example | This is just a example plugin to explain how to implement a PIMS plugin.  |\n| WSI Dicom  | WSIDICOM  | https://github.com/cytomine/pims-plugin-format-dicom  | PIMS plugin based on the WSI Dicom format implemented [here](https://github.com/imi-bigpicture/wsidicom). Annotations management not implemented yet. |\n\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://doc.uliege.cytomine.org",
+            "keywords": "",
+            "license": "Apache 2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "cytomine-pims",
+            "package_url": "https://pypi.org/project/cytomine-pims/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/cytomine-pims/",
+            "project_urls": {
+                "Homepage": "https://doc.uliege.cytomine.org"
+            },
+            "release_url": "https://pypi.org/project/cytomine-pims/0.13.6/",
+            "requires_dist": null,
+            "requires_python": ">=3.8.0",
+            "summary": "Cytomine Python Image Server",
+            "version": "0.13.6",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18210472,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a2c96ec35dead6f58d5a2886a8e7411522528d72269ee7d18399e66b605ac0d6",
+                    "md5": "36a615ad226a0abab331d07f9caf1d75",
+                    "sha256": "6f7ee068b475c7dc0031858419c606c0a336e1068ace2737873e3f82045c979f"
+                },
+                "downloads": -1,
+                "filename": "cytomine-pims-0.13.6.tar.gz",
+                "has_sig": false,
+                "md5_digest": "36a615ad226a0abab331d07f9caf1d75",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8.0",
+                "size": 142038,
+                "upload_time": "2023-05-23T07:47:34",
+                "upload_time_iso_8601": "2023-05-23T07:47:34.149660Z",
+                "url": "https://files.pythonhosted.org/packages/a2/c9/6ec35dead6f58d5a2886a8e7411522528d72269ee7d18399e66b605ac0d6/cytomine-pims-0.13.6.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

@@ -1,0 +1,98 @@
+{
+    "0.1.5": {
+        "info": {
+            "author": "Samuel Muller, Matthias Feurer, Noah Hollmann, Frank Hutter",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# PFNs Are Flexible Models for Real-World Bayesian Optimization\n\n\n## Install\nFirst a standard installation\n```bash\npip install -e .\n```\nNow unzip the datasets with\n```python\nimport pfns4bo\npfns4bo.prepare_models()\n```\n\n\n## Use our trained models\nThe models used for our final setup can be found in `pfns4bo/final_models`.\n\n\n### Use on discrete benchmarks (also in `Tutorial_Discrete_Interface.ipynb`)\nTo use our model on discrete benchmarks, we recommend using our HPO-B interface `pfns4bo.scripts.acquisition_functions.TransformerBOMethod`.\n\nWe called this interface like this for the eval's on HPO-B:\n\n```python\nimport pfns4bo\nimport torch\nfrom pfns4bo.scripts.acquisition_functions import TransformerBOMethod\nfrom pfns4bo.scripts.tune_input_warping import fit_input_warping\n\n# For HEBO+ \nmodel_path = pfns4bo.hebo_plus_model\n# For BNN\n# model_path = pfns4bo.bnn_model\n\n# for correctly specified search spaces (e.g. correctly applied log transformations)\npfn_bo = TransformerBOMethod(torch.load(model_path), device='cpu:0')\n\n# for mis-specified search spaces\npfn_bo = TransformerBOMethod(torch.load(model_path), fit_encoder=fit_input_warping, device='cpu:0')\n```\nThe interface expects all features to be normalized to a [0,1] range and all features have to be scalars/floats.\n```python\nimport numpy as np\n\nX_obs = np.random.rand(4,1) # of shape num_examples x num_features of scalars\ny_obs = np.abs(X_obs[:,0] - .5) * 2. # of shape num_examples\nX_pen = np.linspace(0,1,100)[:,None] # of shape num_examples_pending x num_features\n\nassert (X_obs <= 1).all() and (X_obs >= 0).all() and (X_pen <= 1).all() and (X_pen >= 0).all()\nindex_to_be_queried_next_in_pending = pfn_bo.observe_and_suggest(X_obs, y_obs, X_pen, return_actual_ei=False)\n```\n\nTo use a different acquisition function than EI, you simply pass `acq_function='pi` or `acq_function='ucb'`.\n\nTo explore the EI's of the model you can do\n```python\nindex_to_be_queried_next_in_pending, eis = pfn_bo.observe_and_suggest(X_obs, y_obs, X_pen, return_actual_ei=True)\n```\nThe `eis` are the EI's of the model, i.e. the EI's of the model's predictive distribution for each `X_pen`.\n\n\n### Use on continuous benchmarks (also in `Tutorial_Continuous_Interface.ipynb`)\nTo use our model on continuous setups, we recommend using the interface in `pfns4bo/pfn_bo_bayesmark.py`.\nThis is a standard BayesMark interface.\nThe calls to this interface used in our BayesMark experiments are given in `pfns4bo/config.json`.\n\n\n### Use user priors (also in `Tutorial_Discrete_Interface.ipynb`)\nThe model is at 'pfns4bo/final_models/hebo_morebudget_9_unused_features_3_userpriorperdim2_8.pt'.\nIt can be used with both interfaces, but we only used it with the discrete interface for our experiments.\nThis is the setup we used for our PD-1 experiments for example.\n```python\nimport torch\nimport pfns4bo\nfrom pfns4bo.scripts.acquisition_functions import TransformerBOMethod\n\n# the order of hps in our benchmark is 'lr_decay_factor', 'lr_initial', 'lr_power', 'opt_momentum', 'epoch', 'activation'\npfn_bo = TransformerBOMethod(torch.load(pfns4bo.hebo_plus_userprior_model),\n    style=\n        torch.tensor([\n            .5, 3/4, 4/4,  # feature 1 has .5 prob to the prior where all max's lie in [.75,1.], 1-.5=.5 prob to the standard prior\n            .25, 2/4, 3/4, # feature 2 has .25 prob is given to the prior where all max's lie in [.5,.75]...\n            .1, 3/4, 4/4,\n            0., 0/1, 1/1,\n            .5, 3/4, 4/4,\n            .5, 4/5, 5/5,\n        ]).view(1,-1)\n)\n```\nAll bounds must have the form `(k/n,(k+1)/n)` for `n in {1,2,3,4,5}` and `k in set(range(k))`.\nOther bounds won't give an error, but very likely worse performance.\nThe PFN was only trained for these bounds.\n\n\n## Train your own models (also in `Tutorial_Training.ipynb`)\nTo train we recommend installing the package locally after cloning it,\nwith `pip install -e .`.\n\n\nNow you simply need to call `train.train`.\nWe give all necessary code. The most important bits are in the `priors` dir, e.g. `hebo_prior`, it stores the priors\nwith which we train our models.\n\nYou can train this model on 8 GPUs using `torchrun` or `submitit`\n```python\nimport torch\nfrom pfns4bo import priors, encoders, utils, bar_distribution, train\nfrom ConfigSpace import hyperparameters as CSH\n\nconfig_heboplus = {\n     'priordataloader_class': priors.get_batch_to_dataloader(\n         priors.get_batch_sequence(\n             priors.hebo_prior.get_batch,\n             priors.utils.sample_num_feaetures_get_batch,\n         )\n     ),\n     'encoder_generator': encoders.get_normalized_uniform_encoder(encoders.get_variable_num_features_encoder(encoders.Linear)),\n     'emsize': 512,\n     'nhead': 4,\n     'warmup_epochs': 5,\n     'y_encoder_generator': encoders.Linear,\n     'batch_size': 128,\n     'scheduler': utils.get_cosine_schedule_with_warmup,\n     'extra_prior_kwargs_dict': {'num_features': 18,\n      'hyperparameters': {\n       'lengthscale_concentration': 1.2106559584074301,\n       'lengthscale_rate': 1.5212245992840594,\n       'outputscale_concentration': 0.8452312502679863,\n       'outputscale_rate': 0.3993553245745406,\n       'add_linear_kernel': False,\n       'power_normalization': False,\n       'hebo_warping': False,\n       'unused_feature_likelihood': 0.3,\n       'observation_noise': True}},\n     'epochs': 50,\n     'lr': 0.0001,\n     'bptt': 60,\n     'single_eval_pos_gen': utils.get_uniform_single_eval_pos_sampler(50, min_len=1), #<function utils.get_uniform_single_eval_pos_sampler.<locals>.<lambda>()>,\n     'aggregate_k_gradients': 2,\n     'nhid': 1024,\n     'steps_per_epoch': 1024,\n     'weight_decay': 0.0,\n     'train_mixed_precision': False,\n     'efficient_eval_masking': True,\n     'nlayers': 12}\n\n\nconfig_heboplus_userpriors = {**config_heboplus,\n    'priordataloader_class': priors.get_batch_to_dataloader(\n                              priors.get_batch_sequence(\n                                  priors.hebo_prior.get_batch,\n                                  priors.condition_on_area_of_opt.get_batch,\n                                  priors.utils.sample_num_feaetures_get_batch\n                              )),\n    'style_encoder_generator': encoders.get_normalized_uniform_encoder(encoders.get_variable_num_features_encoder(encoders.Linear))\n}\n\nconfig_bnn = {'priordataloader_class': priors.get_batch_to_dataloader(\n         priors.get_batch_sequence(\n             priors.simple_mlp.get_batch,\n             priors.input_warping.get_batch,\n             priors.utils.sample_num_feaetures_get_batch,\n         )\n     ),\n     'encoder_generator': encoders.get_normalized_uniform_encoder(encoders.get_variable_num_features_encoder(encoders.Linear)),\n     'emsize': 512,\n     'nhead': 4,\n     'warmup_epochs': 5,\n     'y_encoder_generator': encoders.Linear,\n     'batch_size': 128,\n     'scheduler': utils.get_cosine_schedule_with_warmup,\n     'extra_prior_kwargs_dict': {'num_features': 18,\n      'hyperparameters': {'mlp_num_layers': CSH.UniformIntegerHyperparameter('mlp_num_layers', 8, 15),\n       'mlp_num_hidden': CSH.UniformIntegerHyperparameter('mlp_num_hidden', 36, 150),\n       'mlp_init_std': CSH.UniformFloatHyperparameter('mlp_init_std',0.08896049884896237, 0.1928554813280186),\n       'mlp_sparseness': 0.1449806273312999,\n       'mlp_input_sampling': 'uniform',\n       'mlp_output_noise': CSH.UniformFloatHyperparameter('mlp_output_noise', 0.00035983014290491186, 0.0013416342770574585),\n       'mlp_noisy_targets': True,\n       'mlp_preactivation_noise_std': CSH.UniformFloatHyperparameter('mlp_preactivation_noise_std',0.0003145707276259681, 0.0013753183831259406),\n       'input_warping_c1_std': 0.9759720822120248,\n       'input_warping_c0_std': 0.8002534583197192,\n       'num_hyperparameter_samples_per_batch': 16}\n                                 },\n     'epochs': 50,\n     'lr': 0.0001,\n     'bptt': 60,\n     'single_eval_pos_gen': utils.get_uniform_single_eval_pos_sampler(50, min_len=1), \n     'aggregate_k_gradients': 1,\n     'nhid': 1024,\n     'steps_per_epoch': 1024,\n     'weight_decay': 0.0,\n     'train_mixed_precision': True,\n     'efficient_eval_masking': True,\n}\n\n\n# now let's add the criterions, where we decide the border positions based on the prior\ndef get_ys(config):\n    bs = 128\n    all_targets = []\n    for num_hps in [2,8,12]: # a few different samples in case the number of features makes a difference in y dist\n        b = config['priordataloader_class'].get_batch_method(bs,1000,num_hps,epoch=0,device='cuda:0',\n                                                              hyperparameters=\n                                                              {**config['extra_prior_kwargs_dict']['hyperparameters'],\n                                                               'num_hyperparameter_samples_per_batch': -1,})\n        all_targets.append(b.target_y.flatten())\n    return torch.cat(all_targets,0)\n\ndef add_criterion(config):\n    return {**config, 'criterion': bar_distribution.FullSupportBarDistribution(\n        bar_distribution.get_bucket_limits(1000,ys=get_ys(config).cpu())\n    )}\n\n# Now let's train either with\ntrain.train(**add_criterion(config_heboplus))\n# or\ntrain.train(**add_criterion(config_heboplus_userpriors))\n# or\ntrain.train(**add_criterion(config_bnn))\n```\n\n### Problem Handling\n**Out of memory during inference**: It might be fixed by changing `max_dataset_size=10_000` to something smaller on either interface.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "pfns4bo",
+            "package_url": "https://pypi.org/project/pfns4bo/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/pfns4bo/",
+            "project_urls": {
+                "Homepage": "https://github.com/automl/PFNs4BO"
+            },
+            "release_url": "https://pypi.org/project/pfns4bo/0.1.5/",
+            "requires_dist": [
+                "bayesmark>=0.0.8",
+                "botorch>=0.7.2",
+                "configspace>=0.4.21",
+                "gpytorch>=1.5.0",
+                "numpy>=1.21.2",
+                "pyyaml>=5.4.1",
+                "requests>=2.23.0",
+                "scikit-learn<1.2,>=0.24.2",
+                "torch>=1.9.0",
+                "tqdm>=4.62.1"
+            ],
+            "requires_python": ">=3.9",
+            "summary": "PFNs made ready for BO",
+            "version": "0.1.5",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18211288,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "005da3e3e52729fe5421fe68c55664a2041534f11c94c4afa59cc91d2f36bc3f",
+                    "md5": "a8d4ea3d2136bf0fd87314c70a382b3d",
+                    "sha256": "2bc21fe5086fbf86958ae4b34ab5f841af111572d5ee23ba23b1eba6b15a108c"
+                },
+                "downloads": -1,
+                "filename": "pfns4bo-0.1.5-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "a8d4ea3d2136bf0fd87314c70a382b3d",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9",
+                "size": 71163,
+                "upload_time": "2023-05-23T09:04:00",
+                "upload_time_iso_8601": "2023-05-23T09:04:00.476573Z",
+                "url": "https://files.pythonhosted.org/packages/00/5d/a3e3e52729fe5421fe68c55664a2041534f11c94c4afa59cc91d2f36bc3f/pfns4bo-0.1.5-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5841b4f3c5a7672431ea3352f077f5086ab1ebeb7a22396abc83e1eadf03a1f6",
+                    "md5": "c9d25131256cfea613d7ac1cbe2c6e7b",
+                    "sha256": "e582699eee8dd344d64ea233a6299994d31a099c78ab747a365a5b4784ed1bae"
+                },
+                "downloads": -1,
+                "filename": "pfns4bo-0.1.5.tar.gz",
+                "has_sig": false,
+                "md5_digest": "c9d25131256cfea613d7ac1cbe2c6e7b",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9",
+                "size": 65004,
+                "upload_time": "2023-05-23T09:04:03",
+                "upload_time_iso_8601": "2023-05-23T09:04:03.682057Z",
+                "url": "https://files.pythonhosted.org/packages/58/41/b4f3c5a7672431ea3352f077f5086ab1ebeb7a22396abc83e1eadf03a1f6/pfns4bo-0.1.5.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
