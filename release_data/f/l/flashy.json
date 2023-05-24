@@ -8,7 +8,6 @@
                 "License :: OSI Approved :: MIT License",
                 "Topic :: Scientific/Engineering :: Artificial Intelligence"
             ],
-            "description": "Solver framework for deep learning\n\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -37,11 +36,12 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 14552904,
+        "last_serial": 18215436,
         "urls": [
             {
                 "comment_text": "",
                 "digests": {
+                    "blake2b_256": "f20d304260fc5aabca4c8bf7764bc7b6f7a27f09c6d7fe04265c18a7b3b46c05",
                     "md5": "bb3d4c0dd3e605d054943d40f19dea84",
                     "sha256": "89bf584503f2ebb5d53c99b13d44593d2bcbf3bc7cfe1fb6604aec96f548a175"
                 },
@@ -56,6 +56,70 @@
                 "upload_time": "2022-07-26T12:37:59",
                 "upload_time_iso_8601": "2022-07-26T12:37:59.998096Z",
                 "url": "https://files.pythonhosted.org/packages/f2/0d/304260fc5aabca4c8bf7764bc7b6f7a27f09c6d7fe04265c18a7b3b46c05/flashy-0.0.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.1": {
+        "info": {
+            "author": "Alexandre D\u00e9fossez",
+            "author_email": "defossez@fb.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Topic :: Scientific/Engineering :: Artificial Intelligence"
+            ],
+            "description": "# Flashy\n\n![tests badge](https://github.com/facebookresearch/flashy/workflows/tests/badge.svg)\n![linter badge](https://github.com/facebookresearch/flashy/workflows/linter/badge.svg)\n![docs badge](https://github.com/facebookresearch/flashy/workflows/docs/badge.svg)\n\n\n\n## Motivations\n\nWe noticed we reused the same structure over and over again in all of our research projects.\nPyTorch-Lightning is vastly over engineered and due to its complexity does not allow\nthe same level of hackability. Flashy aims to be an alternative. We do not claim it will\nfit all use cases, and our first goal is for it to fit ours. We aim at keeping the code\nsimple enough that you can just inherit and override behaviors, or even copy paste what you want\ninto your project.\n\n## Definitions\n\nAt the core of Flashy is the *Solver*. The Solver takes care of 2 things only:\n- logging metrics, to multiple backends (file logs, tensorboard or WanDB), with custom formatting,\n- checkpointing and automatically tracking stateful part of the solver.\n\nBeyond those core features, Flashy also provide distributed training utilities,\nin particular alternatives to DistributedDataParallel, which can break with complex workflows,\nalong with simple wrappers around DataLoader to support distributed training.\n\nFlashy is *epoch* based, which might sound outdated to some of you. Think of epochs not\nas a single pass over your dataset, but as the atomic unit of time for workflow management.\nEach epoch end is marked by a call to `flashy.BaseSolver.commit(save_checkpoint=True)`.\n\nEach epoch is composed of a number of *stages*, for instance `train`, `valid`, `test` etc, and do not need\nto be the same each time. Stages are a convenience to help with automatically reporting\nmetrics with appropriate metadata.\n\n\n## Dependencies and installation\n\nFlashy assume PyTorch is used along with [Dora][dora]. You could use it without PyTorch\nwith minor changes to `flashy/state.py`. Dora is builtin in a few places and shouldn't be too hard\nto remove, although we warmly recommend using it. Flashy requires at least Python 3.8.\n\nTo install Flashy, run the following\n\n```bash\n# For the moment we recommend having bleeding edge versions of Dora and Submitit\npip install -U git+https://github.com/facebookincubator/submitit@main#egg=submitit\npip install -U git+https://git@github.com/facebookresearch/dora#egg=dora-search\n# Now let's install Flashy!\npip install git+ssh://git@github.com/facebookresearch/flashy.git#egg=flashy\n```\n\nTo install Flashy for development, you can clone this repository and run\n```\nmake install\n```\n\n## Getting Started\n\nWe will assume you are using [Hydra][hydra]. You will need to be familiar with [Dora][dora].\nLet's build a very basic project, called `basic`,\nwith the following structure:\n\n```\nbasic/\n  conf/\n    config.yaml\n  train.py\n  __init__.py\n```\n\nThis project is provided in the [examples](examples/) folder.\nFor [config.yaml](examples/basic/config.yaml), we can start with the basic:\n\n```yaml\nepochs: 10\nlr: 0.1\n\ndora:\n  # Output folder for all the artifacts of an experiment.\n  dir: /tmp/flashy_basic_${oc.env:USER}/outputs\n```\n\n`__init__.py` is just empty. [train.py](examples/basic/train.py) contains most of the logic:\n\n```python\nimport torch\nfrom dora import hydra_main\nimport flashy\n\n\nclass Solver(flashy.BaseSolver):\n    def __init__(self, cfg):\n        super().__init__()\n        self.cfg = cfg\n        self.model = torch.nn.Linear(32, 1)\n        self.optim = torch.optim.Adam(self.model.parameters(), lr=cfg.lr)\n        self.best_state = {}\n        # register_stateful supports any attribute. On checkpoints loading,\n        # it will try to use inplace method when possible (i.e. Modules, lists, dicts).\n        self.register_stateful('model', 'optim', 'best_state')\n        self.init_tensorboard()  # all metrics will be reported to stderr and tensorboard.\n\n    def run(self):\n        self.restore()  # load checkpoint\n        for epoch in range(self.epoch, self.cfg.epochs):\n            # Stages are used for automatic metric reporting to Dora, and it also\n            # allows tuning how metrics are formatted.\n            self.run_stage('train', self.train)\n            # Commit will send the metrics to Dora and save checkpoints by default.\n            self.commit(save_checkpoint=epoch % 2 == 1)\n\n    def train(self):\n        # this is super dumb, checkout `examples/cifar/solver.py` for more advance usage!\n        x = torch.randn(4, 32)\n        y = self.model(x)\n        loss = y.abs().mean()\n        loss.backward()\n        self.optim.step()\n        self.optim.zero_grad()\n        return {'loss': loss.item()}\n\n\n@hydra_main(config_path='config', config_name='config', version_base='1.1')\ndef main(cfg):\n    # Setup logging both to XP specific folder, and to stderr.\n    flashy.setup_logging()\n    # Initialize distributed training, no need to specify anything when using Dora.\n    flashy.distrib.init()\n    solver = Solver(cfg)\n    solver.run()\n\n\nif __name__ == '__main__':\n    main()\n```\n\nFrom the folder containing `basic`, you can launch training with\n```\ndora -P basic run\ndora run  # if no other package contains a train.py file in the current folder.\n```\n\n\n## Example\n\nSee [examples/cifar/solver.py](examples/cifar/solver.py) for a more advanced example,\nwith real training and distributed. When running examples from the `examples/` folder,\nyou must pass the package you want to run to Dora, as there are multiple possibilities:\n```\ndora -P [basic|cifar] run\n```\n\n\n## API\n\nCheckout [Flashy API Documentation][api]\n\n[api]: https://share.honu.io/flashy/docs/flashy/index.html\n[dora]: https://github.com/facebookresearch/dora\n[hydra]: https://github.com/facebookresearch/hydra\n\n\n## Licence\n\nFlashy is provided under the MIT license, which can be found in the [LICENSE](./LICENSE) file\nin the root of the repository. Parts of `flashy.loggers.utils` were adapted from\nPyTorch-Lightning, originally under the Apache 2.0 License, see [flashy/loggers/utils.py](flashy/loggers/utils.py)\nfor details.",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/fairinternal/flashy",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "flashy",
+            "package_url": "https://pypi.org/project/flashy/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/flashy/",
+            "project_urls": {
+                "Homepage": "https://github.com/fairinternal/flashy"
+            },
+            "release_url": "https://pypi.org/project/flashy/0.0.1/",
+            "requires_dist": null,
+            "requires_python": ">=3.8.0",
+            "summary": "Minimal solver for deep learning",
+            "version": "0.0.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18215436,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "be0b9175b1289487f1fa38c28e40ea8fc9f9ae7fd962944fc8f054524c187d6c",
+                    "md5": "7e8329173839a9dcae57c5b419e497ed",
+                    "sha256": "ce048b03c2a80e08ec8f1365dee9d5ad67650b51efa0c13b314d78bff2431d2c"
+                },
+                "downloads": -1,
+                "filename": "flashy-0.0.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "7e8329173839a9dcae57c5b419e497ed",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8.0",
+                "size": 27168,
+                "upload_time": "2023-05-23T14:41:41",
+                "upload_time_iso_8601": "2023-05-23T14:41:41.747462Z",
+                "url": "https://files.pythonhosted.org/packages/be/0b/9175b1289487f1fa38c28e40ea8fc9f9ae7fd962944fc8f054524c187d6c/flashy-0.0.1.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

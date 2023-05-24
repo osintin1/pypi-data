@@ -33,7 +33,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18002227,
+        "last_serial": 18222588,
         "urls": [
             {
                 "comment_text": "",
@@ -65,7 +65,6 @@
             "author_email": "slcunden@gmail.com",
             "bugtrack_url": null,
             "classifiers": [],
-            "description": "# Pay Equity Library\n\nThis purpose of this libary is to allow organizations to carry out pay equity audits in a practical and sustainable manner. The library contains multiple functionalities, including regression modelling, t-test of residuals and remediation. Outlined below is guide for use of the library.\n\n## Installation and Import\n\nTo install the library, please ensure that you have access to https://github.com/scunden/pay-equity. Once you do, you can install the library via command line, using:\n\n```\npip install git+https://github.com/scunden/pay-equity.git\n```\n\nTo import the library and check the version, use the commands below:\n```\nimport payequity\npayequity.__version__\n```\n\n## Creating Job Groups and Enssemble\n\n### Initialization\n\nA job group enssemble is simply a collection of job groups. The enssemble allows the user to perform actions on all of the job groups it contains - i.e., running a regression on an essemble will run a regression on all the job groups it contains. This allows for more efficient and comprehensive coding.\n\nBelow is an example of how to initialize an essemble. The fields that are specified in the instantiation are required, while those left as None or unspecicified are only optional.\n\n```\njge = JobGroupEnssemble(\n    df=df, \n    eeid='Employee ID',\n    pay_component='AZBP', \n    predictive_vars=predictive_vars_bp, \n    diagnostic_vars=None, \n    iter_order=None,\n    div_vars=None, \n    div_min=None, \n    div_ref=None,\n    name='Base Pay Model',\n    job_group_column='Job Group',\n    headcount_cutoff=100\n)\n```\n* `df`: Dataframe  -  Employee level data. Note that once instantiated, the nomanclature of each column will be changed - all strings will be capitalized and special chars ans white spaced replaced by underscores\n* `eeid`: String - Variable used to identify Employee ID\n* `pay_component`: String - Variable used to identify pay component. The pay component in the data should not be log transformed.\n* `predictive_vars`: List of Strings - Variables to be used in pay prediction modelling - should all be legitimate factors\n* `diagnostic_vars`: List of Strings - Variables to be used in diagnostic modelling - any variable to be tested, but not included in making pay predictions. Do not include diversity variables.\n* `iter_order`: List of Strings - This list should mirror in content `predictive_vars` but should have an intended order for the iterative anlaysis.\n* `div_vars`: Dictionary - Contains all of the relevant diversities and their corresponding variables to be evaluated in this audit. More details below\n* `div_min`: Dictionary - Contains all of the relevant minorities and their corresponding variables to be evaluated in this audit. More details below\n* `div_ref`: Dictionary - Contains all of the relevant references and their corresponding variables to be evaluated in this audit. More details below\n* `name`: String - Name of the enssemble\n* `job_group_column`: String - Variable used to identify the job group column in `df`\n* `headcount_cutoff`: Int - The minimum number of headcount required for analysis in a single job group - default is 100\n\n### Specifying Diversities\n\nDiversities are specified in a set of dictionaries. The first dictionary `div_vars` should contain a set of key and values that map to the diversity name (capitalized and with only alphabetical characters and underscores) and their corresponding column in the dataset. In the enxt two dictionaries, you must specify what the minority and reference values are for each diversity (i.e., 'Women' and 'Male' for 'GENDER')\n\nBelow is an example of the diversities dictionaries required to implement the job group enssemble. Every key present in the `div_vars` dictionary needs to be present in the other two dictionaries.  \n\n```\ndiv_vars = {\n    'GENDER':'Gender Grouped',\n    'ETHNICITY':'Ethnicity',\n    'ETHNICITY_BINARY':'Ethnicity Binary',\n    'AGE_GROUP':'Age Group'}\n\ndiv_min = {\n    'GENDER':'Female & NDT',\n    'ETHNICITY':'Black or African American',\n    'ETHNICITY_BINARY':'HUG',\n    'AGE_GROUP':'40 & Above'}\n\ndiv_ref = {\n    'GENDER':'Male',\n    'ETHNICITY':'White',\n    'ETHNICITY_BINARY':'White',\n    'AGE_GROUP':'Below 40'}\n```\n\n### Removing a Diversity from Scope\n\nNote that the analysis will be carried out for all the diversities listed in `div_vars`. Use `jge.remove_diversity_from_scope([discarded_diversity])` to remove the desired diversity from the entire scope across all job groups. If the diversity only needs to be removed from select job groups, you can apply the same method on that given job group instead.\n\n### Data Wrangling\n\nIt is highly recommended that the dataset be cleaned ahead of using the library. However, the library does allow for some wrangling.\n\n`jge.null_check()` will allow the user to view a bar chart indicating the % of values in each categorical columns of `df` that are NaN. In order to remediate to these, the user can call `jge.fill_categorical_nas()` to fill out all categorical NaNs with \"N/A\" string values. Alternatively, the user can specify a dictionary as the sole argument to the previous function, specifying the null value replacement for a given column, for example: `jge.fill_categorical_nas(specified={'Worker is Manager?':'No'})`\n\nThe user can also view the headcount distribution across the diversities listed in `div_vars` using `jge.diversity_distributions(by=\"Business Unit)`.\n\n<font color='red'>Need to update library to ensure all inputs can be capitalized - then specify in MD</font>\n\n### Initializing Job Groups\n\nOne the enssemble has been created, a `JobGroup` object can be created for each job group under `job_group_column`. This can be achieve by simply calling:\n```\njge.generate_job_groups()\n```\n\nPlease be sure to read all INFO and WARNING logs to ensure that all the job groups are properly created.\n\n\n### Variable Inclusion and Exclusion\n\nAll job groups are initialized with `predicitive_vars` as the default variables to use during modelling. However, these can be individually changed by calling the method `include` and `exclude` on a select job group. \n\n### Category References\n\nWhen a regression is ran within a `JobGroup` object, the object will automatically set the regression reference of the categorical variable in `predictive_vars` as its mode. The `set_references()` method can be used to override that behavior for a specific job group, prior to running the regression. In order to change the reference of a variable for the whole enssemble, use the `set_overall_references()` method. Both take in a `specified` dictionary as sole parameter:\n\n```\njge.set_overall_references(specified={\"High Performer\":\"No\"})\n```\n\nIf you wanted to change the reference for `High Performer` to be 'Yes' in only one of your job groups, you cna use the following code:\n\n```\njge.job_groups[0].set_references(specified={\"High Performer\":\"No\"})\n```\n\n## Running Regressions\n\nYou can run the regressions individually on a given job group, or you can run it on all the job groups within the enssemble using the command `jge.run_regressions()`\n\nOnce the command above is successfully ran, it will create a `regressor` object for each job group.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -97,7 +96,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18002227,
+        "last_serial": 18222588,
         "urls": [
             {
                 "comment_text": "",
@@ -138,6 +137,175 @@
                 "upload_time": "2023-05-06T21:07:52",
                 "upload_time_iso_8601": "2023-05-06T21:07:52.487874Z",
                 "url": "https://files.pythonhosted.org/packages/f9/e4/27b3f2c5b75396ae41c95427ea38a2368f2b5cf803052dc4f90d9ae76517/PayEquity-0.1.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.3": {
+        "info": {
+            "author": "Steven Cunden",
+            "author_email": "slcunden@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/scunden/pay-equity",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "PayEquity",
+            "package_url": "https://pypi.org/project/PayEquity/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/PayEquity/",
+            "project_urls": {
+                "Homepage": "https://github.com/scunden/pay-equity"
+            },
+            "release_url": "https://pypi.org/project/PayEquity/0.1.3/",
+            "requires_dist": [
+                "numpy",
+                "pandas"
+            ],
+            "requires_python": "",
+            "summary": "Pay Equity Library",
+            "version": "0.1.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18222588,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "dfeef1e10ffdff0dc25df838a865780ea946ca4fe9edbd1e93be0ff757cee622",
+                    "md5": "e7c9373c0fda1a052efa9c95072cca56",
+                    "sha256": "256ec54ddc19ef36961de6fb11e174a4520212b239ea10aab8348c0e10f37b83"
+                },
+                "downloads": -1,
+                "filename": "PayEquity-0.1.3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "e7c9373c0fda1a052efa9c95072cca56",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 21930,
+                "upload_time": "2023-05-24T01:25:31",
+                "upload_time_iso_8601": "2023-05-24T01:25:31.911985Z",
+                "url": "https://files.pythonhosted.org/packages/df/ee/f1e10ffdff0dc25df838a865780ea946ca4fe9edbd1e93be0ff757cee622/PayEquity-0.1.3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ec00b80f94f9cfdbd873cbdbb952fcd6e9daef79685e0068fe88021a5377a5c9",
+                    "md5": "0c1526f312392f2ab64d54c5d798ae64",
+                    "sha256": "37a723833f38b07dc30da4906b39bffdff4586bfbe09b29babfbe1ba04cf796c"
+                },
+                "downloads": -1,
+                "filename": "PayEquity-0.1.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "0c1526f312392f2ab64d54c5d798ae64",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 19042,
+                "upload_time": "2023-05-24T01:25:33",
+                "upload_time_iso_8601": "2023-05-24T01:25:33.967463Z",
+                "url": "https://files.pythonhosted.org/packages/ec/00/b80f94f9cfdbd873cbdbb952fcd6e9daef79685e0068fe88021a5377a5c9/PayEquity-0.1.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.4": {
+        "info": {
+            "author": "Steven Cunden",
+            "author_email": "slcunden@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "# Pay Equity Library\n\nThis purpose of this libary is to allow organizations to carry out pay equity audits in a practical and sustainable manner. The library contains multiple functionalities, including regression modelling, t-test of residuals and remediation. Outlined below is guide for use of the library.\n\n## Installation and Import\n\nTo install the library, please ensure that you have access to https://github.com/scunden/pay-equity. Once you do, you can install the library via command line, using:\n\n```\npip install git+https://github.com/scunden/pay-equity.git\n```\n\nTo import the library and check the version, use the commands below:\n```\nimport payequity\npayequity.__version__\n```\n\n## Creating Job Groups and Enssemble\n\n### Initialization\n\nA job group enssemble is simply a collection of job groups. The enssemble allows the user to perform actions on all of the job groups it contains - i.e., running a regression on an essemble will run a regression on all the job groups it contains. This allows for more efficient and comprehensive coding.\n\nBelow is an example of how to initialize an essemble. The fields that are specified in the instantiation are required, while those left as None or unspecicified are only optional.\n\n```\njge = JobGroupEnssemble(\n    df=df, \n    eeid='Employee ID',\n    pay_component='AZBP', \n    predictive_vars=predictive_vars_bp, \n    diagnostic_vars=None, \n    iter_order=None,\n    div_vars=None, \n    div_min=None, \n    div_ref=None,\n    name='Base Pay Model',\n    job_group_column='Job Group',\n    headcount_cutoff=100\n)\n```\n* `df`: Dataframe  -  Employee level data. Note that once instantiated, the nomanclature of each column will be changed - all strings will be capitalized and special chars ans white spaced replaced by underscores\n* `eeid`: String - Variable used to identify Employee ID\n* `pay_component`: String - Variable used to identify pay component. The pay component in the data should not be log transformed.\n* `predictive_vars`: List of Strings - Variables to be used in pay prediction modelling - should all be legitimate factors\n* `diagnostic_vars`: List of Strings - Variables to be used in diagnostic modelling - any variable to be tested, but not included in making pay predictions. Do not include diversity variables.\n* `iter_order`: List of Strings - This list should mirror in content `predictive_vars` but should have an intended order for the iterative anlaysis.\n* `div_vars`: Dictionary - Contains all of the relevant diversities and their corresponding variables to be evaluated in this audit. More details below\n* `div_min`: Dictionary - Contains all of the relevant minorities and their corresponding variables to be evaluated in this audit. More details below\n* `div_ref`: Dictionary - Contains all of the relevant references and their corresponding variables to be evaluated in this audit. More details below\n* `name`: String - Name of the enssemble\n* `job_group_column`: String - Variable used to identify the job group column in `df`\n* `headcount_cutoff`: Int - The minimum number of headcount required for analysis in a single job group - default is 100\n\n### Specifying Diversities\n\nDiversities are specified in a set of dictionaries. The first dictionary `div_vars` should contain a set of key and values that map to the diversity name (capitalized and with only alphabetical characters and underscores) and their corresponding column in the dataset. In the enxt two dictionaries, you must specify what the minority and reference values are for each diversity (i.e., 'Women' and 'Male' for 'GENDER')\n\nBelow is an example of the diversities dictionaries required to implement the job group enssemble. Every key present in the `div_vars` dictionary needs to be present in the other two dictionaries.  \n\n```\ndiv_vars = {\n    'GENDER':'Gender Grouped',\n    'ETHNICITY':'Ethnicity',\n    'ETHNICITY_BINARY':'Ethnicity Binary',\n    'AGE_GROUP':'Age Group'}\n\ndiv_min = {\n    'GENDER':'Female & NDT',\n    'ETHNICITY':'Black or African American',\n    'ETHNICITY_BINARY':'HUG',\n    'AGE_GROUP':'40 & Above'}\n\ndiv_ref = {\n    'GENDER':'Male',\n    'ETHNICITY':'White',\n    'ETHNICITY_BINARY':'White',\n    'AGE_GROUP':'Below 40'}\n```\n\n### Removing a Diversity from Scope\n\nNote that the analysis will be carried out for all the diversities listed in `div_vars`. Use `jge.remove_diversity_from_scope([discarded_diversity])` to remove the desired diversity from the entire scope across all job groups. If the diversity only needs to be removed from select job groups, you can apply the same method on that given job group instead.\n\n### Data Wrangling\n\nIt is highly recommended that the dataset be cleaned ahead of using the library. However, the library does allow for some wrangling.\n\n`jge.null_check()` will allow the user to view a bar chart indicating the % of values in each categorical columns of `df` that are NaN. In order to remediate to these, the user can call `jge.fill_categorical_nas()` to fill out all categorical NaNs with \"N/A\" string values. Alternatively, the user can specify a dictionary as the sole argument to the previous function, specifying the null value replacement for a given column, for example: `jge.fill_categorical_nas(specified={'Worker is Manager?':'No'})`\n\nThe user can also view the headcount distribution across the diversities listed in `div_vars` using `jge.diversity_distributions(by=\"Business Unit)`.\n\n<font color='red'>Need to update library to ensure all inputs can be capitalized - then specify in MD</font>\n\n### Initializing Job Groups\n\nOne the enssemble has been created, a `JobGroup` object can be created for each job group under `job_group_column`. This can be achieve by simply calling:\n```\njge.generate_job_groups()\n```\n\nPlease be sure to read all INFO and WARNING logs to ensure that all the job groups are properly created.\n\n\n### Variable Inclusion and Exclusion\n\nAll job groups are initialized with `predicitive_vars` as the default variables to use during modelling. However, these can be individually changed by calling the method `include` and `exclude` on a select job group. \n\n### Category References\n\nWhen a regression is ran within a `JobGroup` object, the object will automatically set the regression reference of the categorical variable in `predictive_vars` as its mode. The `set_references()` method can be used to override that behavior for a specific job group, prior to running the regression. In order to change the reference of a variable for the whole enssemble, use the `set_overall_references()` method. Both take in a `specified` dictionary as sole parameter:\n\n```\njge.set_overall_references(specified={\"High Performer\":\"No\"})\n```\n\nIf you wanted to change the reference for `High Performer` to be 'Yes' in only one of your job groups, you cna use the following code:\n\n```\njge.job_groups[0].set_references(specified={\"High Performer\":\"No\"})\n```\n\n## Running Regressions\n\nYou can run the regressions individually on a given job group, or you can run it on all the job groups within the enssemble using the command `jge.run_regressions()`\n\nOnce the command above is successfully ran, it will create a `regressor` object for each job group.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/scunden/pay-equity",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "PayEquity",
+            "package_url": "https://pypi.org/project/PayEquity/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/PayEquity/",
+            "project_urls": {
+                "Homepage": "https://github.com/scunden/pay-equity"
+            },
+            "release_url": "https://pypi.org/project/PayEquity/0.1.4/",
+            "requires_dist": [
+                "numpy",
+                "pandas"
+            ],
+            "requires_python": "",
+            "summary": "Pay Equity Library",
+            "version": "0.1.4",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18222588,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d55f01eec41dc2bd6023a758be6e5522b1d12647d11d9dfd6333b1a2d87d11fa",
+                    "md5": "f4a6f17d1933863848cc4754a7c2f477",
+                    "sha256": "150abaa279285f5ac2140e027250b484079f4a438c8b2d3c8ab23621482e9d1f"
+                },
+                "downloads": -1,
+                "filename": "PayEquity-0.1.4-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "f4a6f17d1933863848cc4754a7c2f477",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 21934,
+                "upload_time": "2023-05-24T01:31:32",
+                "upload_time_iso_8601": "2023-05-24T01:31:32.968548Z",
+                "url": "https://files.pythonhosted.org/packages/d5/5f/01eec41dc2bd6023a758be6e5522b1d12647d11d9dfd6333b1a2d87d11fa/PayEquity-0.1.4-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f4d24662284f4da8b4b8e3bf6b4b1b2aaa35081035084e83bb7dde3e2ed55712",
+                    "md5": "db0240719e5277ecf62831a1f37de5e6",
+                    "sha256": "ee7f3f7894e2bf462b88e53e3d9f4b6e42d24243824f0e23300e728ac5525f77"
+                },
+                "downloads": -1,
+                "filename": "PayEquity-0.1.4.tar.gz",
+                "has_sig": false,
+                "md5_digest": "db0240719e5277ecf62831a1f37de5e6",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 19045,
+                "upload_time": "2023-05-24T01:31:34",
+                "upload_time_iso_8601": "2023-05-24T01:31:34.889471Z",
+                "url": "https://files.pythonhosted.org/packages/f4/d2/4662284f4da8b4b8e3bf6b4b1b2aaa35081035084e83bb7dde3e2ed55712/PayEquity-0.1.4.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
