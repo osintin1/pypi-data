@@ -1,0 +1,119 @@
+{
+    "0.1.0": {
+        "info": {
+            "author": "Daniel Merthe",
+            "author_email": "dmerthe@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11"
+            ],
+            "description": "# Empyric \n## A Python Library for Experiment Automation\n\nFor more details, [read the docs](https://empyric.readthedocs.io/en/latest/).\n\nEmpyric, at its most basic level, is an easy to use Python interface for communication with and controlling scientific instruments, such as digital multimeters, digital oscilloscopes, and power supplies. On top of that is a general purpose experiment-building architecture, which allows the user to combine process control, measurements and data plotting in a highly customizable fashion, using a straightforward \"runcard\" formalism, which additionally serves the purpose of experiment documentation.\n\nThe Empyric package is managed with [poetry](https://python-poetry.org/). To install, execute the following in a console from within the cloned repository:\n```commandline\npip install poetry  # if not already installed\npoetry install\n```\n\n### Instruments and Adapters\n\nEmpyric contains a number of *instruments* with various associated methods of communication, such as serial or GPIB. For example, to remotely control a Keithley 2400 Sourcemeter from your PC, simply import the `Keithley2400` object from the library and instantiate it with its GPIB address:\n\n```\nfrom empyric.instruments import Keithley2400\n\nkeithley2400 = Keithley2400(1)  # if GPIB address is 1\n\nkiethley2400.set('voltage', 10)\ncurrent = keithley2400.measure('current')\n```\n\nCommunication with instruments is facilitated through Empyric's library of *adapters*. If you have an instrument that is not in the Empyric library but which uses one of the more common communication protocols (Serial, GPIB, USBTMC, Modbus, etc.), you can still make use of Empyric's adapters, which automatically manage many of the underlying details of the communication backends:\n\n```\nfrom empyric.instruments import Instrument\nfrom empyric.adapters import Modbus\n\nclass MyInstrument(Instrument):\n\t\"\"\"\n\tBasic template of an instrument object in Empyric\n\t\"\"\"\n\n\tname = 'My Instrument'\n\t\n\tsupported_adapters = ((Modbus, {'baud_rate':115200}),)\n\t\n\tknobs = ('knob',)\n\tmeters = ('meter',)\n\t\n\tdef set_knob(self, value):\n\t\t# ... set your knob\n\t\n\tdef measure_meter(self):\n\t\t# ... measure your meter\n\t\ninstrument = MyInstrument('COM5::1')  # connect to your instrument\n\nmeter_value = instrument.measure_meter()  # take a measurement\n\n```\n\n### Experiments\n\nThe real purpose of Empyric is to simplify and standardize construction of an experiment, and automate its execution. The two main elements of an experiment are its *variables* which are controlled and/or measured by your instruments, and *routines* which are the various processes that you run on your controllable variables.\n\n*Variables* come in four flavors: knobs, meters, expressions and parameters. A knob is a variable that you can directly control through an instrument, such as voltage from a power supply. A meter is a variable that you directly measure through an instrument, such as temperature from a thermocouple. In some cases, a meter can be controlled indirectly through a feedback loop. For example, PID temperature controllers provide a temperature knob (the setpoint) as well as a temperature meter (the actual temperature measured with a thermocouple or RTD). An expression is a variable that is evaluated in terms of other experiment variables, such as the power delivered by a power supply being the product of the voltage knob value and the current meter value. A parameter is a user-defined value that is relevant to the experiment, such as a unit conversion factor, a variable setpoint (e.g. used in a routine) or a quantity that must be manually logged.\n\nHere is an example showing how to define and use experiment variables in Empyric:\n```\nfrom empyric.variables import Knob, Meter, Parameter, Expression\nfrom empyric.instruments import Keithley2400\n\nkeithley2400 = Keithley2400(1)\n\nvoltage = Knob(instrument=keithley2400, knob='voltage')\ncurrent = Meter(instrument=keithley2400, meter='current')\nmilliwatt = Parameter(parameter = 1e-3)\npower = Expression(expression='V * I / mW', definitions={'V':voltage, 'I':current, 'mW':milliwatt})\n\nvoltage.value = 10 # sets the voltage of the Keithley 2400 to 10 V\n\n# Obtain 10 measurements of current, voltage and power sourced by a Keithley 2400\nmeasurements = [[current.value, voltage.value, power.value] for i in range(10)]\n```\nAssigning a value to the `value` property of a knob-type variable commands the corresponding instrument to set the associated knob accordingly, and the value is stored in the corresponding attribute of the instrument (`[instrument].[knob]`). Calling the `value` property of a meter-type variable commands the corresponding instrument to record a measurement of the associated meter, and then return the value as well as store it as an attribute of the instrument  (`[instrument].measured_[meter]`). Calling the `value` property of an expression-type variable retrieves the values of the variables that define it from the stored attributes of the corresponding knobs, meters and other expressions; it does not trigger any new measurements. Therefore, for repeated calls, be sure to trigger measurements or retrievals of the values of any defining variables prior to each evaluation of the expression.\n\n*Routines* allow one to define the trajectory that an experiment takes through parameter space over the duration of the experiment. Every routine has a start and end, assigned variables and assigned values. Routines update their associated variables based on a given state, containing the current time (in seconds) and values of all variables. The most basic routine is the `Hold` routine:\n```\nimport time\n\n# ... define knob1 and knob2 as instances of Knob from above\n\nknobs = {'Knob 1': knob1, 'Knob 2': knob2}\nvalues = [10, 20]\n\n# Keep knob1 at a value of 10, and knob2 at a value of 20 for 60 seconds\nset_routine = Set(knobs, values, start=0, end=60)\n\nstart_time = time.time()\n\nstate = {'Time': 0, 'Knob 1': None, 'Knob 2': None} # define a process state\n\nwhile state['Time'] <= 60:\n\t\n\tstate['Time'] = time.time() - start_time  # update process time\n\t\n\tset_routine.update(state) # update process state, based on the set routine\n\t\n\tstate['Knob 1] = knob1.value\n\tstate['Knob 2] = knob2.value\n\t\n\tprint(state)  # prints \"{'Time': ..., 'Knob 1': 10, 'Knob 2': 20}\"\n```\n\nAn *Experiment* monitors a set of variables as a set of routines takes action on them. In Empyric, the `Experiment` object is an iterable that updates routines and records data on each iteration. It also has `start`, `hold` and `stop` methods which initiate/resume the experiment, holds routines while continuing to measure meters, and stops all routines and measurements, respectively. The `terminate` method saves the collected data to a file in the working directory and raises the `StopIteration` exception. An experiment will terminate automatically when all routines are finished. See henon_python_eaxmple.py in the 'examples/Henon Map Experiment' directory to see how a basic experiment is set up as a python script. This particular example uses a virtual instrument (`HenonMapper`), so the only requirement to run it is having Python installed along with the usual scientific packages (numpy, scipy, pandas and matplotlib).\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/dmerthe/empyric",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "empyric",
+            "package_url": "https://pypi.org/project/empyric/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/empyric/",
+            "project_urls": {
+                "Homepage": "https://github.com/dmerthe/empyric",
+                "Repository": "https://github.com/dmerthe/empyric"
+            },
+            "release_url": "https://pypi.org/project/empyric/0.1.0/",
+            "requires_dist": [
+                "matplotlib (>=3.6,<3.7)",
+                "numpy (>=1.24.3,<1.25.0)",
+                "pandas (>=1.5.3,<1.6.0)",
+                "pykwalify (>=1.8,<1.9)",
+                "ruamel.yaml (==0.17.21)",
+                "scipy (>=1.9.3,<1.10.0)"
+            ],
+            "requires_python": ">=3.10,<4.0",
+            "summary": "A package for experiment automation",
+            "version": "0.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18240824,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "06819bfc908effb034e5316d2f923dfbce2320ff624c3fc0df586946554b0a84",
+                    "md5": "b77e688aa2a63a0fb2eb72db9b289bfe",
+                    "sha256": "1b88e19150abb06e5c2a9587fe6df03196468cd354d9b271caa95a14a9043dd1"
+                },
+                "downloads": -1,
+                "filename": "empyric-0.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "b77e688aa2a63a0fb2eb72db9b289bfe",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.10,<4.0",
+                "size": 80965,
+                "upload_time": "2023-05-25T04:03:51",
+                "upload_time_iso_8601": "2023-05-25T04:03:51.085998Z",
+                "url": "https://files.pythonhosted.org/packages/06/81/9bfc908effb034e5316d2f923dfbce2320ff624c3fc0df586946554b0a84/empyric-0.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "b8e9e07ca874bdffd16933dc83529e2fab8ab03fb313c2778c3fe15d5519172f",
+                    "md5": "dc09cd923d3de215ae088614f51e051a",
+                    "sha256": "29bd93811a5930c125814ebcdd8a07750b77d80a9a8e9ba07988fe128df07db2"
+                },
+                "downloads": -1,
+                "filename": "empyric-0.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "dc09cd923d3de215ae088614f51e051a",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.10,<4.0",
+                "size": 73165,
+                "upload_time": "2023-05-25T04:03:54",
+                "upload_time_iso_8601": "2023-05-25T04:03:54.368952Z",
+                "url": "https://files.pythonhosted.org/packages/b8/e9/e07ca874bdffd16933dc83529e2fab8ab03fb313c2778c3fe15d5519172f/empyric-0.1.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "21b6d510adf415ec1bc3f75ccdaaa28c5b875c55a0e63853337fde90b2dc722c",
+                    "md5": "13da67f9be2bc2c30a3089942e60a923",
+                    "sha256": "a9c7626695f82c4ac3cc5039c8c362e0c89191bcd3096bf9d65ab15da5537d2b"
+                },
+                "downloads": -1,
+                "filename": "empyric-0.1-py3.9.egg",
+                "has_sig": false,
+                "md5_digest": "13da67f9be2bc2c30a3089942e60a923",
+                "packagetype": "bdist_egg",
+                "python_version": "0.1",
+                "requires_python": ">=3.10,<4.0",
+                "size": 1027,
+                "upload_time": "2023-05-25T04:03:52",
+                "upload_time_iso_8601": "2023-05-25T04:03:52.877598Z",
+                "url": "https://files.pythonhosted.org/packages/21/b6/d510adf415ec1bc3f75ccdaaa28c5b875c55a0e63853337fde90b2dc722c/empyric-0.1-py3.9.egg",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

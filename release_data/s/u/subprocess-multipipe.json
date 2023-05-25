@@ -1,0 +1,97 @@
+{
+    "0.10": {
+        "info": {
+            "author": "Johannes Fischer",
+            "author_email": "aulasparticularesdealemaosp@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Topic :: Software Development :: Libraries :: Python Modules",
+                "Topic :: Utilities"
+            ],
+            "description": "# Uses subprocess.stdin.write and named pipes (Windows) to read data from / write data to a subprocess\r\n\r\n\r\n## pip install subprocess-multipipe\r\n\r\n\r\nSubprocess Management: This module provides a convenient way to start and manage subprocesses. \r\nIt handles subprocess creation, communication, and termination, making it easier to execute multiple processes concurrently.\r\nUnlike in the multiprocessing module, where the if __ name __ == '__ main __' check is necessary, it is not explicitly needed here.\r\n\r\nInter-Process Communication: The code facilitates communication between the main process and subprocesses using pipes. \r\nIt abstracts away the complexities of pipe creation, reading, and writing, allowing for seamless data exchange between processes.\r\n\r\nAsynchronous Reading: The code includes functionality for asynchronously reading from pipes. \r\nThis ensures efficient utilization of system resources by allowing the main process\r\nto continue execution while data is being received from subprocesses.\r\n\r\nSerialization Support: The code supports serialization of data using either Pickle or Dill.\r\nThis enables the transfer of complex data structures between processes, \r\nmaking it suitable for scenarios where data sharing and manipulation are required.\r\n\r\nProcess Termination: The code provides a mechanism to gracefully terminate subprocesses and associated threads. \r\nIt ensures that all resources are properly released, preventing resource leaks and unexpected behavior.\r\n\r\nFlexibility and Customization: The code allows customization of various parameters, such as pipe names, deque size, and additional subprocess arguments. \r\nThis flexibility enables users to adapt the code to their specific requirements and integrate it into their existing systems.\r\n\r\n\r\n### multipipe.py\r\n\r\n```python\r\n\r\n# Uses subprocess.stdin.write and named pipes (Windows) to read data from / write data to a subprocess\r\n\r\n# this example sets up two separate threads to perform parallel image conversions from RGB to BGR (pipe1) and RGB to\r\n# grayscale (pipe2) using inter-process communication through named pipes.\r\n# The converted images are saved in separate output directories.\r\n\r\n\r\n# The code begins by importing various modules\r\n# These modules provide functionality for handling operating system operations, image processing, multi-threading,\r\n# inter-process communication, and file manipulation.\r\n\r\nimport os\r\nimport cv2\r\nimport kthread\r\nfrom kthread_sleep import sleep\r\nfrom varpickler import encode_var\r\nimport psutil\r\nfrom subprocess_multipipe.run_multipipe_subproc import start_subprocess, pipresults\r\nfrom list_all_files_recursively import get_folder_file_complete_path\r\n\r\n# Next, the code defines several variables that hold file paths and folder locations.\r\n# These variables include picfolder (the folder where the input images are located),\r\n# pyfile2 and pyfile1 (file paths for two Python scripts),\r\n\r\n# pipename2 and pipename1 (the names of the named pipes used for inter-process communication),\r\n# https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipes\r\n\r\n# output_folder_rgb2bgr and output_folder_rgb2gray (folders where the output images will be saved), and allfiles.\r\n\r\npicfolder = r\"C:\\testpipe\\testimg\"\r\npyfile2 = r\"C:\\ProgramData\\anaconda3\\envs\\dfdir\\multipipe2.py\"\r\npipename2 = r\"\\\\.\\pipe\\pipe2\"\r\noutput_folder_rgb2bgr = r\"C:\\testpipe\\resultrgbgray\"\r\npyfile1 = r\"C:\\ProgramData\\anaconda3\\envs\\dfdir\\multipipe1.py\"\r\npipename1 = r\"\\\\.\\pipe\\pipe1\"\r\noutput_folder_rgb2gray = r\"C:\\testpipe\\resultrgbbgr\"\r\n\r\n# The allfiles variable is a list comprehension that reads all the files with a .jpg extension from the picfolder and\r\n# stores the corresponding images using the cv2.imread function.\r\n# Essentially, it creates a list of OpenCV image objects from the JPEG files in the specified folder.\r\n\r\nallfiles = [\r\n    cv2.imread(x.path)\r\n    for x in get_folder_file_complete_path(picfolder)\r\n    if x.ext == \".jpg\"\r\n]\r\n\r\n# After that, the code defines two functions: pipe1_rgb2bgr and pipe2_rgb2gray. These functions perform the image\r\n# conversion tasks using separate processes.\r\n\r\n\r\ndef pipe1_rgb2bgr():\r\n    # The pipe1_rgb2bgr function uses the start_subprocess function from the run_multipipe_subproc module\r\n    # to start a subprocess by executing the pyfile1 script. It passes various arguments to the subprocess,\r\n    # including the size of the encoded image (imgencodedsize), the name of the pipe (pipename1),\r\n    # and other parameters. The function then writes each image from the allfiles list to the pipe using the\r\n    # p.write_function method. It waits until all images are processed by checking the length of the received\r\n    # results (pipresults.pipedict[pipename1]) and the status of the subprocess using psutil.pid_exists.\r\n    # Finally, it saves the converted images to the output_folder_rgb2bgr directory using cv2.imwrite.\r\n    p = start_subprocess(\r\n        pyfile1,\r\n        bytesize=imgencodedsize,\r\n        pipename=pipename1,\r\n        pickle_or_dill=\"dill\",\r\n        deque_size=len(allfiles) * 2,\r\n        other_args=(),\r\n        write_first_twice=True,\r\n        block_or_unblock=\"block\",\r\n        pipe_timeout_ms=50,\r\n        pipe_max_instances=10,\r\n    )\r\n    # sleep(1)\r\n    for ini, im in enumerate(allfiles):\r\n        p.write_function(im)\r\n    while len(pipresults.pipedict[pipename1]) < len(allfiles) and psutil.pid_exists(\r\n        p.sub_process.pid\r\n    ):\r\n        print(len(pipresults.pipedict[pipename1]))\r\n\r\n        sleep(0.2)\r\n    p.kill_process()\r\n    for ini, c in enumerate(pipresults.pipedict[pipename1]):\r\n        cv2.imwrite(os.path.join(output_folder_rgb2bgr, f\"{ini}.jpg\"), c)\r\n\r\n\r\ndef pipe2_rgb2gray():\r\n    # The pipe2_rgb2gray function is similar to pipe1_rgb2bgr but uses the pyfile2\r\n    # script and operates on a different pipe\r\n    # (pipename2). It also saves the converted images to the output_folder_rgb2gray directory.\r\n    p = start_subprocess(\r\n        pyfile2,\r\n        bytesize=imgencodedsize,\r\n        pipename=pipename2,\r\n        pickle_or_dill=\"dill\",\r\n        deque_size=len(allfiles) * 2,\r\n        other_args=(),\r\n        write_first_twice=True,\r\n        block_or_unblock=\"block\",\r\n        pipe_timeout_ms=50,\r\n        pipe_max_instances=10,\r\n    )\r\n    for ini, im in enumerate(allfiles):\r\n        p.write_function(im)\r\n    while len(pipresults.pipedict[pipename2]) < len(allfiles) and psutil.pid_exists(\r\n        p.sub_process.pid\r\n    ):\r\n        print(len(pipresults.pipedict[pipename2]))\r\n        sleep(0.2)\r\n    p.kill_process()\r\n    for ini, c in enumerate(pipresults.pipedict[pipename2]):\r\n        cv2.imwrite(os.path.join(output_folder_rgb2gray, f\"{ini}.jpg\"), c)\r\n\r\n\r\n# After defining the conversion functions, the code calculates the size of the encoded image by calling the encode_var\r\n# function from the varpickler module on the last element of the allfiles list. (biggest image (byte size!!) in this case)\r\nimgencodedsize = len(encode_var(allfiles[-1]))\r\n\r\n# Then, two KThread objects (t1 and t2) are created, representing the threads for the pipe1_rgb2bgr and pipe2_rgb2gray\r\n# functions, respectively. These threads are started using the start method.\r\n\r\nt1 = kthread.KThread(target=pipe1_rgb2bgr, name=\"1\")\r\n\r\nt2 = kthread.KThread(target=pipe2_rgb2gray, name=\"2\")\r\nt1.start()\r\n# sleep(1)\r\nt2.start()\r\n\r\n\r\n\r\n\r\n```\r\n\r\n### multipipe2.py\r\n\r\n\r\n```python\r\n\r\n# This code continuously checks for incoming images from stdincollection.stdin_deque,\r\n# converts the color space of the images from RGB to BGR, and writes the processed images to the named pipe\r\n# using the write2pipe function.\r\n\r\n# The code enters an infinite loop with the statement while True:\r\n#\r\n# Inside the loop, the code checks the value of stdincollection.ran_out_of_input.\r\n# If it is True, the code calls os._exit(1) to exit the program with a status code of 1,\r\n#\r\n# If stdincollection.ran_out_of_input is False, the code proceeds to the next conditional statement.\r\n#\r\n# The code checks if the stdincollection.stdin_deque is empty by evaluating if not stdincollection.stdin_deque.\r\n# If it is empty, the code executes sleep(0.01) to pause the execution for a short period (10 milliseconds)\r\n# before continuing to the next iteration of the loop.\r\n#\r\n# If stdincollection.stdin_deque is not empty, the code pops an item from the deque using\r\n# stdincollection.stdin_deque.pop(). The popped item is then copied to a new variable called poppeddata.\r\n#\r\n# The code converts the color space of the poppeddata image from RGB to BGR using cv2.cvtColor with the\r\n# flag cv2.COLOR_RGB2BGR. The result is stored in a variable called with_changed_color.\r\n#\r\n# Finally, the code calls the write2pipe function, passing with_changed_color as the object to be written to the named\r\n# pipe (back to the original process).\r\n#\r\n# Any exceptions that occur during the execution of the code are caught in a general Exception block,\r\n# and the code continues to the next iteration of the loop.\r\n#\r\n\r\nimport os\r\n\r\nimport cv2\r\nfrom time import sleep\r\nfrom subprocess_multipipe.start_pipethread import stdincollection, write2pipe\r\n\r\nwhile True:\r\n    if stdincollection.ran_out_of_input:\r\n        os._exit(1)\r\n    if not stdincollection.stdin_deque:\r\n        sleep(0.01)\r\n\r\n        continue\r\n    try:\r\n        try:\r\n            poppeddata = stdincollection.stdin_deque.pop().copy()\r\n        except Exception:\r\n            continue\r\n        with_changed_color = cv2.cvtColor(poppeddata, cv2.COLOR_RGB2BGR)\r\n        write2pipe(obj=with_changed_color)\r\n    except Exception:\r\n        continue\r\n\r\n\r\n```\r\n\r\n### multipipe1.py\r\n\r\n\r\n```python\r\n\r\n\r\nimport os\r\n\r\nimport cv2\r\nfrom time import sleep\r\nfrom subprocess_multipipe.start_pipethread import stdincollection, write2pipe\r\n\r\nwhile True:\r\n    if stdincollection.ran_out_of_input:\r\n        os._exit(1)\r\n    if not stdincollection.stdin_deque:\r\n        sleep(0.01)\r\n        continue\r\n    try:\r\n        try:\r\n            poppeddata = stdincollection.stdin_deque.pop().copy()\r\n        except Exception:\r\n            continue\r\n        with_changed_color = cv2.cvtColor(poppeddata, cv2.COLOR_BGR2GRAY)\r\n        write2pipe(obj=with_changed_color)\r\n    except Exception:\r\n        continue\r\n\r\n\r\n```\r\n\r\n\r\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/hansalemaos/subprocess_multipipe",
+            "keywords": "pickle,unpickle,subprocess",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "subprocess-multipipe",
+            "package_url": "https://pypi.org/project/subprocess-multipipe/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/subprocess-multipipe/",
+            "project_urls": {
+                "Homepage": "https://github.com/hansalemaos/subprocess_multipipe"
+            },
+            "release_url": "https://pypi.org/project/subprocess-multipipe/0.10/",
+            "requires_dist": [
+                "hackyargparser",
+                "kthread",
+                "kthread-sleep",
+                "pywinpipe",
+                "subprocess-alive",
+                "varpickler"
+            ],
+            "requires_python": "",
+            "summary": "Uses subprocess.stdin.write and named pipes (Windows) to read data from / write data to a subprocess",
+            "version": "0.10",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18240642,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "58e0063d0cf7b6e8b3be086cde3d5174876fc3242f7276036157ca0fda67b35b",
+                    "md5": "ea2343f5691de77ca8e867fd2395fdf3",
+                    "sha256": "a56f8a867ac15993aed4b2f8b4c4502838388f32f3ce99ba28ec0c840e0fcc99"
+                },
+                "downloads": -1,
+                "filename": "subprocess_multipipe-0.10-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "ea2343f5691de77ca8e867fd2395fdf3",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 14261,
+                "upload_time": "2023-05-25T03:33:08",
+                "upload_time_iso_8601": "2023-05-25T03:33:08.236221Z",
+                "url": "https://files.pythonhosted.org/packages/58/e0/063d0cf7b6e8b3be086cde3d5174876fc3242f7276036157ca0fda67b35b/subprocess_multipipe-0.10-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "63772868ebc892244a356f05d61d0dae246b9da486e756bffc4a50be325ff7f8",
+                    "md5": "a7f6bf47c528b0372e7ddb6ae22d8401",
+                    "sha256": "a1124eb52ff399873afda324b4516eafab6e795ebe5c9a54911b82b3c8ab0d7e"
+                },
+                "downloads": -1,
+                "filename": "subprocess_multipipe-0.10.tar.gz",
+                "has_sig": false,
+                "md5_digest": "a7f6bf47c528b0372e7ddb6ae22d8401",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 13100,
+                "upload_time": "2023-05-25T03:33:13",
+                "upload_time_iso_8601": "2023-05-25T03:33:13.430929Z",
+                "url": "https://files.pythonhosted.org/packages/63/77/2868ebc892244a356f05d61d0dae246b9da486e756bffc4a50be325ff7f8/subprocess_multipipe-0.10.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
