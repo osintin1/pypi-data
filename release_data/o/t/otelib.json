@@ -39,7 +39,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17767305,
+        "last_serial": 18230614,
         "urls": [
             {
                 "comment_text": "",
@@ -134,7 +134,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17767305,
+        "last_serial": 18230614,
         "urls": [
             {
                 "comment_text": "",
@@ -229,7 +229,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17767305,
+        "last_serial": 18230614,
         "urls": [
             {
                 "comment_text": "",
@@ -290,7 +290,6 @@
                 "Programming Language :: Python :: 3.10",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "# OTELib\n\n[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/otelib?logo=pypi)](https://pypi.org/project/otelib)\n[![PyPI](https://img.shields.io/pypi/v/otelib?logo=pypi)](https://pypi.org/project/otelib)\n[![Codecov master](https://img.shields.io/codecov/c/github/EMMC-ASBL/otelib/master?logo=codecov)](https://app.codecov.io/gh/EMMC-ASBL/otelib)\n[![CI - Tests](https://github.com/EMMC-ASBL/otelib/actions/workflows/ci_tests.yml/badge.svg?branch=master)](https://github.com/EMMC-ASBL/otelib/actions/workflows/ci_tests.yml?query=branch%3Amaster)\n[![GitHub commit activity](https://img.shields.io/github/commit-activity/m/EMMC-ASBL/otelib?logo=github)](https://github.com/EMMC-ASBL/otelib/pulse)\n[![GitHub last commit](https://img.shields.io/github/last-commit/EMMC-ASBL/otelib?logo=github)](https://github.com/EMMC-ASBL/otelib/pulse)\n\nOTELib is a small Python library on top of the OTEAPI, that provides a simple and pythonic interface to the REST services.\n\nIt makes it very simple to configure, set up and run a pipeline based on the pipes and filter design pattern.\n\n## Content\n\n* [Overview](#overview)\n* [How to use OTELib](#how-to-use-otelib)\n* [Session](#session)\n* [How to run the pore fraction example](#how-to-run-the-pore-fraction-example)\n* [License](#license)\n\n## Overview\n\nThe OTEAPI provides a REST API for connecting a sequence of microservices into a pipeline for connecting simulation tools to data sources in a very flexible and reusable way.\nOTELib provides a simple Python interface to OTEAPI that makes it easy to utilise OTEAPI from user applications and Python scripts/notebooks as illustrated in the figure below.\n\n![OTELib overview](docs/img/otelib-overview.png)\n\n_**Figure:** Overview showing how the OTELib can be used by user applications to access data and simulation tools via a simple Python interface._\n\nOTEAPI utilises the [pipes and filter](https://en.wikipedia.org/wiki/Pipeline_(software)) software design pattern to separate the process of connecting to external data resources, mapping it to a common ontology (for interoperability), data processing and running simulations into a set of reusable components.\nThis design provides a very high degree of flexibility and is easy to maintain due to the modularity, making it well suited for use in EU projects with distributed and loosely coupled teams.\nThe pipes and filters themselves are implemented as microservices that can be fetched from a docker repository.\n\nIn OTELib the pipes and filters are represented by classes - one Pipe class and currently 4 generic filter classes.\nIt uses the [strategy](https://en.wikipedia.org/wiki/Strategy_pattern) software design pattern is used to specify the underlying microservice.\n\n![OTELib overview](docs/img/classes.svg)\n\n* **Pipe:** represent data with a type and connects the output from one filter into the input of another filter.\n  Apart from connecting filters, pipes may also have some additional features, including (not implemented yet):\n\n  * Provide access to data and querying.\n  * Performing authorisation checks.\n  * Provide caching to avoid unnecessary repeating previous operations.\n    In order to avoid unauthorised access to the cache, the cache may utilise access tokens for authorisation.\n    If needed different caching strategies may be supported.\n\n  Pipes will be created transparently by OTELib, so as an user, you will normally not interact with pipes.\n* **DataResource:** is a filter intended to connect to external data resources and allow the user to perform operations like query, read from or write to the resource.\n  Where it make sense, some data resource filters may implement full CRUD (create, read, update, and delete) support.\n\n  If the DataResource filter reads from a resource, its `get()` method will use a given data model (which may be generated on the fly) and store the content acquired data according to that.\n  It will return a reference to the internal data representation.\n* **Mapping:** is a filter intended to map the data model describing the input to concepts in a common ontology.\n  The mappings themselves may either be provided during configuration of the filter or fetched from a triplestore.\n* **DataFilter:** is a filter intended for fast data processing, like simple data conversions.\n  The `get()` method will not return before the output is generated.\n* **Transformation:** is a filter intended for more time-consuming data processing, like simulations or demanding data conversions.\n  It supports polling and waiting for the transformation to finish.\n\n## How to use OTELib\n\nLets assume that you want to set up a simple pipeline as shown in the following figure.\n\n![Generic pipeline](docs/img/generic-pipeline.svg)\n\n_**Figure:** Generic pipeline connecting three filters, a DataResource filter, a Mapping filter and a Transformation filter via pipes._\n\n* The DataResource filter connects to a data resource and represents selected content from it using a data model.\n* The Mapping filter maps the data model to ontologies, making the data read from the data resource fully semantically.\n* The Transformation filter performs a transformation of the data, which could involve a simulation.\n  The result will typically be an instance of another data model.\n\nTo set up a pipeline, you will first have to connect to a running OTE server using the `OTEClient`:\n\n```python\nfrom otelib import OTEClient\n\nclient = OTEClient('http://localhost:8080')\n```\n\nThen you must configure the instances of the filters you want to use:\n\n```python\ndata_resource = client.create_dataresource(\n    downloadUrl=\"https://jpeg.org/images/jpegsystems-home.jpg\",\n    mediaType=\"image/jpeg\",\n)\nmapping = client.create_mapping(mappingType=\"triples\")\ntransformation = client.create_transformation(transformation_type=\"celery/remote\")\n```\n\nBefore you easily and elegant can combine them into a pipeline:\n\n```python\npipeline = data_resource >> mapping >> transformation\n```\n\nNote, this also transparently creates the pipes connecting the filters.\n\nTo execute the pipeline, simply call its `get()` method:\n\n```python\npipeline.get()\n```\n\nwhich will return a reference to the result of the last transformation.\nNote that no data will be read before the `get()` method of the pipeline is called.\n\nA pipeline can be reused and forked:\n\n```python\nfilter2 = client.create_filter(\n    filterType=\"filter/crop\",\n    configuration={\"crop\": [0, 0, 200, 200]},\n)\nfilter3 = client.create_filter(filterType=\"filter/blur\")\npipeline2 = pipeline >> filter2\npipeline3 = pipeline >> filter3\n```\n\n> **Note**: The `filter/blur` filter strategy does not exist in the core OTEAPI package.\n> This strategy should come from another plugin package.\n\nAs well as merged:\n\n```python\npipeline4 = pipeline2 + pipeline3\n```\n\n### Session\n\nA pipeline is executed by calling its `get()` method which will call the `get()` method of the last filter, which will call the `get()` method of its input pipe and so forth.\nHence, a pipeline is executed upstream, from the back to the front, while the data is communicated downstream.\n\nThe purpose of a _session_ is to allow the user or downstream filters to provide configurations consumed by filters further upstream.\nIt is implemented as a common dict shared by all pipes and filters in a pipeline.\nIf a session is not provided when you call the `get()` method, a new _session_ will be created and passed upstream.\n\n## License\n\nOTELib is released under the [MIT license](LICENSE) with copyright &copy; SINTEF.\n\n## Acknowledgment\n\nOTEAPI Core has been supported by the following projects:\n\n* **OntoTrans** (2020-2024) that receives funding from the European Union\u2019s Horizon 2020 Research and Innovation Programme, under Grant Agreement no. 862136.\n\n* **VIPCOAT** (2021-2025) receives funding from the European Union\u2019s Horizon 2020 Research and Innovation Programme - DT-NMBP-11-2020 Open Innovation Platform for Materials Modelling, under Grant Agreement no: 952903.\n\n* **OpenModel** (2021-2025) receives funding from the European Union\u2019s Horizon 2020 Research and Innovation Programme - DT-NMBP-11-2020 Open Innovation Platform for Materials Modelling, under Grant Agreement no: 953167.\n\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -331,7 +330,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17767305,
+        "last_serial": 18230614,
         "urls": [
             {
                 "comment_text": "",
@@ -372,6 +371,108 @@
                 "upload_time": "2023-04-19T07:47:46",
                 "upload_time_iso_8601": "2023-04-19T07:47:46.504523Z",
                 "url": "https://files.pythonhosted.org/packages/22/03/fa5c87679baed489486f04c78c670aad3f5d34235f44d1055f542eff770f/otelib-0.3.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.3.1": {
+        "info": {
+            "author": "",
+            "author_email": "SINTEF <TEAM4.0@SINTEF.no>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 2 - Pre-Alpha",
+                "License :: OSI Approved :: MIT License",
+                "Natural Language :: English",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# OTELib\n\n[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/otelib?logo=pypi)](https://pypi.org/project/otelib)\n[![PyPI](https://img.shields.io/pypi/v/otelib?logo=pypi)](https://pypi.org/project/otelib)\n[![Codecov master](https://img.shields.io/codecov/c/github/EMMC-ASBL/otelib/master?logo=codecov)](https://app.codecov.io/gh/EMMC-ASBL/otelib)\n[![CI - Tests](https://github.com/EMMC-ASBL/otelib/actions/workflows/ci_tests.yml/badge.svg?branch=master)](https://github.com/EMMC-ASBL/otelib/actions/workflows/ci_tests.yml?query=branch%3Amaster)\n[![GitHub commit activity](https://img.shields.io/github/commit-activity/m/EMMC-ASBL/otelib?logo=github)](https://github.com/EMMC-ASBL/otelib/pulse)\n[![GitHub last commit](https://img.shields.io/github/last-commit/EMMC-ASBL/otelib?logo=github)](https://github.com/EMMC-ASBL/otelib/pulse)\n\nOTELib is a small Python library on top of the OTEAPI, that provides a simple and pythonic interface to the REST services.\n\nIt makes it very simple to configure, set up and run a pipeline based on the pipes and filter design pattern.\n\n## Content\n\n* [Overview](#overview)\n* [How to use OTELib](#how-to-use-otelib)\n* [Session](#session)\n* [How to run the pore fraction example](#how-to-run-the-pore-fraction-example)\n* [License](#license)\n\n## Overview\n\nThe OTEAPI provides a REST API for connecting a sequence of microservices into a pipeline for connecting simulation tools to data sources in a very flexible and reusable way.\nOTELib provides a simple Python interface to OTEAPI that makes it easy to utilise OTEAPI from user applications and Python scripts/notebooks as illustrated in the figure below.\n\n![OTELib overview](docs/img/otelib-overview.png)\n\n_**Figure:** Overview showing how the OTELib can be used by user applications to access data and simulation tools via a simple Python interface._\n\nOTEAPI utilises the [pipes and filter](https://en.wikipedia.org/wiki/Pipeline_(software)) software design pattern to separate the process of connecting to external data resources, mapping it to a common ontology (for interoperability), data processing and running simulations into a set of reusable components.\nThis design provides a very high degree of flexibility and is easy to maintain due to the modularity, making it well suited for use in EU projects with distributed and loosely coupled teams.\nThe pipes and filters themselves are implemented as microservices that can be fetched from a docker repository.\n\nIn OTELib the pipes and filters are represented by classes - one Pipe class and currently 4 generic filter classes.\nIt uses the [strategy](https://en.wikipedia.org/wiki/Strategy_pattern) software design pattern is used to specify the underlying microservice.\n\n![OTELib overview](docs/img/classes.svg)\n\n* **Pipe:** represent data with a type and connects the output from one filter into the input of another filter.\n  Apart from connecting filters, pipes may also have some additional features, including (not implemented yet):\n\n  * Provide access to data and querying.\n  * Performing authorisation checks.\n  * Provide caching to avoid unnecessary repeating previous operations.\n    In order to avoid unauthorised access to the cache, the cache may utilise access tokens for authorisation.\n    If needed different caching strategies may be supported.\n\n  Pipes will be created transparently by OTELib, so as an user, you will normally not interact with pipes.\n* **DataResource:** is a filter intended to connect to external data resources and allow the user to perform operations like query, read from or write to the resource.\n  Where it make sense, some data resource filters may implement full CRUD (create, read, update, and delete) support.\n\n  If the DataResource filter reads from a resource, its `get()` method will use a given data model (which may be generated on the fly) and store the content acquired data according to that.\n  It will return a reference to the internal data representation.\n* **Mapping:** is a filter intended to map the data model describing the input to concepts in a common ontology.\n  The mappings themselves may either be provided during configuration of the filter or fetched from a triplestore.\n* **DataFilter:** is a filter intended for fast data processing, like simple data conversions.\n  The `get()` method will not return before the output is generated.\n* **Transformation:** is a filter intended for more time-consuming data processing, like simulations or demanding data conversions.\n  It supports polling and waiting for the transformation to finish.\n\n## How to use OTELib\n\nLets assume that you want to set up a simple pipeline as shown in the following figure.\n\n![Generic pipeline](docs/img/generic-pipeline.svg)\n\n_**Figure:** Generic pipeline connecting three filters, a DataResource filter, a Mapping filter and a Transformation filter via pipes._\n\n* The DataResource filter connects to a data resource and represents selected content from it using a data model.\n* The Mapping filter maps the data model to ontologies, making the data read from the data resource fully semantically.\n* The Transformation filter performs a transformation of the data, which could involve a simulation.\n  The result will typically be an instance of another data model.\n\nTo set up a pipeline, you will first have to connect to a running OTE server using the `OTEClient`:\n\n```python\nfrom otelib import OTEClient\n\nclient = OTEClient('http://localhost:8080')\n```\n\nThen you must configure the instances of the filters you want to use:\n\n```python\ndata_resource = client.create_dataresource(\n    downloadUrl=\"https://jpeg.org/images/jpegsystems-home.jpg\",\n    mediaType=\"image/jpeg\",\n)\nmapping = client.create_mapping(mappingType=\"triples\")\ntransformation = client.create_transformation(transformation_type=\"celery/remote\")\n```\n\nBefore you easily and elegant can combine them into a pipeline:\n\n```python\npipeline = data_resource >> mapping >> transformation\n```\n\nNote, this also transparently creates the pipes connecting the filters.\n\nTo execute the pipeline, simply call its `get()` method:\n\n```python\npipeline.get()\n```\n\nwhich will return a reference to the result of the last transformation.\nNote that no data will be read before the `get()` method of the pipeline is called.\n\nA pipeline can be reused and forked:\n\n```python\nfilter2 = client.create_filter(\n    filterType=\"filter/crop\",\n    configuration={\"crop\": [0, 0, 200, 200]},\n)\nfilter3 = client.create_filter(filterType=\"filter/blur\")\npipeline2 = pipeline >> filter2\npipeline3 = pipeline >> filter3\n```\n\n> **Note**: The `filter/blur` filter strategy does not exist in the core OTEAPI package.\n> This strategy should come from another plugin package.\n\nAs well as merged:\n\n```python\npipeline4 = pipeline2 + pipeline3\n```\n\n### Session\n\nA pipeline is executed by calling its `get()` method which will call the `get()` method of the last filter, which will call the `get()` method of its input pipe and so forth.\nHence, a pipeline is executed upstream, from the back to the front, while the data is communicated downstream.\n\nThe purpose of a _session_ is to allow the user or downstream filters to provide configurations consumed by filters further upstream.\nIt is implemented as a common dict shared by all pipes and filters in a pipeline.\nIf a session is not provided when you call the `get()` method, a new _session_ will be created and passed upstream.\n\n## License\n\nOTELib is released under the [MIT license](LICENSE) with copyright &copy; SINTEF.\n\n## Acknowledgment\n\nOTEAPI Core has been supported by the following projects:\n\n* **OntoTrans** (2020-2024) that receives funding from the European Union\u2019s Horizon 2020 Research and Innovation Programme, under Grant Agreement no. 862136.\n\n* **VIPCOAT** (2021-2025) receives funding from the European Union\u2019s Horizon 2020 Research and Innovation Programme - DT-NMBP-11-2020 Open Innovation Platform for Materials Modelling, under Grant Agreement no: 952903.\n\n* **OpenModel** (2021-2025) receives funding from the European Union\u2019s Horizon 2020 Research and Innovation Programme - DT-NMBP-11-2020 Open Innovation Platform for Materials Modelling, under Grant Agreement no: 953167.\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "OTE,OTE-API",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "otelib",
+            "package_url": "https://pypi.org/project/otelib/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/otelib/",
+            "project_urls": {
+                "Changelog": "https://github.com/EMMC-ASBL/otelib/blob/master/CHANGELOG.md",
+                "Documentation": "https://EMMC-ASBL.github.io/otelib",
+                "Home": "https://github.com/EMMC-ASBL/otelib",
+                "Issue Tracker": "https://github.com/EMMC-ASBL/otelib/issues",
+                "Package": "https://pypi.org/project/otelib",
+                "Source": "https://github.com/EMMC-ASBL/otelib"
+            },
+            "release_url": "https://pypi.org/project/otelib/0.3.1/",
+            "requires_dist": [
+                "oteapi-core >=0.4.2,<1",
+                "pre-commit ~=3.3 ; extra == \"dev\"",
+                "pylint ~=2.17 ; extra == \"dev\"",
+                "pytest ~=7.3 ; extra == \"dev\"",
+                "pytest-cov ~=4.0 ; extra == \"dev\"",
+                "requests-mock ~=1.10 ; extra == \"dev\""
+            ],
+            "requires_python": "~=3.9",
+            "summary": "Open Translation Environment (OTE) REST API client library.",
+            "version": "0.3.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18230614,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6ea4088a32eb06bb4e8556a3f42ca1f2271b5f45a4e330705cf8a29ecf77a5ff",
+                    "md5": "7856913341208911086e17c036280171",
+                    "sha256": "5dc916831cb8d86959fc83ed6d9341ebdb8f8828ccbcae9d3c34496d0120721d"
+                },
+                "downloads": -1,
+                "filename": "otelib-0.3.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "7856913341208911086e17c036280171",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": "~=3.9",
+                "size": 21930,
+                "upload_time": "2023-05-24T14:00:12",
+                "upload_time_iso_8601": "2023-05-24T14:00:12.775929Z",
+                "url": "https://files.pythonhosted.org/packages/6e/a4/088a32eb06bb4e8556a3f42ca1f2271b5f45a4e330705cf8a29ecf77a5ff/otelib-0.3.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3a0f8ae550c787abb5ee036dd46da920fad7734cd13ceb52e72d8f242d492189",
+                    "md5": "91e44399a2405714351137e357c7c83b",
+                    "sha256": "b3a57431f0ef84b65a41678812ce19632d5e2db6b82e0bb880f797384ab2d70d"
+                },
+                "downloads": -1,
+                "filename": "otelib-0.3.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "91e44399a2405714351137e357c7c83b",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": "~=3.9",
+                "size": 99035,
+                "upload_time": "2023-05-24T14:00:14",
+                "upload_time_iso_8601": "2023-05-24T14:00:14.744364Z",
+                "url": "https://files.pythonhosted.org/packages/3a/0f/8ae550c787abb5ee036dd46da920fad7734cd13ceb52e72d8f242d492189/otelib-0.3.1.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

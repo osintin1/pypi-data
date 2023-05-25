@@ -1,0 +1,93 @@
+{
+    "2.1": {
+        "info": {
+            "author": "Caleb Helbling",
+            "author_email": "Caleb Helbling <caleb.helbling@yahoo.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: MacOS",
+                "Operating System :: POSIX :: Linux",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# dihash\nPython implementation of directed graph hashing, from the paper \"Directed Graph Hashing\"\n\n# Version 2.0\ndihash has been updated to 2.0, which is a rewrite of 1.0 with bugfixes and cleaner code. An updated version of the paper is now available on arXiv at https://arxiv.org/abs/2002.06653. Unit tests have been added, as well as a benchmarking script. The hashes of 2.0 are not backward compatible with 1.0 due to a re-write of the string encoding function.\n\n# Version 2.1\nA critical bug has been fixed with the color ordering passed to pynauty. Previously I had assumed that the order of the node colors passed to pynauty did not matter, however testing revealed this not to be the case. The issue was resolved by sorting the coloring by label lexiographical order before passing to pynauty.\n\n# Dependencies\n- Python 3\n- NetworkX: https://networkx.org/\n- pynauty: The main repository now supports computing orbits, which means using a forked version is no longer necessary. See https://github.com/pdobsan/pynauty for more details. Note that when we installed pynauty with pip3, we had to run `pip install --no-binary pynauty pynauty` since the default binary gave segmentation faults. pynauty does not seem to have Windows support, which means that Linux/Unix is a requirement for this library as well.\n\n# How to Use\nThe primary graph hashing algorithm has the following definiton:\n\n```\n(g_hash, node_hashes) = dihash.hash_graph(g, hash_nodes=True, apply_quotient=False, string_hash_fun=hash_sha256)\n```\n\n`hash_graph` has the following inputs:\n- g: A NetworkX digraph. Each node should have a 'label' entry in its node attribute dictionary. The value of this entry should be a string which determines the label of that node. g may optionally have a graph attribute named 'label', which is a label for the entire graph\n- hash_nodes: A boolean value. If true, hash_graph also returns a dictionary giving the hashes of all nodes in the graph\n- apply_quotient: A boolean value. If true, the input graph g is run through the quotient_fixpoint function, which computes (G/Orb)/Orb... prior to hashing the graph.\n- string_hash_fun: A function which maps strings to a string. The default value, hash_sha256 hashes by using hashlib.sha256 and converting to the result to a hex digest.\n\n`hash_graph` has the following outputs:\n- g_hash: A hex digest of the hash of the entire graph\n- node_hashes: If hash_nodes is False, this value is None. If hash_nodes is True, this value is a dictionary mapping nodes to their hash hex digests.\n\nExample:\n\n```\ng = nx.DiGraph()\ng.add_node(0)\ng.add_node(1)\ng.add_node(2)\ng.nodes[0]['label'] = 'a'\ng.nodes[1]['label'] = 'a'\ng.nodes[2]['label'] = 'a'\n\ng.add_edge(0, 1)\ng.add_edge(1, 2)\ng.add_edge(2, 0)\n\n(g_hash, node_hashes) = dihash.hash_graph(g, apply_quotient=False)\n\nprint(g_hash)\nprint(node_hashes)\n```\n\nThe following output is printed:\n\n```\nb37deb748c68bd738fdb647aa638ad8654c690d8ce14507fd21f1f299faf7ed5\n{0: 'ad6321ae4eb544ab1f00db6436938427e01176cc3b4fed44ef0c6a0a88a0a7c3', 1: 'ad6321ae4eb544ab1f00db6436938427e01176cc3b4fed44ef0c6a0a88a0a7c3', 2: 'ad6321ae4eb544ab1f00db6436938427e01176cc3b4fed44ef0c6a0a88a0a7c3'}\n```\n\nThe Merkle graph hashing algorithm has the following definition:\n\n```\n(scc_hashes, cond, node_hashes) = merkle_hash_graph(g, nodes_to_hash=None, apply_quotient=False, precomputed_hashes=None, string_hash_fun=hash_sha256)\n```\n\n`merkle_hash_graph` has the following inputs:\n- g: A NetworkX digraph. Each node should have a 'label' entry in its node attribute dictionary. The value of this entry should be a string which determines the label of that node.\n- nodes_to_hash: A list of nodes to hash in the graph. If nodes_to_hash is None, all nodes in the input graph will be hashed.\n- apply_quotient: A boolean value. If true, the SCCs in the hashing function will be run through the quotient_fixpoint function prior to hashing.\n- precomputed_hashes: A dictionary mapping nodes to their hashes (should be encoded as a string hexdigest). This parameter is useful if you are hashing graphs built up over time. If a node has a hash set in the dictionary, that node's precomputed hash will be used instead of recursively hashing the graph.\n- string_hash_fun: A function which maps strings to a string. The default value, hash_sha256 hashes by using hashlib.sha256 and converting to the result to a hex digest.\n\n`merkle_hash_graph` has the following outputs:\n- scc_hashes: A dictionary mapping strongly connected component integer IDs to string hex digests. The integers represent specific strongly connected components in the input graph. To retrieve the SCC integer ID for some node n, use `cond.graph['mapping'][n]`.\n- cond: The condensation digraph of the input graph, computed using [`nx.algorithms.components.condensation`](https://networkx.org/documentation/stable/reference/algorithms/generated/networkx.algorithms.components.condensation.html).\n- node_hashes: A dictionary mapping nodes to hashes. This dictionary includes the hashes of all nodes that were involved in the computation of `merkle_hash_graph`.\n\nExample:\n\n```\ng = nx.DiGraph()\ng.add_node(0)\ng.add_node(1)\ng.add_node(2)\ng.add_node(3)\ng.add_node(4)\ng.add_node(5)\ng.add_node(6)\n\ng.nodes[0]['label'] = 'a'\ng.nodes[1]['label'] = 'a'\ng.nodes[2]['label'] = 'a'\ng.nodes[3]['label'] = 'a'\ng.nodes[4]['label'] = 'a'\ng.nodes[5]['label'] = 'a'\ng.nodes[6]['label'] = 'a'\n\ng.add_edge(0, 1)\ng.add_edge(0, 2)\n\ng.add_edge(1, 5)\ng.add_edge(4, 6)\n\ng.add_edge(1, 2)\ng.add_edge(2, 1)\ng.add_edge(2, 3)\ng.add_edge(3, 2)\ng.add_edge(3, 4)\ng.add_edge(4, 3)\n\n(scc_hashes, cond, node_hashes) = dihash.merkle_hash_graph(g, apply_quotient=False)\n\nprint(node_hashes[1])\nprint(node_hashes[2])\nprint(node_hashes[3])\nprint(node_hashes[4])\nprint(scc_hashes[cond.graph['mapping'][0]]) # Print the hash for the SCC containing node 0\n```\n\nThe following output is printed:\n\n```\n0794c37c25dd026eab1c46c607a7a44f1faaf32f8d0f7dfdaf7728a25707a9dc\n4ad992c5399689c950e46ec0b4ae4921457f94a319ecba4b3d1f66d8ef00463b\n4ad992c5399689c950e46ec0b4ae4921457f94a319ecba4b3d1f66d8ef00463b\n0794c37c25dd026eab1c46c607a7a44f1faaf32f8d0f7dfdaf7728a25707a9dc\ne9abdcec4447c828c2f259e8bf30e5bf0001da93e3e09fa01654e6d54018d42a\n```\n\nIf we want to simultaneously create multiple node pointers into the given input graph, we can use the hash_graph_node_set function. This function has the following signature:\n\n```\n(g_hash, node_hashes) = hash_graph_node_set(g, node_set, apply_quotient=False, string_hash_fun=hash_sha256)\n```\n\nThe node_set input should be a set of nodes that we want to create pointers for into the graph. The function works by modifying the labels of the graph nodes.\n\nExample:\n```\n# Create a cycle graph with 4 nodes\ng2 = nx.DiGraph()\ng2.add_node(1)\ng2.add_node(2)\ng2.add_node(3)\ng2.add_node(4)\n\ng2.nodes[1]['label'] = 'node_label'\ng2.nodes[2]['label'] = 'node_label'\ng2.nodes[3]['label'] = 'node_label'\ng2.nodes[4]['label'] = 'node_label'\n\ng2.add_edge(1, 2)\ng2.add_edge(2, 3)\ng2.add_edge(3, 4)\ng2.add_edge(4, 1)\n\n(g_hash5, node_hashes5) = dihash.hash_graph_node_set(g2, {1, 2})\n(g_hash6, node_hashes6) = dihash.hash_graph_node_set(g2, {3, 4})\n\nassert(g_hash5 == g_hash6)\nassert(node_hashes5[1] != node_hashes5[2])\nassert(node_hashes6[3] != node_hashes6[4])\nassert(node_hashes5[1] == node_hashes6[3])\nassert(node_hashes5[2] == node_hashes6[4])\n```\n\nThe edge labeled digraph encoding algorithm has the following definition:\n\n`(g_out, edge_labels) = edge_labeled_digraph_to_digraph(g)`\n\nThe input graph `g` with edge labels (defined in the 'label' property of the edge) is converted to a node-labeled digraph via the encoding described in Section 14 of the nauty User's manual. Since the values of the edge labels are erased, the return value `edge_labels` is a sorted list of the set of edge labels in the input graph. If you want to hash an edge labeled digraph, remember to encode `edge_labels` as a string and assign it as the label of `g_out`.\n\nThe multigraph encoding algorithm has the following definition:\n\n`g_out = multigraph_to_edge_labeled_digraph(g)`\n\nThe input graph `g` is a node labeled multigraph. Parallel (duplicate) edges are encoded in the edge label of `g_out`. The label is defined to be the number of edges encoded as a base 10 string.\n\n`multigraph_to_edge_labeled_digraph` is an auxillary function that converts a node labelled NetworkX MultiDiGraph into an isomorphic NetworkX edge labeled DiGraph. This is\n\n```\ng_prime = dihash.multigraph_to_digraph(g)\n```\n\nExample:\n\n```\ng = nx.MultiDiGraph()\ng.add_node(0)\ng.add_node(1)\ng.nodes[0]['label'] = 'a'\ng.nodes[1]['label'] = 'b'\ng.add_edge(0, 1)\ng.add_edge(0, 1)\n\ng_prime = dihash.multigraph_to_edge_labeled_digraph(g)\n\nprint(list(g_prime.nodes()))\nprint(list(g_prime.edges()))\nprint(g_prime.edges[0,1]['label'])\n```\n\nThe following output is printed:\n\n```\n[0, 1]\n[(0, 1)]\n2\n```\n\n# Further Examples\n\nFor further examples, see the unit test script `tests/hash_impl_test.py`.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "dihash",
+            "package_url": "https://pypi.org/project/dihash/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/dihash/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/calebh/dihash/issues",
+                "Homepage": "https://github.com/calebh/dihash"
+            },
+            "release_url": "https://pypi.org/project/dihash/2.1/",
+            "requires_dist": [
+                "pynauty",
+                "networkx"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "Python implementation of various directed graph hashing functions.",
+            "version": "2.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18237030,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e76996324b3b78cd24ab92b19f10fb295268dbcba9b03b587ba17a2dde250e82",
+                    "md5": "0f7d75293488ca4296218dbd0489c28e",
+                    "sha256": "0387f66a9913fda22b92bf2ce937e0b173cd4be2e765844becf1da756c8320de"
+                },
+                "downloads": -1,
+                "filename": "dihash-2.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "0f7d75293488ca4296218dbd0489c28e",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 11175,
+                "upload_time": "2023-05-24T23:12:13",
+                "upload_time_iso_8601": "2023-05-24T23:12:13.142380Z",
+                "url": "https://files.pythonhosted.org/packages/e7/69/96324b3b78cd24ab92b19f10fb295268dbcba9b03b587ba17a2dde250e82/dihash-2.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "0703e762a97281eecbd1f4c8ad731de0b635307eb1fba2e182b4a25bebf618f6",
+                    "md5": "bc15365ee0091051aa77e1c647ef41de",
+                    "sha256": "f122d960b690439b51c45314eb56ae26b5ed9578ff37670696d3c97607ea30dc"
+                },
+                "downloads": -1,
+                "filename": "dihash-2.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "bc15365ee0091051aa77e1c647ef41de",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 12906,
+                "upload_time": "2023-05-24T23:12:14",
+                "upload_time_iso_8601": "2023-05-24T23:12:14.817575Z",
+                "url": "https://files.pythonhosted.org/packages/07/03/e762a97281eecbd1f4c8ad731de0b635307eb1fba2e182b4a25bebf618f6/dihash-2.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
