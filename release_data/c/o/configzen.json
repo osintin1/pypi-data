@@ -41,7 +41,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18230785,
+        "last_serial": 18260762,
         "urls": [
             {
                 "comment_text": "",
@@ -130,7 +130,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18230785,
+        "last_serial": 18260762,
         "urls": [
             {
                 "comment_text": "",
@@ -219,7 +219,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18230785,
+        "last_serial": 18260762,
         "urls": [
             {
                 "comment_text": "",
@@ -308,7 +308,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18230785,
+        "last_serial": 18260762,
         "urls": [
             {
                 "comment_text": "",
@@ -397,7 +397,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18230785,
+        "last_serial": 18260762,
         "urls": [
             {
                 "comment_text": "",
@@ -456,7 +456,6 @@
                 "Programming Language :: Python :: 3.11",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "# configzen\n_configzen_ \u2013 managing configuration files easily.\nCurrently under development, not ready for production use.\n\n\u2b50 Contributions welcome! \u2b50\n\n## What is this?\nFor a more precise and also philosophic explanation, see the wiki article [configzen \u2013 explanation without code](https://github.com/bswck/configzen/wiki/configzen-%E2%80%93-explanation-without-code).\n\n_configzen_ combines the power of [pydantic](https://pydantic-docs.helpmanual.io/) \nand [anyconfig](https://github.com/ssato/python-anyconfig) to provide the most simplistic\nway on Earth of managing configuration files in your Python projects.\n\nThanks to this, instead of manually using \n`pyyaml` for YAML configuration files, `configparser` for INI files, `json` for JSON files, etc. \nyou can create a data model of your configuration and let _configzen_ do the rest and provide you \nwith some extra features on top of that, such as both synchronous and asynchronous, \npreferably full or partial reloading and saving of your structured configuration.\n\n_configzen_ will help you to organize your configuration files and make them easy to use \nand maintain. One of the core features of _configzen_ is that it allows you to import \nconfiguration files inside other configuration files, which is especially useful when you\nhave a lot of configuration files, and you want to avoid repeating yourself.\n\n\n## Features\n\n### Managing content\nLet's see how it looks like in practice. Let's say you have a YAML configuration file like this:\n```yaml\n# database.yaml\nhost: 127.0.0.1\nport: 5432\nuser: postgres\n```\nYou can create a data model for it like this:\n\n```python\n# config.py\nfrom ipaddress import IPv4Address, IPv6Address\nfrom configzen import ConfigModel, ConfigMeta, ConfigField\n\n\nclass DatabaseConfig(ConfigModel):\n    host: IPv4Address | IPv6Address\n    port: int\n    user: str\n    password: str = ConfigField(exclude=True)\n    \n    class Config(ConfigMeta):\n        resource = \"database.yaml\"\n        validate_assignment = True\n        env_prefix = \"DB_\"\n\n\ndb_config = DatabaseConfig.load()\n```\n\nAs simple as that!\nThis way, you can load your configuration from a file as well as from the environment variables\n`DB_HOST`, `DB_PORT`, `DB_USER` and `DB_PASSWORD`. Since `password` is a field created with \nthe option `exclude=True`, it will not be included in the configuration's exported data: that\nguarantees that your password won't leak into `database.yaml` on save \u2013 but you may still pass it \nthrough an environment variable (here \u2013 the mentioned `DB_PASSWORD`).\n\n[pydantic](https://docs.pydantic.dev/latest/) will take care of parsing and validating the loaded data.\n\nYou can now use the `db_config` object to access the configuration values:\n\n```python\n>>> db_config.host\nIPv4Address('127.0.0.1')\n```\n\nmodify them, if the pydantic model allows it:\n\n```python\n>>> db_config.host = \"0.0.0.0\"\n>>> db_config.host\nIPv4Address('0.0.0.0')\n```\n\nas well as reload particular values, without touching the rest of the configuration:\n\n```python\n>>> db_config.at(\"port\").reload()\n5432\n>>> db_config\nDatabaseConfig(host=IPv4Address('0.0.0.0'), port=5432, user='postgres', password='password')\n>>> db_config.at(\"host\").reload()\nIPv4Address('127.0.0.1')\n>>> db_config\nDatabaseConfig(host=IPv4Address('127.0.0.1'), port=5432, user='postgres', password='password')\n```\n\nor reload the whole configuration:\n\n```python\n>>> db_config.port = 1234\n>>> db_config.reload()\nDatabaseConfig(host=IPv4Address('127.0.0.1'), port=5432, user='postgres', password='password')\n```\n\nor save a particular value, without touching the rest of the configuration:\n\n```python\n>>> db_config.host = \"0.0.0.0\"\n>>> db_config.port = 443\n>>> db_config\nDatabaseConfig(host=IPv4Address('0.0.0.0'), port=443, user='postgres', password='password')\n>>> db_config.at(\"host\").save()\n40\n>>> db_config.reload()\nDatabaseConfig(host=IPv4Address('0.0.0.0'), port=5432, user='postgres', password='password')\n```\n\nor save the whole configuration:\n\n```python\n>>> db_config.save()\n39\n```\n\n### Preprocessing directives\n_configzen_ allows you to use built-in preprocessing directives in your configuration files,\noffering features such as importing other configuration files in order to extend \nyour base configuration without writing any code. You might think of it as something\nthat is analogous to [Azure DevOps YAML templates](https://docs.microsoft.com/en-us/azure/devops/pipelines/process/templates?view=azure-devops),\nbut for configuration files, broadened to any configuration file format and with some extra features planned.\n\nThanks to this, you can write your configuration in a modular way, and avoid repeating yourself.\n\nLet's say you have a base configuration file like this (`base.json`):\n\n```json\n{\n  \"i18n\": {\n    \"language\": \"en\",\n    \"timezone\": \"UTC\"\n  },\n  \"app\": {\n    \"debug\": true\n  }\n}\n```\n\nTo extend this configuration, you can create another configuration file like this,\noverriding desired sections as needed:\n\n```yaml\n# production.yaml\n^extend: base.json\n\n+app:\n  debug: false\n```\n\nUsing `+` in front of a key will update the section already defined at that key,\ninstead of replacing it.\n\nNotice how configuration file formats don't matter in _configzen_: you can \nextend JSON configurations in YAML, but that might be as well any other format\namong [JSON](https://en.wikipedia.org/wiki/JSON), [INI](https://en.wikipedia.org/wiki/INI_file),\n[XML](https://en.wikipedia.org/wiki/XML), [.properties](https://en.wikipedia.org/wiki/.properties),\nshellvars (\nsee [Augeas docs on shellvars](https://augeas.net/docs/references/1.4.0/lenses/files/shellvars-aug.html)),\n[YAML](https://yaml.org), [TOML](https://en.wikipedia.org/wiki/TOML),\n[Amazon Ion](https://en.wikipedia.org/wiki/Ion_(serialization_format)),\n[BSON](https://en.wikipedia.org/wiki/BSON), [CBOR](https://en.wikipedia.org/wiki/CBOR),\n[ConfigObj](https://configobj.readthedocs.io/en/latest/configobj.html#introduction) or\n[MessagePack](https://en.wikipedia.org/wiki/MessagePack).\n\nThe above example is equivalent to as if you used:\n\n```yaml\n# production.yaml\ni18n:\n  language: en\n  timezone: UTC\napp:\n  debug: false\n```\n\nWith the difference that the primary example, while saving the configuration,\nwill preserve the relation to the base configuration file, so that you can reload\nthe configuration, and it will be updated with the changes made in the base configuration file.\n\n\n## Setup\nFor using _configzen_ in your project, you need to install it first:\n\n```bash\npip install configzen\n```\n\nFor development, you can clone the repository and install its dependencies with [poetry](https://python-poetry.org/):\n```bash\npoetry install --with dev\n```\n\n## License\n[MIT License](https://choosealicense.com/licenses/mit/)\n\n## Contributing\nContributions are welcome! Feel free to [open an issue](https://github.com/bswck/configzen/issues/new/choose) \nor [submit a pull request](https://github.com/bswck/configzen/compare).\n\n## Credits\n* [@Lunarmagpie](https://github.com/Lunarmagpie) for _crucial_ design tips and ideas.\n \n## Author\n* [bswck](https://github.com/bswck) (contact: bswck.dev@gmail.com or via [Discord](https://discord.com/) `bswck#8238`)\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -487,7 +486,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18230785,
+        "last_serial": 18260762,
         "urls": [
             {
                 "comment_text": "",
@@ -528,6 +527,363 @@
                 "upload_time": "2023-05-24T14:13:45",
                 "upload_time_iso_8601": "2023-05-24T14:13:45.376407Z",
                 "url": "https://files.pythonhosted.org/packages/30/94/47aa6641af7d1a1fa8cc70912a2af36c935ad72c91b830011ce24f74c791/configzen-0.1.36.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.37": {
+        "info": {
+            "author": "bswck",
+            "author_email": "bswck.dev@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "configzen",
+            "package_url": "https://pypi.org/project/configzen/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/configzen/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/configzen/0.1.37/",
+            "requires_dist": [
+                "pydantic (>=1.10.7,<2.0.0)",
+                "anyconfig (>=0.13.0,<0.14.0)",
+                "typing-extensions (>=4.5.0,<5.0.0) ; python_version >= \"3.9\" and python_version < \"3.11\""
+            ],
+            "requires_python": ">=3.9,<4.0",
+            "summary": "The easiest way to manage configuration files in Python",
+            "version": "0.1.37",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18260762,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "67c2905cd3524351e3a26ab3544cd97794e2ad6059e28dde5257543fcfd2d7ef",
+                    "md5": "5ce7e120dd48a5db0ceaea218e05c2b6",
+                    "sha256": "bd30d8df3319de63de06da25c1a267ea5de65c69c685d7917dfaaf02f9ecaf8b"
+                },
+                "downloads": -1,
+                "filename": "configzen-0.1.37-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "5ce7e120dd48a5db0ceaea218e05c2b6",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9,<4.0",
+                "size": 23392,
+                "upload_time": "2023-05-26T07:05:02",
+                "upload_time_iso_8601": "2023-05-26T07:05:02.885103Z",
+                "url": "https://files.pythonhosted.org/packages/67/c2/905cd3524351e3a26ab3544cd97794e2ad6059e28dde5257543fcfd2d7ef/configzen-0.1.37-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ad4e2186b0376efddb5bd7a34d0f72020a7bf7bd072abc17147ece0bf19fe524",
+                    "md5": "c8ada37bc22f19abe75672fb1dfabde2",
+                    "sha256": "ae22c08cc94479c5e78a3809a22fe6bb3bfa0add8ac06d5ec38a6c9780c5ba3a"
+                },
+                "downloads": -1,
+                "filename": "configzen-0.1.37.tar.gz",
+                "has_sig": false,
+                "md5_digest": "c8ada37bc22f19abe75672fb1dfabde2",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9,<4.0",
+                "size": 21684,
+                "upload_time": "2023-05-26T07:05:05",
+                "upload_time_iso_8601": "2023-05-26T07:05:05.062506Z",
+                "url": "https://files.pythonhosted.org/packages/ad/4e/2186b0376efddb5bd7a34d0f72020a7bf7bd072abc17147ece0bf19fe524/configzen-0.1.37.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.38": {
+        "info": {
+            "author": "bswck",
+            "author_email": "bswck.dev@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "configzen",
+            "package_url": "https://pypi.org/project/configzen/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/configzen/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/configzen/0.1.38/",
+            "requires_dist": [
+                "pydantic (>=1.10.7,<2.0.0)",
+                "anyconfig (>=0.13.0,<0.14.0)",
+                "typing-extensions (>=4.5.0,<5.0.0) ; python_version >= \"3.9\" and python_version < \"3.11\""
+            ],
+            "requires_python": ">=3.9,<4.0",
+            "summary": "The easiest way to manage configuration files in Python",
+            "version": "0.1.38",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18260762,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "728096d7a250db11571844864a9784e26a09af3a196ce32afc5bfd1bde2e6f6e",
+                    "md5": "8b92253ada83eab09ba1d88fb2205a62",
+                    "sha256": "c2e98f46e7e88df72917b0c8cc2f9b4192235322cc1e7392bbdf946d6f44cdad"
+                },
+                "downloads": -1,
+                "filename": "configzen-0.1.38-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "8b92253ada83eab09ba1d88fb2205a62",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9,<4.0",
+                "size": 23306,
+                "upload_time": "2023-05-26T09:18:19",
+                "upload_time_iso_8601": "2023-05-26T09:18:19.212136Z",
+                "url": "https://files.pythonhosted.org/packages/72/80/96d7a250db11571844864a9784e26a09af3a196ce32afc5bfd1bde2e6f6e/configzen-0.1.38-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "61cb73e8d2a4efd508856af3a1186b636967a6d69c10c5b388a11de4f00c7481",
+                    "md5": "492388657418225061ac68b1c434d0d7",
+                    "sha256": "c903d71e878ac459364b6887ffc6cfb066cccc3fc49f030f4d5af77837fddecf"
+                },
+                "downloads": -1,
+                "filename": "configzen-0.1.38.tar.gz",
+                "has_sig": false,
+                "md5_digest": "492388657418225061ac68b1c434d0d7",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9,<4.0",
+                "size": 21600,
+                "upload_time": "2023-05-26T09:18:21",
+                "upload_time_iso_8601": "2023-05-26T09:18:21.788787Z",
+                "url": "https://files.pythonhosted.org/packages/61/cb/73e8d2a4efd508856af3a1186b636967a6d69c10c5b388a11de4f00c7481/configzen-0.1.38.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.39": {
+        "info": {
+            "author": "bswck",
+            "author_email": "bswck.dev@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "configzen",
+            "package_url": "https://pypi.org/project/configzen/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/configzen/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/configzen/0.1.39/",
+            "requires_dist": [
+                "pydantic (>=1.10.7,<2.0.0)",
+                "anyconfig (>=0.13.0,<0.14.0)",
+                "typing-extensions (>=4.5.0,<5.0.0) ; python_version >= \"3.9\" and python_version < \"3.11\""
+            ],
+            "requires_python": ">=3.9,<4.0",
+            "summary": "The easiest way to manage configuration files in Python",
+            "version": "0.1.39",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18260762,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e1dc519c447675f0307db459690dc0ec2cc63da0335ea69fe961c9e0e6d69c3c",
+                    "md5": "2566b0ed5df2a59afac2881a1c45e757",
+                    "sha256": "fb925ab7a5d4b07da467627af3a3ac32ea74f11815b5272dc10feaea98a6af77"
+                },
+                "downloads": -1,
+                "filename": "configzen-0.1.39-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "2566b0ed5df2a59afac2881a1c45e757",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9,<4.0",
+                "size": 23380,
+                "upload_time": "2023-05-26T09:32:14",
+                "upload_time_iso_8601": "2023-05-26T09:32:14.519637Z",
+                "url": "https://files.pythonhosted.org/packages/e1/dc/519c447675f0307db459690dc0ec2cc63da0335ea69fe961c9e0e6d69c3c/configzen-0.1.39-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "85240c29107e345f08fcbb7b291d3549a1c72bb60d7a0ffce501ad839553b364",
+                    "md5": "ff008f5ea5c5870e220dc698ab5321dc",
+                    "sha256": "5269a284e160c341b47a930a6890c47e690dd3e5f8582719c7fbae4777aeae01"
+                },
+                "downloads": -1,
+                "filename": "configzen-0.1.39.tar.gz",
+                "has_sig": false,
+                "md5_digest": "ff008f5ea5c5870e220dc698ab5321dc",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9,<4.0",
+                "size": 21671,
+                "upload_time": "2023-05-26T09:32:16",
+                "upload_time_iso_8601": "2023-05-26T09:32:16.867331Z",
+                "url": "https://files.pythonhosted.org/packages/85/24/0c29107e345f08fcbb7b291d3549a1c72bb60d7a0ffce501ad839553b364/configzen-0.1.39.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.40": {
+        "info": {
+            "author": "bswck",
+            "author_email": "bswck.dev@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# configzen\n_configzen_ \u2013 managing configuration files easily.\nCurrently under development, not ready for production use.\n\n\u2b50 Contributions welcome! \u2b50\n\n## What is this?\nFor a more precise and also philosophic explanation, see the wiki article [configzen \u2013 explanation without code](https://github.com/bswck/configzen/wiki/configzen-%E2%80%93-explanation-without-code).\n\n_configzen_ combines the power of [pydantic](https://pydantic-docs.helpmanual.io/) \nand [anyconfig](https://github.com/ssato/python-anyconfig) to provide the most simplistic\nway on Earth of managing configuration files in your Python projects.\n\nThanks to this, instead of manually using \n`pyyaml` for YAML configuration files, `configparser` for INI files, `json` for JSON files, etc. \nyou can create a data model of your configuration and let _configzen_ do the rest and provide you \nwith some extra features on top of that, such as both synchronous and asynchronous, \npreferably full or partial reloading and saving of your structured configuration.\n\n_configzen_ will help you to organize your configuration files and make them easy to use \nand maintain. One of the core features of _configzen_ is that it allows you to import \nconfiguration files inside other configuration files, which is especially useful when you\nhave a lot of configuration files, and you want to avoid repeating yourself.\n\n\n## Features\n\n### Managing content\nLet's see how it looks like in practice. Let's say you have a YAML configuration file like this:\n```yaml\n# database.yaml\nhost: 127.0.0.1\nport: 5432\nuser: postgres\n```\nYou can create a data model for it like this:\n\n```python\n# config.py\nfrom ipaddress import IPv4Address, IPv6Address\nfrom configzen import ConfigModel, ConfigMeta, ConfigField\n\n\nclass DatabaseConfig(ConfigModel):\n    host: IPv4Address | IPv6Address\n    port: int\n    user: str\n    password: str = ConfigField(exclude=True)\n    \n    class Config(ConfigMeta):\n        resource = \"database.yaml\"\n        validate_assignment = True\n        env_prefix = \"DB_\"\n\n\ndb_config = DatabaseConfig.load()\n```\n\nAs simple as that!\nThis way, you can load your configuration from a file as well as from the environment variables\n`DB_HOST`, `DB_PORT`, `DB_USER` and `DB_PASSWORD`. Since `password` is a field created with \nthe option `exclude=True`, it will not be included in the configuration's exported data: that\nguarantees that your password won't leak into `database.yaml` on save \u2013 but you may still pass it \nthrough an environment variable (here \u2013 the mentioned `DB_PASSWORD`).\n\n[pydantic](https://docs.pydantic.dev/latest/) will take care of parsing and validating the loaded data.\n\nYou can now use the `db_config` object to access the configuration values:\n\n```python\n>>> db_config.host\nIPv4Address('127.0.0.1')\n```\n\nmodify them, if the pydantic model allows it:\n\n```python\n>>> db_config.host = \"0.0.0.0\"\n>>> db_config.host\nIPv4Address('0.0.0.0')\n```\n\nas well as reload particular values, without touching the rest of the configuration:\n\n```python\n>>> db_config.at(\"port\").reload()\n5432\n>>> db_config\nDatabaseConfig(host=IPv4Address('0.0.0.0'), port=5432, user='postgres', password='password')\n>>> db_config.at(\"host\").reload()\nIPv4Address('127.0.0.1')\n>>> db_config\nDatabaseConfig(host=IPv4Address('127.0.0.1'), port=5432, user='postgres', password='password')\n```\n\nor reload the whole configuration:\n\n```python\n>>> db_config.port = 1234\n>>> db_config.reload()\nDatabaseConfig(host=IPv4Address('127.0.0.1'), port=5432, user='postgres', password='password')\n```\n\nor save a particular value, without touching the rest of the configuration:\n\n```python\n>>> db_config.host = \"0.0.0.0\"\n>>> db_config.port = 443\n>>> db_config\nDatabaseConfig(host=IPv4Address('0.0.0.0'), port=443, user='postgres', password='password')\n>>> db_config.at(\"host\").save()\n40\n>>> db_config.reload()\nDatabaseConfig(host=IPv4Address('0.0.0.0'), port=5432, user='postgres', password='password')\n```\n\nor save the whole configuration:\n\n```python\n>>> db_config.save()\n39\n```\n\n### Preprocessing directives\n_configzen_ allows you to use built-in preprocessing directives in your configuration files,\noffering features such as importing other configuration files in order to extend \nyour base configuration without writing any code. You might think of it as something\nthat is analogous to [Azure DevOps YAML templates](https://docs.microsoft.com/en-us/azure/devops/pipelines/process/templates?view=azure-devops),\nbut for configuration files, broadened to any configuration file format and with some extra features planned.\n\nThanks to this, you can write your configuration in a modular way, and avoid repeating yourself.\n\nLet's say you have a base configuration file like this (`base.json`):\n\n```json\n{\n  \"i18n\": {\n    \"language\": \"en\",\n    \"timezone\": \"UTC\"\n  },\n  \"app\": {\n    \"debug\": true\n  }\n}\n```\n\nTo extend this configuration, you can create another configuration file like this,\noverriding desired sections as needed:\n\n```yaml\n# production.yaml\n^extend: base.json\n\n+app:\n  debug: false\n```\n\nUsing `+` in front of a key will update the section already defined at that key,\ninstead of replacing it.\n\nNotice how configuration file formats don't matter in _configzen_: you can \nextend JSON configurations in YAML, but that might be as well any other format\namong [JSON](https://en.wikipedia.org/wiki/JSON), [INI](https://en.wikipedia.org/wiki/INI_file),\n[XML](https://en.wikipedia.org/wiki/XML), [.properties](https://en.wikipedia.org/wiki/.properties),\nshellvars (\nsee [Augeas docs on shellvars](https://augeas.net/docs/references/1.4.0/lenses/files/shellvars-aug.html)),\n[YAML](https://yaml.org), [TOML](https://en.wikipedia.org/wiki/TOML),\n[Amazon Ion](https://en.wikipedia.org/wiki/Ion_(serialization_format)),\n[BSON](https://en.wikipedia.org/wiki/BSON), [CBOR](https://en.wikipedia.org/wiki/CBOR),\n[ConfigObj](https://configobj.readthedocs.io/en/latest/configobj.html#introduction) or\n[MessagePack](https://en.wikipedia.org/wiki/MessagePack).\n\nThe above example is equivalent to as if you used:\n\n```yaml\n# production.yaml\ni18n:\n  language: en\n  timezone: UTC\napp:\n  debug: false\n```\n\nWith the difference that the primary example, while saving the configuration,\nwill preserve the relation to the base configuration file, so that you can reload\nthe configuration, and it will be updated with the changes made in the base configuration file.\n\n\n## Setup\nFor using _configzen_ in your project, you need to install it first:\n\n```bash\npip install configzen\n```\n\nFor development, you can clone the repository and install its dependencies with [poetry](https://python-poetry.org/):\n```bash\npoetry install --with dev\n```\n\n## License\n[MIT License](https://choosealicense.com/licenses/mit/)\n\n## Contributing\nContributions are welcome! Feel free to [open an issue](https://github.com/bswck/configzen/issues/new/choose) \nor [submit a pull request](https://github.com/bswck/configzen/compare).\n\n## Credits\n* [@Lunarmagpie](https://github.com/Lunarmagpie) for _crucial_ design tips and ideas.\n \n## Author\n* [bswck](https://github.com/bswck) (contact: bswck.dev@gmail.com or via [Discord](https://discord.com/) `bswck#8238`)\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "configzen",
+            "package_url": "https://pypi.org/project/configzen/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/configzen/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/configzen/0.1.40/",
+            "requires_dist": [
+                "pydantic (>=1.10.7,<2.0.0)",
+                "anyconfig (>=0.13.0,<0.14.0)",
+                "typing-extensions (>=4.5.0,<5.0.0) ; python_version >= \"3.9\" and python_version < \"3.11\""
+            ],
+            "requires_python": ">=3.9,<4.0",
+            "summary": "The easiest way to manage configuration files in Python",
+            "version": "0.1.40",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18260762,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a7602ae4d812067d42fd81de0c7eb70555d40f3da7ffd5fe24ceb71456138468",
+                    "md5": "926d4c3f707879830b3fcb186aaa68df",
+                    "sha256": "796972d210d3cfdf328ba9bfc2c1ee0d72882308f808c5de697f590f0934025a"
+                },
+                "downloads": -1,
+                "filename": "configzen-0.1.40-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "926d4c3f707879830b3fcb186aaa68df",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9,<4.0",
+                "size": 23397,
+                "upload_time": "2023-05-26T09:49:53",
+                "upload_time_iso_8601": "2023-05-26T09:49:53.341379Z",
+                "url": "https://files.pythonhosted.org/packages/a7/60/2ae4d812067d42fd81de0c7eb70555d40f3da7ffd5fe24ceb71456138468/configzen-0.1.40-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e55931fd1236158f83a3385ce2f077cf2318e8a61e5c5924150308db6809453d",
+                    "md5": "5bf6c155fc21c086c0ecb13b91be7759",
+                    "sha256": "da45d5cc9bc0c518cbddf0f9f1a10b3dfaeff5aa41092f348863402a1b92fe47"
+                },
+                "downloads": -1,
+                "filename": "configzen-0.1.40.tar.gz",
+                "has_sig": false,
+                "md5_digest": "5bf6c155fc21c086c0ecb13b91be7759",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9,<4.0",
+                "size": 21690,
+                "upload_time": "2023-05-26T09:49:55",
+                "upload_time_iso_8601": "2023-05-26T09:49:55.924202Z",
+                "url": "https://files.pythonhosted.org/packages/e5/59/31fd1236158f83a3385ce2f077cf2318e8a61e5c5924150308db6809453d/configzen-0.1.40.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

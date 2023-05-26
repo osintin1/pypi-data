@@ -42,7 +42,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18240331,
+        "last_serial": 18257263,
         "urls": [
             {
                 "comment_text": "",
@@ -132,7 +132,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18240331,
+        "last_serial": 18257263,
         "urls": [
             {
                 "comment_text": "",
@@ -222,7 +222,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18240331,
+        "last_serial": 18257263,
         "urls": [
             {
                 "comment_text": "",
@@ -280,7 +280,6 @@
                 "Operating System :: OS Independent",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "# Caqui\n\n**Caqui** is intended to command executions against Drivers synchronously and asynchronously. Launch the Driver as a server and send requests to it. The intention is that the user does not worry about which Driver he/she is using. It can be **Web**Drivers like [Selenium](https://www.selenium.dev/), **Mobile**Drivers like [Appium](http://appium.io/docs/en/2.0/), or **Desktop**Drivers like [Winium](https://github.com/2gis/Winium.Desktop).\n\nThe process **Caqui** follows is similar of the one described in this [article](https://medium.com/@douglas.dcm/testing-windows-apps-with-http-rest-b4e8f80f8b7e) that experiments Drivers as servers together with [Jmeter](https://jmeter.apache.org/) to test the Windows Calculator. However, the motivation to create **Caqui** was feed by the inspiration in [Arsenic](https://github.com/HENNGE/arsenic) library.\n\n**Caqui** is planned to be Driver agnostic, so the user can start any Driver as a server and just inform the server URL. Hence, the code is decoupled from the chosen Driver.\n\n**Caqui** can be used in remote calls. As it needs just the server URL, the user can start the Driver as a server in any host and provide the URL to **Caqui** clients.\n\n# Simple start\nInstall the lastest version of **Caqui**\n\n```\npip install caqui\n```\n\nDownload the same [ChromeDriver](https://chromedriver.chromium.org/downloads) version as your installed Chrome and start the Driver as a server using the port \"9999\"\n\n```\n$ ./chromedriver --port=9999\nStarting ChromeDriver 94.0.4606.61 (418b78f5838ed0b1c69bb4e51ea0252171854915-refs/branch-heads/4606@{#1204}) on port 9999\nOnly local connections are allowed.\nPlease see https://chromedriver.chromium.org/security-considerations for suggestions on keeping ChromeDriver safe.\nChromeDriver was started successfully.\n```\n\nCopy the HTML content to `playground.html`\n\n```\n<html>\n\n<head>\n    <title>Sample page</title>\n</head>\n\n<body>\n    <h1>Basic page</h1>\n    <p> This is a sample page to be used to sanity check </p>\n    <input id=\"input\">\n    <button id=\"button\" onclick=\"myFunction(this, 'red')\">test</button>\n    <p id=\"end\">end</p>\n    <a src=\"http://any1.com\" id=\"a1\">any1.com</a>\n    <a src=\"http://any2.com\" id=\"a2\">any2.com</a>\n    <a src=\"http://any3.com\" id=\"a3\">any3.com</a>\n    <a src=\"http://any4.com\" id=\"a4\">any4.com</a>\n\n    <script>\n        function myFunction(element, color) {\n            element.style.color = color;\n        }\n    </script>\n</body>\n\n</html>\n```\n\nCopy the code to `sample.py` file. This file must be in the same folder of `playground.html`\n```\nimport asyncio\nimport time\nfrom caqui import synchronous, asynchronous\n\nfrom os import getcwd\n\nBASE_DIR = getcwd()\nPAGE_URL = f\"file:///{BASE_DIR}/playground.html\"\n\n\nasync def get_all_links():\n    driver_url = \"http://127.0.0.1:9999\"\n    capabilities = {\n        \"desiredCapabilities\": {\n            \"browserName\": \"firefox\",\n            \"marionette\": True,\n            \"acceptInsecureCerts\": True,\n        }\n    }\n    session = synchronous.get_session(driver_url, capabilities)\n    synchronous.go_to_page(\n        driver_url,\n        session,\n        PAGE_URL,\n    )\n\n    locator_type = \"xpath\"\n    anchors = []\n\n    for i in range(4):\n        i += 1\n        locator_value = f\"//a[@id='a{i}']\"\n        anchor = synchronous.find_element(\n            driver_url, session, locator_type, locator_value\n        )\n        anchors.append(anchor)\n        assert (\n            await asynchronous.get_text(driver_url, session, anchors[i - 1])\n            == f\"any{i}.com\"\n        )\n\n    synchronous.close_session(driver_url, session)\n\n\nstart = time.time()\n\nloop = asyncio.get_event_loop()\ntasks = [\n    loop.create_task(get_all_links()),\n    loop.create_task(get_all_links()),\n    loop.create_task(get_all_links()),\n    loop.create_task(get_all_links()),\n    loop.create_task(get_all_links()),\n    loop.create_task(get_all_links()),\n    loop.create_task(get_all_links()),\n    loop.create_task(get_all_links()),\n    loop.create_task(get_all_links()),\n    loop.create_task(get_all_links()),\n]\nloop.run_until_complete(asyncio.wait(tasks))\nloop.close()\n\nend = time.time()\nprint(f\"Time: {end-start:.2f} sec\")\n\n```\n\nRun the file\n```\npython sample.py\n```\n\n# Driver as server\nTo illustrate what I mean by \"Driver as server\", lets get [chromedriver](https://chromedriver.chromium.org/home) and execute it as an ordinary shell script file.\n\n```\n./chromedriver --port=9999\nStarting ChromeDriver 94.0.4606.61 (418b78f5838ed0b1c69bb4e51ea0252171854915-refs/branch-heads/4606@{#1204}) on port 9999\nOnly local connections are allowed.\nPlease see https://chromedriver.chromium.org/security-considerations for suggestions on keeping ChromeDriver safe.\nChromeDriver was started successfully.\n\n```\nNotice the Driver is running and waiting for HTTP requests.\n\nLets open a new session against it\n```\ncurl --location '127.0.0.1:9999/session' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"desiredCapabilities\": {\n        \"browserName\": \"firefox\",\n        \"marionette\": true,\n        \"acceptInsecureCerts\": true\n    }\n}'\n```\nHere is the response returned\n```\n{\n    \"sessionId\": \"b6654121c4ba1e8395ded73a27b7d8f5\",\n    \"status\": 0,\n    \"value\": {\n        \"acceptInsecureCerts\": true,\n        \"acceptSslCerts\": true,\n        \"applicationCacheEnabled\": false,\n        \"browserConnectionEnabled\": false,\n        \"browserName\": \"chrome\",\n        \"chrome\": {\n            \"chromedriverVersion\": \"94.0.4606.61 (418b78f5838ed0b1c69bb4e51ea0252171854915-refs/branch-heads/4606@{#1204})\",\n            \"userDataDir\": \"/tmp/.com.google.Chrome.xtZUOj\"\n        },\n        \"cssSelectorsEnabled\": true,\n        \"databaseEnabled\": false,\n        \"goog:chromeOptions\": {\n            \"debuggerAddress\": \"localhost:44437\"\n        },\n        \"handlesAlerts\": true,\n        \"hasTouchScreen\": false,\n        \"javascriptEnabled\": true,\n        \"locationContextEnabled\": true,\n        \"mobileEmulationEnabled\": false,\n        \"nativeEvents\": true,\n        \"networkConnectionEnabled\": false,\n        \"pageLoadStrategy\": \"normal\",\n        \"platform\": \"Linux\",\n        \"proxy\": {},\n        \"rotatable\": false,\n        \"setWindowRect\": true,\n        \"strictFileInteractability\": false,\n        \"takesHeapSnapshot\": true,\n        \"takesScreenshot\": true,\n        \"timeouts\": {\n            \"implicit\": 0,\n            \"pageLoad\": 300000,\n            \"script\": 30000\n        },\n        \"unexpectedAlertBehaviour\": \"ignore\",\n        \"version\": \"94.0.4606.54\",\n        \"webStorageEnabled\": true,\n        \"webauthn:extension:credBlob\": true,\n        \"webauthn:extension:largeBlob\": true,\n        \"webauthn:virtualAuthenticators\": true\n    }\n}\n```\nThe *sessionId* value can be used to perform further actions like *find element*, *send keys* or *click* buttons. More details can be found in [Json Wire Protocol Specification](https://www.selenium.dev/documentation/legacy/json_wire_protocol/).\nAlso with the *-h* parameter in Drivers, for example: \n```\n./chromedriver -h\n\nUsage: ./chromedriver [OPTIONS]\n\nOptions\n  --port=PORT                     port to listen on\n  --adb-port=PORT                 adb server port\n  --log-path=FILE                 write server log to file instead of stderr, increases log level to INFO\n  --log-level=LEVEL               set log level: ALL, DEBUG, INFO, WARNING, SEVERE, OFF\n  --verbose                       log verbosely (equivalent to --log-level=ALL)\n  --silent                        log nothing (equivalent to --log-level=OFF)\n  --append-log                    append log file instead of rewriting\n  --replayable                    (experimental) log verbosely and don't truncate long strings so that the log can be replayed.\n  --version                       print the version number and exit\n  --url-base                      base URL path prefix for commands, e.g. wd/url\n  --readable-timestamp            add readable timestamps to log\n  --enable-chrome-logs            show logs from the browser (overrides other logging options)\n  --disable-dev-shm-usage         do not use /dev/shm (add this switch if seeing errors related to shared memory)\n  --allowed-ips                   comma-separated allowlist of remote IP addresses which are allowed to connect to ChromeDriver\n```\n# Contributing\nRead the [Code of Conduct](https://github.com/douglasdcm/caqui/blob/main/CODE_OF_CONDUCT.md) before push new Merge Requests. To start to contribute, install the dependencies (Python >= 3.7)\n```\npython3 -m venv venv\npip install -e .\npip install -r test-requirements.txt\n```\nFork this repository, make the changes into the forked repository and push a new Merge Request to 'main' branch.\nOpen an issue in case of big MRs.\n# Testing\nTo run the tests, start a new Driver as server on port `9999`, for example:\n```\n./chromedriver --port=9999\n```\nAnd execute the tests\n```\npython -m pytest\n```",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -313,7 +312,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18240331,
+        "last_serial": 18257263,
         "urls": [
             {
                 "comment_text": "",
@@ -354,6 +353,97 @@
                 "upload_time": "2023-05-25T02:57:57",
                 "upload_time_iso_8601": "2023-05-25T02:57:57.754132Z",
                 "url": "https://files.pythonhosted.org/packages/5e/9c/5aaa058e3fbefe095e743664ced7ce38e8a0d45aa1f6eb693b341214165a/caqui-1.0.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.0.4": {
+        "info": {
+            "author": "",
+            "author_email": "Douglas Cardoso <noemail@noemail.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# Caqui\n\n**Caqui** is intended to command executions against Drivers synchronously and asynchronously. Launch the Driver as a server and send requests to it. The intention is that the user does not worry about which Driver he/she is using. It can be **Web**Drivers like [Selenium](https://www.selenium.dev/), **Mobile**Drivers like [Appium](http://appium.io/docs/en/2.0/), or **Desktop**Drivers like [Winium](https://github.com/2gis/Winium.Desktop).\n\nThe process **Caqui** follows is similar of the one described in this [article](https://medium.com/@douglas.dcm/testing-windows-apps-with-http-rest-b4e8f80f8b7e) that experiments Drivers as servers together with [Jmeter](https://jmeter.apache.org/) to test the Windows Calculator. However, the motivation to create **Caqui** was feed by the inspiration in [Arsenic](https://github.com/HENNGE/arsenic) library.\n\n**Caqui** is planned to be Driver agnostic, so the user can start any Driver as a server and just inform the server URL. Hence, the code is decoupled from the chosen Driver.\n\n**Caqui** can be used in remote calls. As it needs just the server URL, the user can start the Driver as a server in any host and provide the URL to **Caqui** clients.\n\n# Simple start\nInstall the lastest version of **Caqui**\n\n```\npip install caqui\n```\n\nDownload the same [ChromeDriver](https://chromedriver.chromium.org/downloads) version as your installed Chrome and start the Driver as a server using the port \"9999\"\n\n```\n$ ./chromedriver --port=9999\nStarting ChromeDriver 94.0.4606.61 (418b78f5838ed0b1c69bb4e51ea0252171854915-refs/branch-heads/4606@{#1204}) on port 9999\nOnly local connections are allowed.\nPlease see https://chromedriver.chromium.org/security-considerations for suggestions on keeping ChromeDriver safe.\nChromeDriver was started successfully.\n```\n\nCopy the HTML content to `playground.html`\n\n```\n<html>\n\n<head>\n    <title>Sample page</title>\n</head>\n\n<body>\n    <h1>Basic page</h1>\n    <p> This is a sample page to be used to sanity check </p>\n    <input id=\"input\">\n    <button id=\"button\" onclick=\"myFunction(this, 'red')\">test</button>\n    <p id=\"end\">end</p>\n    <a src=\"http://any1.com\" id=\"a1\">any1.com</a>\n    <a src=\"http://any2.com\" id=\"a2\">any2.com</a>\n    <a src=\"http://any3.com\" id=\"a3\">any3.com</a>\n    <a src=\"http://any4.com\" id=\"a4\">any4.com</a>\n\n    <script>\n        function myFunction(element, color) {\n            element.style.color = color;\n        }\n    </script>\n</body>\n\n</html>\n```\n\nCopy the code to `sample.py` file. This file must be in the same folder of `playground.html`\n```\nimport asyncio\nimport time\nfrom caqui import synchronous, asynchronous\n\nfrom os import getcwd\n\nBASE_DIR = getcwd()\nPAGE_URL = f\"file:///{BASE_DIR}/playground.html\"\n\n\nasync def get_all_links():\n    driver_url = \"http://127.0.0.1:9999\"\n    capabilities = {\n        \"desiredCapabilities\": {\n            \"browserName\": \"firefox\",\n            \"marionette\": True,\n            \"acceptInsecureCerts\": True,\n        }\n    }\n    session = synchronous.get_session(driver_url, capabilities)\n    synchronous.go_to_page(\n        driver_url,\n        session,\n        PAGE_URL,\n    )\n\n    locator_type = \"xpath\"\n    anchors = []\n\n    for i in range(4):\n        i += 1\n        locator_value = f\"//a[@id='a{i}']\"\n        anchor = synchronous.find_element(\n            driver_url, session, locator_type, locator_value\n        )\n        anchors.append(anchor)\n        assert (\n            await asynchronous.get_text(driver_url, session, anchors[i - 1])\n            == f\"any{i}.com\"\n        )\n\n    synchronous.close_session(driver_url, session)\n\n\nstart = time.time()\n\nloop = asyncio.get_event_loop()\ntasks = [\n    loop.create_task(get_all_links()),\n    loop.create_task(get_all_links()),\n    loop.create_task(get_all_links()),\n    loop.create_task(get_all_links()),\n    loop.create_task(get_all_links()),\n    loop.create_task(get_all_links()),\n    loop.create_task(get_all_links()),\n    loop.create_task(get_all_links()),\n    loop.create_task(get_all_links()),\n    loop.create_task(get_all_links()),\n]\nloop.run_until_complete(asyncio.wait(tasks))\nloop.close()\n\nend = time.time()\nprint(f\"Time: {end-start:.2f} sec\")\n\n```\n\nRun the file\n```\npython sample.py\n```\n\n# Driver as server\nTo illustrate what I mean by \"Driver as server\", lets get [chromedriver](https://chromedriver.chromium.org/home) and execute it as an ordinary shell script file.\n\n```\n./chromedriver --port=9999\nStarting ChromeDriver 94.0.4606.61 (418b78f5838ed0b1c69bb4e51ea0252171854915-refs/branch-heads/4606@{#1204}) on port 9999\nOnly local connections are allowed.\nPlease see https://chromedriver.chromium.org/security-considerations for suggestions on keeping ChromeDriver safe.\nChromeDriver was started successfully.\n\n```\nNotice the Driver is running and waiting for HTTP requests.\n\nLets open a new session against it\n```\ncurl --location '127.0.0.1:9999/session' \\\n--header 'Content-Type: application/json' \\\n--data '{\n    \"desiredCapabilities\": {\n        \"browserName\": \"firefox\",\n        \"marionette\": true,\n        \"acceptInsecureCerts\": true\n    }\n}'\n```\nHere is the response returned\n```\n{\n    \"sessionId\": \"b6654121c4ba1e8395ded73a27b7d8f5\",\n    \"status\": 0,\n    \"value\": {\n        \"acceptInsecureCerts\": true,\n        \"acceptSslCerts\": true,\n        \"applicationCacheEnabled\": false,\n        \"browserConnectionEnabled\": false,\n        \"browserName\": \"chrome\",\n        \"chrome\": {\n            \"chromedriverVersion\": \"94.0.4606.61 (418b78f5838ed0b1c69bb4e51ea0252171854915-refs/branch-heads/4606@{#1204})\",\n            \"userDataDir\": \"/tmp/.com.google.Chrome.xtZUOj\"\n        },\n        \"cssSelectorsEnabled\": true,\n        \"databaseEnabled\": false,\n        \"goog:chromeOptions\": {\n            \"debuggerAddress\": \"localhost:44437\"\n        },\n        \"handlesAlerts\": true,\n        \"hasTouchScreen\": false,\n        \"javascriptEnabled\": true,\n        \"locationContextEnabled\": true,\n        \"mobileEmulationEnabled\": false,\n        \"nativeEvents\": true,\n        \"networkConnectionEnabled\": false,\n        \"pageLoadStrategy\": \"normal\",\n        \"platform\": \"Linux\",\n        \"proxy\": {},\n        \"rotatable\": false,\n        \"setWindowRect\": true,\n        \"strictFileInteractability\": false,\n        \"takesHeapSnapshot\": true,\n        \"takesScreenshot\": true,\n        \"timeouts\": {\n            \"implicit\": 0,\n            \"pageLoad\": 300000,\n            \"script\": 30000\n        },\n        \"unexpectedAlertBehaviour\": \"ignore\",\n        \"version\": \"94.0.4606.54\",\n        \"webStorageEnabled\": true,\n        \"webauthn:extension:credBlob\": true,\n        \"webauthn:extension:largeBlob\": true,\n        \"webauthn:virtualAuthenticators\": true\n    }\n}\n```\nThe *sessionId* value can be used to perform further actions like *find element*, *send keys* or *click* buttons. More details can be found in [Json Wire Protocol Specification](https://www.selenium.dev/documentation/legacy/json_wire_protocol/).\nAlso with the *-h* parameter in Drivers, for example: \n```\n./chromedriver -h\n\nUsage: ./chromedriver [OPTIONS]\n\nOptions\n  --port=PORT                     port to listen on\n  --adb-port=PORT                 adb server port\n  --log-path=FILE                 write server log to file instead of stderr, increases log level to INFO\n  --log-level=LEVEL               set log level: ALL, DEBUG, INFO, WARNING, SEVERE, OFF\n  --verbose                       log verbosely (equivalent to --log-level=ALL)\n  --silent                        log nothing (equivalent to --log-level=OFF)\n  --append-log                    append log file instead of rewriting\n  --replayable                    (experimental) log verbosely and don't truncate long strings so that the log can be replayed.\n  --version                       print the version number and exit\n  --url-base                      base URL path prefix for commands, e.g. wd/url\n  --readable-timestamp            add readable timestamps to log\n  --enable-chrome-logs            show logs from the browser (overrides other logging options)\n  --disable-dev-shm-usage         do not use /dev/shm (add this switch if seeing errors related to shared memory)\n  --allowed-ips                   comma-separated allowlist of remote IP addresses which are allowed to connect to ChromeDriver\n```\n# Contributing\nRead the [Code of Conduct](https://github.com/douglasdcm/caqui/blob/main/CODE_OF_CONDUCT.md) before push new Merge Requests. To start to contribute, install the dependencies (Python >= 3.7)\n```\npython3 -m venv venv\npip install -e .\npip install -r test-requirements.txt\n```\nFork this repository, make the changes into the forked repository and push a new Merge Request to 'main' branch.\nOpen an issue in case of big MRs.\n# Testing\nTo run the tests, start a new Driver as server on port `9999`, for example:\n```\n./chromedriver --port=9999\n```\nAnd execute the tests\n```\npython -m pytest\n```",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "caqui",
+            "package_url": "https://pypi.org/project/caqui/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/caqui/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/douglasdcm/caqui/issues",
+                "Homepage": "https://github.com/douglasdcm/caqui"
+            },
+            "release_url": "https://pypi.org/project/caqui/1.0.4/",
+            "requires_dist": [
+                "aiohttp",
+                "requests"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "Run asynchronous commands in WebDrivers",
+            "version": "1.0.4",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18257263,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ccfebf24b5be15ea634f8f18defdfe80c41880750eb5669938e66df9272e57fe",
+                    "md5": "f12e7bde5e51de9bd560bca4fc20c624",
+                    "sha256": "4c8907af9dae5cb3c1a3e821508ba477069103193f0c37ad32558d8060d0c9bd"
+                },
+                "downloads": -1,
+                "filename": "caqui-1.0.4-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "f12e7bde5e51de9bd560bca4fc20c624",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 22766,
+                "upload_time": "2023-05-26T03:21:13",
+                "upload_time_iso_8601": "2023-05-26T03:21:13.603305Z",
+                "url": "https://files.pythonhosted.org/packages/cc/fe/bf24b5be15ea634f8f18defdfe80c41880750eb5669938e66df9272e57fe/caqui-1.0.4-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e63f562f151d1079666d305aed98e5789368d42028d9c1b209405e5c428cc88e",
+                    "md5": "ee9c359c8df93df83d91c1680920955d",
+                    "sha256": "b5b3741b90d3aba0ad912cbc9df71a1c1ce0c617182cd0797d01525afd3837ef"
+                },
+                "downloads": -1,
+                "filename": "caqui-1.0.4.tar.gz",
+                "has_sig": false,
+                "md5_digest": "ee9c359c8df93df83d91c1680920955d",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 29119,
+                "upload_time": "2023-05-26T03:21:15",
+                "upload_time_iso_8601": "2023-05-26T03:21:15.415644Z",
+                "url": "https://files.pythonhosted.org/packages/e6/3f/562f151d1079666d305aed98e5789368d42028d9c1b209405e5c428cc88e/caqui-1.0.4.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
