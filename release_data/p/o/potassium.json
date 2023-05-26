@@ -42,7 +42,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17446606,
+        "last_serial": 18253777,
         "urls": [
             {
                 "comment_text": "",
@@ -132,7 +132,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17446606,
+        "last_serial": 18253777,
         "urls": [
             {
                 "comment_text": "",
@@ -222,7 +222,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17446606,
+        "last_serial": 18253777,
         "urls": [
             {
                 "comment_text": "",
@@ -313,7 +313,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17446606,
+        "last_serial": 18253777,
         "urls": [
             {
                 "comment_text": "",
@@ -404,7 +404,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17446606,
+        "last_serial": 18253777,
         "urls": [
             {
                 "comment_text": "",
@@ -496,7 +496,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17446606,
+        "last_serial": 18253777,
         "urls": [
             {
                 "comment_text": "",
@@ -588,7 +588,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17446606,
+        "last_serial": 18253777,
         "urls": [
             {
                 "comment_text": "",
@@ -648,7 +648,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Topic :: Software Development :: Build Tools"
             ],
-            "description": "# Potassium\n\n![Potassium (1)](https://user-images.githubusercontent.com/44653944/222016748-ca2c6905-8fd5-4ee5-a68e-7aed48f23436.png)\n\n[Potassium](https://github.com/bananaml/potassium) is an open source web framework, built to tackle the unique challenges of serving custom models in production.\n\nThe goal of this project is to:\n\n- Provide a familiar web framework similar to Flask/FastAPI\n- Bake in best practices for handling large, GPU-bound ML models\n- Provide a set of primitives common in ML serving, such as:\n    - POST request handlers\n    - Websocket / streaming connections\n    - Async handlers w/ webhooks\n- Maintain a standard interface, to allow the code and models to compile to specialized hardware (ideally on [Banana Serverless GPUs](https://banana.dev) \ud83d\ude09)\n\n### Stability Notes:\n- This is a v0 release using SemVer, and is not stable; the interface may change at any time. Be sure to lock your versions!\n- If deploying to Banana, Potassium apps currently won't receive [fast boot optimizations](https://docs.banana.dev/banana-docs/core-concepts/build-system). This will be added within a few days.\n\n---\n\n## Quickstart: Serving a Huggingface BERT model\n\nThe fastest way to get up and running is to use the [Banana CLI](https://github.com/bananaml/banana-cli), which downloads and runs your first model.\n\n[Here's a demo video](https://www.loom.com/share/86d4e7b0801549b9ab2f7a1acce772aa)\n\n\n1. Install the CLI with pip\n```bash\npip3 install banana-cli\n```\nThis downloads boilerplate for your potassium app, and automatically installs potassium into the venv.\n\n2. Create a new project directory with \n```bash\nbanana init my-app\ncd my-app\n```\n3. Start the hot-reload dev server\n```bash\nbanana dev\n```\n\n4. Call your API (from a separate terminal)\n```bash\ncurl -X POST -H \"Content-Type: application/json\" -d '{\"prompt\": \"Hello I am a [MASK] model.\"}' http://localhost:8000/\n``` \n\n---\n\n## Or do it yourself:\n\n1. Install the potassium package\n\n```bash\npip3 install potassium\n```\n\nCreate a python file called `app.py` containing:\n\n```python\nfrom potassium import Potassium, Request, Response\nfrom transformers import pipeline\nimport torch\nimport time\n\napp = Potassium(\"my_app\")\n\n# @app.init runs at startup, and initializes the app's context\n@app.init\ndef init():\n    device = 0 if torch.cuda.is_available() else -1\n    model = pipeline('fill-mask', model='bert-base-uncased', device=device)\n   \n    context = {\n        \"model\": model,\n        \"hello\": \"world\"\n    }\n\n    return context\n\n# @app.handler is an http post handler running for every call\n@app.handler()\ndef handler(context: dict, request: Request) -> Response:\n    \n    prompt = request.json.get(\"prompt\")\n    model = context.get(\"model\")\n    outputs = model(prompt)\n\n    return Response(\n        json = {\"outputs\": outputs}, \n        status=200\n    )\n\nif __name__ == \"__main__\":\n    app.serve()\n```\n\nThis runs a Huggingface BERT model.\n\nFor this example, you'll also need to install transformers and torch.\n\n```\npip3 install transformers torch\n```\n\nStart the server with:\n\n```bash\npython3 app.py\n```\n\nTest the running server with:\n\n```bash\ncurl -X POST -H \"Content-Type: application/json\" -d '{\"prompt\": \"Hello I am a [MASK] model.\"}' http://localhost:8000\n```\n\n---\n\n# Documentation\n\n## potassium.Potassium\n\n```python\nfrom potassium import Potassium\n\napp = Potassium(\"server\")\n```\n\nThis instantiates your HTTP app, similar to popular frameworks like [Flask](https://flask.palletsprojects.com/en/2.2.x/_)\n\n---\n\n## @app.init\n\n```python\n@app.init\ndef init():\n    device = 0 if torch.cuda.is_available() else -1\n    model = pipeline('fill-mask', model='bert-base-uncased', device=device)\n\n    return {\n        \"model\": model\n    }\n```\n\nThe `@app.init` decorated function runs once on server startup, and is used to load any reuseable, heavy objects such as:\n\n- Your AI model, loaded to GPU\n- Tokenizers\n- Precalculated embeddings\n\nThe return value is a dictionary which saves to the app's `context`, and is used later in the handler functions.\n\nThere may only be one `@app.init` function.\n\n---\n\n## @app.handler()\n\n```python\n@app.handler(\"/\")\ndef handler(context: dict, request: Request) -> Response:\n    \n    prompt = request.json.get(\"prompt\")\n    model = context.get(\"model\")\n    outputs = model(prompt)\n\n    return Response(\n        json = {\"outputs\": outputs}, \n        status=200\n    )\n```\n\nThe `@app.handler` decorated function runs for every http call, and is used to run inference or training workloads against your model(s).\n\nYou may configure as many `@app.handler` functions as you'd like, with unique API routes.\nNote: Banana serverless currently only supports handlers at the root \"/\"\n\n---\n\n## @app.async_handler(path=\"/async\")\n\n```python\n@app.async_handler(\"/async\")\ndef handler(context: dict, request: Request) -> Response:\n\n    prompt = request.json.get(\"prompt\")\n    model = context.get(\"model\")\n    outputs = model(prompt)\n\n    send_webhook(url=\"http://localhost:8001\", json={\"outputs\": outputs})\n\n    return\n```\n\nThe `@app.async_handler()` decorated function runs a nonblocking job in the background, for tasks where results aren't expected to return clientside. It's on you to forward the data to wherever you please. Potassium supplies a `send_webhook()` helper function for POSTing data onward to a url, or you may add your own custom upload/pipeline code.\n\nWhen invoked, the client immediately returns a `{\"success\": true}` message.\n\nYou may configure as many `@app.async_handler` functions as you'd like, with unique API routes.\nNote: Banana serverless isn't perfectly stable running async_handler. You can use it, but concurrency may be weird.\n\n\n---\n\n## app.serve()\n\n`app.serve` runs the server, and is a blocking operation.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -681,7 +680,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17446606,
+        "last_serial": 18253777,
         "urls": [
             {
                 "comment_text": "",
@@ -722,6 +721,100 @@
                 "upload_time": "2023-03-26T02:52:39",
                 "upload_time_iso_8601": "2023-03-26T02:52:39.983543Z",
                 "url": "https://files.pythonhosted.org/packages/fb/91/fb1f38d1feae9b0877de75d79c7760ae66854aa7c00521c5f8f1bbba6a4e/potassium-0.0.8.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.9": {
+        "info": {
+            "author": "Erik Dunteman",
+            "author_email": "erik@banana.dev",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Topic :: Software Development :: Build Tools"
+            ],
+            "description": "# Potassium\n\n![Potassium (1)](https://user-images.githubusercontent.com/44653944/222016748-ca2c6905-8fd5-4ee5-a68e-7aed48f23436.png)\n\n[Potassium](https://github.com/bananaml/potassium) is an open source web framework, built to tackle the unique challenges of serving custom models in production.\n\nThe goal of this project is to:\n\n- Provide a familiar web framework similar to Flask/FastAPI\n- Bake in best practices for handling large, GPU-bound ML models\n- Provide a set of primitives common in ML serving, such as:\n    - POST request handlers\n    - Websocket / streaming connections\n    - Async handlers w/ webhooks\n- Maintain a standard interface, to allow the code and models to compile to specialized hardware (ideally on [Banana Serverless GPUs](https://banana.dev) \ud83d\ude09)\n\n### Stability Notes:\nPotassium uses Semantic Versioning, in that major versions imply breaking changes, and v0 implies instability even between minor/patch versions. Be sure to lock your versions, as we're still in v0!\n\n---\n\n## Quickstart: Serving a Huggingface BERT model\n\nThe fastest way to get up and running is to use the [Banana CLI](https://github.com/bananaml/banana-cli), which downloads and runs your first model.\n\n[Here's a demo video](https://www.loom.com/share/86d4e7b0801549b9ab2f7a1acce772aa)\n\n\n1. Install the CLI with pip\n```bash\npip3 install banana-cli\n```\nThis downloads boilerplate for your potassium app, and automatically installs potassium into the venv.\n\n2. Create a new project directory with \n```bash\nbanana init my-app\ncd my-app\n```\n3. Start the hot-reload dev server\n```bash\nbanana dev\n```\n\n4. Call your API (from a separate terminal)\n```bash\ncurl -X POST -H \"Content-Type: application/json\" -d '{\"prompt\": \"Hello I am a [MASK] model.\"}' http://localhost:8000/\n``` \n\n---\n\n## Or do it yourself:\n\n1. Install the potassium package\n\n```bash\npip3 install potassium\n```\n\nCreate a python file called `app.py` containing:\n\n```python\nfrom potassium import Potassium, Request, Response\nfrom transformers import pipeline\nimport torch\nimport time\n\napp = Potassium(\"my_app\")\n\n# @app.init runs at startup, and initializes the app's context\n@app.init\ndef init():\n    device = 0 if torch.cuda.is_available() else -1\n    model = pipeline('fill-mask', model='bert-base-uncased', device=device)\n   \n    context = {\n        \"model\": model,\n        \"hello\": \"world\"\n    }\n\n    return context\n\n# @app.handler is an http post handler running for every call\n@app.handler()\ndef handler(context: dict, request: Request) -> Response:\n    \n    prompt = request.json.get(\"prompt\")\n    model = context.get(\"model\")\n    outputs = model(prompt)\n\n    return Response(\n        json = {\"outputs\": outputs}, \n        status=200\n    )\n\nif __name__ == \"__main__\":\n    app.serve()\n```\n\nThis runs a Huggingface BERT model.\n\nFor this example, you'll also need to install transformers and torch.\n\n```\npip3 install transformers torch\n```\n\nStart the server with:\n\n```bash\npython3 app.py\n```\n\nTest the running server with:\n\n```bash\ncurl -X POST -H \"Content-Type: application/json\" -d '{\"prompt\": \"Hello I am a [MASK] model.\"}' http://localhost:8000\n```\n\n---\n\n# Documentation\n\n## potassium.Potassium\n\n```python\nfrom potassium import Potassium\n\napp = Potassium(\"server\")\n```\n\nThis instantiates your HTTP app, similar to popular frameworks like [Flask](https://flask.palletsprojects.com/en/2.2.x/_)\n\n---\n\n## @app.init\n\n```python\n@app.init\ndef init():\n    device = 0 if torch.cuda.is_available() else -1\n    model = pipeline('fill-mask', model='bert-base-uncased', device=device)\n\n    return {\n        \"model\": model\n    }\n```\n\nThe `@app.init` decorated function runs once on server startup, and is used to load any reuseable, heavy objects such as:\n\n- Your AI model, loaded to GPU\n- Tokenizers\n- Precalculated embeddings\n\nThe return value is a dictionary which saves to the app's `context`, and is used later in the handler functions.\n\nThere may only be one `@app.init` function.\n\n---\n\n## @app.handler()\n\n```python\n@app.handler(\"/\", gpu=True)\ndef handler(context: dict, request: Request) -> Response:\n    \n    prompt = request.json.get(\"prompt\")\n    model = context.get(\"model\")\n    outputs = model(prompt)\n\n    return Response(\n        json = {\"outputs\": outputs}, \n        status=200\n    )\n```\n\nThe `@app.handler` decorated function runs for every http call, and is used to run inference or training workloads against your model(s).\n\nYou may configure as many `@app.handler` functions as you'd like, with unique API routes.\n\nThe `gpu=True` argument allows the handler to access the prewarmed context value, and runs the handler as blocking. While the handler is running, potassium will reject any other `gpu=True` handlers with a 423 Locked error, to ensure that there are no multithreading issues with CUDA. If set to `false`, the handler may be called at any time, but the context provided will be `None`. `gpu` defaults to `True`.\n\n---\n\n## @app.background(path=\"/background\", gpu=True)\n\n```python\n@app.background(\"/background\")\ndef handler(context: dict, request: Request) -> Response:\n\n    prompt = request.json.get(\"prompt\")\n    model = context.get(\"model\")\n    outputs = model(prompt)\n\n    send_webhook(url=\"http://localhost:8001\", json={\"outputs\": outputs})\n\n    return\n```\n\nThe `@app.background()` decorated function runs a nonblocking job in the background, for tasks where results aren't expected to return clientside. It's on you to forward the data to wherever you please. Potassium supplies a `send_webhook()` helper function for POSTing data onward to a url, or you may add your own custom upload/pipeline code.\n\nWhen invoked, the client immediately returns a `{\"success\": true}` message.\n\nYou may configure as many `@app.background` functions as you'd like, with unique API routes.\n\nThe `gpu=True` argument allows the background handler to access the prewarmed context value, and runs the child background thread as blocking. While the child thread is running, potassium will reject any other `gpu=True` handlers with a 423 Locked error, to ensure that there are no multithreading issues with CUDA. If set to `false`, the handler may be called at any time, but the context provided will be `None`. `gpu` defaults to `True`.\n\n---\n\n## app.serve()\n\n`app.serve` runs the server, and is a blocking operation.\n\n\n---\n\n# Store\nPotassium includes a key-value storage primative, to help users persist data between calls. This is often used to implement patterns such as an async-worker queue where one background task runs inference and saves the result to the Store, with another handler set to `gpu=False` built to fetch the result.\n\nExample usage: your own Redis backend (encouraged)\n```\nfrom potassium.store import Store, RedisConfig\n\nstore = Store(\n    backend=\"redis\",\n    config = RedisConfig(\n        host = \"localhost\",\n        port = 6379\n    )\n)\n\n# in one handler\nstore.set(\"key\", \"value\", ttl=60)\n\n# in another handler\nvalue = store.get(\"key\")\n```\n\nExample usage: using local storage \n- Note: not encouraged on Banana serverless or multi-replica environments, as data is stored only on the single replica\n```\nfrom potassium.store import Store, RedisConfig\n\nstore = Store(\n    backend=\"local\"\n)\n\n# in one handler\nstore.set(\"key\", \"value\", ttl=60)\n\n# in another handler\nvalue = store.get(\"key\")\n```\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://www.banana.dev",
+            "keywords": "Banana server,HTTP server,Banana,Framework",
+            "license": "Apache License 2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "potassium",
+            "package_url": "https://pypi.org/project/potassium/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/potassium/",
+            "project_urls": {
+                "Homepage": "https://www.banana.dev"
+            },
+            "release_url": "https://pypi.org/project/potassium/0.0.9/",
+            "requires_dist": [
+                "Flask",
+                "requests",
+                "termcolor",
+                "redis"
+            ],
+            "requires_python": "",
+            "summary": "The potassium package is a flask-like HTTP server for serving large AI models",
+            "version": "0.0.9",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18253777,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c1c4a9a00503ba0dee2fffe3b12b8c70f820ea64702e65babdc55fdd3bf1fe1e",
+                    "md5": "72de5c289a5b8c09eef6bc638a08fa57",
+                    "sha256": "ec8d1272175f83bc0f51e0533284e37aa1eb20229e77567b3d3dc046426099a4"
+                },
+                "downloads": -1,
+                "filename": "potassium-0.0.9-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "72de5c289a5b8c09eef6bc638a08fa57",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 12607,
+                "upload_time": "2023-05-25T22:30:04",
+                "upload_time_iso_8601": "2023-05-25T22:30:04.166344Z",
+                "url": "https://files.pythonhosted.org/packages/c1/c4/a9a00503ba0dee2fffe3b12b8c70f820ea64702e65babdc55fdd3bf1fe1e/potassium-0.0.9-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "9e3597d4a4c2c93b5869593cc01814e4e4d8b2e509aba6c65bd64e9e079c88c8",
+                    "md5": "79df9d27cd770a56c6db0db77cf348b7",
+                    "sha256": "cd5bd20b4c92e1c158708819ba10a0a0ce1443edc6ce98f904878669430dbfe9"
+                },
+                "downloads": -1,
+                "filename": "potassium-0.0.9.tar.gz",
+                "has_sig": false,
+                "md5_digest": "79df9d27cd770a56c6db0db77cf348b7",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 14331,
+                "upload_time": "2023-05-25T22:30:06",
+                "upload_time_iso_8601": "2023-05-25T22:30:06.680005Z",
+                "url": "https://files.pythonhosted.org/packages/9e/35/97d4a4c2c93b5869593cc01814e4e4d8b2e509aba6c65bd64e9e079c88c8/potassium-0.0.9.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

@@ -1,0 +1,112 @@
+{
+    "1.0.0": {
+        "info": {
+            "author": "",
+            "author_email": "Michael Klatt <mdklatt@alumni.ou.edu>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Environment :: Web Environment",
+                "Intended Audience :: Developers",
+                "Intended Audience :: System Administrators",
+                "License :: OSI Approved :: MIT License",
+                "Natural Language :: English",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+                "Topic :: Software Development :: User Interfaces"
+            ],
+            "description": "########\nhttpexec\n########\n\n|python3.9|\n|python3.10|\n|python3.11|\n|license|\n|release|\n|pypi|\n|tests|\n\n*httpexec* is an `Asynchronous Server Gateway Interface`_ (ASGI) application\nthat allows remote clients to execute CLI commands on the local host via a\nREST API. An `ASGI-capable server`_ is also required.\n\n**There are critical security concerns when using this application.** See the\n`Security`_ section.\n\n\n.. image:: docs/httpexec.png\n  :alt: httpexec System Architecture\n\n\n========\nREST API\n========\n\nSee the project's `OpenAPI`_ spec file (``openapi.yaml``) for more information.\n\n\nRequests\n--------\n\nThe application accepts ``POST`` requests as ``application/json`` to the\n``/<command>`` endpoint of its bound address. The request defines the\narguments, input and output streams, and environment variables that will be\nused to for executing the command.\n\nThis sample request sent to endpoint ``/app`` will execute ``app -o option``\non the local host with the string ``input`` piped to ``STDIN``. The contents of\n``STDOUT`` will be captured and returned to the client using Base64 encoding.\nThe variable ``FOO=BAR`` will be added to the execution environment. The\ncontents of ``STDERR`` will not be captured.\n\n.. code-block:: json\n\n    {\n      \"args\": [\"-o\", \"option\"],\n      \"stdin\": {\"content\": \"input\"},\n      \"stdout\": {\"capture\": true, \"encode\": \"base64\"},\n      \"environment\": {\"FOO\": \"BAR\"}\n    }\n\nResponses\n---------\n\nIf the command was executed, a ``200`` (``OK``) status is returned along with\nan  ``application/json`` response. This does **not** mean the command itself\nwas successful; the ``return`` value in the response is the exit status\nreturned by the command.\n\nIf the requested command is not found, a ``404`` (``Not Found``) status is\nreturned. If the command could not be executed due to an unexpected error, a\n``500`` (``Internal Server Error``) status is returned.\n\n\nIf the sample request from above was executed, a response like this will be\nreturned. The command returned an exit status of ``0``, the output to\n``STDERR`` was not captured, and the output to ``STDOUT`` is encoded binary\ndata.\n\n.. code-block:: json\n\n    {\n      \"return\": 0,\n      \"stderr\": null,\n      \"stdout\": {\"content\": \"YmluYXJ5IGRhdGE=\", \"encode\": \"base64\"}\n    }\n\n\nBinary Data\n-----------\n\nJSON cannot handle arbitrary binary data. Any binary input to ``STDOUT`` or\noutput from ``STDERR`` or ``STDOUT`` must be encoded as text strings. The\nclient must *encode* the content of ``STDIN`` in the request and *decode* the\ncontents of ``STDERR`` and ``STDOUT`` from the response. *httpexec* will\n*decode* the content of ``STDIN`` from the request and *encode* the contents of\n``STDERR`` and ``STDOUT`` in the response. Thus, encoding is transparent to the\ntarget command.\n\n*httpexec* currently supports two encoding schemes, `base64`_ and `base85`_. If\nthe target command implements its own text-safe encoding for binary data, use\n``\"encode\": null`` (or omit it) in the request to make this transparent to\n*httpexec*.\n\n\n===========\nBasic Setup\n===========\n\nInstallation\n-------------\n\nInstall the application, its runtime dependencies, and the `Hypercorn`_ web\nserver:\n\n.. code-block:: console\n\n    $ python -m pip install httpexec \"hypercorn>=0.14.3,<1\"\n\n\nConfiguration\n-------------\n\nUser-configurable options can be set using a `TOML`_ config file or an\nenvironment variable. Environment variable names must be prefixed with\n``HTTPEXEC_``, *e.g.* ``HTTPEXEC_EXEC_ROOT`` sets ``EXEC_ROOT``. Environment\nvariables have precedence over the config file.\n\n\n``EXEC_ROOT``\n  For security, *httpexec* will not execute any command outside of this\n  directory. **This must be set explicitly by the user.**\n\n``FOLLOW_LINKS``\n  This is a boolean that controls whether or not *httpexec* will follow a\n  symbolic link to a path outside of ``EXEC_ROOT``. If true, the link itself\n  must still be within ``EXEC_ROOT``. For an environment variable use ``1``\n  for true and ``0`` for false. For security, the default value is false.\n\n``LOGGING_LEVEL``\n  The application uses standard `Python logging`_, and this sets the logging\n  level. Messages of a lower severity will not be be logged. The default level\n  is ``WARNING``.\n\n``CONFIG_PATH``\n  This is the path to the optional config file.\n  **This can only set by environment variable.**\n\n\nExecution\n---------\n\nStart the web server, and *httpexec* will be available at the bound address.\n\n.. code-block:: console\n   \n    $ python -m hypercorn --error-logfile - --access-logfile - --bind 127.0.0.1:8000 httpexec.asgi:app\n\nThe *httpexec* execution environment is set by the web server, which will also\nimpact the execution environment of the commands being executed by *httpexec*.\nFor example, this will determine whether or not *httpexec* has permission to\nrun a target command, and the environment variables that are available to the\ncommand. See the web server's documentation.\n\n\n========\nSecurity\n========\n\n**Allowing arbitrary remote execution is a significant security risk.**\n\nDo not use *httpexec* without understanding all of the security implications.\nThis application was developed for a specific use case: Allowing a CLI command\nin one Docker container to be executed by another Docker container. Docker\nmakes it easier to provide multiple layers of security, but this is also\npossible without Docker. **The following advice is not authoritative.**\n**USE AT YOUR RISK.**\n\n\nNetwork Isolation\n-----------------\n\nAccess to the address *httpexec* is bound to must be **strictly controlled**.\nUnder no circumstances should this be globally visible to the outside world.\nBy default, a Docker container is only accessible to other Docker containers\non that host. Access can be further controlled by using a `user-defined bridge\nnetwork`_ to connect the *httpexec* container to a subset of containers on the\nhost. In a non-container environment, firewall rules and VLANs should be\nused to restrict access to an *httpexec* instance.\n\n\nCommand Isolation\n-----------------\n\n*httpexec* can only do what its target commands can do. Make sure it cannot\naccess dangerous commands. Access control is currently limited by directory\n(see `Configuration`_). If necessary, create a directory containing only links\nto allowed commands, and use that as ``EXEC_ROOT`` (``FOLLOW_LINKS`` must be\nenabled). This is applicable to container and non-container environments.\n\n\nProcess Isolation\n-----------------\n\nBy default, a Docker container (via `LXC`_) cannot access running processes or\nstart new processes on its host. Running *httpexec* inside a container limits\nits scope to that container. In a non-container environment, this isolation\ncan be achieved via a virtual machine.\n\n\nUser Isolation\n--------------\n\nDocker best practices dictate that a container runs as a non-privileged user.\nThe UID the container is running as can only access host resources with the\nsame permissions as that UID on the host (the respective user names are\nirrelevant). Ensure that the container does not run as ``root`` (UID ``0``).\nRun the container as a UID that does not exist on the host for maximum\nisolation. In both container and non-container environments, do not run\n*httpexec* and/or the web server as a UID that has more access than is\nnecessary.\n\n\nFile Isolation\n--------------\n\nA Docker container does not have access to files on the host unless they are\nexplicitly mounted, and then its access is determined by the UID it is running\nas (see above). This isolation can be achieved in a non-container environment\nusing `chroot`_ or a virtual machine.\n\n\nEnvironment Isolation\n---------------------\n\nEnvironment variables are commonly used to store various credentials and other\nprivileged information. A Docker container does not have access to environment\nvariables on the host unless they explicitly exported to it, and this a\nread-only static exchange (changes on the host will not be reflected in a\nrunning container). Environment isolation can also be controlled by the web\nserver (see its documentation). *httpexec* also allows limited control over\nthe environment, but that is limited to modifying the environment, not\nrestricting access. While it is possible to unset specific environment\nvariables as seen by the target command, this requires prior knowledge of all\nproblematic variable names. In a non-container environment, a virtual\nmachine will ensure a strict separation of environments, but the VM itself may\ncontain privileged information.\n\n\n===========\nDevelopment\n===========\n\nUse the project Makefile to simplify development tasks.\n\nSetup\n-----\n\nCreate a Python virtualenv environment and install the project and its ``dev``\ndependencies in editable mode:\n\n.. code-block:: console\n\n    $ make dev\n\n\nRun Checks\n----------\n\nRun all tests and linters:\n\n.. code-block:: console\n\n    $ make check\n\n\nBuild Documentation\n-------------------\n\nBuild HTML documentation using `Sphinx`_:\n\n.. code-block:: console\n\n    $ make docs\n\n\nBuild Package\n-------------\n\nBuild source and `wheel`_ packages. This will run all checks first.\n\n.. code-block:: console\n\n    $ make build\n\n\n.. |python3.9| image:: https://img.shields.io/static/v1?label=python&message=3.9&color=informational\n   :alt: Python 3.9\n.. |python3.10| image:: https://img.shields.io/static/v1?label=python&message=3.10&color=informational\n   :alt: Python 3.10\n.. |python3.11| image:: https://img.shields.io/static/v1?label=python&message=3.11&color=informational\n   :alt: Python 3.11\n.. |release| image:: https://img.shields.io/github/v/release/mdklatt/httpexec?sort=semver\n   :alt: GitHub release (latest SemVer)\n.. |pypi| image:: https://img.shields.io/pypi/v/httpexec\n   :alt: PyPI\n   :target: `PyPI`_\n.. |license| image:: https://img.shields.io/github/license/mdklatt/httpexec\n   :alt: MIT License\n   :target: `MIT License`_\n.. |tests| image:: https://github.com/mdklatt/httpexec/actions/workflows/test.yml/badge.svg\n    :alt: CI Test\n    :target: `GitHub Actions`_\n\n\n.. _ASGI-capable server: https://asgi.readthedocs.io/en/latest/implementations.html#servers\n.. _Asynchronous Server Gateway Interface: https://asgi.readthedocs.io/en/latest\n.. _base64: https://en.wikipedia.org/wiki/Base64\n.. _base85: https://en.wikipedia.org/wiki/Ascii85\n.. _chroot: https://en.wikipedia.org/wiki/Chroot\n.. _GitHub Actions: https://github.com/mdklatt/httpexec/actions/workflows/test.yml\n.. _Hypercorn: https://pgjones.gitlab.io/hypercorn\n.. _LXC: https://linuxcontainers.org/\n.. _MIT License: https://choosealicense.com/licenses/mit\n.. _OpenAPI: https://www.openapis.org/\n.. _PyPI: https://pypi.org/project/httpexec/\n.. _Python logging: https://docs.python.org/3/howto/logging.html\n.. _Sphinx: https://www.sphinx-doc.org/en/master/\n.. _TOML: https://toml.io/en/\n.. _user-defined bridge network: https://docs.docker.com/network/network-tutorial-standalone/#use-user-defined-bridge-networks\n.. _wheel: https://peps.python.org/pep-0491/\n",
+            "description_content_type": "text/x-rst",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "The MIT License (MIT)  Copyright (c) 2022-2023, Michael Klatt  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.  THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. ",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "httpexec",
+            "package_url": "https://pypi.org/project/httpexec/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/httpexec/",
+            "project_urls": {
+                "Homepage": "https://github.com/mdklatt/httpexec",
+                "Repository": "https://github.com/mdklatt/httpexec"
+            },
+            "release_url": "https://pypi.org/project/httpexec/1.0.0/",
+            "requires_dist": [
+                "quart (<1,>=0.17.0)",
+                "toml (<1,>=0.10.2)",
+                "aiohttp (<4,>=3.8.4) ; extra == 'dev'",
+                "build (<1,>=0.10.0) ; extra == 'dev'",
+                "hypercorn (<1,>=0.14.3) ; extra == 'dev'",
+                "openapi-spec-validator (<0.6.0,>=0.5.6) ; extra == 'dev'",
+                "pytest (<8,>=7.3.1) ; extra == 'dev'",
+                "pytest-asyncio (<1,>=0.21.0) ; extra == 'dev'",
+                "sphinx (<7,>=6.2.1) ; extra == 'dev'",
+                "sphinx-rtd-theme (<2,>=1.2.1) ; extra == 'dev'",
+                "twine (<5,>=4.0.2) ; extra == 'dev'"
+            ],
+            "requires_python": ">=3.9",
+            "summary": "Execute CLI commands via a REST API.",
+            "version": "1.0.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18250094,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "fe0fe62d3c9c191d633af3bc3c052da4357957dbc4819522cfb7d11d8c1b84ca",
+                    "md5": "565d0dff5ea8ab336a0e303bb0f7da3e",
+                    "sha256": "708a0e069791ebdefe83bc3df93cfc754db81c004d607f7ff49f783ea1662bbf"
+                },
+                "downloads": -1,
+                "filename": "httpexec-1.0.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "565d0dff5ea8ab336a0e303bb0f7da3e",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.9",
+                "size": 10449,
+                "upload_time": "2023-05-25T16:35:41",
+                "upload_time_iso_8601": "2023-05-25T16:35:41.818140Z",
+                "url": "https://files.pythonhosted.org/packages/fe/0f/e62d3c9c191d633af3bc3c052da4357957dbc4819522cfb7d11d8c1b84ca/httpexec-1.0.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "7e1c1662389e1e0e264b4fcfbed03724d9151a585e0d2275f68edec5e16cd7bc",
+                    "md5": "e525dd955434cc0e4b37cdad373dea97",
+                    "sha256": "e8e916d5ca127562107351287f617f39a33881f6b5a63f4afcc9bf9f0df5a235"
+                },
+                "downloads": -1,
+                "filename": "httpexec-1.0.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "e525dd955434cc0e4b37cdad373dea97",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.9",
+                "size": 13841,
+                "upload_time": "2023-05-25T16:35:43",
+                "upload_time_iso_8601": "2023-05-25T16:35:43.504918Z",
+                "url": "https://files.pythonhosted.org/packages/7e/1c/1662389e1e0e264b4fcfbed03724d9151a585e0d2275f68edec5e16cd7bc/httpexec-1.0.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
