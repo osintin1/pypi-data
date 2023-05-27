@@ -40,7 +40,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18248113,
+        "last_serial": 18267580,
         "urls": [
             {
                 "comment_text": "",
@@ -100,7 +100,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "# DataSieve\n\nDataSieve is very similar to the SKlearn Pipeline in that it:\n\n- fits an arbitrary series of transformations to an array X\n- transforms subsequent arrays of the same dimension according to the fit from the original X\n- inverse transforms arrays by inverting the series of transformations\n\nThis means that it follows the SKLearn API very closely, and in fact most of the methods inherit directly from SKLearn methods.\n\nThe main **difference** is that DataSieve allows for the manipulation of the y and sample_weight arrays in addition to the X array. This is useful if you find yourself wishing to use the SKLearn pipeline for:\n\n- removing outliers across your X, y, and sample_weights arrays according to simple or complex criteria\n- remove feature columns based on arbitrary criteria (e.g. low variance features)\n- change feature column names at certain transformations (e.g. PCA)\n- passing dynamic parameters to individual transforms of the pipeline\n- passing dataframes/arrays without worrying about converting to arrays and maintaining the proper feature columns\n\nThese improved flexibilities allow for more customized/creative transformations. For example, the included `DataSieveDBSCAN` has automated parameter fitting and outlier removal based on clustering. \n\nAn example would be someone who wants to use `SGDOneClassSVM` to detect and remove outliers from their data set before training:\n\n```python\nclass SVMOutlierExtractor(SGDOneClassSVM):\n    \"\"\"\n    A subclass of the SKLearn SGDOneClassSVM that adds a transform() method\n    for removing detected outliers from X (as well as the associated y and\n    sample_weight if they are also furnished.\n    \"\"\"\n\n    def __init__(self, **kwargs):\n        super().__init__(**kwargs)\n\n    def fit_transform(self, X, y=None, sample_weight=None, feature_list=None, **kwargs):\n        self.fit(X, y, sample_weight=sample_weight)\n        return self.transform(X, y, sample_weight=sample_weight)\n\n    def fit(self, X, y=None, sample_weight=None, feature_list=None, **kwargs):\n        super().fit(X, y=y, sample_weight=sample_weight)\n        return X, y, sample_weight, feature_list\n\n    def transform(self, X, y=None, sample_weight=None, feature_list=None, **kwargs):\n        y_pred = self.predict(X)\n\n        X, y, sample_weight = remove_outliers(X, y, sample_weight, y_pred)\n\n        num_tossed = len(y_pred) - len(X)\n        if num_tossed > 0:\n            logger.info(\n                f\"SVM detected {num_tossed} data points\"\n                \"as outliers.\"\n            )\n\n        return X, y, sample_weight, feature_list\n\n    def inverse_transform(self, X, y=None, sample_weight=None, feature_list=None, **kwargs):\n        \"\"\"\n        Unused, pass through X, y, sample_weight, and feature_list\n        \"\"\"\n        return X, y, sample_weight, feature_list\n```\n\n\nAs shown here, the `fit()` method is actually identical to the SKLearn `fit()` method, but the `transform()` removes data points from X, y, and sample_weight for any outliers detected in the `X` array.\n\n\n# Usage\nThe user builds the pipeline similarly to SKLearn:\n\n```python\n    from datasieve.pipeline import Pipeline\n    from datasieve.transforms import DataSieveMinMaxScaler, DataSievePCA, DataSieveVarianceThreshold, SVMOutlierExtractor\n\n    feature_pipeline = Pipeline([\n        (\"detect_constants\", DataSieveVarianceThreshold(threshold=0)),\n        (\"pre_svm_scaler\", DataSieveMinMaxScaler(feature_range=(-1, 1)))\n        (\"svm\", SVMOutlierExtractor()),\n        (\"pre_pca_scaler\", DataSieveMinMaxScaler(feature_range=(-1, 1)))\n        (\"pca\", DataSievePCA(n_components=0.95),\n        (\"post_pca_scaler\", DataSieveMinMaxScaler(feature_range=(-1, 1)))\n    ])\n\n```\n\nOnce the pipeline is built, it can be fit and transformed similar to a SKLearn pipeline:\n\n```python\nX, y, sample_weight = feature_pipeline.fit_transform(X, y, sample_weight)\n```\n\nThis pipeline demonstrates the various components of `DataSieve` which are missing from SKLearn's pipeline. A dataframe `X` (if desired, else users can input a simply array without column names) is input with its associated `y` and `sample_weight` arrays/vectors. The `VarianceThreshold` will first detect and remove any features that have zero variance in X, the `SVMOutlierExtractor` will fit `SGDOneClassSVM` to `X` and then remove the detected outliers in `X`, while also propagating those row removals from `y` and `sample_weight`. Finally, the `PCA` will be fit to the remaining `X` array with the features count changing and getting renamed. The returned `X` dataframe will have the correctly named column features/count, and equal row counts across the `X`, `y`, and `sample_weight` arrays.\n\nNext, the `feature_pipeline` can then be used to transform other datasets with the same input feature dimension:\n\n```python\nX2, _, _ = feature_pipeline.transform(X2)\n\n```\n\nFinally, similar to SKLearn's pipeline, the `feature_pipeline` can be used to inverse_transform an array `X3` array that has the same dimensions as the returned `X` array from the pipeline:\n\n```python\nXinv, _ ,_ = feature_pipeline.inverse_transform(X)\n```\n\n## Data removal\n\nThe command `feature_pipeline.fit_transform(X, y, sample_weight)` fits each pipeline step to `X`, and transforms `X` according to each step's `transform()` method. In some cases, this will not affect `y` or `sample_weight`. For example, `FlowdaptMinMaxScaler` simply scales `X` and saves the normalization information.  Meanwhile, in the `SVMOutlierExtractor`, `.fit()` will fit an SVM to `X` and `.transform()` will remove any detected outliers from `X`. Typical `Scikit-Learn` pipelines do not remove those data points from `y` and `sample_weight`. Luckily, the `FlowdaptPipeline` takes care of the \"associated removal\" of the same outlier data points from `y` and `sample_weight`. \n\n## Feature modification\n\nAnother feature is demonstrated in the `FlowdaptPCA`, which fits a PCA transform to `X` and then transforms `X` to principal components. This dimensionality reduction means that the features are no longer the same, instead they are now `PC1`, `PC2` ... `PCX`. `FlowdaptPipeline` handles the feature renaming at that step (which is not a feature available in the `Scikit-Learn` pipeline). Similar to `FlowdaptPCA`, the `FlowdaptVarianceThreshold` subclasses the `Scikit-Learn` `VarianceThreshold` which is geared toward removing features that have a low variance. `FlowdaptVarianceThreshold` ensures that the removed features are properly handled when `X` passes through this part of the pipeline.\n\n## Adding a custom step\n\nEach step of the `Pipeline` *must* contain the following methods:\n\n```python\nclass MyTransformer:\n    def fit_transform(self, X, y=None, sample_weight=None, feature_list=None, **kwargs):\n        X, y, sample_weight = self.fit(X, y, sample_weight)\n        X, y, sample_weight = self.transform(X, y, sample_weight)\n        return X, y, sample_weight, feature_list\n\n    def fit(self, X, y=None, sample_weight=None, feature_list=None, **kwargs):\n        return X, y, sample_weight, feature_list\n\n    def transform(self, X, y=None, sample_weight=None, feature_list=None, **kwargs):\n        return X, y, sample_weight, feature_list\n\n    def inverse_transform(self, X, y=None, sample_weight=None, feature_list=None, **kwargs):\n        return X, y, sample_weight, feature_list\n```\n\nThis is because these four methods are called automatically by the `Pipeline` object. In most cases, the goal is to add functionality for an existing transformer from the `Scikit-Learn` library. Here is an example of subclassing the `MinMaxScaler` to work with the `FlowdaptPipeline`:\n\n```python\nclass DataSieveMinMaxScaler(MinMaxScaler):\n    \"\"\"\n    A subclass of the SKLearn MinMaxScaler that ensures fit, transform, fit_transform and\n    inverse_transform all take the full set of params X, y, sample_weight (even if they\n    are unused) to follow the FlowdaptPipeline API.\n    \"\"\"\n\n    def __init__(self, **kwargs):\n        super().__init__(**kwargs)\n\n    def fit_transform(self, X, y=None, sample_weight=None, feature_list=None, **kwargs):\n        super().fit(X)\n        X = super().transform(X)\n        return X, y, sample_weight, feature_list\n\n    def fit(self, X, y=None, sample_weight=None, feature_list=None, **kwargs):\n        super().fit(X)\n        return X, y, sample_weight, feature_list\n\n    def transform(self, X, y=None, sample_weight=None, feature_list=None, **kwargs):\n        X = super().transform(X)\n        return X, y, sample_weight, feature_list\n\n    def inverse_transform(self, X, y=None, sample_weight=None, feature_list=None, **kwargs):\n        return super().inverse_transform(X), y, sample_weight, feature_list\n```\n\n\n\n# Installation\n\nThe easiest way to install `datasieve` is with:\n\n```\npip install datasieve\n```\n\nbut you can also clone this repository and install it with:\n\n```\ngit clone https://github.com/emergentmethods/datasieve.git\ncd datasieve\npoetry install\n```\n\n\n# License\n\nCopyright (c) 2023 DataSieve\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -130,7 +129,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18248113,
+        "last_serial": 18267580,
         "urls": [
             {
                 "comment_text": "",
@@ -171,6 +170,271 @@
                 "upload_time": "2023-05-25T14:21:32",
                 "upload_time_iso_8601": "2023-05-25T14:21:32.731487Z",
                 "url": "https://files.pythonhosted.org/packages/e5/f9/a86c8d9b6e960f4ed1a0026ca2ec65ba5174d5757606249ce818977da13b/datasieve-0.0.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.3": {
+        "info": {
+            "author": "Robert Caulk",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "datasieve",
+            "package_url": "https://pypi.org/project/datasieve/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/datasieve/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/datasieve/0.0.3/",
+            "requires_dist": [
+                "pandas (>=1.3.3,<2.0.0)",
+                "scikit-learn (>=1.2.0,<2.0.0)"
+            ],
+            "requires_python": ">=3.8.1,<4.0",
+            "summary": "This package implements a flexible data pipeline to help organize row removal (e.g. outlier removal) and feature modification (e.g. PCA)",
+            "version": "0.0.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18267580,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "84c0e9cf0206c5693fa97477f161b082877bf36c592e64460089c0030d2df437",
+                    "md5": "114f534cbc452fecce682ce6ce975b5f",
+                    "sha256": "e60e6d9982a7fd42d854551aa1c6f01a5f37b45d7e0139c2f2d7e2b48b92509c"
+                },
+                "downloads": -1,
+                "filename": "datasieve-0.0.3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "114f534cbc452fecce682ce6ce975b5f",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8.1,<4.0",
+                "size": 13912,
+                "upload_time": "2023-05-26T13:34:42",
+                "upload_time_iso_8601": "2023-05-26T13:34:42.142288Z",
+                "url": "https://files.pythonhosted.org/packages/84/c0/e9cf0206c5693fa97477f161b082877bf36c592e64460089c0030d2df437/datasieve-0.0.3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "85055c3be97661bc118f1d6d7a6e2b5188ee84b3d0025259acb059133f9406d6",
+                    "md5": "ba1062de5847184397dc22445e7efa7b",
+                    "sha256": "c37482e41a7553b8ebe990638abe74d2313ad7935900dfaf64c9c68054883a32"
+                },
+                "downloads": -1,
+                "filename": "datasieve-0.0.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "ba1062de5847184397dc22445e7efa7b",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8.1,<4.0",
+                "size": 11664,
+                "upload_time": "2023-05-26T13:34:43",
+                "upload_time_iso_8601": "2023-05-26T13:34:43.816165Z",
+                "url": "https://files.pythonhosted.org/packages/85/05/5c3be97661bc118f1d6d7a6e2b5188ee84b3d0025259acb059133f9406d6/datasieve-0.0.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.5": {
+        "info": {
+            "author": "Robert Caulk",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "datasieve",
+            "package_url": "https://pypi.org/project/datasieve/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/datasieve/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/datasieve/0.0.5/",
+            "requires_dist": [
+                "pandas (>=1.3.3,<2.0.0)",
+                "scikit-learn (>=1.2.0,<2.0.0)"
+            ],
+            "requires_python": ">=3.8.1,<4.0",
+            "summary": "This package implements a flexible data pipeline to help organize row removal (e.g. outlier removal) and feature modification (e.g. PCA)",
+            "version": "0.0.5",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18267580,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "4fd93266e0d6cf12e4ec848add471840ae0c1abb2d61bc3aded5ffd032a55d76",
+                    "md5": "30bd7cd88016f1470fb15e704143a981",
+                    "sha256": "c761f032dfbec2deceadfdab17b31ecb408b9b483c58721a95d7b914bec9f22d"
+                },
+                "downloads": -1,
+                "filename": "datasieve-0.0.5-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "30bd7cd88016f1470fb15e704143a981",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8.1,<4.0",
+                "size": 14621,
+                "upload_time": "2023-05-26T15:11:29",
+                "upload_time_iso_8601": "2023-05-26T15:11:29.360802Z",
+                "url": "https://files.pythonhosted.org/packages/4f/d9/3266e0d6cf12e4ec848add471840ae0c1abb2d61bc3aded5ffd032a55d76/datasieve-0.0.5-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c90ec90c835b35ed282beaf9cdde88e106f4bc2f89a85f141760a705c94d62ae",
+                    "md5": "549dd8a9e260737a9f98f1f305b971b1",
+                    "sha256": "0f44fe056e3be192b363f39913a1dcc7fdae3bfdb0dfe8861e598b9b03722f30"
+                },
+                "downloads": -1,
+                "filename": "datasieve-0.0.5.tar.gz",
+                "has_sig": false,
+                "md5_digest": "549dd8a9e260737a9f98f1f305b971b1",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8.1,<4.0",
+                "size": 12691,
+                "upload_time": "2023-05-26T15:11:31",
+                "upload_time_iso_8601": "2023-05-26T15:11:31.186668Z",
+                "url": "https://files.pythonhosted.org/packages/c9/0e/c90c835b35ed282beaf9cdde88e106f4bc2f89a85f141760a705c94d62ae/datasieve-0.0.5.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.6": {
+        "info": {
+            "author": "Robert Caulk",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# DataSieve\n\nDataSieve is very similar to the SKlearn Pipeline in that it:\n\n- fits an arbitrary series of transformations to an array X\n- transforms subsequent arrays of the same dimension according to the fit from the original X\n- inverse transforms arrays by inverting the series of transformations\n\nThis means that it follows the SKLearn API very closely, and in fact most of the methods inherit directly from SKLearn methods.\n\nThe main **difference** is that DataSieve allows for the manipulation of the y and sample_weight arrays in addition to the X array. This is useful if you find yourself wishing to use the SKLearn pipeline for:\n\n- removing outliers across your X, y, and sample_weights arrays according to simple or complex criteria\n- remove feature columns based on arbitrary criteria (e.g. low variance features)\n- change feature column names at certain transformations (e.g. PCA)\n- needing outlier classification without removal (see `oulier_check`)\n- passing dynamic parameters to individual transforms of the pipeline\n- passing dataframes/arrays without worrying about converting to arrays and maintaining the proper feature columns\n- customizing backend for parallelization (e.g. Dask, Ray, loky, etc.)\n\nThese improved flexibilities allow for more customized/creative transformations. For example, the included `DataSieveDBSCAN` has automated parameter fitting and outlier removal based on clustering. \n\nAn example would be someone who wants to use `SGDOneClassSVM` to detect and remove outliers from their data set before training:\n\n```python\nclass SVMOutlierExtractor(SGDOneClassSVM):\n    \"\"\"\n    A subclass of the SKLearn SGDOneClassSVM that adds a transform() method\n    for removing detected outliers from X (as well as the associated y and\n    sample_weight if they are also furnished.\n    \"\"\"\n\n    def __init__(self, **kwargs):\n        super().__init__(**kwargs)\n\n    def fit_transform(self, X, y=None, sample_weight=None, feature_list=None, **kwargs):\n        self.fit(X, y, sample_weight=sample_weight)\n        return self.transform(X, y, sample_weight=sample_weight)\n\n    def fit(self, X, y=None, sample_weight=None, feature_list=None, **kwargs):\n        super().fit(X, y=y, sample_weight=sample_weight)\n        return X, y, sample_weight, feature_list\n\n    def transform(self, X, y=None, sample_weight=None, feature_list=None, **kwargs):\n        y_pred = self.predict(X)\n\n        X, y, sample_weight = remove_outliers(X, y, sample_weight, y_pred)\n\n        num_tossed = len(y_pred) - len(X)\n        if num_tossed > 0:\n            logger.info(\n                f\"SVM detected {num_tossed} data points \"\n                \"as outliers.\"\n            )\n\n        return X, y, sample_weight, feature_list\n\n    def inverse_transform(self, X, y=None, sample_weight=None, feature_list=None, **kwargs):\n        \"\"\"\n        Unused, pass through X, y, sample_weight, and feature_list\n        \"\"\"\n        return X, y, sample_weight, feature_list\n```\n\n\nAs shown here, the `fit()` method is actually identical to the SKLearn `fit()` method, but the `transform()` removes data points from X, y, and sample_weight for any outliers detected in the `X` array.\n\n\n# Usage\nThe user builds the pipeline similarly to SKLearn:\n\n```python\n    from datasieve.pipeline import Pipeline\n    from datasieve.transforms import DataSieveMinMaxScaler, DataSievePCA, DataSieveVarianceThreshold, SVMOutlierExtractor\n\n    feature_pipeline = Pipeline([\n        (\"detect_constants\", DataSieveVarianceThreshold(threshold=0)),\n        (\"pre_svm_scaler\", DataSieveMinMaxScaler(feature_range=(-1, 1))),\n        (\"svm\", SVMOutlierExtractor()),\n        (\"pre_pca_scaler\", DataSieveMinMaxScaler(feature_range=(-1, 1))),\n        (\"pca\", DataSievePCA(n_components=0.95),\n        (\"post_pca_scaler\", DataSieveMinMaxScaler(feature_range=(-1, 1)))\n    ])\n\n```\n\nOnce the pipeline is built, it can be fit and transformed similar to a SKLearn pipeline:\n\n```python\nX, y, sample_weight = feature_pipeline.fit_transform(X, y, sample_weight)\n```\n\nThis pipeline demonstrates the various components of `DataSieve` which are missing from SKLearn's pipeline. A dataframe `X` (if desired, else users can input a simply array without column names) is input with its associated `y` and `sample_weight` arrays/vectors. The `VarianceThreshold` will first detect and remove any features that have zero variance in X, the `SVMOutlierExtractor` will fit `SGDOneClassSVM` to `X` and then remove the detected outliers in `X`, while also propagating those row removals from `y` and `sample_weight`. Finally, the `PCA` will be fit to the remaining `X` array with the features count changing and getting renamed. The returned `X` dataframe will have the correctly named column features/count, and equal row counts across the `X`, `y`, and `sample_weight` arrays.\n\nNext, the `feature_pipeline` can then be used to transform other datasets with the same input feature dimension:\n\n```python\nX2, _, _ = feature_pipeline.transform(X2)\n\n```\n\nFinally, similar to SKLearn's pipeline, the `feature_pipeline` can be used to inverse_transform an array `X3` array that has the same dimensions as the returned `X` array from the pipeline:\n\n```python\nXinv, _ ,_ = feature_pipeline.inverse_transform(X)\n```\n\n## Data removal\n\nThe command `feature_pipeline.fit_transform(X, y, sample_weight)` fits each pipeline step to `X`, and transforms `X` according to each step's `transform()` method. In some cases, this will not affect `y` or `sample_weight`. For example, `FlowdaptMinMaxScaler` simply scales `X` and saves the normalization information.  Meanwhile, in the `SVMOutlierExtractor`, `.fit()` will fit an SVM to `X` and `.transform()` will remove any detected outliers from `X`. Typical `Scikit-Learn` pipelines do not remove those data points from `y` and `sample_weight`. Luckily, the `FlowdaptPipeline` takes care of the \"associated removal\" of the same outlier data points from `y` and `sample_weight`. \n\n## Feature modification\n\nAnother feature is demonstrated in the `FlowdaptPCA`, which fits a PCA transform to `X` and then transforms `X` to principal components. This dimensionality reduction means that the features are no longer the same, instead they are now `PC1`, `PC2` ... `PCX`. `FlowdaptPipeline` handles the feature renaming at that step (which is not a feature available in the `Scikit-Learn` pipeline). Similar to `FlowdaptPCA`, the `FlowdaptVarianceThreshold` subclasses the `Scikit-Learn` `VarianceThreshold` which is geared toward removing features that have a low variance. `FlowdaptVarianceThreshold` ensures that the removed features are properly handled when `X` passes through this part of the pipeline.\n\n## Adding a custom step\n\nEach step of the `Pipeline` *must* contain the following methods:\n\n```python\nclass MyTransformer:\n    def fit_transform(self, X, y=None, sample_weight=None, feature_list=None, **kwargs):\n        X, y, sample_weight = self.fit(X, y, sample_weight)\n        X, y, sample_weight = self.transform(X, y, sample_weight)\n        return X, y, sample_weight, feature_list\n\n    def fit(self, X, y=None, sample_weight=None, feature_list=None, **kwargs):\n        return X, y, sample_weight, feature_list\n\n    def transform(self, X, y=None, sample_weight=None, feature_list=None, **kwargs):\n        return X, y, sample_weight, feature_list\n\n    def inverse_transform(self, X, y=None, sample_weight=None, feature_list=None, **kwargs):\n        return X, y, sample_weight, feature_list\n```\n\nThis is because these four methods are called automatically by the `Pipeline` object. In most cases, the goal is to add functionality for an existing transformer from the `Scikit-Learn` library. Here is an example of subclassing the `MinMaxScaler` to work with the `FlowdaptPipeline`:\n\n```python\nclass DataSieveMinMaxScaler(MinMaxScaler):\n    \"\"\"\n    A subclass of the SKLearn MinMaxScaler that ensures fit, transform, fit_transform and\n    inverse_transform all take the full set of params X, y, sample_weight (even if they\n    are unused) to follow the FlowdaptPipeline API.\n    \"\"\"\n\n    def __init__(self, **kwargs):\n        super().__init__(**kwargs)\n\n    def fit_transform(self, X, y=None, sample_weight=None, feature_list=None, **kwargs):\n        super().fit(X)\n        X = super().transform(X)\n        return X, y, sample_weight, feature_list\n\n    def fit(self, X, y=None, sample_weight=None, feature_list=None, **kwargs):\n        super().fit(X)\n        return X, y, sample_weight, feature_list\n\n    def transform(self, X, y=None, sample_weight=None, feature_list=None, **kwargs):\n        X = super().transform(X)\n        return X, y, sample_weight, feature_list\n\n    def inverse_transform(self, X, y=None, sample_weight=None, feature_list=None, **kwargs):\n        return super().inverse_transform(X), y, sample_weight, feature_list\n```\n\n\n## Outlier checking\n\nDataSieve also allows users to fit a pipeline that can be used to flag outliers in data *without* removing them from the dataset. This may be handy in a variety of cases where keeping the data point is important but having some indication of which points are outliers is also important. In order to use this functionality, you can take an already `fit` pipeline and call `transform(X, outlier_check=True)` which will return X as well as a vector of 1s and 0s indicating which points are outliers. This is demonstrated in the following example:\n\n```python\npipeline = Pipeline([\n    (\"pre_svm_scaler\", transforms.DataSieveMinMaxScaler()),\n    (\"svm\", transforms.SVMOutlierExtractor())\n])\n\npipeline.fit(X)\n\nX, outliers, _ = pipeline.transform(X, outlier_check=True)\n```\n\nNow X will *not* have any of the outlier data points removed, but the vector `outliers` will be an indication of which points were classified as outliers, where 0 means the point was an outlier and 1 means that the point was an inlier.\n\n\n# Installation\n\nThe easiest way to install `datasieve` is with:\n\n```\npip install datasieve\n```\n\nbut you can also clone this repository and install it with:\n\n```\ngit clone https://github.com/emergentmethods/datasieve.git\ncd datasieve\npoetry install\n```\n\n\n# License\n\nCopyright (c) 2023 DataSieve\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "datasieve",
+            "package_url": "https://pypi.org/project/datasieve/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/datasieve/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/datasieve/0.0.6/",
+            "requires_dist": [
+                "pandas (>=1.3.3,<2.0.0)",
+                "scikit-learn (>=1.2.0,<2.0.0)"
+            ],
+            "requires_python": ">=3.8.1,<4.0",
+            "summary": "This package implements a flexible data pipeline to help organize row removal (e.g. outlier removal) and feature modification (e.g. PCA)",
+            "version": "0.0.6",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18267580,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "52e79b96e4ebb6970226fd291167376dcfc5975db8c10757bd4f378cad1458b3",
+                    "md5": "b85e2dcbe492a4fd4b39741d7b0282ce",
+                    "sha256": "24e27685c13fc9c18a9775694472bf7a28f4d4f4a85c49b986d4bd46d31c4ff7"
+                },
+                "downloads": -1,
+                "filename": "datasieve-0.0.6-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "b85e2dcbe492a4fd4b39741d7b0282ce",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8.1,<4.0",
+                "size": 14685,
+                "upload_time": "2023-05-26T18:39:31",
+                "upload_time_iso_8601": "2023-05-26T18:39:31.498307Z",
+                "url": "https://files.pythonhosted.org/packages/52/e7/9b96e4ebb6970226fd291167376dcfc5975db8c10757bd4f378cad1458b3/datasieve-0.0.6-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c04731e0ab858d03bc79b4a8e707aa4c9f726657bc5a542d2e7f9b61a8a66ecb",
+                    "md5": "7687f060e303fa882ed6716fc750629b",
+                    "sha256": "a303233f935e5487866aca6e5a0f57ce0169d3d6245ae5c348fc8c3b6528aeba"
+                },
+                "downloads": -1,
+                "filename": "datasieve-0.0.6.tar.gz",
+                "has_sig": false,
+                "md5_digest": "7687f060e303fa882ed6716fc750629b",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8.1,<4.0",
+                "size": 12754,
+                "upload_time": "2023-05-26T18:39:33",
+                "upload_time_iso_8601": "2023-05-26T18:39:33.348400Z",
+                "url": "https://files.pythonhosted.org/packages/c0/47/31e0ab858d03bc79b4a8e707aa4c9f726657bc5a542d2e7f9b61a8a66ecb/datasieve-0.0.6.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

@@ -51,7 +51,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18219991,
+        "last_serial": 18267779,
         "urls": [
             {
                 "comment_text": "",
@@ -114,7 +114,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "# Python Bugs OpenAI\n\n![version](https://img.shields.io/pypi/v/py_bugs_open_ai)\n![python versions](https://img.shields.io/pypi/pyversions/py_bugs_open_ai)\n![build](https://img.shields.io/github/actions/workflow/status/valmikirao/py_bugs_open_ai/push-workflow.yml?branch=master)\n\n* Free software: GNU General Public License v3\n\nA utility to help use OpenAI to find bugs in large projects or git diffs in python code.  Makes heavy use of caching to save time/money\n\n# Table of Contents\n\n1. [Installation](#Installation)\n2. [Usage](#Usage)\n3. [System Text](#SystemText)\n4. [Skipping False Positives](#Skipping)\n5. [Providing Examples](#Examples)\n6. [TODO](#TODO)\n7. [Credits](#Credits)\n\n\n## Installation <a id=\"Installation\"/>\n\n```shell\n# in local virtual env\n$ pip install py-bugs-open-ai\n\n# globally\n$ pipx install py-bugs-open-ai\n```\n\n## Usage <a id=\"Usage\"/>\n\n```shell\n# check for bugs in file\n$ pybugsai foo.py\n\n# in a repo\n$ git ls-files '*.py' | pybugsai --in\n\n# in the diff from master\n$ git diff master -- '*.py' | pybugsai --diff-in\n```\n\n`pybugsai` makes heavy use of caching and you should make sure to somehow persist the cache if you run it your ci/cd\n\nFrom the help:\n\n```text\nUsage: pybugsai [OPTIONS] [FILE]...\n\n  Chunks up python files and sends the pieces to open-ai to see if it thinks\n  there are any bugs in it\n\nOptions:\n  -c, --config TEXT               The config file.  Overrides the [pybugsai]\n                                  section in pybugsai.cfg and setup.cfg\n  --files-from-stdin, --in        Take the list of files from standard in,\n                                  such that you could run this script like\n                                  `git ls-files -- '*.py' | pybugsai --in`\n  --api-key-env-variable TEXT     The environment variable which the openai\n                                  api key is stored in  [default:\n                                  OPEN_AI_API_KEY]\n  --model TEXT                    The openai model used  [default:\n                                  gpt-3.5-turbo]\n  --embeddings-model TEXT\n  --max-chunk-size, --chunk INTEGER\n                                  The script tries to break the python down\n                                  into chunk sizes smaller than this\n                                  [default: 500]\n  --abs-max-chunk-size, --abs-chunk INTEGER\n                                  Sometimes the script can't break up the code\n                                  into chunks smaller than --max-chunk-size.\n                                  This is the absolute maximum size of chunk\n                                  it will send.  If a chunk is bigger than\n                                  this, it will be reported as a warning or as\n                                  an error if --strict-chunk-size is set.\n                                  Defaults to --max-chunk-size\n  --cache-dir, --cache TEXT       The cache directory [~/.pybugsai/cache]\n  --refresh-cache\n  --die-after INTEGER             After this many errors are found, the\n                                  scripts stops running  [default: 3]\n  --strict-chunk-size, --strict   If true and there is a chunk that is bigger\n                                  than --abs-max-chunk-size, it will be marked\n                                  as an error\n  --skip-chunks TEXT              The hashes of the chunks to skip.  Can be\n                                  added multiple times are be a comma-\n                                  delimited list\n  --diff-from-stdin, --diff-in    Be able to take `git diff` from the std-in\n                                  and then only check the chunks for lines\n                                  that are different\n  --is-bug-re, --re TEXT          If the response from OpenAI matches this\n                                  regular-expression, then it is marked as an\n                                  error.  Might be necessary to change this\n                                  from the default if you use a customer\n                                  --system-content  [default: ^ERROR\\b]\n  -i, --is-bug-re-ignore-case     Ignore the case when applying the `--is-bug-\n                                  re`\n  -s, --system-content TEXT       The system content sent to OpenAI\n  --examples-file TEXT            File containing example code and responses\n                                  to guide openai in finding bugs or non-bugs.\n                                  See README for format and more information\n                                  [default: ~/.pybugsai/examples.yml]\n  --max-tokens-to-send INTEGER    Maximum number of tokens to send to the\n                                  OpenAI api, include the examples in the\n                                  --examples-file.  pybugsai uses embeddings\n                                  to only send the most relevant examples if\n                                  it can't send them all without exceeding\n                                  this count  [default: 1000]\n  --help                          Show this message and exit.\n\n```\n\nThe default for any readme can be set in the `[pybugsai]` of the config files (`pybugsai.cfg`, `setup.cfg`, or the\nfile specified by the `--config` option):\n\n```text\nfile:                                   file\nconfig:                                 --config, -c\nfiles_from_stdin (true or false):       --files-from-stdin, --in\napi_key_env_variable:                   --api-key-env-variable\nmodel:                                  --model\nembeddings_model:                       --embeddings-model\nmax_chunk_size:                         --max-chunk-size, --chunk\nabs_max_chunk_size:                     --abs-max-chunk-size, --abs-chunk\ncache_dir:                              --cache-dir, --cache\nrefresh_cache (true or false):          --refresh-cache\ndie_after:                              --die-after\nstrict_chunk_size (true or false):      --strict-chunk-size, --strict\nskip_chunks:                            --skip-chunks\ndiff_from_stdin (true or false):        --diff-from-stdin, --diff-in\nis_bug_re:                              --is-bug-re, --re\nis_bug_re_ignore_case (true or false):  --is-bug-re-ignore-case, -i\nsystem_content:                         --system-content, -s\nexamples_file:                          --examples-file\nmax_tokens_to_send:                     --max-tokens-to-send\n\n```\n\n## System Text <a id=\"SystemText\"/>\n\nThe `--system-text` argument, `system_text` config variable tells OpenAI what function it should be fulfilling.  Since\nthe default value was too long to include in the `--help` message, here it is:\n\n```text\n\n```\n\n## Skipping False Positives <a id=\"Skipping\"/>\n\nSometimes, openai is smart enough to interpret comments added to the code\n\n```python\nsys.path.join(foo, bar)  # sys in imported earlier (pybugsai)\n```\n\nMore reliably, you can have it skip certain chunks of code by using their hashes and the `--skip-chunks` option or\nthe `skip_chunks` argument in the `.cfg` file.  The hashes are reported in the output\n\n```text\nfoo.py:1-51; 8a49edc09f token count: 390 - ok\nfoo.py:68-101; 907cf1dc2c token count: 380 - ok\nfoo.py:103-148; 3156754fe4 token count: 451 - error\nfoo.py:150-168; 91b78bdac4 token count: 183 - error\nfoo.py:171-172; 71daa97727 token count: 13 - ok\n```\n\nSo if you wanted to skip the two above errors, you could do the following:\n\n```text\n[pybugsai]\nskip_chunks = 3156754fe4,91b78bdac4\n```\n\n## Providing Examples <a id=\"Examples\"/>\n\nYou can provide examples of potential bugs in a file.  By default, the cli looks for this file at\n``, but it can also be specified with the `--examples-files` argument.  The file is a Yaml\nfile with the following format:\n\n```yaml\nexamples:\n  - code: <some code>\n    response: <what you wound want OpenAI to respond with for this type of code>\n  - <more examples>\n```\n\nSo, for example:\n\n```yaml\nexamples:\n  - code: os.path.join('dir', 'file')\n    response: \"OK: Assume that the \\\"os\\\" module was imported above\"\n  - code: my_companys_module.my_companys_function(-1)\n    response: \"ERROR: my_companys_module.my_companys_function() errors with negative values\"\n```\n\nIf the token count in the query plus the `--system-text` plus the chunk size are greater than `--max-tokens-to-send`,\nthen the `` will use embeddings to figure out which of the examples are relevant to this particular chunk\nand just send those.  Please note that standard billing applies to getting the embeddings.  The embedding results are\ncached\n\nIf you don't know what embeddings are, this might help explain it:\nhttps://github.com/openai/openai-cookbook/blob/main/examples/Question_answering_using_embeddings.ipynb\n\n## TODO <a id=\"TODO\"/>\n\n* Allow this to use LLM's besides OpenAI\n* Add tooling to have some sort of remote cache, so if you run it locally then another contributor or the CI/CD can\n  take advantage of the same cache\n\n## Credits <a id=\"Credits\"/>\n\nCreated by Valmiki Rao <valmikirao@gmail.com>\n\nThis package was created with Cookiecutter_ and the `audreyr/cookiecutter-pypackage`_ project template.\n\n* Cookiecutter: https://github.com/audreyr/cookiecutter\n* `audreyr/cookiecutter-pypackage`: https://github.com/audreyr/cookiecutter-pypackage\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -151,7 +150,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18219991,
+        "last_serial": 18267779,
         "urls": [
             {
                 "comment_text": "",
@@ -192,6 +191,205 @@
                 "upload_time": "2023-05-23T21:24:49",
                 "upload_time_iso_8601": "2023-05-23T21:24:49.552419Z",
                 "url": "https://files.pythonhosted.org/packages/4a/36/32bb406466657a8aaa9c963385416c95216483a6e4945e88bfe9203f413b/py_bugs_open_ai-0.1.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.2": {
+        "info": {
+            "author": "Valmiki Rao",
+            "author_email": "valmikirao@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 2 - Pre-Alpha",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+                "Natural Language :: English",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/valmikirao/py_bugs_open_ai",
+            "keywords": "py_bugs_open_ai",
+            "license": "GNU General Public License v3",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "py-bugs-open-ai",
+            "package_url": "https://pypi.org/project/py-bugs-open-ai/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/py-bugs-open-ai/",
+            "project_urls": {
+                "Homepage": "https://github.com/valmikirao/py_bugs_open_ai"
+            },
+            "release_url": "https://pypi.org/project/py-bugs-open-ai/0.1.2/",
+            "requires_dist": [
+                "Click (<9.0.0,>=8.1.3)",
+                "pydantic (<2.0.0,>=1.10.7)",
+                "diskcache (<6.0.0,>=5.6.1)",
+                "openai[embeddings] (<1.0.0,>=0.27.4)",
+                "PyYAML (<7.0.0,>=6.0.0)",
+                "tiktoken (<1.0.0,>=0.3.3)",
+                "tenacity (<9.0.0,>=8.2.2)"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "A utility to help use OpenAI to find bugs in large projects or git diffs in python code.  Makes heavy use of caching to save time/money",
+            "version": "0.1.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18267779,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c49af5ae6fb17c0a8ded12a60c23d861f7c82c37e36cae8944df5e8c803f4832",
+                    "md5": "b9ef6bf165f4a6af2f4bedd53b5d0160",
+                    "sha256": "4d612880792f401a3ceccaedf8140543fb5294d5c608453c5606e8e313d71b79"
+                },
+                "downloads": -1,
+                "filename": "py_bugs_open_ai-0.1.2-py2.py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "b9ef6bf165f4a6af2f4bedd53b5d0160",
+                "packagetype": "bdist_wheel",
+                "python_version": "py2.py3",
+                "requires_python": ">=3.8",
+                "size": 19579,
+                "upload_time": "2023-05-26T18:32:09",
+                "upload_time_iso_8601": "2023-05-26T18:32:09.655460Z",
+                "url": "https://files.pythonhosted.org/packages/c4/9a/f5ae6fb17c0a8ded12a60c23d861f7c82c37e36cae8944df5e8c803f4832/py_bugs_open_ai-0.1.2-py2.py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e87c3f4a1771f886a71cc59882eae189f8c02f03b43fa75c40fc7713edcd2191",
+                    "md5": "59a0c6f36e8229b05017e0a3d7821c12",
+                    "sha256": "9c651b1a09030d3b0eca276bc0040efed634c046fcfa70c8be0d1b438ac6dd5c"
+                },
+                "downloads": -1,
+                "filename": "py_bugs_open_ai-0.1.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "59a0c6f36e8229b05017e0a3d7821c12",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 20027,
+                "upload_time": "2023-05-26T18:32:11",
+                "upload_time_iso_8601": "2023-05-26T18:32:11.572199Z",
+                "url": "https://files.pythonhosted.org/packages/e8/7c/3f4a1771f886a71cc59882eae189f8c02f03b43fa75c40fc7713edcd2191/py_bugs_open_ai-0.1.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.3": {
+        "info": {
+            "author": "Valmiki Rao",
+            "author_email": "valmikirao@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 2 - Pre-Alpha",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+                "Natural Language :: English",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# Python Bugs OpenAI\n\n![version](https://img.shields.io/pypi/v/py_bugs_open_ai)\n![python versions](https://img.shields.io/pypi/pyversions/py_bugs_open_ai)\n![build](https://img.shields.io/github/actions/workflow/status/valmikirao/py_bugs_open_ai/push-workflow.yml?branch=master)\n\n* Free software: GNU General Public License v3\n* Note for Python 3.8 and MacOS: I can't get this to work on my local machine with this combination, but it seems to\n work in ubuntu, so I'm keeping this as working for Python 3.8\n\nA utility to help use OpenAI to find bugs in large projects or git diffs in python code.  Makes heavy use of caching to save time/money\n\n# Table of Contents\n\n1. [Installation](#Installation)\n2. [Usage](#Usage)\n3. [System Text](#SystemText)\n4. [Skipping False Positives](#Skipping)\n5. [Providing Examples](#Examples)\n6. [TODO](#TODO)\n7. [Credits](#Credits)\n\n\n## Installation <a id=\"Installation\"/>\n\n```shell\n# in local virtual env\n$ pip install py-bugs-open-ai\n\n# globally\n$ pipx install py-bugs-open-ai\n```\n\n## Usage <a id=\"Usage\"/>\n\n```shell\n# check for bugs in file\n$ pybugsai foo.py\n\n# in a repo\n$ git ls-files '*.py' | pybugsai --in\n\n# in the diff from master\n$ git diff master -- '*.py' | pybugsai --diff-in\n```\n\n`pybugsai` makes heavy use of caching and you should make sure to somehow persist the cache if you run it your ci/cd\n\nFrom the help:\n\n```text\nUsage: pybugsai [OPTIONS] [FILE]...\n\n  Chunks up python files and sends the pieces to open-ai to see if it thinks\n  there are any bugs in it\n\nOptions:\n  -c, --config TEXT               The config file.  Overrides the [pybugsai]\n                                  section in pybugsai.cfg and setup.cfg\n  --files-from-stdin, --in        Take the list of files from standard in,\n                                  such that you could run this script like\n                                  `git ls-files -- '*.py' | pybugsai --in`\n  --api-key-env-variable TEXT     The environment variable which the openai\n                                  api key is stored in  [default:\n                                  OPEN_AI_API_KEY]\n  --model TEXT                    The openai model used  [default:\n                                  gpt-3.5-turbo]\n  --embeddings-model TEXT\n  --max-chunk-size, --chunk INTEGER\n                                  The script tries to break the python down\n                                  into chunk sizes smaller than this\n                                  [default: 500]\n  --abs-max-chunk-size, --abs-chunk INTEGER\n                                  Sometimes the script can't break up the code\n                                  into chunks smaller than --max-chunk-size.\n                                  This is the absolute maximum size of chunk\n                                  it will send.  If a chunk is bigger than\n                                  this, it will be reported as a warning or as\n                                  an error if --strict-chunk-size is set.\n                                  Defaults to --max-chunk-size\n  --cache-dir, --cache TEXT       The cache directory [~/.pybugsai/cache]\n  --refresh-cache\n  --die-after INTEGER             After this many errors are found, the\n                                  scripts stops running  [default: 3]\n  --strict-chunk-size, --strict   If true and there is a chunk that is bigger\n                                  than --abs-max-chunk-size, it will be marked\n                                  as an error\n  --skip-chunks TEXT              The hashes of the chunks to skip.  Can be\n                                  added multiple times are be a comma-\n                                  delimited list\n  --diff-from-stdin, --diff-in    Be able to take `git diff` from the std-in\n                                  and then only check the chunks for lines\n                                  that are different\n  --is-bug-re, --re TEXT          If the response from OpenAI matches this\n                                  regular-expression, then it is marked as an\n                                  error.  Might be necessary to change this\n                                  from the default if you use a customer\n                                  --system-content  [default: ^ERROR\\b]\n  -i, --is-bug-re-ignore-case     Ignore the case when applying the `--is-bug-\n                                  re`\n  -s, --system-content TEXT       The system content sent to OpenAI\n  --examples-file TEXT            File containing example code and responses\n                                  to guide openai in finding bugs or non-bugs.\n                                  See README for format and more information\n                                  [default: ~/.pybugsai/examples.yml]\n  --max-tokens-to-send INTEGER    Maximum number of tokens to send to the\n                                  OpenAI api, include the examples in the\n                                  --examples-file.  pybugsai uses embeddings\n                                  to only send the most relevant examples if\n                                  it can't send them all without exceeding\n                                  this count  [default: 1000]\n  --help                          Show this message and exit.\n\n```\n\nThe default for any readme can be set in the `[pybugsai]` of the config files (`pybugsai.cfg`, `setup.cfg`, or the\nfile specified by the `--config` option):\n\n```text\nfile:                                   file\nconfig:                                 --config, -c\nfiles_from_stdin (true or false):       --files-from-stdin, --in\napi_key_env_variable:                   --api-key-env-variable\nmodel:                                  --model\nembeddings_model:                       --embeddings-model\nmax_chunk_size:                         --max-chunk-size, --chunk\nabs_max_chunk_size:                     --abs-max-chunk-size, --abs-chunk\ncache_dir:                              --cache-dir, --cache\nrefresh_cache (true or false):          --refresh-cache\ndie_after:                              --die-after\nstrict_chunk_size (true or false):      --strict-chunk-size, --strict\nskip_chunks:                            --skip-chunks\ndiff_from_stdin (true or false):        --diff-from-stdin, --diff-in\nis_bug_re:                              --is-bug-re, --re\nis_bug_re_ignore_case (true or false):  --is-bug-re-ignore-case, -i\nsystem_content:                         --system-content, -s\nexamples_file:                          --examples-file\nmax_tokens_to_send:                     --max-tokens-to-send\n\n```\n\n## System Text <a id=\"SystemText\"/>\n\nThe `--system-text` argument, `system_text` config variable tells OpenAI what function it should be fulfilling.  Since\nthe default value was too long to include in the `--help` message, here it is:\n\n```text\n\n```\n\n## Skipping False Positives <a id=\"Skipping\"/>\n\nSometimes, openai is smart enough to interpret comments added to the code\n\n```python\nsys.path.join(foo, bar)  # sys in imported earlier (pybugsai)\n```\n\nMore reliably, you can have it skip certain chunks of code by using their hashes and the `--skip-chunks` option or\nthe `skip_chunks` argument in the `.cfg` file.  The hashes are reported in the output\n\n```text\nfoo.py:1-51; 8a49edc09f token count: 390 - ok\nfoo.py:68-101; 907cf1dc2c token count: 380 - ok\nfoo.py:103-148; 3156754fe4 token count: 451 - error\nfoo.py:150-168; 91b78bdac4 token count: 183 - error\nfoo.py:171-172; 71daa97727 token count: 13 - ok\n```\n\nSo if you wanted to skip the two above errors, you could do the following:\n\n```text\n[pybugsai]\nskip_chunks = 3156754fe4,91b78bdac4\n```\n\n## Providing Examples <a id=\"Examples\"/>\n\nYou can provide examples of potential bugs in a file.  By default, the cli looks for this file at\n``, but it can also be specified with the `--examples-files` argument.  The file is a Yaml\nfile with the following format:\n\n```yaml\nexamples:\n  - code: <some code>\n    response: <what you wound want OpenAI to respond with for this type of code>\n  - <more examples>\n```\n\nSo, for example:\n\n```yaml\nexamples:\n  - code: os.path.join('dir', 'file')\n    response: \"OK: Assume that the \\\"os\\\" module was imported above\"\n  - code: my_companys_module.my_companys_function(-1)\n    response: \"ERROR: my_companys_module.my_companys_function() errors with negative values\"\n```\n\nIf the token count in the query plus the `--system-text` plus the chunk size are greater than `--max-tokens-to-send`,\nthen the `` will use embeddings to figure out which of the examples are relevant to this particular chunk\nand just send those.  Please note that standard billing applies to getting the embeddings.  The embedding results are\ncached\n\nIf you don't know what embeddings are, this might help explain it:\nhttps://github.com/openai/openai-cookbook/blob/main/examples/Question_answering_using_embeddings.ipynb\n\n## TODO <a id=\"TODO\"/>\n\n* Allow this to use LLM's besides OpenAI\n* Add tooling to have some sort of remote cache, so if you run it locally then another contributor or the CI/CD can\n  take advantage of the same cache\n\n## Credits <a id=\"Credits\"/>\n\nCreated by Valmiki Rao <valmikirao@gmail.com>\n\nThis package was created with Cookiecutter_ and the `audreyr/cookiecutter-pypackage`_ project template.\n\n* Cookiecutter: https://github.com/audreyr/cookiecutter\n* `audreyr/cookiecutter-pypackage`: https://github.com/audreyr/cookiecutter-pypackage\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/valmikirao/py_bugs_open_ai",
+            "keywords": "py_bugs_open_ai",
+            "license": "GNU General Public License v3",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "py-bugs-open-ai",
+            "package_url": "https://pypi.org/project/py-bugs-open-ai/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/py-bugs-open-ai/",
+            "project_urls": {
+                "Homepage": "https://github.com/valmikirao/py_bugs_open_ai"
+            },
+            "release_url": "https://pypi.org/project/py-bugs-open-ai/0.1.3/",
+            "requires_dist": [
+                "Click (<9.0.0,>=8.1.3)",
+                "pydantic (<2.0.0,>=1.10.7)",
+                "diskcache (<6.0.0,>=5.6.1)",
+                "openai[embeddings] (<1.0.0,>=0.27.4)",
+                "PyYAML (<7.0.0,>=6.0.0)",
+                "tiktoken (<1.0.0,>=0.3.3)",
+                "tenacity (<9.0.0,>=8.2.2)"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "A utility to help use OpenAI to find bugs in large projects or git diffs in python code.  Makes heavy use of caching to save time/money",
+            "version": "0.1.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18267779,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "be0a4ab9c45d9d61035c207556852a69ab6dda6971d80a9c45f55b3812a21bee",
+                    "md5": "88b840f0b902793e5caab822d4901870",
+                    "sha256": "3345b180616debcfb42618b208029fb0fbd55932f28eed5fc873a602ac2f3ded"
+                },
+                "downloads": -1,
+                "filename": "py_bugs_open_ai-0.1.3-py2.py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "88b840f0b902793e5caab822d4901870",
+                "packagetype": "bdist_wheel",
+                "python_version": "py2.py3",
+                "requires_python": ">=3.8",
+                "size": 19576,
+                "upload_time": "2023-05-26T18:52:16",
+                "upload_time_iso_8601": "2023-05-26T18:52:16.214404Z",
+                "url": "https://files.pythonhosted.org/packages/be/0a/4ab9c45d9d61035c207556852a69ab6dda6971d80a9c45f55b3812a21bee/py_bugs_open_ai-0.1.3-py2.py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "b773dce0dc689196324cd5e91abf34e8703a4e806663c1071bbb178076c62e43",
+                    "md5": "b78e9df8e694f5f4a277d7174232f572",
+                    "sha256": "79b1a6932072c8abdd2118dae06865375b38ebf4fd35cb72b72af0c75aaa84db"
+                },
+                "downloads": -1,
+                "filename": "py_bugs_open_ai-0.1.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "b78e9df8e694f5f4a277d7174232f572",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 20048,
+                "upload_time": "2023-05-26T18:52:17",
+                "upload_time_iso_8601": "2023-05-26T18:52:17.816972Z",
+                "url": "https://files.pythonhosted.org/packages/b7/73/dce0dc689196324cd5e91abf34e8703a4e806663c1071bbb178076c62e43/py_bugs_open_ai-0.1.3.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

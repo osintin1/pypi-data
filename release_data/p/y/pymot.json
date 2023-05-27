@@ -36,7 +36,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18183650,
+        "last_serial": 18267516,
         "urls": [
             {
                 "comment_text": null,
@@ -123,7 +123,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18183650,
+        "last_serial": 18267516,
         "urls": [
             {
                 "comment_text": null,
@@ -210,7 +210,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18183650,
+        "last_serial": 18267516,
         "urls": [
             {
                 "comment_text": null,
@@ -266,7 +266,6 @@
                 "License :: OSI Approved :: MIT License",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "# Multi object tracking class\n\n> Perform multi object tracking and use a custom function for tracked objects\n\nMOT arguments:\n\n-   _mot_cfg_ - configuration dictionary for MOT (tamplate below)\n\n```python\nmot_cfg = {\n    'od_classes':'SPECIFY',       # Object detection algorithm classes path\n    'od_algo':'yolo',\n    'od_wpath':'SPECIFY',         # Object detection algorithm weights path\n    'od_cpath':'SPECIFY',         # Object detection algorithm config path\n    'od_nms_thr':0.4,\n    'od_conf_thr':0.5,\n    'od_img_size':416,\n    'od_cuda':True,\n    't_classes':'SPECIFY',        # List of classes to track\n    't_algo':'deepsort',\n    't_cuda':True,\n    't_metric':'cosine',\n    't_max_cosine_distance':0.2,\n    't_budget':100,\n    't_max_iou_distance':0.7,\n    't_max_age':70,\n    't_n_init':3\n}\n```\n\nMOT methods:\n\n- _detect_objects_ - detect object from a frame\n- _track_objects_ - perform a tracking update on frame\n\n## Algorithms\n\nCurrently available object detection algorithms:\n        \n- YOLOv3\n- YOLOv4\n        \nCurrently available tracking algorithms:\n        \n- DeepSORT\n\n## Installation\n\nTo use the package torch, torchvision and opencv must be also installed.\n\nNote: It is recommended to use opencv compiled with CUDA support, because algorithms that use opencv's darknet\nbackend like YOLOv3/v4 run an order of magnitude faster on a GPU.\n\n```sh\npip install pymot\n```\n\n## Usage\n\nWithout a custom function for tracked objects\n\n```python\nfrom pymot.mot import MOT\nimport cv2\n\nmot_tracker = MOT(mot_cfg)\n\ncap = cv2.VideoCapture(0)\n\nwhile True:\n    ret, frame = cap.read()\n    if not ret:\n        break\n\n    if cv2.waitKey(1) & 0xFF == ord(\"q\"):\n        cap.release()\n        cv2.destroyAllWindows()\n        break\n\n    tracked_ojb_info, frame_with_bboxes, _ = mot_tracker.track_objects(frame)\n\n    cv2.imshow('Object tracking with deepSORT', frame_with_bboxes)\n```\n\nWith a custom function for tracked objects\n\n```python\nfrom pymot.mot import MOT\nimport cv2\n\nmot_tracker = MOT(mot_cfg)\n\ncap = cv2.VideoCapture(0)\n\n\ndef custom_processing_function(\n        frame, \n        tracking_id, \n        obj_coord, \n        **proc_kwargs\n    ) -> tuple[tuple, tuple]:\n    xmin, ymin, xmax, ymax = obj_coord\n\n    # If number of processed objects is more than max limit,\n    # delete the first to enter.\n    if len(proc_kwargs['proc_obj_info'])>proc_kwargs['max_n_obj']:\n        if proc_kwargs['last_obj_to_del'] not in proc_kwargs['proc_obj_info']:\n            proc_kwargs['last_obj_to_del'] += 1\n        else:\n            del proc_kwargs['proc_obj_info'][proc_kwargs['last_obj_to_del']]\n\n    # If there are no processed objects set the first to enter id\n    # as last_obj_to_del.\n    if len(proc_kwargs['proc_obj_info']) == 0:\n        proc_kwargs['last_obj_to_del'] = tracking_id\n\n    # If new tracking id, create new entry in the processed objects dict.\n    if tracking_id>proc_kwargs['prev_id']:\n        proc_kwargs['prev_id'] = tracking_id\n        proc_kwargs['proc_obj_info'][tracking_id] = [1, [], [], False]\n        # Processing object information dict list element meaning:\n        # 0 - counter,\n        # 1 - custom intermediate data accumulated until final processing,\n        # 2 - data assigned after final processing,\n        # 3 - if object has 2 states, e.g. recognized, unrecognized\n\n    # If the number of performed processings on a object with a certain\n    # tracking id is less than needed, do another processing.\n    if proc_kwargs['proc_obj_info'][tracking_id][0]<=proc_kwargs['n_det']:\n\n        # DO SOMETHING\n\n        proc_kwargs['proc_obj_info'][tracking_id][1].append(plate_number)\n\n        idx = int(proc_kwargs['proc_obj_info'][tracking_id][0] \\\n            * (len(proc_kwargs['proc_animation']) / proc_kwargs['n_det']))\n\n        proc_kwargs['proc_obj_info'][tracking_id][2] \\\n            = proc_kwargs['proc_animation'][idx - 1 \\\n                if idx==len(proc_kwargs['proc_animation']) else idx]\n\n        proc_kwargs['proc_obj_info'][tracking_id][0] += 1\n\n    # If the number of performed processings on a object with a certain\n    # tracking id has sufficed do final processing.\n    if proc_kwargs['proc_obj_info'][tracking_id][0]==proc_kwargs['n_det']+1:\n\n        # DO SOMETHING\n\n        proc_kwargs['proc_obj_info'][tracking_id][0] += 1\n\n    output = (\n        (\n            proc_kwargs['proc_obj_info'], \n            proc_kwargs['last_obj_to_del'], \n            proc_kwargs['prev_id']\n        ),\n        (\n            False, \n            proc_kwargs['proc_obj_info'][tracking_id][3],\n            ((0,255,0),(0,0,255)),\n            proc_kwargs['proc_obj_info'][tracking_id][2]\n        )\n    )\n\n    return output\n\n\nprev_id = -1\nn_det = 10\nmax_n_obj = 50\nlast_obj_to_del = 0\nproc_obj_info = {}\nproc_animation = {i:'|'*(i+1) for i in range(8)}\n\nwhile True:\n    ret, frame = cap.read()\n    if not ret:\n        break\n\n    if cv2.waitKey(1) & 0xFF == ord(\"q\"):\n        cap.release()\n        cv2.destroyAllWindows()\n        break\n\n    output = mot_tracker.track_objects(\n        frame,\n        custom_processing_function,\n        prev_id=prev_id,\n        n_det=n_det,\n        max_n_obj=max_n_obj,\n        last_obj_to_del=last_obj_to_del,\n        proc_animation=proc_animation,\n        # Custom kwargs\n    )\n\n    tracked_ojb_info, frame_with_bboxes, proc_obj_info_tuple = output\n\n    if None not in proc_obj_info_tuple:\n        proc_obj_info, last_obj_to_del, prev_id = proc_obj_info_tuple\n\n    cv2.imshow('Object tracking with deepSORT', frame_with_bboxes)\n```\n\n## [Changelog](https://github.com/simsiru/pymot/blob/main/CHANGELOG.md)\n\n## License\n\n[MIT](https://choosealicense.com/licenses/mit/)",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": null,
@@ -301,7 +300,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18183650,
+        "last_serial": 18267516,
         "urls": [
             {
                 "comment_text": null,
@@ -342,6 +341,97 @@
                 "upload_time": "2023-05-20T17:57:38",
                 "upload_time_iso_8601": "2023-05-20T17:57:38.980498Z",
                 "url": "https://files.pythonhosted.org/packages/b0/46/1b1f9bf75b95ecb712cb76a26c1e759262c574da8255a4ba4f12c65f0ade/pymot-0.0.4.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.5": {
+        "info": {
+            "author": null,
+            "author_email": "Simas Sirutavicius <sirutavicius.simas@gmail.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# Multi object tracking class\n\n> Perform multi object tracking and use a custom function for tracked objects\n\nMOT arguments:\n\n-   _mot_cfg_ - configuration dictionary for MOT (tamplate below)\n\n```python\nmot_cfg = {\n    'od_classes':'SPECIFY',       # Object detection algorithm classes path\n    'od_algo':'yolo',\n    'od_wpath':'SPECIFY',         # Object detection algorithm weights path\n    'od_cpath':'SPECIFY',         # Object detection algorithm config path\n    'od_nms_thr':0.4,\n    'od_conf_thr':0.5,\n    'od_img_size':416,\n    'od_cuda':True,\n    't_classes':'SPECIFY',        # List of classes to track\n    't_algo':'deepsort',\n    't_cuda':True,\n    't_metric':'cosine',\n    't_max_cosine_distance':0.2,\n    't_budget':100,\n    't_max_iou_distance':0.7,\n    't_max_age':70,\n    't_n_init':3\n}\n```\n\nMOT methods:\n\n- _detect_objects_ - detect object from a frame\n- _track_objects_ - perform a tracking update on frame\n\n## Algorithms\n\nCurrently available object detection algorithms:\n        \n- YOLOv3\n- YOLOv4\n        \nCurrently available tracking algorithms:\n        \n- DeepSORT\n\n## Installation\n\nTo use the package torch, torchvision and opencv must be also installed.\n\nNote: It is recommended to use opencv compiled with CUDA support, because algorithms that use opencv's darknet\nbackend like YOLOv3/v4 run an order of magnitude faster on a GPU.\n\n```sh\npip install pymot\n```\n\n## Usage\n\n<details>\n<summary>Without a custom function for tracked objects</summary>\n\n```python\nfrom pymot.mot import MOT\nimport cv2\n\nmot_tracker = MOT(mot_cfg)\n\ncap = cv2.VideoCapture(0)\n\nwhile True:\n    ret, frame = cap.read()\n    if not ret:\n        break\n\n    if cv2.waitKey(1) & 0xFF == ord(\"q\"):\n        cap.release()\n        cv2.destroyAllWindows()\n        break\n\n    tracked_ojb_info, frame_with_bboxes, _ = mot_tracker.track_objects(frame)\n\n    cv2.imshow('Object tracking with deepSORT', frame_with_bboxes)\n```\n\n</details>\n\n\n<details>\n<summary>With a custom function for tracked objects</summary>\n\n```python\nfrom pymot.mot import MOT\nimport cv2\n\nmot_tracker = MOT(mot_cfg)\n\ncap = cv2.VideoCapture(0)\n\n\ndef custom_processing_function(\n        frame, \n        tracking_id, \n        obj_coord, \n        **proc_kwargs\n    ) -> tuple[tuple, tuple]:\n    xmin, ymin, xmax, ymax = obj_coord\n\n    # If number of processed objects is more than max limit,\n    # delete the first to enter.\n    if len(proc_kwargs['proc_obj_info'])>proc_kwargs['max_n_obj']:\n        if proc_kwargs['last_obj_to_del'] not in proc_kwargs['proc_obj_info']:\n            proc_kwargs['last_obj_to_del'] += 1\n        else:\n            del proc_kwargs['proc_obj_info'][proc_kwargs['last_obj_to_del']]\n\n    # If there are no processed objects set the first to enter id\n    # as last_obj_to_del.\n    if len(proc_kwargs['proc_obj_info']) == 0:\n        proc_kwargs['last_obj_to_del'] = tracking_id\n\n    # If new tracking id, create new entry in the processed objects dict.\n    if tracking_id>proc_kwargs['prev_id']:\n        proc_kwargs['prev_id'] = tracking_id\n        proc_kwargs['proc_obj_info'][tracking_id] = [1, [], [], False]\n        # Processing object information dict list element meaning:\n        # 0 - counter,\n        # 1 - custom intermediate data accumulated until final processing,\n        # 2 - data assigned after final processing,\n        # 3 - if object has 2 states, e.g. recognized, unrecognized\n\n    # If the number of performed processings on a object with a certain\n    # tracking id is less than needed, do another processing.\n    if proc_kwargs['proc_obj_info'][tracking_id][0]<=proc_kwargs['n_det']:\n\n        # DO SOMETHING\n\n        proc_kwargs['proc_obj_info'][tracking_id][1].append(plate_number)\n\n        idx = int(proc_kwargs['proc_obj_info'][tracking_id][0] \\\n            * (len(proc_kwargs['proc_animation']) / proc_kwargs['n_det']))\n\n        proc_kwargs['proc_obj_info'][tracking_id][2] \\\n            = proc_kwargs['proc_animation'][idx - 1 \\\n                if idx==len(proc_kwargs['proc_animation']) else idx]\n\n        proc_kwargs['proc_obj_info'][tracking_id][0] += 1\n\n    # If the number of performed processings on a object with a certain\n    # tracking id has sufficed do final processing.\n    if proc_kwargs['proc_obj_info'][tracking_id][0]==proc_kwargs['n_det']+1:\n\n        # DO SOMETHING\n\n        proc_kwargs['proc_obj_info'][tracking_id][0] += 1\n\n    output = (\n        (\n            proc_kwargs['proc_obj_info'], \n            proc_kwargs['last_obj_to_del'], \n            proc_kwargs['prev_id']\n        ),\n        (\n            False, \n            proc_kwargs['proc_obj_info'][tracking_id][3],\n            ((0,255,0),(0,0,255)),\n            proc_kwargs['proc_obj_info'][tracking_id][2]\n        )\n    )\n\n    return output\n\n\nprev_id = -1\nn_det = 10\nmax_n_obj = 50\nlast_obj_to_del = 0\nproc_obj_info = {}\nproc_animation = {i:'|'*(i+1) for i in range(8)}\n\nwhile True:\n    ret, frame = cap.read()\n    if not ret:\n        break\n\n    if cv2.waitKey(1) & 0xFF == ord(\"q\"):\n        cap.release()\n        cv2.destroyAllWindows()\n        break\n\n    output = mot_tracker.track_objects(\n        frame,\n        custom_processing_function,\n        prev_id=prev_id,\n        n_det=n_det,\n        max_n_obj=max_n_obj,\n        last_obj_to_del=last_obj_to_del,\n        proc_animation=proc_animation,\n        # Custom kwargs\n    )\n\n    tracked_ojb_info, frame_with_bboxes, proc_obj_info_tuple = output\n\n    if None not in proc_obj_info_tuple:\n        proc_obj_info, last_obj_to_del, prev_id = proc_obj_info_tuple\n\n    cv2.imshow('Object tracking with deepSORT', frame_with_bboxes)\n```\n\n</details>\n\n## [Changelog](https://github.com/simsiru/pymot/blob/main/CHANGELOG.md)\n\n## License\n\n[MIT](https://choosealicense.com/licenses/mit/)",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": null,
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": null,
+            "keywords": null,
+            "license": null,
+            "maintainer": null,
+            "maintainer_email": null,
+            "name": "pymot",
+            "package_url": "https://pypi.org/project/pymot/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/pymot/",
+            "project_urls": {
+                "Source": "https://github.com/simsiru/pymot"
+            },
+            "release_url": "https://pypi.org/project/pymot/0.0.5/",
+            "requires_dist": [
+                "numpy ==1.24.3",
+                "opencv-python ==4.7.0.72",
+                "scipy ==1.10.1",
+                "torch ==2.0.1",
+                "torchvision ==0.15.2"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "Multi object tracking",
+            "version": "0.0.5",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18267516,
+        "urls": [
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "5e7a15bb7bef20f564b0c2388e3ec8d94df76805eb5f1cb22d3c8e05b76a1d2b",
+                    "md5": "5b5817f0131821a0b4ce4c1910a6fe70",
+                    "sha256": "123665513ad2b1bb722973e4aa7494ab56460055e7ddbc561acece45a5011448"
+                },
+                "downloads": -1,
+                "filename": "pymot-0.0.5-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "5b5817f0131821a0b4ce4c1910a6fe70",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 42953788,
+                "upload_time": "2023-05-26T18:34:26",
+                "upload_time_iso_8601": "2023-05-26T18:34:26.617030Z",
+                "url": "https://files.pythonhosted.org/packages/5e/7a/15bb7bef20f564b0c2388e3ec8d94df76805eb5f1cb22d3c8e05b76a1d2b/pymot-0.0.5-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "fa854629d5d30617e302912b1abfe81d944716d83be4d33efee015204609cbb5",
+                    "md5": "ca0db34b2ab9fc28e1e9db5770011e47",
+                    "sha256": "d149045d352bbdae14f2dfb7fee4338884c8e139a2abf6bbe70cd3f3f0269f58"
+                },
+                "downloads": -1,
+                "filename": "pymot-0.0.5.tar.gz",
+                "has_sig": false,
+                "md5_digest": "ca0db34b2ab9fc28e1e9db5770011e47",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 42953698,
+                "upload_time": "2023-05-26T18:34:38",
+                "upload_time_iso_8601": "2023-05-26T18:34:38.229761Z",
+                "url": "https://files.pythonhosted.org/packages/fa/85/4629d5d30617e302912b1abfe81d944716d83be4d33efee015204609cbb5/pymot-0.0.5.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
