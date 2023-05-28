@@ -36,7 +36,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17203144,
+        "last_serial": 18277243,
         "urls": [
             {
                 "comment_text": "",
@@ -120,7 +120,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17203144,
+        "last_serial": 18277243,
         "urls": [
             {
                 "comment_text": "",
@@ -203,7 +203,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17203144,
+        "last_serial": 18277243,
         "urls": [
             {
                 "comment_text": "",
@@ -256,7 +256,6 @@
             "author_email": "zhenlin4@illinois.edu",
             "bugtrack_url": null,
             "classifiers": [],
-            "description": "\n# Installation\n\n`pip install .`\n\n**By default, a folder called `.persist_to_disk` is created under your home directory, and will be used to store cache files.**\nIf you want to change it, see \"Global Settings\" below.\n\n# Global Settings\n\nTo set global settings (for example, where the cache should go by default), please do the following:\n\n```\nimport persist_to_disk as ptd\nptd.config.generate_config()\n```\nThen, you could (optionally) change the settings in the generated `config.ini`:\n\n1. `persist_path`: where to store the cache.\n    All projects you have on this machine will have a folder under `persist_path` by default, unless you specify it within the project (See examples below).\n2. `hashsize`: How many hash buckets to use to store each function's outputs. Default=500.\n3. `lock_granularity`:\n    How granular the lock is.\n    This could be `call`, `func` or `global`.\n\n    * `call` means each hash bucket will have one lock, so only only processes trying to write/read to/from the same hash bucket will share the same lock.\n    * `func` means each function will have one lock, so if you have many processes calling the same function they will all be using the same lock.\n    * `global` all processes share the same lock (I tested that it's OK to have nested mechanism on Unix).\n\n\n# Quick Start\n\n### Basic Example\nUsing `persist_to_disk` is very easy.\nFor example, if you want to write a general training function:\n```\nimport torch \n\n@ptd.persistf()\ndef train_a_model(dataset, model_cls, lr, epochs, device='cpu'):\n    ...\n    return trained_model_or_key\n\nif __name__ == '__main__':\n    train_a_model('MNIST', torch.nn.Linear, 1e-3, 30)\n```\n\nSuppose the above is in a file with path `~/project_name/pipeline/train.py`. \nIf we are in `~/project_name` and run `python -m pipeline.train`, a cache folder will be created under `PERSIST_PATH`, like the following:\n```\nPERSIST_PATH(=ptd.config.get_persist_path())\n\u251c\u2500\u2500 project_name-[autoid]\n\u2502   \u251c\u2500\u2500 pipeline\n\u2502   \u2502   \u251c\u2500\u2500 train\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 train_a_model\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500[hashed_bucket].pkl\n```\nNote that in the above, `[autoid]` is a auto-generated id. \n`[hashed_bucket]` will be an int in [0, `hashsize`).\n\n### Multiprocessing\nNote that `ptd.persistf` can be used with [multiprocessing](https://docs.python.org/3/library/multiprocessing.html) directly.\n\n\n# Advanced Settings\n\n## `config.set_project_path` and `config.set_persist_path`\n\nThere are two important paths for each workspace/project: `project_path` and `persist_path`. \nYou could set them by calling `ptd.config.set_project_path` and `ptd.config.set_persist_path`.\n\nOn a high level, `persist_path` determines *where* the results are cached/persisted, and `project_path` determines the structure of the cache file tree.\nFollowing the basic example, `ptd.config.persist_path(PERSIST_PATH)` will only change the root directory. \nOn the other hand, supppose we add a line of `ptd.config.set_project_path(\"./pipeline\")` to `train.py` and run it again, the new file structure will be created under `PERSIST_PATH`, like the following:\n```\nPERSIST_PATH(=ptd.config.get_persist_path())\n\u251c\u2500\u2500 pipeline-[autoid]\n\u2502   \u251c\u2500\u2500 train\n\u2502   \u2502   \u251c\u2500\u2500 train_a_model\n\u2502   \u2502   \u2502   \u251c\u2500\u2500[hashed_bucket].pkl\n```\n\nAlternatively, it is also possible that we store some notebooks under `~/project_name/notebook/`. \nIn this case, we could set the `project_path` back to `~/project_name`.\nYou could check the mapping from projects to autoids in `~/.persist_to_disk/project_to_pids.txt`.\n\n\n\n## Additional Parameters\n`persist` take additional arguments.\nFor example, consider the new function below:\n```\n@ptd.persistf(groupby=['dataset', 'epochs'], expand_dict_kwargs=['model_kwargs'], skip_kwargs=['device'])\ndef train_a_model(dataset, model_cls, model_kwargs, lr, epochs, device='cpu'):\n    model = model_cls(**model_kwargs)\n    model.to(device)\n    ... # train the model\n    model.save(path)\n    return path\n```\nThe kwargs we passed to `persistf` has the following effects:\n\n* `groupby`: We will create more intermediate directories basing on what's in `groupby`. \nIn the example above, the new cache structure will look like\n```\nPERSIST_PATH(=ptd.config.get_persist_path())\n\u251c\u2500\u2500 project_name-[autoid]\n\u2502   \u251c\u2500\u2500 pipeline\n\u2502   \u2502   \u251c\u2500\u2500 train\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 train_a_model\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 MNIST\n\u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 20\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500[hashed_bucket].pkl\n\u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 10\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500[hashed_bucket].pkl\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 CIFAR10\n\u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 30\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500[hashed_bucket].pkl\n```\n\n* `expand_dict_kwargs`: This simply allows the dictionary to be passed in.\nThis is because we cannot hash a dictionary directly, so there are additionally preprocessing steps for these arguments within `ptd`. \nNote that you can also set `expand_dict_kwargs='all'` to avoid specifying individual dictionary arguements.\nHowever, please only do so IF YOU KNOW what you are passing in - a very big nested dictionary can make the cache-retrievement very slow and use a lot of disk space unnecessarily.\n\n* `skip_kwargs`: This specifies arguments that will be *ignored*. \nFor examplte, if we call `train_a_model(..., device='cpu')` and `train_a_model(..., device='cuda:0')`, the second run will simply read the cache, as `device` is ignored. \n\n### Other useful parameters:\n* `hash_size`: Defaults to 500. \nIf a function has a lot of cache files, you can also increase this if necessary to reduce the number of `.pkl` files on disk.\n\n## 0.0.4\n==================\n1. Changed the behavior of `switch_kwarg`. Now, this is not considered an input to the wrapped function. For example, the correct usage is\n    ```\n    @ptd.persistf(switch_kwarg='switch')\n    def func1(a=1):\n        print(1)\n    func1(a=1, switch=ptd.NOCACHE)\n    ```\n    Note how `switch` is not an argument of `func1`.\n2. Fix the path inference step, which now finds the absolute paths for `project_path` or `file_path` (the path to the file contaning the function) before inferencing the structure.\n\n## 0.0.3\n==================\n\n1. Added `set_project_path` to config.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -287,7 +286,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17203144,
+        "last_serial": 18277243,
         "urls": [
             {
                 "comment_text": "",
@@ -328,6 +327,69 @@
                 "upload_time": "2023-03-08T06:27:48",
                 "upload_time_iso_8601": "2023-03-08T06:27:48.064759Z",
                 "url": "https://files.pythonhosted.org/packages/6f/10/214d4143286cce7ffb1b279fbab0d32748417cc36fcf92e6441ec968e5b7/persist_to_disk-0.0.4.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.5": {
+        "info": {
+            "author": "Zhen Lin",
+            "author_email": "zhenlin4@illinois.edu",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "\n# Installation\n\n`pip install .` or `pip install persist-to-disk`\n\n**By default, a folder called `.cache/persist_to_disk` is created under your home directory, and will be used to store cache files.**\nIf you want to change it, see \"Global Settings\" below.\n\n# Global Settings\n\nTo set global settings (for example, where the cache should go by default), please do the following:\n\n```\nimport persist_to_disk as ptd\nptd.config.generate_config()\n```\nThen, you could (optionally) change the settings in the generated `config.ini`:\n\n1. `persist_path`: where to store the cache.\n    All projects you have on this machine will have a folder under `persist_path` by default, unless you specify it within the project (See examples below).\n2. `hashsize`: How many hash buckets to use to store each function's outputs. Default=500.\n3. `lock_granularity`:\n    How granular the lock is.\n    This could be `call`, `func` or `global`.\n\n    * `call` means each hash bucket will have one lock, so only only processes trying to write/read to/from the same hash bucket will share the same lock.\n    * `func` means each function will have one lock, so if you have many processes calling the same function they will all be using the same lock.\n    * `global` all processes share the same lock (I tested that it's OK to have nested mechanism on Unix).\n\n\n# Quick Start\n\n### Basic Example\nUsing `persist_to_disk` is very easy.\nFor example, if you want to write a general training function:\n```\nimport torch\n\n@ptd.persistf()\ndef train_a_model(dataset, model_cls, lr, epochs, device='cpu'):\n    ...\n    return trained_model_or_key\n\nif __name__ == '__main__':\n    train_a_model('MNIST', torch.nn.Linear, 1e-3, 30)\n```\n\nSuppose the above is in a file with path `~/project_name/pipeline/train.py`.\nIf we are in `~/project_name` and run `python -m pipeline.train`, a cache folder will be created under `PERSIST_PATH`, like the following:\n```\nPERSIST_PATH(=ptd.config.get_persist_path())\n\u251c\u2500\u2500 project_name-[autoid]\n\u2502   \u251c\u2500\u2500 pipeline\n\u2502   \u2502   \u251c\u2500\u2500 train\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 train_a_model\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500[hashed_bucket].pkl\n```\nNote that in the above, `[autoid]` is a auto-generated id.\n`[hashed_bucket]` will be an int in [0, `hashsize`).\n\n### Multiprocessing\nNote that `ptd.persistf` can be used with [multiprocessing](https://docs.python.org/3/library/multiprocessing.html) directly.\n\n\n# Advanced Settings\n\n## `config.set_project_path` and `config.set_persist_path`\n\nThere are two important paths for each workspace/project: `project_path` and `persist_path`.\nYou could set them by calling `ptd.config.set_project_path` and `ptd.config.set_persist_path`.\n\nOn a high level, `persist_path` determines *where* the results are cached/persisted, and `project_path` determines the structure of the cache file tree.\nFollowing the basic example, `ptd.config.persist_path(PERSIST_PATH)` will only change the root directory.\nOn the other hand, supppose we add a line of `ptd.config.set_project_path(\"./pipeline\")` to `train.py` and run it again, the new file structure will be created under `PERSIST_PATH`, like the following:\n```\nPERSIST_PATH(=ptd.config.get_persist_path())\n\u251c\u2500\u2500 pipeline-[autoid]\n\u2502   \u251c\u2500\u2500 train\n\u2502   \u2502   \u251c\u2500\u2500 train_a_model\n\u2502   \u2502   \u2502   \u251c\u2500\u2500[hashed_bucket].pkl\n```\n\nAlternatively, it is also possible that we store some notebooks under `~/project_name/notebook/`.\nIn this case, we could set the `project_path` back to `~/project_name`.\nYou could check the mapping from projects to autoids in `~/.persist_to_disk/project_to_pids.txt`.\n\n\n\n## Additional Parameters\n`persist` take additional arguments.\nFor example, consider the new function below:\n```\n@ptd.persistf(groupby=['dataset', 'epochs'], expand_dict_kwargs=['model_kwargs'], skip_kwargs=['device'])\ndef train_a_model(dataset, model_cls, model_kwargs, lr, epochs, device='cpu'):\n    model = model_cls(**model_kwargs)\n    model.to(device)\n    ... # train the model\n    model.save(path)\n    return path\n```\nThe kwargs we passed to `persistf` has the following effects:\n\n* `groupby`: We will create more intermediate directories basing on what's in `groupby`.\nIn the example above, the new cache structure will look like\n```\nPERSIST_PATH(=ptd.config.get_persist_path())\n\u251c\u2500\u2500 project_name-[autoid]\n\u2502   \u251c\u2500\u2500 pipeline\n\u2502   \u2502   \u251c\u2500\u2500 train\n\u2502   \u2502   \u2502   \u251c\u2500\u2500 train_a_model\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 MNIST\n\u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 20\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500[hashed_bucket].pkl\n\u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 10\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500[hashed_bucket].pkl\n\u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 CIFAR10\n\u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500 30\n\u2502   \u2502   \u2502   \u2502   \u2502   \u2502   \u251c\u2500\u2500[hashed_bucket].pkl\n```\n\n* `expand_dict_kwargs`: This simply allows the dictionary to be passed in.\nThis is because we cannot hash a dictionary directly, so there are additionally preprocessing steps for these arguments within `ptd`.\nNote that you can also set `expand_dict_kwargs='all'` to avoid specifying individual dictionary arguements.\nHowever, please only do so IF YOU KNOW what you are passing in - a very big nested dictionary can make the cache-retrievement very slow and use a lot of disk space unnecessarily.\n\n* `skip_kwargs`: This specifies arguments that will be *ignored*.\nFor examplte, if we call `train_a_model(..., device='cpu')` and `train_a_model(..., device='cuda:0')`, the second run will simply read the cache, as `device` is ignored.\n\n### Other useful parameters:\n* `hash_size`: Defaults to 500.\nIf a function has a lot of cache files, you can also increase this if necessary to reduce the number of `.pkl` files on disk.\n\n## 0.0.5\n==================\n1. `lock_granularity` can be set differently for each function.\n2. Changed the default cache folder to `.cache/persist_to_disk`.\n\n## 0.0.4\n==================\n1. Changed the behavior of `switch_kwarg`. Now, this is not considered an input to the wrapped function. For example, the correct usage is\n    ```\n    @ptd.persistf(switch_kwarg='switch')\n    def func1(a=1):\n        print(1)\n    func1(a=1, switch=ptd.NOCACHE)\n    ```\n    Note how `switch` is not an argument of `func1`.\n2. Fix the path inference step, which now finds the absolute paths for `project_path` or `file_path` (the path to the file contaning the function) before inferencing the structure.\n\n## 0.0.3\n==================\n\n1. Added `set_project_path` to config.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/zlin7/python-persist_to_disk",
+            "keywords": "Cache,Persist",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "persist-to-disk",
+            "package_url": "https://pypi.org/project/persist-to-disk/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/persist-to-disk/",
+            "project_urls": {
+                "Homepage": "https://github.com/zlin7/python-persist_to_disk"
+            },
+            "release_url": "https://pypi.org/project/persist-to-disk/0.0.5/",
+            "requires_dist": [
+                "filelock (==3.9.0)"
+            ],
+            "requires_python": "",
+            "summary": "Persist expensive operations on disk.",
+            "version": "0.0.5",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18277243,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "612d786e6dd45d70b748b98a13c832fc48a8776eaecb4a920a29051c425442f5",
+                    "md5": "8af397604ad580c1effd357e3ee7493d",
+                    "sha256": "a2676ffbc859b104b83868772b9f569b4c69d44c9e69f37ce44a621588a52444"
+                },
+                "downloads": -1,
+                "filename": "persist_to_disk-0.0.5-py2.py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "8af397604ad580c1effd357e3ee7493d",
+                "packagetype": "bdist_wheel",
+                "python_version": "py2.py3",
+                "requires_python": null,
+                "size": 13122,
+                "upload_time": "2023-05-27T22:42:29",
+                "upload_time_iso_8601": "2023-05-27T22:42:29.447592Z",
+                "url": "https://files.pythonhosted.org/packages/61/2d/786e6dd45d70b748b98a13c832fc48a8776eaecb4a920a29051c425442f5/persist_to_disk-0.0.5-py2.py3-none-any.whl",
                 "yanked": false,
                 "yanked_reason": null
             }
