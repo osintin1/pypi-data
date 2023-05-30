@@ -1,0 +1,91 @@
+{
+    "0.1.1": {
+        "info": {
+            "author": "",
+            "author_email": "Ryan Young <dev@ryayoung.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3.11",
+                "Topic :: Software Development :: Libraries"
+            ],
+            "description": "# debuggpt\n\n> The realest AI debugger in the game.\n\nExample code:\n\n`/test/test_debug.py`:\n\n```python\nfrom debuggpt import gpt_debug\nimport pickle\n\n@gpt_debug(show_prompt_only=True)\ndef func():\n    with open('test.pkl', 'rb') as f:\n        df = pickle.load(f)\n    df['c'] = df.a + df.b\n\nfunc()\n```\n\nHere's what happens when the above code runs:\n\n`test.pkl` stores a pandas DataFrame:\n       a     b\n    0  1     4\n    1  2   foo\n    2  3     6\n\nSince column `b` contains a string, 'foo', we get an error when adding it to `a`:\n\n> *TypeError: unsupported operand type(s) for +: 'int' and 'str'*\n\nThis is tricky to debug because:\n1. Our code NEVER indicates that `df` is a Pandas DataFrame. In fact, we don't even import pandas!\n2. Our code NEVER mentions the data types, or contents, of `df`.\n3. We *can't* know which column ('a' or 'b') has mixed types, not even by looking at the error or traceback.\n\nBut GPT-4 knew *all* of this. **Including #3.**\n\nHere's its response:\n\n> The error \"TypeError: unsupported operand type(s) for +: 'int' and 'str'\" is occurring because you are trying to add an integer and a string together in line 9 of `test/test_debug.py`:\n> \n> ```python\n> df['c'] = df.a + df.b\n> ```\n> \n> The DataFrame `df` has mixed types in column 'b' - it contains both integers and the string 'foo'. You cannot add an integer and a string together directly, which is causing the error.\n> \n> To fix this issue, you need to decide how you want to handle the mixed types in column 'b'. One option is to convert the non-numeric values to a default value, like 0, before performing the addition. You can do this using the `pd.to_numeric` function with the `errors='coerce'` argument, which will replace non-numeric values with NaN, and then use the `fillna` method to replace NaN with 0.\n> \n> Here's the updated code for `func`:\n> \n> ```python\n> def func():\n>     with open('test.pkl', 'rb') as f:\n>         df = pickle.load(f)\n> \n>     df['b'] = pd.to_numeric(df['b'], errors='coerce').fillna(0)\n>     df['c'] = df.a + df.b\n> ```\n> \n> This code will first convert any non-numeric values in column 'b' to NaN, then replace NaN with 0, and finally perform the addition. If you have a different way you'd like to handle the mixed types in column 'b', you can modify the code accordingly.\n\n\nThis is an excellent response.\n\nGPT-4 could see *everything*. \n- It knew the type and exact contents of `df`, the value returned by `pickle.load`.\n- It could see all relevant code, *not* just the traceback (more on this later)\n- It could see everything that was printed during life of our program (including the original error traceback).\n\n\nHere's what the original traceback looked like:\n```\nTraceback (most recent call last):\n  File \"/Users/Ryan.Young3/.pyenv/versions/debuggpt/lib/python3.11/site-packages/pandas/core/ops/array_ops.py\", line 171, in _na_arithmetic_op\n    result = func(left, right)\n             ^^^^^^^^^^^^^^^^^\n  File \"/Users/Ryan.Young3/.pyenv/versions/debuggpt/lib/python3.11/site-packages/pandas/core/computation/expressions.py\", line 239, in evaluate\n    return _evaluate(op, op_str, a, b)  # type: ignore[misc]\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/Ryan.Young3/.pyenv/versions/debuggpt/lib/python3.11/site-packages/pandas/core/computation/expressions.py\", line 70, in _evaluate_standard\n    return op(a, b)\n           ^^^^^^^^\nTypeError: unsupported operand type(s) for +: 'int' and 'str'\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/Users/Ryan.Young3/main/code/debuggpt/test/test_debug.py\", line 10, in <module>\n    func()\n  File \"/Users/Ryan.Young3/main/code/debuggpt/test/test_debug.py\", line 8, in func\n    df['c'] = df.a + df.b\n              ~~~~~^~~~~~\n  File \"/Users/Ryan.Young3/.pyenv/versions/debuggpt/lib/python3.11/site-packages/pandas/core/ops/common.py\", line 81, in new_method\n    return method(self, other)\n           ^^^^^^^^^^^^^^^^^^^\n  File \"/Users/Ryan.Young3/.pyenv/versions/debuggpt/lib/python3.11/site-packages/pandas/core/arraylike.py\", line 186, in __add__\n    return self._arith_method(other, operator.add)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/Ryan.Young3/.pyenv/versions/debuggpt/lib/python3.11/site-packages/pandas/core/series.py\", line 6108, in _arith_method\n    return base.IndexOpsMixin._arith_method(self, other, op)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/Ryan.Young3/.pyenv/versions/debuggpt/lib/python3.11/site-packages/pandas/core/base.py\", line 1348, in _arith_method\n    result = ops.arithmetic_op(lvalues, rvalues, op)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/Ryan.Young3/.pyenv/versions/debuggpt/lib/python3.11/site-packages/pandas/core/ops/array_ops.py\", line 232, in arithmetic_op\n    res_values = _na_arithmetic_op(left, right, op)  # type: ignore[arg-type]\n                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/Ryan.Young3/.pyenv/versions/debuggpt/lib/python3.11/site-packages/pandas/core/ops/array_ops.py\", line 178, in _na_arithmetic_op\n    result = _masked_arith_op(left, right, op)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/Ryan.Young3/.pyenv/versions/debuggpt/lib/python3.11/site-packages/pandas/core/ops/array_ops.py\", line 116, in _masked_arith_op\n    result[mask] = op(xrav[mask], yrav[mask])\n                   ^^^^^^^^^^^^^^^^^^^^^^^^^^\nTypeError: unsupported operand type(s) for +: 'int' and 'str'\n```\n\nWhile we do pass this traceback to the model, the magic comes from what we provide next: the code report.\n\nHere is the exact code report we gave the model (in addition, we also provided a prompt, and the printed stdout history)\n\n````\n\nYou are debugging a call to `func`.\n\nCONTEXT SURROUNDING THE LAST CALL TO `func` BEFORE THE ERROR WAS RAISED:\nFile \"/test/test_debug.py\", line 10\n```python\n1| from debuggpt import gpt_debug\n2| import pickle\n3| \n4| @gpt_debug\n5| def func():\n6|     with open('test.pkl', 'rb') as f:\n7|         df = pickle.load(f)\n8|     df['c'] = df.a + df.b  # <-- LINE 8, THE ORIGINAL LINE THAT CAUSED THE ERROR\n9| \n10| func()  # <-- LINE 10 CALLED\n```\n\nLOCAL NAMES, TYPES, AND VALUES, IN THE ABOVE CONTEXT (module, '/test/test_debug.py') WHEN THE ERROR OCCURRED:\ngpt_debug: function\npickle: module\nfunc: function\n\n\nSOURCE CODE FOR `func`, THE FUNCTION YOU'RE DEBUGGING:\nFile \"/test/test_debug.py\", line 8\n```python\n4| @gpt_debug\n5| def func():\n6|     with open('test.pkl', 'rb') as f:\n7|         df = pickle.load(f)\n8|     df['c'] = df.a + df.b  # <-- LINE 8, THE ORIGINAL LINE THAT CAUSED THE ERROR\n```\n\nLOCAL NAMES, TYPES, AND VALUES, IN THE ABOVE CONTEXT (function, `func`) WHEN THE ERROR OCCURRED:\nf: BufferedReader =\n<_io.BufferedReader name='test.pkl'>\n\ndf: DataFrame =\n   a     b\n0  1     4\n1  2  blah\n2  3     6\n````\n\nThe report stops here because the remaining calls in the traceback are from pandas code. But normally,\nif there are more calls from our code, we would provide an extended traceback, showing the context\nfor each call in the stack.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "debuggpt",
+            "package_url": "https://pypi.org/project/debuggpt/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/debuggpt/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/debuggpt/0.1.1/",
+            "requires_dist": [
+                "openai"
+            ],
+            "requires_python": "",
+            "summary": "The realest AI debugger in the game.",
+            "version": "0.1.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18298515,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "9214c0d438cebbc3d5f56a6e8666d0d5327d58cdf916c596d62f5a2d3c0d2736",
+                    "md5": "953c713ac8b218f23b70217d77914a10",
+                    "sha256": "8b5813900033433af72414edf029991c09634c5f8c1945612ec0b6fa96d6a19c"
+                },
+                "downloads": -1,
+                "filename": "debuggpt-0.1.1-py2.py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "953c713ac8b218f23b70217d77914a10",
+                "packagetype": "bdist_wheel",
+                "python_version": "py2.py3",
+                "requires_python": null,
+                "size": 9563,
+                "upload_time": "2023-05-30T06:48:27",
+                "upload_time_iso_8601": "2023-05-30T06:48:27.043780Z",
+                "url": "https://files.pythonhosted.org/packages/92/14/c0d438cebbc3d5f56a6e8666d0d5327d58cdf916c596d62f5a2d3c0d2736/debuggpt-0.1.1-py2.py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f770929810ef9b27627d83beb6dafe9f6d5a23506f0a1840c3a62b6cb20a245c",
+                    "md5": "fe28ba7561c1645da0a505094c5a35bd",
+                    "sha256": "ba39a34ac01646210fc9c670996b017d4f3d2f1ab75a927d28c90490e224ec7a"
+                },
+                "downloads": -1,
+                "filename": "debuggpt-0.1.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "fe28ba7561c1645da0a505094c5a35bd",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 9510,
+                "upload_time": "2023-05-30T06:48:28",
+                "upload_time_iso_8601": "2023-05-30T06:48:28.413531Z",
+                "url": "https://files.pythonhosted.org/packages/f7/70/929810ef9b27627d83beb6dafe9f6d5a23506f0a1840c3a62b6cb20a245c/debuggpt-0.1.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

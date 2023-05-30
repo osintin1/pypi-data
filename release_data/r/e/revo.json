@@ -35,7 +35,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18289747,
+        "last_serial": 18298642,
         "urls": [
             {
                 "comment_text": "",
@@ -71,7 +71,6 @@
                 "Operating System :: OS Independent",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "# `revo` --- Referenced Values in Objects\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -101,7 +100,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18289747,
+        "last_serial": 18298642,
         "urls": [
             {
                 "comment_text": "",
@@ -121,6 +120,72 @@
                 "upload_time": "2023-05-29T12:31:01",
                 "upload_time_iso_8601": "2023-05-29T12:31:01.868496Z",
                 "url": "https://files.pythonhosted.org/packages/aa/89/003c2d6f1bbf6ea9c51849f2afff61735dfafafd4bb68abe5eeac72a4841/revo-0.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.2.0": {
+        "info": {
+            "author": "",
+            "author_email": "Sun Yijiang <sunyijiang@gmail.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# Revo \u2013 *Re*ferenced *V*alues in *O*bjects\n\n**Revo** is a non-intrusive variable substitution solution for config files.\n\n**Revo** casts a Python built-in `dict` or `list` into a mutable tree, where the\nvalue of each tree node is either a string or a number, while any node can\nreference any other node in the tree with GNU make style `$(var)` variable\nsyntax.\n\nAlthough a tiny (under 200 lines of code) library, **revo** provides some\nlevel of programmability to plain old Python objects and thus great\nflexibility to many applications, especially configuration processing. No\nmatter what format (`JSON`, `YAML`, `TOML`, etc.) your config file is, as long\nas it maps to Python built-in types cleanly, **revo** provides Makefile-style\nvariable substitution to it.\n\n\n# Design ideas\n\n**Revo** treats a Python built-in object as a tree of data, like an XML\ndoc. The top-level object must be `dict` or `list`. Values on tree nodes must\nbe either `str` or built-in number (`int` or `float`).\n\nIn order to reference *any* node in an object tree, we need to design a path\nmechanism. Yes, the idea is like [XPath](https://en.wikipedia.org/wiki/XPath)\nfor Python objects, but much simpler.\n\nIn fact, we can almost simply borrow the design of UNIX path: slash-separated\nstring, with only a small adaptation: path segments in integer literals are\ntreated as numeric indexes for `list`.\n\nAn exmple would be nice, isn't it?\n\n```python\n# This is legal Python code, making an object from literals.\n# You can also construct it from a YAML or JSON file.\nconf = {\n  \"project\": {\n    \"name\": \"revo\",\n    \"version\": \"0.1.0\",\n    \"rules\": {\n      \"Homepage\": \"https://github.com/sunyj/$(project/name)\"\n    }\n  },\n  \"classifiers\": [\n    \"Programming Language :: Python :: 3\",\n    \"License :: OSI Approved :: MIT License\",\n    \"Operating System :: OS Independent\"\n  ],\n  \"tag\": \"$(classifiers/0)\", # reference a list element with integer index\n  \"v1\": \"project\",\n  \"v2\": \"version\",\n  \"v3\": \"$($(v1)/$(v2))\" # support variables in variable names\n}\n\n# Resolve variable references with revo\nfrom revo import Revo\nobj = Revo(conf).resolve()\n\nprint(obj['project/rules/Homepage'])  # https://github.com/sunyj/revo\nprint(obj['tag'])                     # Programming Language :: Python :: 3\nprint(obj['v3'])                      # 0.1.0\n```\n\n\n# Typical use cases\n\n\nAlmost everyone who works long enough with config files appreciates the great\nvalue of a robust and flexible variable substitution mechanism. It helps to\nreduce tedious config-processing logic by moving them to config files.\n\nRevo was designed to be a non-intrusive solution for that purpose. It resolves\non Python objects, not the files storing those objects, so it's transparent to\nthe config file format.\n\n\n# Design details\n\nThe core mechanism is the path to reach any node in the object tree. With a\nunique path for every node, an object can be melted down to a set of flat dict\nof key-value mappings. The definition of class `Revo` reflects that.\n\n```python\nclass Revo(MutableMapping):\n    ... ...\n```\n\nAs the path of every node is unique within an object, it may serve as the\n*name* for the corresponding node's value. Voil\u00e0! *variable*, as in the\ncontext of \"*variable substitution*\", can now be properly defined.\n\n| Concept        | Implementation |\n| -------------- | -------------- |\n| variable       | tree node      |\n| variable name  | node path      |\n| variable value | node value     |\n\n[Variables Make Makefiles Simpler](https://www.gnu.org/software/make/manual/html_node/Variables-Simplify.html),\nequally true for config files. We simply use the variable reference syntax of\n[GNU make](https://www.gnu.org/software/make/).\n\n\n## Variable overrides\n\nAnother common need for config files is overriding values from command line or\nother input sources. **Revo** supports that with its `override` method:\n\n```python\nfrom revo import Revo\noverride_specs = ['date=20200110', 'conf/path=/another/path/with=/in/it']\n\n# construct with overrides\nconf_obj = load_my_json_config(...)\nconf = Revo(conf_obj, override_specs)\n\n# or in a separate call\nconf = Revo(load_my_yaml_config(...))\nconf.override(override_specs).resolve()\n```\n\nOverride spec parsing rules:\n- First `=` is used as the name-value separator. Subsequent `=` characters are all put into the value string.\n- Revo always tries parsing the value string as a Python literal, and falls back to string if that fails.\n\n\n## Fault tolerance\n\nKeyword-only boolean argument `mercy` controls if **revo** raises exceptions\non errors during the resolution process. Typical errors are:\n\n- Unknown variable.\n- Illegal variable syntax.\n- Self-reference or circular reference.\n\nIt defaults to `False`.  When `mercy=True`, unresolved or partially-resolved\nvalues are left in the object.\n\n\n## Definition merging\n\nOverrides may contain variables that are not in the object under resolve, for\nexample:\n\n```python\nimport revo\nconf = revo.Revo({'name': 'hello $(date)'}, ['date=20220101'])\nconf['name'] # 'hello 20220101'\nconf['date'] # what do you expect?\n```\n\nSuch overrides are called *definitions*.  Definitions may stay in the object\nafter the resolution.  Keyword-only boolean argument `absorb` controls this,\nit defaults to `False`.\n\n\n## Type retaining\n\nKeyword-only boolean argument `retain` controls if **revo** tries to keep\nvariable value type in substitutions.\n\nIt defaults to `True`.  When `retain=False`, values resolved are always `str`.\n\n```python\nimport revo\nconf = revo.Revo({'name': 'n$(val)', 'x': '$(val)', 'val': 10}, retain=True)\nconf.resolve()\n\ntype(conf['name'])  # <class 'str'>\ntype(conf['x'])     # <class 'int'>\n```\n\n# Limitations\n\nVariable substitutions are resolved bottom-up, which means **revo** copies and\niterates over all values in loops until no more incremental substitution\nhappens. This algorithm is easy to understand and implement, but it's pretty\nslow. For average config files with typically dozens or hundreds of entries,\nperformance should not be a concern on modern computers. However, if you plan\nto use it on very large config files, make performance tests before you invest\nfurther.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "revo",
+            "package_url": "https://pypi.org/project/revo/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/revo/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/sunyj/revo/issues",
+                "Homepage": "https://github.com/sunyj/revo"
+            },
+            "release_url": "https://pypi.org/project/revo/0.2.0/",
+            "requires_dist": null,
+            "requires_python": ">=3.4",
+            "summary": "Referenced Values in Objects.",
+            "version": "0.2.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18298642,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2d1a681ca1b7925a420b960c4abcc82d8241a9e674a02db7cfdaf6a9fa41ac08",
+                    "md5": "bbaf631ca64c4aec89c065c8c1da571c",
+                    "sha256": "41154eac305bf476c209a56f14fc7b5630c3cd094832deb6f196fc6ffb17f8f7"
+                },
+                "downloads": -1,
+                "filename": "revo-0.2.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "bbaf631ca64c4aec89c065c8c1da571c",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.4",
+                "size": 6476,
+                "upload_time": "2023-05-30T07:03:05",
+                "upload_time_iso_8601": "2023-05-30T07:03:05.942826Z",
+                "url": "https://files.pythonhosted.org/packages/2d/1a/681ca1b7925a420b960c4abcc82d8241a9e674a02db7cfdaf6a9fa41ac08/revo-0.2.0-py3-none-any.whl",
                 "yanked": false,
                 "yanked_reason": null
             }
