@@ -42,7 +42,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17824701,
+        "last_serial": 18306344,
         "urls": [
             {
                 "comment_text": "",
@@ -132,7 +132,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17824701,
+        "last_serial": 18306344,
         "urls": [
             {
                 "comment_text": "",
@@ -222,7 +222,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17824701,
+        "last_serial": 18306344,
         "urls": [
             {
                 "comment_text": "",
@@ -312,7 +312,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17824701,
+        "last_serial": 18306344,
         "urls": [
             {
                 "comment_text": "",
@@ -402,7 +402,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17824701,
+        "last_serial": 18306344,
         "urls": [
             {
                 "comment_text": "",
@@ -464,7 +464,6 @@
                 "Topic :: System :: Emulators",
                 "Topic :: Utilities"
             ],
-            "description": "# QEMU Runner\nThis project allows creation of self-contained runner for QEMU with embedded command line arguments. Command line arguments are described in files called **layers**. They are simple INI files that can be combined together to express more complex command lines.\n\n```shell\n> cat ./arm_virt.ini\n[general]\nengine = qemu-system-arm\n\n[machine]\n@=virt\n\n> cat ./ram_2G.ini\n[general]\nmemory = 2G\n\n> qemu_make_runner -l ./arm_virt.ini ./ram_2G.ini -o ./my_runner.pyz\n> python ./my_runner.pyz --dry-run kernel.elf arg1 arg2  # --dry-run to see effective command line instead of running QEMU\nqemu-system-arm -machine virt -kernel kernel.elf -append 'arg1 arg2'\n```\n\nResulting `my_runner.pyz` file is ZIP file with `qemu_runner` package and layers. Runner has no extra dependencies, using only Python 3.8+ standard library. QEMU is found according to search precedence described below.\n\nExisting runner can be used as base for next runner. **Derived runner** will contain all layers from base runner along with additional layers specified when deriving. This features allows extending base runner with project specific settings without being aware of base settings.\n\n```shell\n> cat ./semihosting.ini\n[semihosting-config]\nenable=on\ntarget=native\n\n> python ./my_runner.pyz --layers ./semihosting.ini --derive ./derived.pyz\n> python ./derived.pyz --dry-run kernel.elf arg1 arg2  # --dry-run to see effective command line instead of running QEMU\nqemu-system-arm -machine virt -semihosting-config enable=on,target=native -kernel kernel.elf -append 'arg1 arg2'\n```\n\nRunner provides following features, consult `--help` output for details:\n* GDB server settings\n* Start with CPU halted\n* Inspect command line\n\n# QEMU search precedence\nIf environment variable `QEMU_DEV` is set, it is used as path to QEMU executable.\nIf environment variable `QEMU_DEV` is not set but argument `--qemu` is specified it is used as path to QEMU executable.\n\nIf `QEMU_DEV` is not set, directories are searched for QEMU executable with name specified as `engine` in \ncombined layer:\n1. Directory specified by `QEMU_DIR` environment variable\n2. Directory specified by `--qemu-dir` argument\n3. Each ancestor directory containing runner, up to the root directory and `qemu` subdirectory at each level.\n   If runner's path is `c:\\dir1\\dir2\\runner.pyz`, then following directories are checked:\n   1. `c:\\dir1\\dir2`\n   2. `c:\\dir1\\dir2\\qemu`\n   3. `c:\\dir1\\`\n   4. `c:\\dir1\\qemu`\n   5. `c:\\`\n   6. `c:\\qemu`\n4. Repeat step 2 with path of base runner in case of derived runners with `--tract-qemu` option.\n5. Repeat step 2 with path of passed as `--qemu-dir` when runner was derived.\n6. Directories in `PATH` environment variable.\n\nOn Windows, `PATHEXT` variable is used to determine executable extension.\n\n# Environment variables\nSeveral environment variables influences the way QEMU command line is constructed:\n* `QEMU_FLAGS` - arguments to be added to the QEMU command line during execution \n* `QEMU_RUNNER_FLAGS` - arguments will be interpreted exactly as if they were added to runner execution. \n\nExample:\n```shell\nshell> QEMU_FLAGS = '-d int' QEMU_RUNNER_FLAGS = '--halted' ./runner.pyz --dry-run kernel.elf\nqemu-system-arm -machine virt -d int -S -kernel kernel.elf\n```\n\n# Layer search precedence\nIf layer path is absolute and file is not found, search process fails immediately.\n\nIf layer path is relative, following directories are searched:\n1. Current directory\n2. Packages declaring entry point `qemu_runner_layer_packages` (see below)\n\n# Layer file format\n**Layers** are plain INI files with sections describing QEMU command line. Layers can be combined together allowing user to build bigger command line from simpler building blocks.\n\nValues are interpreted as strings unless specified otherwise. When value is described as boolean, values `1`, `yes`, `true` and `on` are interpreted as true, values `0`, `no`, `false` and `off` are interpreted as false. Other values are invalid.\n\n## Section `[general]`\nSection `[general]` describes most common QEMU arguments. \n\nAvailable settings:\n* `engine` - Name of QEMU executable (e.g.: `qemu-system-arm`, `qemu-system-sparc`)\n* `cpu` - CPU to use in machine (`-cpu option`)\n* `memory` - RAM memory size, supports suffixes like `M`, `G` (e.g. `20M`, `4G`)\n* `gdb` (boolean) - If true QEMU will be started with gdbserver enabled.\n* `gdb_dev` - Use specified value as gdbserver listend address. If not used, default QEMU address will be used (`tcp::1234` at the time this document is written). Note that specifing only `gdb_dev` does not enable gdbserver.\n* `halted` - Freeze QEMU CPU at startup.\n\n## Section `[name]`\nEach section corresponds to single QEMU argument, e.g. section `[machine]` corresponds to `-machine` argument. Value specified as `@` key will be used as direct argument value (machine name, device type, etc). Remaining arguments will be added as key-value properties (note: for `id` property see next section).\n\nFor example, layer:\n```ini\n[machine]\n@=virt\nusb=on\ngic-version=2\n```\n\nwill be translated into\n\n```\n-machine virt,usb=on,gic-version=2\n```\n\n## Section `[name:id]`\nAs INI file syntax does not allow duplicated section names it is not possible to describe many QEMU arguments without additional syntax: `-device`, `-netdev`, etc. These arguments can be differentiated by `id` property which can be specified as section name in format `argument_name:id`.\n\nFor example, layer:\n```ini\n[device:d1]\n@=type1\narg1=10\narg2=20\n\n[device:d2]\n@=type1\narg1=10\narg2=20\n\n[device:d3]\n@=type2\narg3=10\narg4=20\n```\n\ntranslates into:\n\n```\n-device type1,id=d1,arg1=10,arg2=20 -device type1,id=d2,arg1=10,arg2=20 -device type2,id=d3,arg3=10,arg4=20\n```\n\n\n## Variable resolution\nIn sections `[name]` and `[name:id]` it is possible to use variables which will be resolved directly before building complete command lines. Variables are in form `${VARIABLE_NAME}`.\n\nCurrently available variables:\n\n| Variable name | Value                                                           |\n|---------------|-----------------------------------------------------------------|\n| `KERNEL_DIR`  | Directory containing kernel executable (path is not normalized) |\n\n## How layers are combined\nLayers can be combined by applying one layer on top of the another. Operation 'build layer `LResult` by applying layer `LAdd` on top of `LBase`' is defined as follows:\n* `[general]` (except `cmdline`) - `LResult` contains all settings from layers `LAdd` and `LBase`, values in `LAdd` override values in `LBase`\n* `[general]`, `cmdline` value  - `LResult` contains `cmdline` from `LBase` followed by `LAdd` (command line arguments are combined)\n* `[name]`\n  * If `LBase` does not contain section `[name]`, `LResult` will contain section from `LAdd`.\n  * If `LBase` contains section `[name]`, `LResult` will contain `[name]` with all settings from `LBase` and `LAdd`, values in `LAdd` override values in `LBase`.\n* `[name:id]`\n  * The same rules as with section `[name]` applies, `id` is treated as part of section name.\n\nNote:\n* It is not possible to remove section by applying another layer\n* It is not possible to change `id` property\n* It is not possible to remove argument from section\n\n# Putting layers into pip-installable package\nIt is possible to distribute layers as pure Python package that can be installed using `pip`. Layers distributes in that way are always visible and there is no need to specify full path to file.\n\nCreating package with layers:\n1. Create Python package `layers_pkg`, add empty `__init__.py` file.\n2. Put layer files into `layers_pkg/layers` folder, it is possible to use more complex directory structure.\n3. Add `MANIFEST.in` file with `recursive-include layers_pkg/layers *.ini` in it.\n4. Add `setup.py` file:\n```python\nfrom setuptools import setup\n\nsetup(\n    name='layers-pkg',\n    version='1.0.0',\n    packages=['layers_pkg'],\n    zip_safe=True,\n    include_package_data=True,\n    entry_points={\n        'qemu_runner_layer_packages': ['layers_pkg=layers_pkg'] # Always use `package_name=package_name`\n    }\n)\n```\n5. Create Python package using tools of your choice (`python setup.py` or `pyproject-build`)\n\nPackage might contain other files, as it is normal Python package.\n\n**NOTE:** This is simplified process of creating Python package, refer to Python documentation for more details.\n\n`qemu_runner` tools uses `qemu_runner_layer_packages` entry point to discover all registered packages, from each entry point module portion is used in search for layers.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -493,7 +492,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17824701,
+        "last_serial": 18306344,
         "urls": [
             {
                 "comment_text": "",
@@ -534,6 +533,97 @@
                 "upload_time": "2023-04-23T18:11:33",
                 "upload_time_iso_8601": "2023-04-23T18:11:33.948456Z",
                 "url": "https://files.pythonhosted.org/packages/14/9c/857b5033580f572f49d5f805bebdaa62e855368b38367a0dcf4add8f8e29/qemu-runner-1.3.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.3.3": {
+        "info": {
+            "author": "Maciej Nowak",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Environment :: Console",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Topic :: Software Development :: Embedded Systems",
+                "Topic :: System :: Emulators",
+                "Topic :: Utilities"
+            ],
+            "description": "# QEMU Runner\nThis project allows creation of self-contained runner for QEMU with embedded command line arguments. Command line arguments are described in files called **layers**. They are simple INI files that can be combined together to express more complex command lines.\n\n```shell\n> cat ./arm_virt.ini\n[general]\nengine = qemu-system-arm\n\n[machine]\n@=virt\n\n> cat ./ram_2G.ini\n[general]\nmemory = 2G\n\n> qemu_make_runner -l ./arm_virt.ini ./ram_2G.ini -o ./my_runner.pyz\n> python ./my_runner.pyz --dry-run kernel.elf arg1 arg2  # --dry-run to see effective command line instead of running QEMU\nqemu-system-arm -machine virt -kernel kernel.elf -append 'arg1 arg2'\n```\n\nResulting `my_runner.pyz` file is ZIP file with `qemu_runner` package and layers. Runner has no extra dependencies, using only Python 3.8+ standard library. QEMU is found according to search precedence described below.\n\nExisting runner can be used as base for next runner. **Derived runner** will contain all layers from base runner along with additional layers specified when deriving. This features allows extending base runner with project specific settings without being aware of base settings.\n\n```shell\n> cat ./semihosting.ini\n[semihosting-config]\nenable=on\ntarget=native\n\n> python ./my_runner.pyz --layers ./semihosting.ini --derive ./derived.pyz\n> python ./derived.pyz --dry-run kernel.elf arg1 arg2  # --dry-run to see effective command line instead of running QEMU\nqemu-system-arm -machine virt -semihosting-config enable=on,target=native -kernel kernel.elf -append 'arg1 arg2'\n```\n\nRunner provides following features, consult `--help` output for details:\n* GDB server settings\n* Start with CPU halted\n* Inspect command line\n\n# QEMU search precedence\nIf environment variable `QEMU_DEV` is set, it is used as path to QEMU executable.\nIf environment variable `QEMU_DEV` is not set but argument `--qemu` is specified it is used as path to QEMU executable.\n\nIf `QEMU_DEV` is not set, directories are searched for QEMU executable with name specified as `engine` in \ncombined layer:\n1. Directory specified by `QEMU_DIR` environment variable\n2. Directory specified by `--qemu-dir` argument\n3. Each ancestor directory containing runner, up to the root directory and `qemu` subdirectory at each level.\n   If runner's path is `c:\\dir1\\dir2\\runner.pyz`, then following directories are checked:\n   1. `c:\\dir1\\dir2`\n   2. `c:\\dir1\\dir2\\qemu`\n   3. `c:\\dir1\\`\n   4. `c:\\dir1\\qemu`\n   5. `c:\\`\n   6. `c:\\qemu`\n4. Repeat step 2 with path of base runner in case of derived runners with `--tract-qemu` option.\n5. Repeat step 2 with path of passed as `--qemu-dir` when runner was derived.\n6. Directories in `PATH` environment variable.\n\nOn Windows, `PATHEXT` variable is used to determine executable extension.\n\n# Environment variables\nSeveral environment variables influences the way QEMU command line is constructed:\n* `QEMU_FLAGS` - arguments to be added to the QEMU command line during execution \n* `QEMU_RUNNER_FLAGS` - arguments will be interpreted exactly as if they were added to runner execution. \n\nExample:\n```shell\nshell> QEMU_FLAGS = '-d int' QEMU_RUNNER_FLAGS = '--halted' ./runner.pyz --dry-run kernel.elf\nqemu-system-arm -machine virt -d int -S -kernel kernel.elf\n```\n\n# Layer search precedence\nIf layer path is absolute and file is not found, search process fails immediately.\n\nIf layer path is relative, following directories are searched:\n1. Current directory\n2. Packages declaring entry point `qemu_runner_layer_packages` (see below)\n\n# Layer file format\n**Layers** are plain INI files with sections describing QEMU command line. Layers can be combined together allowing user to build bigger command line from simpler building blocks.\n\nValues are interpreted as strings unless specified otherwise. When value is described as boolean, values `1`, `yes`, `true` and `on` are interpreted as true, values `0`, `no`, `false` and `off` are interpreted as false. Other values are invalid.\n\n## Section `[general]`\nSection `[general]` describes most common QEMU arguments. \n\nAvailable settings:\n* `engine` - Name of QEMU executable (e.g.: `qemu-system-arm`, `qemu-system-sparc`)\n* `cpu` - CPU to use in machine (`-cpu option`)\n* `memory` - RAM memory size, supports suffixes like `M`, `G` (e.g. `20M`, `4G`)\n* `gdb` (boolean) - If true QEMU will be started with gdbserver enabled.\n* `gdb_dev` - Use specified value as gdbserver listend address. If not used, default QEMU address will be used (`tcp::1234` at the time this document is written). Note that specifing only `gdb_dev` does not enable gdbserver.\n* `halted` - Freeze QEMU CPU at startup.\n\n## Section `[name]`\nEach section corresponds to single QEMU argument, e.g. section `[machine]` corresponds to `-machine` argument. Value specified as `@` key will be used as direct argument value (machine name, device type, etc). Remaining arguments will be added as key-value properties (note: for `id` property see next section).\n\nFor example, layer:\n```ini\n[machine]\n@=virt\nusb=on\ngic-version=2\n```\n\nwill be translated into\n\n```\n-machine virt,usb=on,gic-version=2\n```\n\n## Section `[name:id]`\nAs INI file syntax does not allow duplicated section names it is not possible to describe many QEMU arguments without additional syntax: `-device`, `-netdev`, etc. These arguments can be differentiated by `id` property which can be specified as section name in format `argument_name:id`.\n\nFor example, layer:\n```ini\n[device:d1]\n@=type1\narg1=10\narg2=20\n\n[device:d2]\n@=type1\narg1=10\narg2=20\n\n[device:d3]\n@=type2\narg3=10\narg4=20\n```\n\ntranslates into:\n\n```\n-device type1,id=d1,arg1=10,arg2=20 -device type1,id=d2,arg1=10,arg2=20 -device type2,id=d3,arg3=10,arg4=20\n```\n\n\n## Variable resolution\nIn sections `[name]` and `[name:id]` it is possible to use variables which will be resolved directly before building complete command lines. Variables are in form `${VARIABLE_NAME}`.\n\nCurrently available variables:\n\n| Variable name | Value                                                           |\n|---------------|-----------------------------------------------------------------|\n| `KERNEL_DIR`  | Directory containing kernel executable (path is not normalized) |\n\n## How layers are combined\nLayers can be combined by applying one layer on top of the another. Operation 'build layer `LResult` by applying layer `LAdd` on top of `LBase`' is defined as follows:\n* `[general]` (except `cmdline`) - `LResult` contains all settings from layers `LAdd` and `LBase`, values in `LAdd` override values in `LBase`\n* `[general]`, `cmdline` value  - `LResult` contains `cmdline` from `LBase` followed by `LAdd` (command line arguments are combined)\n* `[name]`\n  * If `LBase` does not contain section `[name]`, `LResult` will contain section from `LAdd`.\n  * If `LBase` contains section `[name]`, `LResult` will contain `[name]` with all settings from `LBase` and `LAdd`, values in `LAdd` override values in `LBase`.\n* `[name:id]`\n  * The same rules as with section `[name]` applies, `id` is treated as part of section name.\n\nNote:\n* It is not possible to remove section by applying another layer\n* It is not possible to change `id` property\n* It is not possible to remove argument from section\n\n# Putting layers into pip-installable package\nIt is possible to distribute layers as pure Python package that can be installed using `pip`. Layers distributes in that way are always visible and there is no need to specify full path to file.\n\nCreating package with layers:\n1. Create Python package `layers_pkg`, add empty `__init__.py` file.\n2. Put layer files into `layers_pkg/layers` folder, it is possible to use more complex directory structure.\n3. Add `MANIFEST.in` file with `recursive-include layers_pkg/layers *.ini` in it.\n4. Add `setup.py` file:\n```python\nfrom setuptools import setup\n\nsetup(\n    name='layers-pkg',\n    version='1.0.0',\n    packages=['layers_pkg'],\n    zip_safe=True,\n    include_package_data=True,\n    entry_points={\n        'qemu_runner_layer_packages': ['layers_pkg=layers_pkg'] # Always use `package_name=package_name`\n    }\n)\n```\n5. Create Python package using tools of your choice (`python setup.py` or `pyproject-build`)\n\nPackage might contain other files, as it is normal Python package.\n\n**NOTE:** This is simplified process of creating Python package, refer to Python documentation for more details.\n\n`qemu_runner` tools uses `qemu_runner_layer_packages` entry point to discover all registered packages, from each entry point module portion is used in search for layers.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/Novakov/qemu-runner",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "qemu-runner",
+            "package_url": "https://pypi.org/project/qemu-runner/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/qemu-runner/",
+            "project_urls": {
+                "Homepage": "https://github.com/Novakov/qemu-runner"
+            },
+            "release_url": "https://pypi.org/project/qemu-runner/1.3.3/",
+            "requires_dist": null,
+            "requires_python": ">=3.8",
+            "summary": "Create self-contained wrappers around QEMU to hide & share long command-line invocations",
+            "version": "1.3.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18306344,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "0b6b533cd40bebc609b32d24867fade4bca3e9e38b3b947a6784d69211206e40",
+                    "md5": "7cf4fa9858e985ab09d591712860f239",
+                    "sha256": "44e0408f8dda475dc3cf6d33454cf65678d6cef425ff4fdda351d322edb686f0"
+                },
+                "downloads": -1,
+                "filename": "qemu_runner-1.3.3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "7cf4fa9858e985ab09d591712860f239",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 16641,
+                "upload_time": "2023-05-30T18:52:06",
+                "upload_time_iso_8601": "2023-05-30T18:52:06.101531Z",
+                "url": "https://files.pythonhosted.org/packages/0b/6b/533cd40bebc609b32d24867fade4bca3e9e38b3b947a6784d69211206e40/qemu_runner-1.3.3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d9d230d1fcb486391a4f7a9baf4a2df473fc44448732656c4bd86faa436b023c",
+                    "md5": "82a242d423431f89292e5d9022d389c1",
+                    "sha256": "acc79e724fe7ffece66984f7de3f51b95086f1dec7ec0910e74fafe698a19d10"
+                },
+                "downloads": -1,
+                "filename": "qemu-runner-1.3.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "82a242d423431f89292e5d9022d389c1",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 25181,
+                "upload_time": "2023-05-30T18:52:07",
+                "upload_time_iso_8601": "2023-05-30T18:52:07.999337Z",
+                "url": "https://files.pythonhosted.org/packages/d9/d2/30d1fcb486391a4f7a9baf4a2df473fc44448732656c4bd86faa436b023c/qemu-runner-1.3.3.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

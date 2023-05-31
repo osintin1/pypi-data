@@ -52,7 +52,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16607883,
+        "last_serial": 18306997,
         "urls": [
             {
                 "comment_text": "",
@@ -131,7 +131,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16607883,
+        "last_serial": 18306997,
         "urls": [
             {
                 "comment_text": "",
@@ -1008,7 +1008,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16607883,
+        "last_serial": 18306997,
         "urls": [
             {
                 "comment_text": "",
@@ -1906,7 +1906,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16607883,
+        "last_serial": 18306997,
         "urls": [
             {
                 "comment_text": "",
@@ -2804,7 +2804,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16607883,
+        "last_serial": 18306997,
         "urls": [
             {
                 "comment_text": "",
@@ -3702,7 +3702,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16607883,
+        "last_serial": 18306997,
         "urls": [
             {
                 "comment_text": "",
@@ -4726,7 +4726,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16607883,
+        "last_serial": 18306997,
         "urls": [
             {
                 "comment_text": "",
@@ -6101,7 +6101,6 @@
                 "Topic :: System :: Archiving",
                 "Topic :: System :: Archiving :: Compression"
             ],
-            "description": "<div align=\"center\">\n\n![](https://raw.githubusercontent.com/mxmlnkn/indexed_bzip2/master/python/pragzip/pragzip.svg)\n\n# Parallel Random Access Gzip (pragzip)\n\n[![PyPI version](https://badge.fury.io/py/pragzip.svg)](https://badge.fury.io/py/pragzip)\n[![Python Version](https://img.shields.io/pypi/pyversions/pragzip)](https://pypi.org/project/pragzip/)\n[![PyPI Platforms](https://img.shields.io/badge/pypi-linux%20%7C%20macOS%20%7C%20Windows-brightgreen)](https://pypi.org/project/pragzip/)\n[![Downloads](https://pepy.tech/badge/pragzip/month)](https://pepy.tech/project/pragzip)\n[![License](https://img.shields.io/badge/license-MIT-blue.svg)](http://opensource.org/licenses/MIT)\n[![Build Status](https://github.com/mxmlnkn/indexed_bzip2/workflows/tests/badge.svg)](https://github.com/mxmlnkn/pragzip/actions)\n[![codecov](https://codecov.io/gh/mxmlnkn/indexed_bzip2/branch/master/graph/badge.svg?token=94ZD4UTZQW)](https://codecov.io/gh/mxmlnkn/pragzip)\n![C++17](https://img.shields.io/badge/C++-17-blue.svg?style=flat-square)\n\n</div>\n\nThis module provides a PragzipFile class, which can be used to seek inside gzip files without having to decompress them first.\nAlternatively, you can use this simply as a **parallelized** gzip decoder as a replacement for Python's builtin `gzip` module in order to fully utilize all your cores.\n\nThe random seeking support is the same as provided by [indexed_gzip](https://github.com/pauldmccarthy/indexed_gzip) but further speedups are realized at the cost of higher memory usage thanks to a least-recently-used cache in combination with a parallelized prefetcher.\n\n\n# Table of Contents\n\n1. [Performance](#performance-comparison-with-gzip-module)\n   1. [Decompression with Existing Index](#decompression-with-existing-index)\n   2. [Decompression from Scratch](#decompression-from-scratch)\n2. [Installation](#installation)\n3. [Usage](#usage)\n   1. [Command Line Tool](#command-line-tool)\n   2. [Python Library](#python-library)\n   3. [Via Ratarmount](#via-ratarmount)\n   4. [C++ Library](#c-library)\n4. [Internal Architecture](#internal-architecture)\n5. [Tracing the Decoder](#tracing-the-decoder)\n\n\n# Performance\n\nThese are simple timing tests for reading all the contents of a gzip file sequentially.\n\nResults are shown for an AMD Ryzen 3900X 12-core (24 virtual cores) processor and with `gzipFilePath=\"4GiB-base64.gz\"`, which is a 4 GiB gzip compressed file with base64 random data.\n\nBe aware that the chunk size requested from the Python code does influence the performance heavily.\nThis benchmarks use a chunk size of 512 KiB.\n\n## Decompression with Existing Index\n\n| Module                            | Runtime / s | Bandwidth / (MB/s) | Speedup |\n|-----------------------------------|-------------|--------------------|---------|\n| gzip                              |  17.9       |  180               |    1    |\n| pragzip with parallelization = 0  |  1.21       | 2700               | 14.8    |\n| pragzip with parallelization = 1  |  14.0       |  230               |  1.3    |\n| pragzip with parallelization = 2  |   7.2       |  450               |  2.5    |\n| pragzip with parallelization = 6  |  2.51       | 1300               |  7.1    |\n| pragzip with parallelization = 12 |  1.40       | 2330               | 12.8    |\n| pragzip with parallelization = 24 |  1.11       | 2940               | 16.1    |\n| pragzip with parallelization = 32 |  1.12       | 2920               | 16.0    |\n\n\n<details>\n<summary>Benchmark Code</summary>\n\n```python3\nimport gzip\nimport time\n\nwith gzip.open(gzipFilePath) as file:\n    t0 = time.time()\n    while file.read(4*1024*1024):\n        pass\n    gzipDuration = time.time() - t0\n    print(f\"Decoded file in {gzipDuration:.2f}s, bandwidth: {fileSize / gzipDuration / 1e6:.0f} MB/s\")\n```\n\nThe usage of pragzip is slightly different:\n\n```python3\nimport os\nimport time\n\nimport indexed_gzip\nimport pragzip\n\nfileSize = os.stat(gzipFilePath).st_size\n\nif not os.path.exists(gzipFilePath + \".index\"):\n    with indexed_gzip.IndexedGzipFile(gzipFilePath) as file:\n        file.build_full_index()\n        file.export_index(gzipFilePath + \".index\")\n\n# parallelization = 0 means that it is automatically using all available cores.\nfor parallelization in [0, 1, 2, 6, 12, 24, 32]:\n    with pragzip.PragzipFile(gzipFilePath, parallelization = parallelization) as file:\n        file.import_index(open(gzipFilePath + \".index\", 'rb'))\n        t0 = time.time()\n        # Unfortunately, the chunk size is very performance critical! It might depend on the cache size.\n        while file.read(512*1024):\n            pass\n        pragzipDuration = time.time() - t0\n        print(f\"Decoded file in {pragzipDuration:.2f}s\"\n              f\", bandwidth: {fileSize / pragzipDuration / 1e6:.0f} MB/s\"\n              f\", speedup: {gzipDuration/pragzipDuration:.1f}\")\n```\n\n</details>\n\n\n## Decompression from Scratch\n\n### Python\n\n| Module                            | Runtime / s | Bandwidth / (MB/s) | Speedup |\n|-----------------------------------|-------------|--------------------|---------|\n| gzip                              |  17.5       |  190               | 1       |\n| pragzip with parallelization = 0  |  1.22       | 2670               | 14.3    |\n| pragzip with parallelization = 1  |  18.2       |  180               | 1.0     |\n| pragzip with parallelization = 2  |   9.3       |  350               | 1.9     |\n| pragzip with parallelization = 6  |  3.28       | 1000               | 5.3     |\n| pragzip with parallelization = 12 |  1.82       | 1800               | 9.6     |\n| pragzip with parallelization = 24 |  1.25       | 2620               | 14.0    |\n| pragzip with parallelization = 32 |  1.30       | 2520               | 13.5    |\n\nNote that pragzip is generally faster than given an index because it can delegate the decompression to zlib while it has to use its own gzip decompression engine when no index exists yet.\n\nNote that values deviate roughly by 10% and therefore are rounded.\n\n<details>\n<summary>Benchmark Code</summary>\n\n```python3\nimport gzip\nimport os\nimport time\n\nimport pragzip\n\nfileSize = os.stat(gzipFilePath).st_size\n\nwith gzip.open(gzipFilePath) as file:\n    t0 = time.time()\n    while file.read(4*1024*1024):\n        pass\n    gzipDuration = time.time() - t0\n    print(f\"Decoded file in {gzipDuration:.2f}s, bandwidth: {fileSize / gzipDuration / 1e6:.0f} MB/s\")\n\n# parallelization = 0 means that it is automatically using all available cores.\nfor parallelization in [0, 1, 2, 6, 12, 24, 32]:\n    with pragzip.PragzipFile(gzipFilePath, parallelization = parallelization) as file:\n        t0 = time.time()\n        # Unfortunately, the chunk size is very performance critical! It might depend on the cache size.\n        while file.read(512*1024):\n            pass\n        pragzipDuration = time.time() - t0\n        print(f\"Decoded file in {pragzipDuration:.2f}s\"\n              f\", bandwidth: {fileSize / pragzipDuration / 1e6:.0f} MB/s\"\n              f\", speedup: {gzipDuration/pragzipDuration:.1f}\")\n```\n\n</details>\n\n\n# Installation\n\nYou can simply install it from PyPI:\n\n```\npython3 -m pip install --upgrade pip  # Recommended for newer manylinux wheels\npython3 -m pip install pragzip\n```\n\nThe latest unreleased development version can be tested out with:\n\n```bash\npython3 -m pip install --force-reinstall 'git+https://github.com/mxmlnkn/indexed_bzip2.git@master#egginfo=pragzip&subdirectory=python/pragzip'\n```\n\nAnd to build locally, you can use `build` and install the wheel:\n\n```bash\ncd python/pragzip\nrm -rf dist\npython3 -m build .\npython3 -m pip install --force-reinstall --user dist/*.whl\n```\n\n\n# Usage\n\n## Command Line Tool\n\n```bash\npragzip --help\n\n# Parallel decoding: 1.7 s\ntime pragzip -d -c -P 0 sample.gz | wc -c\n\n# Serial decoding: 22 s\ntime gzip -d -c sample.gz | wc -c\n```\n\n\n## Python Library\n\n### Simple open, seek, read, and close\n\n```python3\nfrom pragzip import PragzipFile\n\nfile = PragzipFile( \"example.gz\", parallelization = os.cpu_count() )\n\n# You can now use it like a normal file\nfile.seek( 123 )\ndata = file.read( 100 )\nfile.close()\n```\n\nThe first call to seek will ensure that the block offset list is complete and therefore might create them first.\nBecause of this the first call to seek might take a while.\n\n\n### Use with context manager\n\n```python3\nimport os\nimport pragzip\n\nwith pragzip.open( \"example.gz\", parallelization = os.cpu_count() ) as file:\n    file.seek( 123 )\n    data = file.read( 100 )\n```\n\n\n### Storing and loading the block offset map\n\nThe creation of the list of gzip blocks can take a while because it has to decode the gzip file completely.\nTo avoid this setup when opening a gzip file, the block offset list can be exported and imported.\n\n\n### Open a pure Python file-like object for indexed reading\n\n```python3\nimport io\nimport os\nimport pragzip as pragzip\n\nwith open( \"example.gz\", 'rb' ) as file:\n    in_memory_file = io.BytesIO( file.read() )\n\nwith pragzip.open( in_memory_file, parallelization = os.cpu_count() ) as file:\n    file.seek( 123 )\n    data = file.read( 100 )\n```\n\n\n## Via Ratarmount\n\n`pragzip` is **planned** to be used as a backend inside ratarmount with version 0.12.\nThen, you can use [ratarmount](https://github.com/mxmlnkn/ratarmount) to mount single gzip files easily.\n\n```bash\nbase64 /dev/urandom | head -c $(( 4 * 1024 * 1024 * 1024 )) | gzip > sample.gz\n# Serial decoding: 23 s\ntime gzip -c -d sample.gz | wc -c\n\npython3 -m pip install --user ratarmount\nratarmount sample.gz mounted\n\n# Parallel decoding: 3.5 s\ntime cat mounted/sample | wc -c\n\n# Random seeking to the middle of the file and reading 1 MiB: 0.287 s\ntime dd if=mounted/sample bs=$(( 1024 * 1024 )) \\\n       iflag=skip_bytes,count_bytes skip=$(( 2 * 1024 * 1024 * 1024 )) count=$(( 1024 * 1024 )) | wc -c\n```\n\n\n# C++ library\n\nBecause it is written in C++, it can of course also be used as a C++ library.\nIn order to make heavy use of templates and to simplify compiling with Python `setuptools`, it is mostly header-only so that integration it into another project should be easy.\nThe license is also permissive enough for most use cases.\n\nI currently did not yet test integrating it into other projects other than simply manually copying the source in `src/core`, `src/pragzip`, and if integrated zlib is desired also `src/external/zlib`.\nIf you have suggestions and wishes like support with CMake or Conan, please open an issue.\n\n\n# Internal Architecture\n\nThe main part of the [internal architecture](https://github.com/mxmlnkn/indexed_bzip2/tree/master/python/indexed_bzip2#internal-architecture) used for parallelizing is the same as used for [indexed_bzip2](https://github.com/mxmlnkn/indexed_bzip2).\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -6130,7 +6129,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 16607883,
+        "last_serial": 18306997,
         "urls": [
             {
                 "comment_text": "",
@@ -7347,6 +7346,1285 @@
                 "upload_time": "2023-01-29T11:16:25",
                 "upload_time_iso_8601": "2023-01-29T11:16:25.470751Z",
                 "url": "https://files.pythonhosted.org/packages/70/12/baa9399cd06efc4e7c70bded68da36c0fb95f163af7b257f2d134f8bc3c3/pragzip-0.5.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.6.0": {
+        "info": {
+            "author": "Maximilian Knespel",
+            "author_email": "mxmlnkn@github.de",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "License :: OSI Approved :: Apache Software License",
+                "License :: OSI Approved :: MIT License",
+                "Natural Language :: English",
+                "Operating System :: MacOS",
+                "Operating System :: Microsoft :: Windows",
+                "Operating System :: POSIX",
+                "Operating System :: Unix",
+                "Programming Language :: C++",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.6",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Software Development :: Libraries",
+                "Topic :: Software Development :: Libraries :: Python Modules",
+                "Topic :: System :: Archiving",
+                "Topic :: System :: Archiving :: Compression"
+            ],
+            "description": "<div align=\"center\">\n\n![](https://raw.githubusercontent.com/mxmlnkn/indexed_bzip2/master/python/pragzip/pragzip.svg)\n\n# Pragzip: Parallel Random Access Gzip\n\n[![PyPI version](https://badge.fury.io/py/pragzip.svg)](https://badge.fury.io/py/pragzip)\n[![Python Version](https://img.shields.io/pypi/pyversions/pragzip)](https://pypi.org/project/pragzip/)\n[![PyPI Platforms](https://img.shields.io/badge/pypi-linux%20%7C%20macOS%20%7C%20Windows-brightgreen)](https://pypi.org/project/pragzip/)\n[![Downloads](https://pepy.tech/badge/pragzip/month)](https://pepy.tech/project/pragzip)\n<br>\n[![License](https://img.shields.io/badge/license-MIT-blue.svg)](http://opensource.org/licenses/MIT)\n[![Build Status](https://github.com/mxmlnkn/indexed_bzip2/workflows/tests/badge.svg)](https://github.com/mxmlnkn/pragzip/actions)\n[![codecov](https://codecov.io/gh/mxmlnkn/indexed_bzip2/branch/master/graph/badge.svg?token=94ZD4UTZQW)](https://codecov.io/gh/mxmlnkn/pragzip)\n![C++17](https://img.shields.io/badge/C++-17-blue.svg)\n[![Discord](https://img.shields.io/discord/783411320354766878?label=discord)](https://discord.gg/Wra6t6akh2)\n[![Telegram](https://img.shields.io/badge/Chat-Telegram-%2330A3E6)](https://t.me/joinchat/FUdXxkXIv6c4Ib8bgaSxNg)\n\n![](https://raw.githubusercontent.com/mxmlnkn/indexed_bzip2/master/results/asciinema/pragzip-comparison.gif)\n\n</div>\n\n(Alternative Name: Rapidgzip: Random Access Parallel (Indexed) Decompression for Gzip Files)\n\nThis repository contains the command line tool `pragzip`, which can be used for parallel decompression of almost any gzip file.\n\nThe Python module provides a `PragzipFile` class, which can be used to seek inside gzip files without having to decompress them first.\nAlternatively, you can use this simply as a **parallelized** gzip decoder as a replacement for Python's builtin `gzip` module in order to fully utilize all your cores.\n\nThe random seeking support is the same as provided by [indexed_gzip](https://github.com/pauldmccarthy/indexed_gzip) but further speedups are realized at the cost of higher memory usage thanks to a least-recently-used cache in combination with a parallelized prefetcher.\n\n[This](https://github.com/mxmlnkn/pragzip) repository is a light-weight fork of the [indexed_bzip2](https://github.com/mxmlnkn/indexed_bzip2) repository, in which the main development takes place.\nThis repository was created for visibility reasons and in order to keep indexed_bzip2 and pragzip releases separate.\nIt will be updated at least for each release.\nIssues regarding pragzip should be opened [here](https://github.com/mxmlnkn/pragzip/issues).\n\n\n# Table of Contents\n\n1. [Performance](#performance-comparison-with-gzip-module)\n   1. [Decompression with Existing Index](#decompression-with-existing-index)\n   2. [Decompression from Scratch](#decompression-from-scratch)\n2. [Installation](#installation)\n3. [Usage](#usage)\n   1. [Command Line Tool](#command-line-tool)\n   2. [Python Library](#python-library)\n   3. [Via Ratarmount](#via-ratarmount)\n   4. [C++ Library](#c-library)\n4. [Citation](#citation)\n5. [Internal Architecture](#internal-architecture)\n6. [Tracing the Decoder](#tracing-the-decoder)\n\n\n# Performance\n\nThese are simple timing tests for reading all the contents of a gzip file sequentially.\n\nResults are shown for an AMD Ryzen 3900X 12-core (24 virtual cores) processor and with `gzipFilePath=\"4GiB-base64.gz\"`, which is a 4 GiB gzip compressed file with base64 random data.\n\nBe aware that the chunk size requested from the Python code does influence the performance heavily.\nThis benchmarks use a chunk size of 512 KiB.\n\n## Decompression with Existing Index\n\n|                      | 4GiB-base64                  | 4GiB-base64     | | 20x-silesia                   | 20x-silesia\n|----------------------|------------------------------|-----------------|-|-------------------------------|---------\n| Uncompressed Size    | 4 GiB                        |                 | | 3.95 GiB                      |\n| Compressed Size      | 3.04 GiB                     |                 | | 1.27 GiB                      |\n| **Module**           | **Bandwidth <br/> / (MB/s)** | **Speedup**     | |  **Bandwidth <br/> / (MB/s)** | **Speedup**\n| gzip                 |  250                         |    1            | |   293                         |  1\n| pragzip (0  threads) | 4480                         | 17.9            | |  4830                         | 16.5\n| pragzip (1  threads) |  294                         |  1.2            | |   350                         |  1.2\n| pragzip (2  threads) |  580                         |  2.3            | |   678                         |  2.3\n| pragzip (6  threads) | 1680                         |  6.7            | |  1940                         |  6.6\n| pragzip (12 threads) | 3110                         | 12.5            | |  3460                         | 11.8\n| pragzip (24 threads) | 4510                         | 18.0            | |  5070                         | 17.3\n| pragzip (32 threads) | 4330                         | 17.3            | |  4720                         | 16.1\n\n\n## Decompression from Scratch\n\n### Python\n\n|                      | 4GiB-base64                  | 4GiB-base64     | | 20x-silesia                   | 20x-silesia\n|----------------------|------------------------------|-----------------|-|-------------------------------|---------\n| Uncompressed Size    | 4 GiB                        |                 | | 3.95 GiB                      |\n| Compressed Size      | 3.04 GiB                     |                 | | 1.27 GiB                      |\n| **Module**           | **Bandwidth <br/> / (MB/s)** | **Speedup**     | |  **Bandwidth <br/> / (MB/s)** | **Speedup**\n| gzip                 |  250                         |    1            | |   293                         |  1\n| pragzip (0  threads) | 3280                         | 13.1            | |  2280                         |  7.8\n| pragzip (1  threads) |  222                         |  0.9            | |   236                         |  0.8\n| pragzip (2  threads) |  428                         |  1.7            | |   411                         |  1.4\n| pragzip (6  threads) | 1250                         |  5.0            | |  1095                         |  3.7\n| pragzip (12 threads) | 2290                         |  9.2            | |  1390                         |  4.8\n| pragzip (24 threads) | 3300                         | 13.2            | |  2280                         |  7.8\n| pragzip (32 threads) | 3180                         | 12.7            | |  2480                         |  8.5\n\nNote that pragzip is generally faster when given an index because it can delegate the decompression to zlib while it has to use its own gzip decompression engine when no index exists yet.\n\nNote that values deviate roughly by 10% and therefore are rounded.\n\nThe code used for benchmarking can be found [here](results/benchmarkPythonModule.py).\n\n\n# Installation\n\nYou can simply install it from PyPI:\n\n```\npython3 -m pip install --upgrade pip  # Recommended for newer manylinux wheels\npython3 -m pip install pragzip\n```\n\nThe latest unreleased development version can be tested out with:\n\n```bash\npython3 -m pip install --force-reinstall 'git+https://github.com/mxmlnkn/indexed_bzip2.git@master#egginfo=pragzip&subdirectory=python/pragzip'\n```\n\nAnd to build locally, you can use `build` and install the wheel:\n\n```bash\ncd python/pragzip\nrm -rf dist\npython3 -m build .\npython3 -m pip install --force-reinstall --user dist/*.whl\n```\n\n\n# Usage\n\n## Command Line Tool\n\n```bash\npragzip --help\n\n# Parallel decoding: 1.7 s\ntime pragzip -d -c -P 0 sample.gz | wc -c\n\n# Serial decoding: 22 s\ntime gzip -d -c sample.gz | wc -c\n```\n\n\n## Python Library\n\n### Simple open, seek, read, and close\n\n```python3\nfrom pragzip import PragzipFile\n\nfile = PragzipFile( \"example.gz\", parallelization = os.cpu_count() )\n\n# You can now use it like a normal file\nfile.seek( 123 )\ndata = file.read( 100 )\nfile.close()\n```\n\nThe first call to seek will ensure that the block offset list is complete and therefore might create them first.\nBecause of this the first call to seek might take a while.\n\n\n### Use with context manager\n\n```python3\nimport os\nimport pragzip\n\nwith pragzip.open( \"example.gz\", parallelization = os.cpu_count() ) as file:\n    file.seek( 123 )\n    data = file.read( 100 )\n```\n\n\n### Storing and loading the block offset map\n\nThe creation of the list of gzip blocks can take a while because it has to decode the gzip file completely.\nTo avoid this setup when opening a gzip file, the block offset list can be exported and imported.\n\n\n### Open a pure Python file-like object for indexed reading\n\n```python3\nimport io\nimport os\nimport pragzip as pragzip\n\nwith open( \"example.gz\", 'rb' ) as file:\n    in_memory_file = io.BytesIO( file.read() )\n\nwith pragzip.open( in_memory_file, parallelization = os.cpu_count() ) as file:\n    file.seek( 123 )\n    data = file.read( 100 )\n```\n\n\n## Via Ratarmount\n\n`pragzip` is **planned** to be used as a backend inside ratarmount with version 0.12.\nThen, you can use [ratarmount](https://github.com/mxmlnkn/ratarmount) to mount single gzip files easily.\n\n```bash\nbase64 /dev/urandom | head -c $(( 4 * 1024 * 1024 * 1024 )) | gzip > sample.gz\n# Serial decoding: 23 s\ntime gzip -c -d sample.gz | wc -c\n\npython3 -m pip install --user ratarmount\nratarmount sample.gz mounted\n\n# Parallel decoding: 3.5 s\ntime cat mounted/sample | wc -c\n\n# Random seeking to the middle of the file and reading 1 MiB: 0.287 s\ntime dd if=mounted/sample bs=$(( 1024 * 1024 )) \\\n       iflag=skip_bytes,count_bytes skip=$(( 2 * 1024 * 1024 * 1024 )) count=$(( 1024 * 1024 )) | wc -c\n```\n\n\n# C++ library\n\nBecause it is written in C++, it can of course also be used as a C++ library.\nIn order to make heavy use of templates and to simplify compiling with Python `setuptools`, it is mostly header-only so that integration it into another project should be easy.\nThe license is also permissive enough for most use cases.\n\nI currently did not yet test integrating it into other projects other than simply manually copying the source in `src/core`, `src/pragzip`, and if integrated zlib is desired also `src/external/zlib`.\nIf you have suggestions and wishes like support with CMake or Conan, please open an issue.\n\n\n# Citation\n\nA paper describing the implementation details and showing the scaling behavior with up to 128 cores has been submitted to and [accepted](https://www.hpdc.org/2023/program/technical-sessions/) in [ACM HPDC'23](https://www.hpdc.org/2023/), The 32nd International Symposium on High-Performance Parallel and Distributed Computing. If you use this software for your scientific publication, please cite it as:\n\nThis is preliminiary. The final citation will become available end of June 2023.\n\n```bibtex\n@inproceedings{rapidgzip,\n    author    = {Knespel, Maximilian and Brunst, Holger},\n    title     = {Rapidgzip: Parallel Decompression and Seeking in Gzip Files Using Cache Prefetching},\n    year      = {2023},\n    % isbn    = {},  % To be released end of June\n    publisher = {Association for Computing Machinery},\n    address   = {New York, NY, USA},\n    url       = {https://doi.org/10.1145/3588195.3592992},\n    doi       = {10.1145/3588195.3592992},\n    abstract  = {Gzip is a file compression format, which is ubiquitously used. Although a multitude of gzip implementations exist, only pugz can fully utilize current multi-core processor architectures for decompression. Yet, pugz cannot decompress arbitrary gzip files. It requires the decompressed stream to only contain byte values 9\u2013126. In this work, we present a generalization of the parallelization scheme used by pugz that can be reliably applied to arbitrary gzip-compressed data without compromising performance. We show that the requirements on the file contents posed by pugz can be dropped by implementing an architecture based on a cache and a parallelized prefetcher. This architecture can safely handle faulty decompression results, which can appear when threads start decompressing in the middle of a gzip file by using trial and error. Using 128 cores, our implementation reaches 8.7 GB/s decompression bandwidth for gzip-compressed base64-encoded data, a speedup of 55 over the single-threaded GNU gzip, and 5.6 GB/s for the Silesia corpus, a speedup of 33 over GNU gzip.},\n    booktitle = {Proceedings of the 32nd International Symposium on High-Performance Parallel and Distributed Computing},\n    % pages   = {16\u201329},  % To be released end of June\n    numpages  = {13},\n    keywords  = {Gzip, Decompression, Parallel Algorithm, Performance, Random Access},\n    location  = {Orlando, FL, USA},\n    series    = {HPDC '23},\n}\n```\n\n\n# Internal Architecture\n\nThe main part of the [internal architecture](https://github.com/mxmlnkn/indexed_bzip2/tree/master/python/indexed_bzip2#internal-architecture) used for parallelizing is the same as used for [indexed_bzip2](https://github.com/mxmlnkn/indexed_bzip2).\n\n\n# Tracing the Decoder\n\n\nPerformance profiling and tracing is done with [Score-P](https://www.vi-hps.org/projects/score-p/) for instrumentation and [Vampir](https://vampir.eu/) for visualization.\nThis is one way, you could install Score-P with most of the functionalities on Ubuntu 22.04.\n\n## Installation of Dependencies\n\n<details>\n<summary>Installation steps for Score-P</summary>\n\n```bash\nsudo apt-get install libopenmpi-dev openmpi-bin gcc-11-plugin-dev llvm-dev libclang-dev libunwind-dev \\\n                     libopen-trace-format-dev otf-trace libpapi-dev\n\n# Install Score-P (to /opt/scorep)\nSCOREP_VERSION=8.0\nwget \"https://perftools.pages.jsc.fz-juelich.de/cicd/scorep/tags/scorep-${SCOREP_VERSION}/scorep-${SCOREP_VERSION}.tar.gz\"\ntar -xf \"scorep-${SCOREP_VERSION}.tar.gz\"\ncd \"scorep-${SCOREP_VERSION}\"\n./configure --with-mpi=openmpi --enable-shared --without-llvm --without-shmem --without-cubelib --prefix=\"/opt/scorep-${SCOREP_VERSION}\"\nmake -j $( nproc )\nmake install\n\n# Add /opt/scorep to your path variables on shell start\ncat <<EOF >> ~/.bashrc\nif test -d /opt/scorep; then\n    export SCOREP_ROOT=/opt/scorep\n    export PATH=$SCOREP_ROOT/bin:$PATH\n    export LD_LIBRARY_PATH=$SCOREP_ROOT/lib:$LD_LIBRARY_PATH\nfi\nEOF\n\necho -1 | sudo tee /proc/sys/kernel/perf_event_paranoid\n\n# Check whether it works\nscorep --version\nscorep-info config-summary\n```\n\n</details>\n\n## Tracing\n\n### Results for a version from 2023-02-04\n\n![](https://raw.githubusercontent.com/mxmlnkn/indexed_bzip2/master/results/Screenshot_2023-01-28_17-16-49.png)\n\n### Comparison without and with rpmalloc preloaded\n\n![](https://raw.githubusercontent.com/mxmlnkn/indexed_bzip2/master/results/benchmarks/malloc/Summary_Timeline_scorep-pragzip-2023-02-04-without-rpmalloc.png)\n![](https://raw.githubusercontent.com/mxmlnkn/indexed_bzip2/master/results/benchmarks/malloc/Summary_Timeline_scorep-pragzip-2023-02-04-with-rpmalloc.png)\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/mxmlnkn/pragzip",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "pragzip",
+            "package_url": "https://pypi.org/project/pragzip/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/pragzip/",
+            "project_urls": {
+                "Homepage": "https://github.com/mxmlnkn/pragzip"
+            },
+            "release_url": "https://pypi.org/project/pragzip/0.6.0/",
+            "requires_dist": null,
+            "requires_python": ">=3.6",
+            "summary": "Parallel random access to gzip files",
+            "version": "0.6.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18306997,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f079c1f1fb901265e62785b288c71c21c6d2852d71d1f09ebb1608f644bf6d72",
+                    "md5": "702c01cf639b1d7bcf2a44d1261c21b7",
+                    "sha256": "933d745966414627a5e04873ed95767da7ecc397701944227f78d4fb5e77f011"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp310-cp310-macosx_10_14_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "702c01cf639b1d7bcf2a44d1261c21b7",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.6",
+                "size": 754496,
+                "upload_time": "2023-05-30T19:33:25",
+                "upload_time_iso_8601": "2023-05-30T19:33:25.632194Z",
+                "url": "https://files.pythonhosted.org/packages/f0/79/c1f1fb901265e62785b288c71c21c6d2852d71d1f09ebb1608f644bf6d72/pragzip-0.6.0-cp310-cp310-macosx_10_14_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "b6245de4192ba4c800424a9e82a6ed995e316f8006bf3b269987d62820244461",
+                    "md5": "2c2f2aeaad831b45d7c5496bd803fdaa",
+                    "sha256": "4d87aa1b5cccedd6f4f657ea71607cf272975470f9e67f13127205b7fe5f6fea"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp310-cp310-manylinux_2_17_i686.manylinux2014_i686.whl",
+                "has_sig": false,
+                "md5_digest": "2c2f2aeaad831b45d7c5496bd803fdaa",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.6",
+                "size": 6568938,
+                "upload_time": "2023-05-30T19:42:26",
+                "upload_time_iso_8601": "2023-05-30T19:42:26.675403Z",
+                "url": "https://files.pythonhosted.org/packages/b6/24/5de4192ba4c800424a9e82a6ed995e316f8006bf3b269987d62820244461/pragzip-0.6.0-cp310-cp310-manylinux_2_17_i686.manylinux2014_i686.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "94b1254e3b3a19494590446055a7e85a4881ff9025cab54e55c6bc80729805fc",
+                    "md5": "c3a1ceb1b017fa3df5ee0326a9f32d77",
+                    "sha256": "6297f0032cd0f85a198c7e642093342664a8131755161a659294a49435f1e8b2"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "c3a1ceb1b017fa3df5ee0326a9f32d77",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.6",
+                "size": 6689924,
+                "upload_time": "2023-05-30T19:48:56",
+                "upload_time_iso_8601": "2023-05-30T19:48:56.940100Z",
+                "url": "https://files.pythonhosted.org/packages/94/b1/254e3b3a19494590446055a7e85a4881ff9025cab54e55c6bc80729805fc/pragzip-0.6.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a31cddb819d70dc1205b6fae0d4889d77e319b51515d14b44326ce112fe33f52",
+                    "md5": "4444cae5ef171a41ee4003393032415f",
+                    "sha256": "b12b7cee2dd5c9cfb49e515decf65e6ae79d44d57ee67a5acafc47aae736d6e4"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp310-cp310-manylinux_2_28_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "4444cae5ef171a41ee4003393032415f",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.6",
+                "size": 6734100,
+                "upload_time": "2023-05-30T19:44:46",
+                "upload_time_iso_8601": "2023-05-30T19:44:46.118414Z",
+                "url": "https://files.pythonhosted.org/packages/a3/1c/ddb819d70dc1205b6fae0d4889d77e319b51515d14b44326ce112fe33f52/pragzip-0.6.0-cp310-cp310-manylinux_2_28_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3c700b1cafa804c2e822c18e3025ad8a600f7c865d8529b489017dd6fc01ccab",
+                    "md5": "d44e0573274c59d49445ae64e7800954",
+                    "sha256": "fcc1a2ae9306405c728b028f68b6f39aebc94d965e736cc2f5fc42f3b8e9af72"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp310-cp310-musllinux_1_1_i686.whl",
+                "has_sig": false,
+                "md5_digest": "d44e0573274c59d49445ae64e7800954",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.6",
+                "size": 7233887,
+                "upload_time": "2023-05-30T19:42:29",
+                "upload_time_iso_8601": "2023-05-30T19:42:29.018541Z",
+                "url": "https://files.pythonhosted.org/packages/3c/70/0b1cafa804c2e822c18e3025ad8a600f7c865d8529b489017dd6fc01ccab/pragzip-0.6.0-cp310-cp310-musllinux_1_1_i686.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f2c1d969defb8f36e91dede5ceb8c00918630a298d1c16633c1ece2628ea2733",
+                    "md5": "e4c4f0265614bb747c0b55aad1c580c0",
+                    "sha256": "4762f6d9c09be626947dcc26affbdf618634f5c94041a80308b599391b28fd7c"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp310-cp310-musllinux_1_1_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "e4c4f0265614bb747c0b55aad1c580c0",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.6",
+                "size": 7340658,
+                "upload_time": "2023-05-30T19:44:48",
+                "upload_time_iso_8601": "2023-05-30T19:44:48.687787Z",
+                "url": "https://files.pythonhosted.org/packages/f2/c1/d969defb8f36e91dede5ceb8c00918630a298d1c16633c1ece2628ea2733/pragzip-0.6.0-cp310-cp310-musllinux_1_1_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3d98fafaa1f50c9dc12436909bea02466e95855c878f0601975aa840bc025b1d",
+                    "md5": "3e31fe90d9a6df3c856b7260228acc3e",
+                    "sha256": "0364369f870ca7fe1cfea8fff15927af63c278e6af6921b04797aca88793fe12"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp310-cp310-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "3e31fe90d9a6df3c856b7260228acc3e",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.6",
+                "size": 540823,
+                "upload_time": "2023-05-30T19:33:36",
+                "upload_time_iso_8601": "2023-05-30T19:33:36.015853Z",
+                "url": "https://files.pythonhosted.org/packages/3d/98/fafaa1f50c9dc12436909bea02466e95855c878f0601975aa840bc025b1d/pragzip-0.6.0-cp310-cp310-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "393a0bcbb8b4a3403cf5c43c1f68ff0d84b5eab1e6d0bf380047dfdb5d5a68cf",
+                    "md5": "9913e97e7496c7d217d4f68feb837cb1",
+                    "sha256": "fb69e1574ed30b10117d07980eac17286b38e7b13edc709dfde0a39ccb5540d5"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp311-cp311-macosx_10_14_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "9913e97e7496c7d217d4f68feb837cb1",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.6",
+                "size": 753452,
+                "upload_time": "2023-05-30T19:33:31",
+                "upload_time_iso_8601": "2023-05-30T19:33:31.249635Z",
+                "url": "https://files.pythonhosted.org/packages/39/3a/0bcbb8b4a3403cf5c43c1f68ff0d84b5eab1e6d0bf380047dfdb5d5a68cf/pragzip-0.6.0-cp311-cp311-macosx_10_14_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "83cdeb7af9dfd715c41a1748ca36bb1afb303916916641e3b44b2c27e9031285",
+                    "md5": "ffd4d2d16531b1b35f9691ff198a34c7",
+                    "sha256": "25766efd2aba39a74f618ca7f230e24ec427b7c4eb1bb04ebd34e646f249d4bb"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp311-cp311-manylinux_2_17_i686.manylinux2014_i686.whl",
+                "has_sig": false,
+                "md5_digest": "ffd4d2d16531b1b35f9691ff198a34c7",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.6",
+                "size": 6573479,
+                "upload_time": "2023-05-30T19:42:31",
+                "upload_time_iso_8601": "2023-05-30T19:42:31.485668Z",
+                "url": "https://files.pythonhosted.org/packages/83/cd/eb7af9dfd715c41a1748ca36bb1afb303916916641e3b44b2c27e9031285/pragzip-0.6.0-cp311-cp311-manylinux_2_17_i686.manylinux2014_i686.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "cd3ff250f4f7bde79fc4a24e7f80d8f79e4cb726ffc26b5a3608bbd01b5d1a96",
+                    "md5": "f1b20999a6aaba95611718fe6b661fd7",
+                    "sha256": "25e5bb30d5283a35df0a5452edf9db010f2be399305d7f9501603201b9e20b49"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "f1b20999a6aaba95611718fe6b661fd7",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.6",
+                "size": 6702263,
+                "upload_time": "2023-05-30T19:49:00",
+                "upload_time_iso_8601": "2023-05-30T19:49:00.134594Z",
+                "url": "https://files.pythonhosted.org/packages/cd/3f/f250f4f7bde79fc4a24e7f80d8f79e4cb726ffc26b5a3608bbd01b5d1a96/pragzip-0.6.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "9dd3ac3fe40a97c57308f42dda2c4f42079d3560877fed9c8445b77d00323873",
+                    "md5": "7d9bb718e083db73630f33cc4b4e46fb",
+                    "sha256": "57f7fb21419ea98d2ee05752a4353c029f93e50634deddbafa0e95bd3362c1d4"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp311-cp311-manylinux_2_28_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "7d9bb718e083db73630f33cc4b4e46fb",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.6",
+                "size": 6737787,
+                "upload_time": "2023-05-30T19:44:51",
+                "upload_time_iso_8601": "2023-05-30T19:44:51.156531Z",
+                "url": "https://files.pythonhosted.org/packages/9d/d3/ac3fe40a97c57308f42dda2c4f42079d3560877fed9c8445b77d00323873/pragzip-0.6.0-cp311-cp311-manylinux_2_28_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "67d2257a741dc1d0f1933d00c9cb0d6c558a5762e4be14cd02079b9f2c8d79b8",
+                    "md5": "a47f10533baab7c2c179f5d589f7228d",
+                    "sha256": "90e36fe32bcf0223eec3832e698c01a65a7ca9722e1662957d29a846c268aadb"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp311-cp311-musllinux_1_1_i686.whl",
+                "has_sig": false,
+                "md5_digest": "a47f10533baab7c2c179f5d589f7228d",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.6",
+                "size": 7194204,
+                "upload_time": "2023-05-30T19:42:33",
+                "upload_time_iso_8601": "2023-05-30T19:42:33.961668Z",
+                "url": "https://files.pythonhosted.org/packages/67/d2/257a741dc1d0f1933d00c9cb0d6c558a5762e4be14cd02079b9f2c8d79b8/pragzip-0.6.0-cp311-cp311-musllinux_1_1_i686.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "91d5375b0c9f97dd33f57abfdee4cd141336c7252edfa9d0dbc995b4e3a13781",
+                    "md5": "2356c5eca974e65275bd0d2eb0e4d89a",
+                    "sha256": "b7ac06d8ad55780d86aff506eef9690c503eb6c7b94f522803c3dfc1885e466f"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp311-cp311-musllinux_1_1_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "2356c5eca974e65275bd0d2eb0e4d89a",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.6",
+                "size": 7340787,
+                "upload_time": "2023-05-30T19:44:52",
+                "upload_time_iso_8601": "2023-05-30T19:44:52.951683Z",
+                "url": "https://files.pythonhosted.org/packages/91/d5/375b0c9f97dd33f57abfdee4cd141336c7252edfa9d0dbc995b4e3a13781/pragzip-0.6.0-cp311-cp311-musllinux_1_1_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "0344584fd479856238e3bd260bc4532bef231aea10e104f6cde8d8ac8d5ebcdd",
+                    "md5": "8d9341c50e2c13ad2dbf5c9024cc7a12",
+                    "sha256": "83892bb9bf3e1025939f09731e9c76d4f49ab6f7c2e60ab29d12d9786e94b0a4"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp311-cp311-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "8d9341c50e2c13ad2dbf5c9024cc7a12",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.6",
+                "size": 538749,
+                "upload_time": "2023-05-30T19:33:38",
+                "upload_time_iso_8601": "2023-05-30T19:33:38.819463Z",
+                "url": "https://files.pythonhosted.org/packages/03/44/584fd479856238e3bd260bc4532bef231aea10e104f6cde8d8ac8d5ebcdd/pragzip-0.6.0-cp311-cp311-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "84e240320d3de8f3092610f7dcb25f574bd3ba9cd2c55b906fc54980d07c8fbd",
+                    "md5": "7b83c4f708e7c44ed57353f1caf28200",
+                    "sha256": "fda392a3a167059ab137baaff336821f7808ae788a9b4828f45217e6457a3c6a"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp36-cp36m-macosx_10_14_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "7b83c4f708e7c44ed57353f1caf28200",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp36",
+                "requires_python": ">=3.6",
+                "size": 756446,
+                "upload_time": "2023-05-30T19:33:32",
+                "upload_time_iso_8601": "2023-05-30T19:33:32.832218Z",
+                "url": "https://files.pythonhosted.org/packages/84/e2/40320d3de8f3092610f7dcb25f574bd3ba9cd2c55b906fc54980d07c8fbd/pragzip-0.6.0-cp36-cp36m-macosx_10_14_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "bf1d321f1f3a7b466ca6e4afa534ad6f8bd4694d7df565756624ded4e45ff2ae",
+                    "md5": "43e1ffe43578abd53274293e100fc169",
+                    "sha256": "70a11747fbdd7d8ac2188ee6f319b96cfa424145246a7cdd316f62497d60b81c"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp36-cp36m-manylinux_2_17_i686.manylinux2014_i686.whl",
+                "has_sig": false,
+                "md5_digest": "43e1ffe43578abd53274293e100fc169",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp36",
+                "requires_python": ">=3.6",
+                "size": 6575031,
+                "upload_time": "2023-05-30T19:42:36",
+                "upload_time_iso_8601": "2023-05-30T19:42:36.171601Z",
+                "url": "https://files.pythonhosted.org/packages/bf/1d/321f1f3a7b466ca6e4afa534ad6f8bd4694d7df565756624ded4e45ff2ae/pragzip-0.6.0-cp36-cp36m-manylinux_2_17_i686.manylinux2014_i686.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "66a859af27eb88044250560992a2a3f3ce4c57e8b166e02d4ef5ec921f239a08",
+                    "md5": "b050a99032bc7ec3f871a48d83893218",
+                    "sha256": "95424a51023d8c65f162daf01bfba1a74fb116a11ba9d40abf5eb8f3a49c783a"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp36-cp36m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "b050a99032bc7ec3f871a48d83893218",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp36",
+                "requires_python": ">=3.6",
+                "size": 6698560,
+                "upload_time": "2023-05-30T19:49:03",
+                "upload_time_iso_8601": "2023-05-30T19:49:03.115467Z",
+                "url": "https://files.pythonhosted.org/packages/66/a8/59af27eb88044250560992a2a3f3ce4c57e8b166e02d4ef5ec921f239a08/pragzip-0.6.0-cp36-cp36m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "71adf9653f8eeaca03272b4ec800607c240f6df5f0a307ce7f94cdd251a44b2b",
+                    "md5": "85056dcaeb9830038e3a8e7c21a1f2fc",
+                    "sha256": "8f152e4f06b5319207c42b284c861c1d45ab909b8d9c16dab70d72152907144f"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp36-cp36m-manylinux_2_28_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "85056dcaeb9830038e3a8e7c21a1f2fc",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp36",
+                "requires_python": ">=3.6",
+                "size": 6742067,
+                "upload_time": "2023-05-30T19:44:55",
+                "upload_time_iso_8601": "2023-05-30T19:44:55.042499Z",
+                "url": "https://files.pythonhosted.org/packages/71/ad/f9653f8eeaca03272b4ec800607c240f6df5f0a307ce7f94cdd251a44b2b/pragzip-0.6.0-cp36-cp36m-manylinux_2_28_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e9970d82b2c47934b1ded829a9f7323d74bffda23eaaab3060383d139541668f",
+                    "md5": "9da1a337db72897c8085e917d7b56b67",
+                    "sha256": "2e5fc87bd4fb1cbf2a33b7f835c677627944216eb0609b4bcaf03751841ee2b9"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp36-cp36m-musllinux_1_1_i686.whl",
+                "has_sig": false,
+                "md5_digest": "9da1a337db72897c8085e917d7b56b67",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp36",
+                "requires_python": ">=3.6",
+                "size": 7239534,
+                "upload_time": "2023-05-30T19:42:38",
+                "upload_time_iso_8601": "2023-05-30T19:42:38.476832Z",
+                "url": "https://files.pythonhosted.org/packages/e9/97/0d82b2c47934b1ded829a9f7323d74bffda23eaaab3060383d139541668f/pragzip-0.6.0-cp36-cp36m-musllinux_1_1_i686.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "607edb14e1bbd2acf41313ea4de00e132fa77644b1235f8f66ee366307045ca8",
+                    "md5": "b93dc5b988b92cbece6367ef3bb2fa92",
+                    "sha256": "8f6d7c5b66d0c0e1fd0fdde5ca047bc505c30f0e829a77f237c6d16ddb135490"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp36-cp36m-musllinux_1_1_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "b93dc5b988b92cbece6367ef3bb2fa92",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp36",
+                "requires_python": ">=3.6",
+                "size": 7343244,
+                "upload_time": "2023-05-30T19:44:57",
+                "upload_time_iso_8601": "2023-05-30T19:44:57.584348Z",
+                "url": "https://files.pythonhosted.org/packages/60/7e/db14e1bbd2acf41313ea4de00e132fa77644b1235f8f66ee366307045ca8/pragzip-0.6.0-cp36-cp36m-musllinux_1_1_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ba762f4ef03ec93e1eef56e5746e6b297e0e2cccde0b6a0403b4398f6515cd9a",
+                    "md5": "c51566f7d4a21fbb79961e74dde50672",
+                    "sha256": "f9118f011749775a612fe35d45f228a8ea86309c0d0e9866d8c501add3832d38"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp36-cp36m-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "c51566f7d4a21fbb79961e74dde50672",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp36",
+                "requires_python": ">=3.6",
+                "size": 541337,
+                "upload_time": "2023-05-30T19:33:41",
+                "upload_time_iso_8601": "2023-05-30T19:33:41.855290Z",
+                "url": "https://files.pythonhosted.org/packages/ba/76/2f4ef03ec93e1eef56e5746e6b297e0e2cccde0b6a0403b4398f6515cd9a/pragzip-0.6.0-cp36-cp36m-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c1f9f52f475d7acae92fbb3631ce78d8635f1afbf3b528491142d2b63fc4cf08",
+                    "md5": "7903cb803932dfaaf4af639fb32e9003",
+                    "sha256": "2f4e1667ee62ad039549478e263e79b409186112b43a4c12217e95b1daeaee35"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp37-cp37m-macosx_10_14_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "7903cb803932dfaaf4af639fb32e9003",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.6",
+                "size": 754404,
+                "upload_time": "2023-05-30T19:33:35",
+                "upload_time_iso_8601": "2023-05-30T19:33:35.343977Z",
+                "url": "https://files.pythonhosted.org/packages/c1/f9/f52f475d7acae92fbb3631ce78d8635f1afbf3b528491142d2b63fc4cf08/pragzip-0.6.0-cp37-cp37m-macosx_10_14_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5484cd7e11e076979a53aab24f4e0664054bd13df498350053f75c02b8a27d15",
+                    "md5": "3e6922de981449608e8fcd241439acb1",
+                    "sha256": "cb6c6ccfd587616e493c7cd4a5edced22138d7e472bedaa2488c5d53965e1f1e"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp37-cp37m-manylinux_2_17_i686.manylinux2014_i686.whl",
+                "has_sig": false,
+                "md5_digest": "3e6922de981449608e8fcd241439acb1",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.6",
+                "size": 6572489,
+                "upload_time": "2023-05-30T19:42:40",
+                "upload_time_iso_8601": "2023-05-30T19:42:40.884096Z",
+                "url": "https://files.pythonhosted.org/packages/54/84/cd7e11e076979a53aab24f4e0664054bd13df498350053f75c02b8a27d15/pragzip-0.6.0-cp37-cp37m-manylinux_2_17_i686.manylinux2014_i686.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "31f62f3964bb6f3bcd4a02677b87c2af853933714f9e946f3f081137ab3e3913",
+                    "md5": "cfcdf63da544a78c8b84dc98498d12b2",
+                    "sha256": "4c2bc3e19842de280b6d5d0266ad4805ed2f5773be95c0c7991835c77f943883"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "cfcdf63da544a78c8b84dc98498d12b2",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.6",
+                "size": 6691804,
+                "upload_time": "2023-05-30T19:49:05",
+                "upload_time_iso_8601": "2023-05-30T19:49:05.916127Z",
+                "url": "https://files.pythonhosted.org/packages/31/f6/2f3964bb6f3bcd4a02677b87c2af853933714f9e946f3f081137ab3e3913/pragzip-0.6.0-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d6847545418a415c129ce22a714808e1bc8c302d931f0922f145e3c82e76131c",
+                    "md5": "d1ac712dd84c8444414dfb9d3acf92c4",
+                    "sha256": "d50e8d902cf63dd703bdc5623cb5c18c9aae21bd95d95dee8c14a68fdf8c1fd5"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp37-cp37m-manylinux_2_28_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "d1ac712dd84c8444414dfb9d3acf92c4",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.6",
+                "size": 6737019,
+                "upload_time": "2023-05-30T19:44:59",
+                "upload_time_iso_8601": "2023-05-30T19:44:59.744387Z",
+                "url": "https://files.pythonhosted.org/packages/d6/84/7545418a415c129ce22a714808e1bc8c302d931f0922f145e3c82e76131c/pragzip-0.6.0-cp37-cp37m-manylinux_2_28_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "0e7441cae4d08fb459ab62b176fdcab69c0e403a94f8101b88996ae15ba7626c",
+                    "md5": "758d257a2c83a3a983879ae141fe729d",
+                    "sha256": "761b612790a88df5b3f19e98802ad227178e8af1ada9e6ace84b3fa3b32a9506"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp37-cp37m-musllinux_1_1_i686.whl",
+                "has_sig": false,
+                "md5_digest": "758d257a2c83a3a983879ae141fe729d",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.6",
+                "size": 7241338,
+                "upload_time": "2023-05-30T19:42:43",
+                "upload_time_iso_8601": "2023-05-30T19:42:43.292167Z",
+                "url": "https://files.pythonhosted.org/packages/0e/74/41cae4d08fb459ab62b176fdcab69c0e403a94f8101b88996ae15ba7626c/pragzip-0.6.0-cp37-cp37m-musllinux_1_1_i686.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "8e30386cbdb4f1b7f459d9eb8ef469b00bdbd7ed5344a64c9f441c9c9750ece9",
+                    "md5": "1e4a694852f88698fb303e5f1cdd45a2",
+                    "sha256": "99e7baeaa7248b34554164844bf749280d0bb38555f1741f45c2d1c593660b2a"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp37-cp37m-musllinux_1_1_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "1e4a694852f88698fb303e5f1cdd45a2",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.6",
+                "size": 7341525,
+                "upload_time": "2023-05-30T19:45:02",
+                "upload_time_iso_8601": "2023-05-30T19:45:02.011647Z",
+                "url": "https://files.pythonhosted.org/packages/8e/30/386cbdb4f1b7f459d9eb8ef469b00bdbd7ed5344a64c9f441c9c9750ece9/pragzip-0.6.0-cp37-cp37m-musllinux_1_1_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "bf76e66e235c93e06080fb2216126a4b587258cf93d1f1e3f08a480747e19391",
+                    "md5": "ff0f469d0693ce7990ffa0fa3ec1827f",
+                    "sha256": "11667b0cd3384ef7a183229210e4e61122fc7d4d2acc506ad32843f5addfaef0"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp37-cp37m-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "ff0f469d0693ce7990ffa0fa3ec1827f",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.6",
+                "size": 541389,
+                "upload_time": "2023-05-30T19:33:45",
+                "upload_time_iso_8601": "2023-05-30T19:33:45.191467Z",
+                "url": "https://files.pythonhosted.org/packages/bf/76/e66e235c93e06080fb2216126a4b587258cf93d1f1e3f08a480747e19391/pragzip-0.6.0-cp37-cp37m-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "7c4bb09d7ec1cdcce3b774a831e653e148101265daba2d808a0c7c4f2e3d5f10",
+                    "md5": "c209e95d336e7509070fc68c02f30e9c",
+                    "sha256": "aa6aebad9fb8a5c77cac72fd74052f01ec7fd351b55708dee16b266aa89ea84a"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp38-cp38-macosx_10_14_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "c209e95d336e7509070fc68c02f30e9c",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.6",
+                "size": 754947,
+                "upload_time": "2023-05-30T19:33:36",
+                "upload_time_iso_8601": "2023-05-30T19:33:36.792882Z",
+                "url": "https://files.pythonhosted.org/packages/7c/4b/b09d7ec1cdcce3b774a831e653e148101265daba2d808a0c7c4f2e3d5f10/pragzip-0.6.0-cp38-cp38-macosx_10_14_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ae032a5217686f2a52791f880b5b4be10684d64be472cf066bd39c3200830576",
+                    "md5": "07979bce373520a2383bbe7fe8a85d99",
+                    "sha256": "d172eb95e3a9910d8b2619270953eb6a4f4c1a82a87024f1b5973c49cd2030f0"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp38-cp38-manylinux_2_17_i686.manylinux2014_i686.whl",
+                "has_sig": false,
+                "md5_digest": "07979bce373520a2383bbe7fe8a85d99",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.6",
+                "size": 6585630,
+                "upload_time": "2023-05-30T19:42:45",
+                "upload_time_iso_8601": "2023-05-30T19:42:45.259173Z",
+                "url": "https://files.pythonhosted.org/packages/ae/03/2a5217686f2a52791f880b5b4be10684d64be472cf066bd39c3200830576/pragzip-0.6.0-cp38-cp38-manylinux_2_17_i686.manylinux2014_i686.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "69dea673d71f3f43562b291ce4e2c17d9355915dd0b3d77b04f23d7c2d92b66d",
+                    "md5": "66ade0bf2e5e76d3108187f395329d96",
+                    "sha256": "a34d3b1ba2634a8467f2bab1418054513ecbc21d6b84428d42c8ea6b1748ba60"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "66ade0bf2e5e76d3108187f395329d96",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.6",
+                "size": 6701277,
+                "upload_time": "2023-05-30T19:49:08",
+                "upload_time_iso_8601": "2023-05-30T19:49:08.634265Z",
+                "url": "https://files.pythonhosted.org/packages/69/de/a673d71f3f43562b291ce4e2c17d9355915dd0b3d77b04f23d7c2d92b66d/pragzip-0.6.0-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2f3eb8fc567b586e79c4ed28ada5c644fe0e37ba0ff5f489b648548f58254600",
+                    "md5": "0f13b7ae36faabf6cbe6550e149ea8a9",
+                    "sha256": "87cfc8e03827648bc75de4de2dad6582e630732f90b2926c2871906cbeaed4c9"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp38-cp38-manylinux_2_28_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "0f13b7ae36faabf6cbe6550e149ea8a9",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.6",
+                "size": 6745463,
+                "upload_time": "2023-05-30T19:45:04",
+                "upload_time_iso_8601": "2023-05-30T19:45:04.150050Z",
+                "url": "https://files.pythonhosted.org/packages/2f/3e/b8fc567b586e79c4ed28ada5c644fe0e37ba0ff5f489b648548f58254600/pragzip-0.6.0-cp38-cp38-manylinux_2_28_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d705b28e75544e481c94a49af646b30ad5c2e246843dca894bb0e2fb464f0b9c",
+                    "md5": "5e8a43d8b08ecfbdce205ba98bcdd9af",
+                    "sha256": "fce9037f207cc0d0dd0b3ba17b30d4394669b28bf058037911ea2ab16e536b5c"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp38-cp38-musllinux_1_1_i686.whl",
+                "has_sig": false,
+                "md5_digest": "5e8a43d8b08ecfbdce205ba98bcdd9af",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.6",
+                "size": 7262874,
+                "upload_time": "2023-05-30T19:42:47",
+                "upload_time_iso_8601": "2023-05-30T19:42:47.763253Z",
+                "url": "https://files.pythonhosted.org/packages/d7/05/b28e75544e481c94a49af646b30ad5c2e246843dca894bb0e2fb464f0b9c/pragzip-0.6.0-cp38-cp38-musllinux_1_1_i686.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "af3ab5b03cbc4ceeca200c2d043ebf6d12f92f3e5896f795c8e4c12a305f9b13",
+                    "md5": "758396873661fad8c69d7829d6f6b2a4",
+                    "sha256": "8d7ae3326b1dfe6151ce147cdd43c5107fd17795c5d64d73aa8d896ddce4e633"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp38-cp38-musllinux_1_1_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "758396873661fad8c69d7829d6f6b2a4",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.6",
+                "size": 7358785,
+                "upload_time": "2023-05-30T19:45:06",
+                "upload_time_iso_8601": "2023-05-30T19:45:06.177002Z",
+                "url": "https://files.pythonhosted.org/packages/af/3a/b5b03cbc4ceeca200c2d043ebf6d12f92f3e5896f795c8e4c12a305f9b13/pragzip-0.6.0-cp38-cp38-musllinux_1_1_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "390dc0c062bd53af4c4bc06d520bb8f4cef2c031c27f6722a46cb3f51db8d79b",
+                    "md5": "d76e2e3eb73d03f9df363c2eb166be7a",
+                    "sha256": "9dfed40caf9ca1fe8c4560299232ba23bbe729e4e33712619fd56585a9915f8c"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp38-cp38-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "d76e2e3eb73d03f9df363c2eb166be7a",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.6",
+                "size": 542316,
+                "upload_time": "2023-05-30T19:33:48",
+                "upload_time_iso_8601": "2023-05-30T19:33:48.172417Z",
+                "url": "https://files.pythonhosted.org/packages/39/0d/c0c062bd53af4c4bc06d520bb8f4cef2c031c27f6722a46cb3f51db8d79b/pragzip-0.6.0-cp38-cp38-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ddde67da982ac24caa10398db9f7da7c8ea9a657091cdbf4da5e6eefcb08f78a",
+                    "md5": "e57392387c7169ba2ade71164910fc4c",
+                    "sha256": "48a4827264cc4330cc95c66eaf5626b4e95226734ff835d3d63189352f978054"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp39-cp39-macosx_10_14_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "e57392387c7169ba2ade71164910fc4c",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.6",
+                "size": 755848,
+                "upload_time": "2023-05-30T19:33:40",
+                "upload_time_iso_8601": "2023-05-30T19:33:40.332799Z",
+                "url": "https://files.pythonhosted.org/packages/dd/de/67da982ac24caa10398db9f7da7c8ea9a657091cdbf4da5e6eefcb08f78a/pragzip-0.6.0-cp39-cp39-macosx_10_14_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ce1b8c3a0e22aecb231d2ac62a0c49d95a8c135673b6c9ce55344f3a10297df3",
+                    "md5": "f6807fed34f7917fb5d3e3c1a20a6fb2",
+                    "sha256": "cc046ff45cabb2ea103092902be930a6870bb173296485b07e546ac4be20ef9a"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp39-cp39-manylinux_2_17_i686.manylinux2014_i686.whl",
+                "has_sig": false,
+                "md5_digest": "f6807fed34f7917fb5d3e3c1a20a6fb2",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.6",
+                "size": 6582859,
+                "upload_time": "2023-05-30T19:42:50",
+                "upload_time_iso_8601": "2023-05-30T19:42:50.044089Z",
+                "url": "https://files.pythonhosted.org/packages/ce/1b/8c3a0e22aecb231d2ac62a0c49d95a8c135673b6c9ce55344f3a10297df3/pragzip-0.6.0-cp39-cp39-manylinux_2_17_i686.manylinux2014_i686.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "8db6e764346ea322301d17447cef0b04fa0fa32cf56db7f742f3ff2a7ad734fc",
+                    "md5": "042ee60577430620d52a6d74ee1b7209",
+                    "sha256": "7ae94a5d86b21e37906a05195ddaa0819f290007f3309b824fcec0e5bcd3bc3d"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "042ee60577430620d52a6d74ee1b7209",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.6",
+                "size": 6696898,
+                "upload_time": "2023-05-30T19:49:11",
+                "upload_time_iso_8601": "2023-05-30T19:49:11.277291Z",
+                "url": "https://files.pythonhosted.org/packages/8d/b6/e764346ea322301d17447cef0b04fa0fa32cf56db7f742f3ff2a7ad734fc/pragzip-0.6.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "1940b1d71d8f8f9ea2cda5dc2e5c35665e9932e61a6c8e18b0f4fe933927e2e5",
+                    "md5": "e6d3b4cb1466b08d0fa0493d192b3f89",
+                    "sha256": "7f896099515ebc70fb9b8490f08d7a3851abf9dbcb5c79bec8d0a333559bcd53"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp39-cp39-manylinux_2_28_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "e6d3b4cb1466b08d0fa0493d192b3f89",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.6",
+                "size": 6740748,
+                "upload_time": "2023-05-30T19:45:08",
+                "upload_time_iso_8601": "2023-05-30T19:45:08.036853Z",
+                "url": "https://files.pythonhosted.org/packages/19/40/b1d71d8f8f9ea2cda5dc2e5c35665e9932e61a6c8e18b0f4fe933927e2e5/pragzip-0.6.0-cp39-cp39-manylinux_2_28_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c4e4ca199a482b430799d9a2bec761171e5f73ddc6d6bdb66bbef9002bd5c218",
+                    "md5": "fce7338c5e5a059431de168239ef4d8d",
+                    "sha256": "dbfcd692dfd0c784dee937b8f8e32589ac9e1cfa529b112df440847a076020cd"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp39-cp39-musllinux_1_1_i686.whl",
+                "has_sig": false,
+                "md5_digest": "fce7338c5e5a059431de168239ef4d8d",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.6",
+                "size": 7244687,
+                "upload_time": "2023-05-30T19:42:52",
+                "upload_time_iso_8601": "2023-05-30T19:42:52.557990Z",
+                "url": "https://files.pythonhosted.org/packages/c4/e4/ca199a482b430799d9a2bec761171e5f73ddc6d6bdb66bbef9002bd5c218/pragzip-0.6.0-cp39-cp39-musllinux_1_1_i686.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ca57fcc935788bb3801e9f6283ad8c51697bb0ce6262daaf3084cd60ace649fc",
+                    "md5": "f85d1d977e0710a1cb7221652de99332",
+                    "sha256": "003750f7cc2abb3ad93e2a7a3ce0a9ab3423d01ea4cf9cbf9450f6b6c94b5211"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp39-cp39-musllinux_1_1_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "f85d1d977e0710a1cb7221652de99332",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.6",
+                "size": 7344467,
+                "upload_time": "2023-05-30T19:45:10",
+                "upload_time_iso_8601": "2023-05-30T19:45:10.099463Z",
+                "url": "https://files.pythonhosted.org/packages/ca/57/fcc935788bb3801e9f6283ad8c51697bb0ce6262daaf3084cd60ace649fc/pragzip-0.6.0-cp39-cp39-musllinux_1_1_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "55715260f1c0eb14b77c8d11952f4baf1ad6a5f2e1e5c6ac48c373d9a70baa76",
+                    "md5": "006316d3aaeae677556102393e062a69",
+                    "sha256": "14aaa276ca62c92fdfea8e91a8e0a501840e57902ef153a8519f79a38a229647"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-cp39-cp39-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "006316d3aaeae677556102393e062a69",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.6",
+                "size": 542340,
+                "upload_time": "2023-05-30T19:33:50",
+                "upload_time_iso_8601": "2023-05-30T19:33:50.552508Z",
+                "url": "https://files.pythonhosted.org/packages/55/71/5260f1c0eb14b77c8d11952f4baf1ad6a5f2e1e5c6ac48c373d9a70baa76/pragzip-0.6.0-cp39-cp39-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ebee4f64415d8288671243ce34e2feb3cd6251ab6eaf9584d41d77100d0c6e71",
+                    "md5": "eeaa2876fb78ff74ebbb30535c03e4c5",
+                    "sha256": "8dd74680707f2318835012b8cd190203a17081f566a4f4f4e635448275782e72"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-pp37-pypy37_pp73-macosx_10_14_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "eeaa2876fb78ff74ebbb30535c03e4c5",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp37",
+                "requires_python": ">=3.6",
+                "size": 701982,
+                "upload_time": "2023-05-30T19:33:43",
+                "upload_time_iso_8601": "2023-05-30T19:33:43.838970Z",
+                "url": "https://files.pythonhosted.org/packages/eb/ee/4f64415d8288671243ce34e2feb3cd6251ab6eaf9584d41d77100d0c6e71/pragzip-0.6.0-pp37-pypy37_pp73-macosx_10_14_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "824809a9196f8273d085d19f913e8d7e1fe1efe5e5be13e47363228c057b31d7",
+                    "md5": "aab144628f78c7f9fd947fb6883f0d3c",
+                    "sha256": "cb41810ffc10e53a44d3e5184cc64d683c797aba401aa8ce9373037b864a0d64"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-pp37-pypy37_pp73-manylinux_2_17_i686.manylinux2014_i686.whl",
+                "has_sig": false,
+                "md5_digest": "aab144628f78c7f9fd947fb6883f0d3c",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp37",
+                "requires_python": ">=3.6",
+                "size": 858591,
+                "upload_time": "2023-05-30T19:42:54",
+                "upload_time_iso_8601": "2023-05-30T19:42:54.395636Z",
+                "url": "https://files.pythonhosted.org/packages/82/48/09a9196f8273d085d19f913e8d7e1fe1efe5e5be13e47363228c057b31d7/pragzip-0.6.0-pp37-pypy37_pp73-manylinux_2_17_i686.manylinux2014_i686.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d5838291b30edc94a012259b8a0806547e264a24133d7464c7d6d183c6980604",
+                    "md5": "176bb4c91074a763cf251801cb4accc6",
+                    "sha256": "cdc582d88f5bfc21b7fb1d4685684f194e742d6c3976ecdca8609d5a4b4c5fb6"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-pp37-pypy37_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "176bb4c91074a763cf251801cb4accc6",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp37",
+                "requires_python": ">=3.6",
+                "size": 821973,
+                "upload_time": "2023-05-30T19:49:13",
+                "upload_time_iso_8601": "2023-05-30T19:49:13.807641Z",
+                "url": "https://files.pythonhosted.org/packages/d5/83/8291b30edc94a012259b8a0806547e264a24133d7464c7d6d183c6980604/pragzip-0.6.0-pp37-pypy37_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3a07be2d1e23d25e59e51b3a87bda76b97d686705b782c2b747114b58656b6d8",
+                    "md5": "6eddf266fcd517979ddcfdd25b6045bf",
+                    "sha256": "bebf37d48799d92bd921ad40642de2c66244fa4417cb4c17fbd42dd429155c1a"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-pp37-pypy37_pp73-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "6eddf266fcd517979ddcfdd25b6045bf",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp37",
+                "requires_python": ">=3.6",
+                "size": 799981,
+                "upload_time": "2023-05-30T19:45:12",
+                "upload_time_iso_8601": "2023-05-30T19:45:12.492004Z",
+                "url": "https://files.pythonhosted.org/packages/3a/07/be2d1e23d25e59e51b3a87bda76b97d686705b782c2b747114b58656b6d8/pragzip-0.6.0-pp37-pypy37_pp73-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3d164c91d086309675d788d0799f25e1d57f2ee2000c5f40f2d8295133a5bc1a",
+                    "md5": "9367b7fc1cdc455d9ee8b60aa3e19601",
+                    "sha256": "4e07abb795914047fee28946f7b3ddc86f087f8868bfa13511ee0476b3bf1c01"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-pp37-pypy37_pp73-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "9367b7fc1cdc455d9ee8b60aa3e19601",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp37",
+                "requires_python": ">=3.6",
+                "size": 534732,
+                "upload_time": "2023-05-30T19:33:52",
+                "upload_time_iso_8601": "2023-05-30T19:33:52.999709Z",
+                "url": "https://files.pythonhosted.org/packages/3d/16/4c91d086309675d788d0799f25e1d57f2ee2000c5f40f2d8295133a5bc1a/pragzip-0.6.0-pp37-pypy37_pp73-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "695ba9b03d82e60a65cdec2c5d4e976b1fd5558a122f294e9a47871c19ee5168",
+                    "md5": "8dfe3bc10ea64ffec60d5ed2c684cd01",
+                    "sha256": "8f41fcbe0989fac4894a16f3ad3f44339333527682cf0ddddfbaa7d13f2e46e3"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-pp38-pypy38_pp73-macosx_10_14_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "8dfe3bc10ea64ffec60d5ed2c684cd01",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp38",
+                "requires_python": ">=3.6",
+                "size": 701961,
+                "upload_time": "2023-05-30T19:33:46",
+                "upload_time_iso_8601": "2023-05-30T19:33:46.565370Z",
+                "url": "https://files.pythonhosted.org/packages/69/5b/a9b03d82e60a65cdec2c5d4e976b1fd5558a122f294e9a47871c19ee5168/pragzip-0.6.0-pp38-pypy38_pp73-macosx_10_14_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "4aa939f5d6c71eb6c811191d77632a73b19de0b6002bdc3c0a94c1a3ff757622",
+                    "md5": "000fe73540d1bd25149adc0e20d2edbd",
+                    "sha256": "c745896c09e14ed7eddf465407424532de1cfdf39b6ab15170f97547d8a0b9cb"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-pp38-pypy38_pp73-manylinux_2_17_i686.manylinux2014_i686.whl",
+                "has_sig": false,
+                "md5_digest": "000fe73540d1bd25149adc0e20d2edbd",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp38",
+                "requires_python": ">=3.6",
+                "size": 852627,
+                "upload_time": "2023-05-30T19:42:55",
+                "upload_time_iso_8601": "2023-05-30T19:42:55.865076Z",
+                "url": "https://files.pythonhosted.org/packages/4a/a9/39f5d6c71eb6c811191d77632a73b19de0b6002bdc3c0a94c1a3ff757622/pragzip-0.6.0-pp38-pypy38_pp73-manylinux_2_17_i686.manylinux2014_i686.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "577bbca38de0fe2243f3917e3381961bfe0f715e8853e7ec371a68cc7c6393f9",
+                    "md5": "9e88804679653dc2b1a03642166efdbc",
+                    "sha256": "2e21a07c4fc9790be33ed77e8cec84636679f335b822727650157b298cbd840d"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-pp38-pypy38_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "9e88804679653dc2b1a03642166efdbc",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp38",
+                "requires_python": ">=3.6",
+                "size": 813522,
+                "upload_time": "2023-05-30T19:49:15",
+                "upload_time_iso_8601": "2023-05-30T19:49:15.898702Z",
+                "url": "https://files.pythonhosted.org/packages/57/7b/bca38de0fe2243f3917e3381961bfe0f715e8853e7ec371a68cc7c6393f9/pragzip-0.6.0-pp38-pypy38_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "799ada7818a1c3d5a9c5b1fa86925277a9fe2d9417ad5b4fe3f046b6a4888c54",
+                    "md5": "d14e07a44c43b532922bb98c67c90968",
+                    "sha256": "082c39c0e6d5caf96f70a3260e6a4b834dcdf6fa0df2bd204eb3dc502f647905"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-pp38-pypy38_pp73-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "d14e07a44c43b532922bb98c67c90968",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp38",
+                "requires_python": ">=3.6",
+                "size": 797564,
+                "upload_time": "2023-05-30T19:45:14",
+                "upload_time_iso_8601": "2023-05-30T19:45:14.123067Z",
+                "url": "https://files.pythonhosted.org/packages/79/9a/da7818a1c3d5a9c5b1fa86925277a9fe2d9417ad5b4fe3f046b6a4888c54/pragzip-0.6.0-pp38-pypy38_pp73-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "109e1f77a8085a005505c956357caef9faf9e46737dcd804c541a533b79b20a5",
+                    "md5": "da2675208ee7d032bcc686405ec86863",
+                    "sha256": "8bb335ad6bb7a041e01b5c853255aa70f42dbf13a6bd57368abae12cb5a29553"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-pp38-pypy38_pp73-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "da2675208ee7d032bcc686405ec86863",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp38",
+                "requires_python": ">=3.6",
+                "size": 534765,
+                "upload_time": "2023-05-30T19:33:54",
+                "upload_time_iso_8601": "2023-05-30T19:33:54.385705Z",
+                "url": "https://files.pythonhosted.org/packages/10/9e/1f77a8085a005505c956357caef9faf9e46737dcd804c541a533b79b20a5/pragzip-0.6.0-pp38-pypy38_pp73-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "1503982b133b6240008a9ee3f291323209e8112c7e4c1bdd925bb983a9f62058",
+                    "md5": "2b49126c22868ce1f9f4e19a9ff23700",
+                    "sha256": "e525717e2fe04059d741cd9da5494ecc6637ccab3598abd0c615e8ae2d04e430"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-pp39-pypy39_pp73-macosx_10_14_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "2b49126c22868ce1f9f4e19a9ff23700",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp39",
+                "requires_python": ">=3.6",
+                "size": 702080,
+                "upload_time": "2023-05-30T19:33:49",
+                "upload_time_iso_8601": "2023-05-30T19:33:49.200950Z",
+                "url": "https://files.pythonhosted.org/packages/15/03/982b133b6240008a9ee3f291323209e8112c7e4c1bdd925bb983a9f62058/pragzip-0.6.0-pp39-pypy39_pp73-macosx_10_14_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e0be6485c39570dbfc9da2c45c66a539c64f0009aa61e864104578bc35f7ee0a",
+                    "md5": "5c5243cf0016dd744e7a45ed178ef0de",
+                    "sha256": "5f4e7cff2b80ab428e38da7a64c5c13d47375d391175417a15095eee48d24240"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-pp39-pypy39_pp73-manylinux_2_17_i686.manylinux2014_i686.whl",
+                "has_sig": false,
+                "md5_digest": "5c5243cf0016dd744e7a45ed178ef0de",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp39",
+                "requires_python": ">=3.6",
+                "size": 853740,
+                "upload_time": "2023-05-30T19:42:57",
+                "upload_time_iso_8601": "2023-05-30T19:42:57.953460Z",
+                "url": "https://files.pythonhosted.org/packages/e0/be/6485c39570dbfc9da2c45c66a539c64f0009aa61e864104578bc35f7ee0a/pragzip-0.6.0-pp39-pypy39_pp73-manylinux_2_17_i686.manylinux2014_i686.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "1df7988bb9954c510448c22b216c522fecf0c46f564b5f0e2c386674d28d9a12",
+                    "md5": "1424138f71f2731ace492c90ff1cb70d",
+                    "sha256": "cd522584ae098770dc6ef4332476dfde7b760ee1cef94f01d3b35a771570e091"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-pp39-pypy39_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "1424138f71f2731ace492c90ff1cb70d",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp39",
+                "requires_python": ">=3.6",
+                "size": 814387,
+                "upload_time": "2023-05-30T19:49:17",
+                "upload_time_iso_8601": "2023-05-30T19:49:17.674485Z",
+                "url": "https://files.pythonhosted.org/packages/1d/f7/988bb9954c510448c22b216c522fecf0c46f564b5f0e2c386674d28d9a12/pragzip-0.6.0-pp39-pypy39_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d8370bf5865bb9b1e3bf0c61c3760f8c1f39b6ce4b26dfe48fabf34ed97cb8e2",
+                    "md5": "524dd64a517b02c8ffe98c93910bc39f",
+                    "sha256": "3fde5be65156461624664b3d9d103239b98498665a0c4ead9c83a72f80eb65f9"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-pp39-pypy39_pp73-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "524dd64a517b02c8ffe98c93910bc39f",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp39",
+                "requires_python": ">=3.6",
+                "size": 798417,
+                "upload_time": "2023-05-30T19:45:16",
+                "upload_time_iso_8601": "2023-05-30T19:45:16.363842Z",
+                "url": "https://files.pythonhosted.org/packages/d8/37/0bf5865bb9b1e3bf0c61c3760f8c1f39b6ce4b26dfe48fabf34ed97cb8e2/pragzip-0.6.0-pp39-pypy39_pp73-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "15c298d7fa0689b2c1e66af626fd29ee0d95eb18c34bba408f19033b9738c56a",
+                    "md5": "4485e0ed6198105bbc97440f5361afdc",
+                    "sha256": "de2b9746dac9ec4ebc7749e0562ee4eb3cfbe80530faf7afb128b3383d09c286"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0-pp39-pypy39_pp73-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "4485e0ed6198105bbc97440f5361afdc",
+                "packagetype": "bdist_wheel",
+                "python_version": "pp39",
+                "requires_python": ">=3.6",
+                "size": 534619,
+                "upload_time": "2023-05-30T19:33:56",
+                "upload_time_iso_8601": "2023-05-30T19:33:56.064489Z",
+                "url": "https://files.pythonhosted.org/packages/15/c2/98d7fa0689b2c1e66af626fd29ee0d95eb18c34bba408f19033b9738c56a/pragzip-0.6.0-pp39-pypy39_pp73-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f3ba1fbfcffbeb9ffbaa77ccf743185f79b9b05727aafb57f58e40aec6bfdfe1",
+                    "md5": "9309a72b90c8de894688a9b0fd6c0d70",
+                    "sha256": "48deb92f8f3b6d374132d33eb2c3bfab1f1942732d9500642df2ee0e7a0e65a0"
+                },
+                "downloads": -1,
+                "filename": "pragzip-0.6.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "9309a72b90c8de894688a9b0fd6c0d70",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.6",
+                "size": 607691,
+                "upload_time": "2023-05-30T19:42:23",
+                "upload_time_iso_8601": "2023-05-30T19:42:23.368695Z",
+                "url": "https://files.pythonhosted.org/packages/f3/ba/1fbfcffbeb9ffbaa77ccf743185f79b9b05727aafb57f58e40aec6bfdfe1/pragzip-0.6.0.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

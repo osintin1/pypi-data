@@ -1,0 +1,96 @@
+{
+    "0.1.3": {
+        "info": {
+            "author": "Nathan Clack <nclack@chanzuckerberg.com>",
+            "author_email": "Nathan Clack <nclack@chanzuckerberg.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: Implementation :: CPython",
+                "Programming Language :: Python :: Implementation :: PyPy",
+                "Programming Language :: Rust"
+            ],
+            "description": "[![Build](https://github.com/acquire-project/acquire-python/actions/workflows/build.yml/badge.svg)](https://github.com/acquire-project/acquire-python/actions/workflows/build.yml)\r\n[![Test](https://github.com/acquire-project/acquire-python/actions/workflows/test_pr.yml/badge.svg)](https://github.com/acquire-project/acquire-python/actions/workflows/test_pr.yml)\r\n[![DOI](https://zenodo.org/badge/632689876.svg)](https://zenodo.org/badge/latestdoi/632689876)\r\n\r\n# acquire-imaging\r\n\r\nThis python package provides a multi-camera video streaming library focusing\r\non performant microscopy.\r\n\r\n> **Note** This is an early stage project. If you find it interesting please\r\n> reach out!\r\n\r\nSupport for:\r\n\r\n- Up to two independent video streams\r\n- Camera support:\r\n  - Hamamatsu Orca Fusion BT (C15440-20UP) (windows only)\r\n  - Vieworks VC-151MX-M6H00\r\n- Streaming file format support:\r\n  - Tiff\r\n  - Zarr v2\r\n\r\n## Installation\r\n\r\n```bash\r\npython -m pip install acquire-imaging\r\n```\r\n\r\n## Usage\r\n\r\nSee the tests for more examples.\r\n\r\nThe provided [napari][] plugin is a good example of how to stream for visualization.\r\n\r\n### List devices\r\n\r\n```python\r\nimport acquire\r\nprint(acquire.Runtime().device_manager().devices())\r\n```\r\n\r\n### Finite triggered acquisition\r\n\r\n```python\r\nimport acquire\r\nruntime=acquire.Runtime()\r\ndm=runtime.device_manager()\r\n\r\nprops=runtime.get_configuration()\r\n# select the first Hamamatsu camera\r\nprops.video[0].camera.identifier = dm.select(DeviceKind.Camera, \"hamamatsu.*\")\r\n# stream to zarr\r\nprops.video[0].storage.identifier = dm.select(DeviceKind.Storage, \"zarr\")\r\nprops.video[0].storage.settings.filename=\"out.zarr\"\r\nprops.video[0].camera.settings.shape = (2304, 2304)\r\nprops.video[0].camera.settings.pixel_type = SampleType.U16\r\nprops.video[0].max_frame_count = 100\r\nprops=runtime.configure(props)\r\n\r\nruntime.start()\r\nruntime.stop() # wait for acquisition to complete\r\n```\r\n\r\n# Development\r\n\r\nWe welcome contributors. The following will help you get started building the\r\ncode.\r\n\r\n## Environment\r\n\r\nRequires\r\n\r\n- CMake 3.23+ ([download page](https://cmake.org/download/) or via\r\n  [chocolatey](https://community.chocolatey.org/packages/cmake))\r\n- A C++20 compiler (Microsoft Visual Studio Community [download\r\n  page](https://visualstudio.microsoft.com/downloads/), or clang)\r\n- Rust (via rustup, see [install\r\n  page](https://www.rust-lang.org/tools/install))\r\n- conda (optional; via\r\n  [miniconda](https://docs.conda.io/en/latest/miniconda.html))\r\n- libclang >= v5.0 (on windows via [choco](https://chocolatey.org/) `choco\r\n  install llvm` or, on osx, via [brew](https://brew.sh/) `brew install llvm`)\r\n\r\nIt's strongly recommended you create a python environment for development\r\n\r\n```bash\r\nconda create --name acquire python=3.11\r\nconda activate acquire\r\n```\r\n\r\n## Build\r\n\r\n```bash\r\nconda activate acquire\r\ngit submodule update --init --recursive\r\npip install maturin\r\nmaturin build -i python\r\n```\r\n\r\n**Important** When updating the 'acquire-video-runtime' (the c api), to need to manually trigger\r\na rebuild by touching `wrapper.h`.\r\n\r\n```bash\r\ngit submodule update # updates acquire-video-runtime\r\ntouch wrapper.h # will trigger a rebuild\r\npython -m build\r\n```\r\n\r\nThis package depends on a submodule ([acquire-video-runtime](https://github.com/acquire-project/acquire-video-runtime))\r\nand binaries from the following Acquire drivers:\r\n- [acquire-driver-common](https://github.com/acquire-project/acquire-driver-common)\r\n- [acquire-driver-hdcam](https://github.com/acquire-project/acquire-driver-hdcam)\r\n- [acquire-driver-egrabber](https://github.com/acquire-project/acquire-driver-egrabber)\r\n- [acquire-driver-zarr](https://github.com/acquire-project/acquire-driver-zarr)\r\n\r\nThe build script will automatically try to fetch the binaries from GitHub releases.\r\nIn order to configure which release of each driver to use, you can set the value in `drivers.json`:\r\n\r\n```json\r\n{\r\n  \"acquire-driver-common\": \"0.1.0\",\r\n  \"acquire-driver-hdcam\": \"0.1.0\",\r\n  \"acquire-driver-egrabber\": \"0.1.0\",\r\n  \"acquire-driver-zarr\": \"0.1.0\"\r\n}\r\n```\r\n\r\nThese values can be set to a specific version, or to `nightly` for nightly builds.\r\n\r\n## Develop\r\n\r\n```bash\r\npip install -e \".[testing]\"\r\npytest -s --tb-short --log-cli-level=0\r\n```\r\n\r\nThis project uses [`pre-commit`](https://pre-commit.com/) to run required\r\nchecks as git hooks.\r\n\r\n```bash\r\npip install precommit\r\npre-commit install\r\n```\r\n\r\n## Troubleshooting\r\n\r\n### Maturin can't find a python interpreter\r\n\r\n`Maturin` is a command line tool associated with\r\n[`pyo3`](https://pyo3.rs/v0.16.4/). It helps automate the build and packaging\r\nprocess. It's invoked by `setuptools` during a build.\r\n\r\n1. Double-check you've activated the right conda environment.\r\n2. Try `maturin build -i python`\r\n\r\nThis seems to happen on windows in anaconda environments when multiple python\r\ninterpreters are available on the path.\r\n\r\nIt seems to happen less frequently when invoked via pip - `pip install -e .`\r\nwill end up invoking maturin.\r\n\r\n### Working with an editable install, how do I update the build?\r\n\r\nIt depends on what you changed:\r\n\r\n- **acquire-video-runtime** (c/c++ code): `touch wrapper.h; maturin develop`\r\n- **rust code**: `maturin develop`\r\n\r\n[napari]: https://github.com/napari/napari\r\n\n",
+            "description_content_type": "text/markdown; charset=UTF-8; variant=GFM",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "acquire-imaging",
+            "package_url": "https://pypi.org/project/acquire-imaging/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/acquire-imaging/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/acquire-imaging/0.1.3/",
+            "requires_dist": [
+                "numpy >=1.22",
+                "black ; extra == 'testing'",
+                "pytest >=7 ; extra == 'testing'",
+                "mypy ; extra == 'testing'",
+                "pytest-cov ; extra == 'testing'",
+                "tifffile ; extra == 'testing'",
+                "zarr ; extra == 'testing'",
+                "dask ; extra == 'testing'",
+                "ome-zarr ; extra == 'testing'"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "",
+            "version": "0.1.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18305748,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "7a373756cab397e7df419a28a3243fb032535c6e9356b82690e3a5739ff03d0e",
+                    "md5": "f05ab557dcbca6aba718efae61bba525",
+                    "sha256": "5eb7503d04387904e62203af9136771d9f5edf52666f02a474165b0835b1cf2b"
+                },
+                "downloads": -1,
+                "filename": "acquire_imaging-0.1.3-cp38-abi3-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "f05ab557dcbca6aba718efae61bba525",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.8",
+                "size": 1051072,
+                "upload_time": "2023-05-30T17:31:20",
+                "upload_time_iso_8601": "2023-05-30T17:31:20.893611Z",
+                "url": "https://files.pythonhosted.org/packages/7a/37/3756cab397e7df419a28a3243fb032535c6e9356b82690e3a5739ff03d0e/acquire_imaging-0.1.3-cp38-abi3-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "69ec3b838750661f01000dc022120cdb8f7b5b5d07aefe5ae93c6507882e2f3b",
+                    "md5": "c08d82527aefbd9e97b4e8f550deb9bc",
+                    "sha256": "28ef62720af5dde7dca3d8e5f79af6a30880af71001f95f1c22b8685ae9a3cc6"
+                },
+                "downloads": -1,
+                "filename": "acquire_imaging-0.1.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "c08d82527aefbd9e97b4e8f550deb9bc",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 10997662,
+                "upload_time": "2023-05-30T17:31:29",
+                "upload_time_iso_8601": "2023-05-30T17:31:29.313338Z",
+                "url": "https://files.pythonhosted.org/packages/69/ec/3b838750661f01000dc022120cdb8f7b5b5d07aefe5ae93c6507882e2f3b/acquire_imaging-0.1.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

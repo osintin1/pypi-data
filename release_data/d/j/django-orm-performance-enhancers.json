@@ -1,0 +1,100 @@
+{
+    "1.0.0": {
+        "info": {
+            "author": null,
+            "author_email": "Oleksandr Mashianov <mashianov@gmail.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Programming Language :: Python :: Implementation :: CPython"
+            ],
+            "description": "# django-orm-performance-enhancers (DOPEs)\n\n[![PyPI - Version](https://img.shields.io/pypi/v/django-orm-performance-enhancers.svg)](https://pypi.org/project/django-orm-performance-enhancers)\n[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/django-orm-performance-enhancers.svg)](https://pypi.org/project/django-orm-performance-enhancers)\n\n-----\n\n**Table of Contents**\n\n- [Installation](#installation)\n- [Example Models](#example-models)\n- [ExtendedQuerySet](#extendedqueryset)\n  - [with_evaluation_callbacks](#withevaluationcallbacks)\n  - [pool_related](#poolrelated)\n  - [select_related_pooled](#selectrelatedpooled)\n  - [prefetch_related_with_limit](#prefetchrelatedwithlimit)\n  - [map_related](#maprelated)\n  - [prefetch_unrelated](#prefetchunrelated)\n- [PrefetchedProperty](#prefetchedproperty)\n\n\n## Installation\n\n```console\npip install django-orm-performance-enhancers\n```\n\n## Example Models\nPlease see `demo_project/data_models/models.py` for the models used in the examples below.\nFor extra samples beyond what's shown in the README, see the tests.\n\n\n## ExtendedQuerySet\nUsage:\n```python\nfrom django.db import models\nfrom django_orm_performance_enhancers import ExtendedQuerySet\n\nclass MyModelQuerySet(ExtendedQuerySet):\n    pass\n\nclass MyModel(models.Model):\n    objects = MyModelQuerySet.as_manager()\n    # or objects = ExtendedQuerySet.as_manager()\n```\n\n### with_evaluation_callbacks\nAs the name suggests, adds callbacks to be evaluated when the queryset is evaluated.\nThink of it as a python-based `.annotate` method.\n\nAPI:\n\n`with_evaluation_callbacks(self, *evaluation_callbacks: EvaluationCallbackType)`\n\n`EvaluationCallbackType = Callable[[Sequence[TModel]], Union[Sequence[TModel], None]]`\n\nUseful for:\n- creating custom annotations\n- transforming/processing data after evaluation\n- prefetching related objects which is tricky or not doable in ORM way\n- filtering prefetches in a way not achievable by ORM\n- prefetching from tables which don't have a direct relation to current model\n- re-using data fetched elsewhere in the queryset\n- doing custom joins, which are not possible in ORM way\n\nSee a sample:\n```python\nfrom data_models.models import User, Vehicle\n\ndef prefetch_vehicles_parked_on_user_address(results: list[User]):\n    address_ids = {user.address_id for user in results}\n    for user in results:\n        vehicles_by_address_id = {\n            vehicle.address_id: vehicle \n           for vehicle in Vehicle.objects.filter(address_id__in=address_ids)\n        }\n        user.vehicles_parked_on_user_address = vehicles_by_address_id.get(user.address_id, [])\n\nclass UserQuerySet:\n    def with_vehicles_parked_on_user_address(self):\n        return self.with_evaluation_callbacks(prefetch_vehicles_parked_on_user_address)\n    \nqs = (\n    User\n    .objects\n    .with_vehicles_parked_on_user_address()  # no evaluation\n)\nqs = qs.annotate(...) # no evaluation\n\n[x.vehicles_parked_on_user_address for x in qs]  # evaluated in a single query to Vehicles parked on the user address.\n```\n\n### pool_related\nA drop-in replacement for `prefetch_related` which uses a pool of prefetched results.\n\nThis has 3 benefits:\n - reduces CPU and memory usage while fetching particularly large datasets by re-using instances of models with the same id\nBy default, django creates a new instance of a model for each row even if they have the same id. Here related objs are shared\nby reference instead.\n**There's a catch**: if you modify a shared object, it will get modified everywhere. \nThis might or might not be what you wanted.\n- reduces the number of queries by combining multiple prefetch_related targets into one query\n- helps saving time on joining the same table multiple times via `select_related` and re-using the same annotations, \nwhich might or might not increase performance. Always benchmark when in doubt.\n\n<details>\n<summary>\u2935\ufe0fReducing the number of queries:</summary>\n\n```python\nfrom data_models.models import User\n\nregular_results = list(\n    User\n    .objects\n    .select_related('address') # Query1: User + Address\n                      # Query2: rides_starting_here\n                      # Query3: rides_ending_here\n                      # Query4: transactions for rides_starting_here\n                      # Query5: transactions for rides_ending_here\n    .prefetch_related('address__rides_starting_here__transactions',\n                      'address__rides_ending_here__transactions') \n)\nfirst_ride_starting_at_user_address = regular_results[0].address.rides_starting_here.all()[0]\nfirst_ride_ending_at_user_address = regular_results[0].address.rides_ending_here.all()[0]\nfirst_ride_starting_at_user_address.id == first_ride_ending_at_user_address.id  # True\nfirst_ride_starting_at_user_address is first_ride_ending_at_user_address  # False\n\n\npooled_results = list(\n    User\n    .objects\n    .select_related('address') # Query1: User + address\n    .pool_related('address__rides_starting_here',\n                  'address__rides_ending_here') # Query2: all rides\n    .pool_related('address__rides_starting_here__transactions',\n                  'address_rides_ending_here__transactions') # Query3: all transactions\n)\nfirst_ride_starting_at_user_address = pooled_results[0].address.rides_starting_here.all()[0]\nfirst_ride_ending_at_user_address = pooled_results[0].address.rides_ending_here.all()[0]\nfirst_ride_starting_at_user_address.id == first_ride_ending_at_user_address.id  # True\nfirst_ride_starting_at_user_address is first_ride_ending_at_user_address  # True\n```\n</details>\n\n\n### select_related_pooled\nA drop-in replacement for `select_related` which re-uses model instances with the same id.\nBy default, django duplicates instances of models with the same id.\n\n<details>\n<summary>\u2935\ufe0fSharing by reference:</summary>\n\n```python\nfrom data_models.models import User\n\nregular_results = list(\n    User\n    .objects\n    .select_related('address')\n)\nregular_results[0].address.id == regular_results[1].address.id  # True\nregular_results[0].address is regular_results[1].address  # False\n\n\npooled_results = list(\n    User\n    .objects\n    .select_related_pooled('address') # Query1: User + address\n)\nregular_results[0].address.id == regular_results[1].address.id  # True\nregular_results[0].address is regular_results[1].address  # True\n```\n</details>\n\n### prefetch_related_with_limit\n\nif `limits` is not provided, assumes LIMIT 1 for all fields and uses DISTINCT ON to get only one result.\nIf `limits` is provided, manages limiting in python to achieve necessary result, \nbecause it's not trivial to do limit 2 in SQL without access to `SELECT * from ...` in ORM\n\n\nAPI:\n\n```\nprefetch_related_with_limit(\n    self,\n    *fields_or_prefetches: Union[str, Prefetch],\n    limit: Optional[int] = None\n)\n```\n\n### map_related\nLets you batch-load related objects, then sort them to different attributes on the parent object \nbased on SQL Case-When statements.\nAPI:\n```\nmap_related(\n    self, \n    map_through: Union[str, MapRelatedCall],\n    *mapping_conditions: MapRelatedCondition\n)\n\n@dataclass\nclass MapRelatedCondition:\n    case_q: Q\n    to_attr: str\n```\n<details>\n<summary>\u2935\ufe0fMapping vehicles by make:</summary>\n\n```python\nfrom data_models.models import User, Vehicle\nfrom django.db.models import Q, Prefetch\nfrom django_orm_performance_enhancers.evaluation_callbacks import MapRelatedCondition\n\n\n# regular django-orm way\n(\n    User\n    .objects\n    .prefetch_related(\n       # Query1:\n       Prefetch('vehicles', \n                Vehicle.objects.filter(make=Vehicle.Makes.BMW), \n                to_attr='bmw_vehicles'),\n       # Query2:\n       Prefetch('vehicles',\n                Vehicle.objects.filter(make=Vehicle.Makes.TOYOTA),\n                to_attr='toyota_vehicles'),\n       # Query3:\n       Prefetch('vehicles', \n                Vehicle.objects.filter(make=Vehicle.Makes.FORD),\n                to_attr='ford_vehicles'),\n    )\n)\n\n\nusers_with_grouped_vehicles = (\n    User\n    .objects\n    .map_related(\n        'vehicles',  # One SQL query to fetch all vehicles\n        MapRelatedCondition(Q(make=Vehicle.Makes.BMW), 'bmw_vehicles'),\n        MapRelatedCondition(Q(make=Vehicle.Makes.TOYOTA), 'toyota_vehicles'),\n        MapRelatedCondition(Q(make=Vehicle.Makes.FORD), 'ford_vehicles'),\n    )\n)\nassert users_with_grouped_vehicles[0].bmw_vehicles[0].make == Vehicle.Makes.BMW\nassert users_with_grouped_vehicles[0].toyota_vehicles[0].make == Vehicle.Makes.TOYOTA\nassert users_with_grouped_vehicles[0].ford_vehicles[0].make == Vehicle.Makes.FORD\n```\n</details>\n\n<details>\n<summary>\u2935\ufe0fPopular author-book example:</summary>\n\n```python\nAuthor\n.objects\n.map_related(\n   MapRelatedCall(\n      qs=Book.objects.all(),\n      child_field_name='author_id',\n      parent_field_name='id'\n   )\n   MapRelatedCondition(Q(genre='fantasy'), 'fantasy_books'),\n   MapRelatedCondition(Q(genre='sci-fi'), 'sci_fi_books'),\n   MapRelatedCondition(Q(genre='horror'), 'horror_books'),\n)\n```\n</details>\n\n\n### prefetch_unrelated\nLets you prefetch something with a `to_attr` without direct relation to the parent.\n\nAPI:\n```python\nprefetch_unrelated(self, *unrelated_prefetches: PrefetchUnrelatedCall)\n\n@dataclass\nclass PrefetchUnrelatedCall:\n    qs: QuerySetType\n    group_by_attr: str\n    map_by_attr: str\n    map_to_attr: str\n```\n\n\nFills these usecases:\n - `Prefetch('some__relation__many_levels__deep', to_attr='some_attr_on_first_level')`\n - `Prefetch('...no relation to parent...', to_attr='some_attr_on_parent')`\n\nAPI:\n`prefetch_unrelated(self, *unrelated_prefetches: PrefetchUnrelatedCall)`\n\n<details>\n<summary>\u2935\ufe0fPrefetching unrelated objects:</summary>\n\n```python\nfrom data_models.models import User, Transaction\nfrom django_orm_performance_enhancers.querysets import PrefetchUnrelatedCall\n\n\nusers_with_transactions = (\n   User\n   .objects\n   .prefetch_unrelated(\n      PrefetchUnrelatedCall(\n         # Transaction doesn't have any relation to user, just integer user_id column\n         Transaction.objects.all(), \n         'user_id',\n         'id',\n         'unrelated_transactions'\n      )\n   )\n)\nassert users_with_transactions[0].unrelated_transactions[0].user_id == users_with_transactions[0].id\n```\n</details>\n\n### PrefetchedProperty\nLets you create an easily re-usable attribute to hold either query_set cache of an annotation,\nor compute that annotation on the fly.\n\n```python\nfrom typing_extensions import Self\nfrom django.db import models\nfrom django_orm_performance_enhancers.descriptors import PrefetchedProperty\nfrom django_orm_performance_enhancers.querysets import ExtendedQuerySet, PrefetchUnrelatedCall\n\n\nclass Address(models.Model):\n    objects = ExtendedQuerySet.as_manager()\n\n\n\nclass UserQuerySet(ExtendedQuerySet):\n    def with_vehicles_parked_on_user_address(self) -> Self:\n        # use prefetch_unrelated to assign prefetched objects to user, not to address\n        return self.prefetch_unrelated(\n            PrefetchUnrelatedCall(\n                qs=Vehicle.objects.all(),\n                group_by_attr='parking_address_id',\n                map_by_attr='address_id',\n                map_to_attr='vehicles_parked_on_user_address'  # map to the PrefetchedProperty\n            )\n        )\n\n    def with_amount_passenger_rides(self) -> Self:\n        return self.annotate(pass_rides_cnt=models.Count('passenger_rides'))\n\nclass User(models.Model):\n    address = models.ForeignKey(Address, on_delete=models.CASCADE, related_name='users')\n\n    vehicles_parked_on_user_address = PrefetchedProperty(\n        queryset_method=UserQuerySet.with_vehicles_parked_on_user_address,\n        single_instance_getter=lambda user: Vehicle.objects.filter(parking_address_id=user.address_id)\n    )\n\n    amount_passenger_rides = PrefetchedProperty(\n        queryset_method=UserQuerySet.with_amount_passenger_rides,\n        single_instance_getter=lambda user: user.passenger_rides.count(),\n        cache_attr_name='pass_rides_cnt'  # use custom attr name from queryset method\n    )\n    objects = UserQuerySet.as_manager()\n\n       # 2 SQL queries                                # 1 SQL query\nassert User.objects.first().amount_passenger_rides == User.objects.with_amount_passenger_rides().first().amount_passenger_rides\n```\n\n## License\n\n`django-orm-performance-enhancers` is distributed under the terms of the [MIT](https://spdx.org/licenses/MIT.html) license.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": null,
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": null,
+            "keywords": null,
+            "license": null,
+            "maintainer": null,
+            "maintainer_email": null,
+            "name": "django-orm-performance-enhancers",
+            "package_url": "https://pypi.org/project/django-orm-performance-enhancers/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/django-orm-performance-enhancers/",
+            "project_urls": {
+                "Documentation": "https://github.com/imakedonsky/django-orm-performance-enhancers#readme",
+                "Issues": "https://github.com/imakedonsky/django-orm-performance-enhancers/issues",
+                "Source": "https://github.com/imakedonsky/django-orm-performance-enhancers"
+            },
+            "release_url": "https://pypi.org/project/django-orm-performance-enhancers/1.0.0/",
+            "requires_dist": [
+                "django-stubs",
+                "django>=3.2",
+                "psycopg2-binary>=2.8",
+                "typing-extensions"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "A set of QuerySet performance enhancers for Django ORM",
+            "version": "1.0.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18308618,
+        "urls": [
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "9fa08d3308eb12934e90cdcb630b41cd43434e83ef80c70d90fc9b7ba9de8faa",
+                    "md5": "7b442b3e0ab0961f26759e260634fd3c",
+                    "sha256": "85ae8e9c6a44d3845216930e0c6611c46f03f39c2e429a45d972e36402f4f6f2"
+                },
+                "downloads": -1,
+                "filename": "django_orm_performance_enhancers-1.0.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "7b442b3e0ab0961f26759e260634fd3c",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 5600,
+                "upload_time": "2023-05-30T23:24:46",
+                "upload_time_iso_8601": "2023-05-30T23:24:46.638625Z",
+                "url": "https://files.pythonhosted.org/packages/9f/a0/8d3308eb12934e90cdcb630b41cd43434e83ef80c70d90fc9b7ba9de8faa/django_orm_performance_enhancers-1.0.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": null,
+                "digests": {
+                    "blake2b_256": "72ce8ecc8d0e8ed78c6c83a2e4c45ae976837aa7411936c8ccf2f39028007918",
+                    "md5": "9cbdf82c84b33515141c6d9ff355e3d4",
+                    "sha256": "c18540ea79902c6a8a097efad3ed01cb5ef05cb005110c5b5a5cb1c1443727ab"
+                },
+                "downloads": -1,
+                "filename": "django_orm_performance_enhancers-1.0.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "9cbdf82c84b33515141c6d9ff355e3d4",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 10620,
+                "upload_time": "2023-05-30T23:24:44",
+                "upload_time_iso_8601": "2023-05-30T23:24:44.546214Z",
+                "url": "https://files.pythonhosted.org/packages/72/ce/8ecc8d0e8ed78c6c83a2e4c45ae976837aa7411936c8ccf2f39028007918/django_orm_performance_enhancers-1.0.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

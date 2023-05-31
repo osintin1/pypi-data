@@ -1,0 +1,106 @@
+{
+    "0.0.2": {
+        "info": {
+            "author": "Aleksei Tarasov",
+            "author_email": "aleksei.v.tarasov@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Environment :: Console",
+                "Environment :: X11 Applications :: Qt",
+                "Intended Audience :: Developers",
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: Apache Software License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Scientific/Engineering :: Artificial Intelligence",
+                "Topic :: Scientific/Engineering :: Image Recognition"
+            ],
+            "description": "# First breaks picking\r\nThis project is devoted to pick waves that are the first to be detected on a seismogram (first breaks, first arrivals).\r\nTraditionally, this procedure is performed manually. When processing field data, the number of picks reaches hundreds of\r\nthousands. Existing analytical methods allow you to automate picking only on high-quality data with a high\r\nsignal / noise ratio. \r\n\r\nAs a more robust algorithm, it is proposed to use a neural network to pick the first breaks. Since the data on adjacent\r\nseismic traces have similarities in the features of the wave field, **we pick first breaks on 2D seismic gather**, not \r\nindividual traces.\r\n\r\n![](https://raw.githubusercontent.com/DaloroAT/first_breaks_picking/main/docs/images/intro_small.PNG)\r\n\r\n# Installation\r\n\r\nLibrary is available in PyPI:\r\n```shell\r\npip install -U first-breaks-picking\r\n```\r\n\r\n### Extra data\r\n\r\n- To pick first breaks you need \r\nto [download model](https://oml.daloroserver.com/download/seis/fb.onnx). \r\n\r\n- If you have no seismic data, you can also \r\n[download small SGY file](https://raw.githubusercontent.com/DaloroAT/first_breaks_picking/main/data/real_gather.sgy).\r\n\r\nIt's also possible to download them with Python using the following snippet:\r\n\r\n```python\r\nfrom first_breaks.utils.utils import (download_demo_sgy, \r\n                                      download_model_onnx)\r\n\r\nsgy_filename = 'data.sgy'\r\nmodel_filename = 'model.onnx'\r\n\r\ndownload_demo_sgy(sgy_filename)\r\ndownload_model_onnx(model_filename)\r\n```\r\n\r\n# How to use it\r\n\r\nThe library can be used in Python, or you can use the desktop application. The former has more flexibility for \r\nbuilding your own picking scenario and processing multiple files. The difference between the latter is that it \r\nallows you to work interactively with only one file and has better performance in visualization.\r\n\r\n\r\n### Create SGY\r\nWe provide several ways to create `SGY` object: from file, `bytes` or `numpy` array. \r\n\r\nFrom file:\r\n```python\r\nfrom first_breaks.sgy.reader import SGY\r\n\r\nsgy_filename = ...  # put path to your file. \r\nsgy = SGY(sgy_filename)\r\n```\r\n\r\nFrom `bytes`:\r\n```python\r\nfrom first_breaks.sgy.reader import SGY\r\n\r\nsgy_filename = ...  # put path to your file. \r\n\r\nwith open(sgy_filename, 'rb') as fin:\r\n    sgy_bytes = fin.read()\r\n\r\nsgy = SGY(sgy_bytes)\r\n```\r\n\r\nFrom `numpy` array:\r\n```python\r\nimport numpy as np\r\nfrom first_breaks.sgy.reader import SGY\r\n\r\nnum_samples = 1000\r\nnum_traces = 48\r\ndt_mcs = 1e3\r\n\r\ntraces = np.random.random((num_samples, num_traces))\r\nsgy = SGY(traces, dt_mcs=dt_mcs)\r\n```\r\n\r\n#### Content of SGY \r\n\r\nCreated `SGY` allows you to read traces, get observation parameters and view headers (empty if created from `numpy`)\r\n\r\n```python\r\nfrom first_breaks.sgy.reader import SGY\r\n\r\nsgy: SGY = ...  # put here previously created SGY\r\n\r\n# get all traces or specific traces limited by time\r\nall_traces = sgy.read()\r\nblock_of_data = sgy.read_traces_by_ids(ids=[1, 2, 3, 10],\r\n                                       min_sample=100,\r\n                                       max_sample=500)\r\n\r\n# number of traces, values are the same\r\nprint(sgy.num_traces, sgy.ntr)\r\n# number of time samples, values are the same\r\nprint(sgy.num_samples, sgy.ns) \r\n# = (ns, ntr)\r\nprint(sgy.shape)\r\n# time discretization, in mcs, in mcs, in ms\r\nprint(sgy.dt, sgy.dt_mcs, sgy.dt_ms)\r\n\r\n# dict with headers in the first 3600 bytes of the file\r\nprint(sgy.general_headers)\r\n# pandas DataFrame with headers for each trace\r\nprint(sgy.traces_headers.head())\r\n```\r\n\r\n### Create task for picking\r\n\r\nNext, we create a task for picking and pass the picking parameters to it. They have default values, but for the \r\nbest quality, they must be matched to specific data. You can use the desktop application to evaluate the parameters.\r\nA detailed description of the parameters can be found  in the following chapters.\r\n\r\n```python\r\nfrom first_breaks.sgy.reader import SGY\r\nfrom first_breaks.picking.task import Task\r\n\r\nsgy: SGY = ...  # put here previously created SGY\r\ntask = Task(sgy, \r\n            traces_per_gather=24,\r\n            maximum_time=200)\r\n```\r\n\r\n### Pick first breaks\r\n\r\nIn this step, we use the neural network for picking. If you downloaded the model according to the installation section, \r\nthen pass the path to it. Or leave the path to the model empty so that we can download it automatically.\r\n\r\n```python\r\nfrom first_breaks.picking.task import Task\r\nfrom first_breaks.picking.picker import PickerONNX\r\n\r\ntask: Task = ...  # put here previously created task\r\npicker = PickerONNX()\r\ntask = picker.process_task(task)\r\n\r\n# we can see results of picking\r\nprint(task.picks_in_samples)\r\nprint(task.picks_in_ms)\r\nprint(task.confidence)\r\n```\r\n\r\n\r\n\r\n\r\n\r\n\r\n[//]: # (- We can create it from `numpy` array.)\r\n\r\n# Picking process\r\n\r\nNeural network process file as series of **images**. There is why **the traces should not be random**,\r\nsince we are using information about adjacent traces.\r\n\r\nTo obtain the first breaks we do the following steps:\r\n1) Read all traces in the file.\r\n![All traces](https://raw.githubusercontent.com/DaloroAT/first_breaks_picking/main/docs/images/full.png)\r\n2) Limit time range by `Maximum time`. \r\n![Limited by time](https://raw.githubusercontent.com/DaloroAT/first_breaks_picking/main/docs/images/tm_100.png)\r\n3) Split the sequence of traces into independent gathers of lengths `Traces per gather` each. \r\n![Splitted file](https://raw.githubusercontent.com/DaloroAT/first_breaks_picking/main/docs/images/tm_100_tr_24_24_24_24.png)\r\n4) Apply trace modification on the gathers level if necessary (`Gain`, `Clip`, etc). \r\n5) Calculate first breaks for individual gathers independently.\r\n![Picked shots](https://raw.githubusercontent.com/DaloroAT/first_breaks_picking/main/docs/images/tm_100_tr_24_24_24_24_picks.png)\r\n6) Join the first breaks of individual gathers.\r\n![Picked file](https://raw.githubusercontent.com/DaloroAT/first_breaks_picking/main/docs/images/tm_100_picks.png)\r\n\r\nTo achieve the best result, you need to modify the picking parameters.\r\n\r\n### Traces per gather\r\n\r\n`Traces per gather` is the most important parameter for picking. The parameter defines how we split the sequence of \r\ntraces into individual gathers. \r\n\r\nSuppose we need to process a file with 96 traces. Depending on the value of `Traces per gather` parameter, we will \r\nprocess it as follows:\r\n- `Traces per gather` = 24. We will process 4 gathers with 24 traces each. \r\n![4 full shots](https://raw.githubusercontent.com/DaloroAT/first_breaks_picking/main/docs/images/tm_100_tr_24_24_24_24.png)\r\n- `Traces per gather` = 48. We will process 2 gathers with 48 traces each.\r\n![2 full shots](https://raw.githubusercontent.com/DaloroAT/first_breaks_picking/main/docs/images/tm_100_tr_48_48.png)\r\n- `Traces per gather` = 40. We will process 2 gathers with 40 traces each and 1 gather with the remaining 16 traces. \r\nThe last gather will be interpolated from 16 to 40 traces. \r\n![2 full + 1 interpolated shots](https://raw.githubusercontent.com/DaloroAT/first_breaks_picking/main/docs/images/tm_100_tr_40_40_16.png)\r\n\r\n### Maximum time\r\n\r\nYou can localize the area for finding first breaks. Specify `Maximum time` if you have long records but the first breaks\r\nlocated at the start of the traces. Keep it `0` if you don't want to limit traces.\r\n\r\n### List of traces to inverse\r\n\r\nSome receivers may have the wrong polarity, so you can specify which traces should be inversed. Note, that inversion \r\nwill be applied on the gathers level. For example, if you have 96 traces, `Traces per gather` = 48 and\r\n`List of traces to inverse` = (2, 30, 48), then traces (2, 3, 48, 50, 78, 96) will be inversed.\r\n\r\nNotes:\r\n- Trace indexing starts at 1.\r\n- Option is not available on desktop app.\r\n\r\n\r\n## Recommendations\r\nYou can receive predictions for any file with any parameters, but to get a better result, you should comply with the \r\nfollowing guidelines:\r\n- Your file should contain one or more gathers. By a gather, we mean that traces within a single gather can be \r\ngeophysically interpreted. **The traces within the same gather should not be random**, since we are using information \r\nabout adjacent traces.\r\n- All gathers in the file must contain the same number of traces.\r\n- The number of traces in gather must be equal to `Traces per gather` or divisible by it without a remainder. \r\nFor example, if you have CSP gathers and the number of receivers is 48, then you can set the parameter \r\nvalue to 48, 24, or 12.\r\n- We don't sort your file (CMP, CRP, CSP, etc), so you should send us files with traces sorted by yourself. \r\n- You can process a file with independent seismograms obtained from different polygons, under different conditions, etc., \r\nbut the requirements listed above must be met.\r\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/DaloroAT/first_breaks_picking",
+            "keywords": "seismic,first-breaks,computer-vision,deep-learning,segmentation,data-science",
+            "license": "Apache License 2.0",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "first-breaks-picking",
+            "package_url": "https://pypi.org/project/first-breaks-picking/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/first-breaks-picking/",
+            "project_urls": {
+                "Homepage": "https://github.com/DaloroAT/first_breaks_picking"
+            },
+            "release_url": "https://pypi.org/project/first-breaks-picking/0.0.2/",
+            "requires_dist": [
+                "requests (==2.28.2)",
+                "numpy (==1.24.2)",
+                "pandas (==2.0.0)",
+                "PyQt5 (==5.15.9)",
+                "onnxruntime (==1.14.1)",
+                "pyqtgraph (==0.13.3)",
+                "tqdm (==4.65.0)"
+            ],
+            "requires_python": ">=3.7,<4.0",
+            "summary": "Tool for picking first breaks in seismic gather",
+            "version": "0.0.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18306601,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f8ea45222e8a4e00181effd55959ecf572f913d1463f21dc1441377265d335a2",
+                    "md5": "0f5dea93125413ec6a6aab487982c435",
+                    "sha256": "1327c64ce164a6971c644154d331dd3e3c2511315307be6cb5e9f40faed48541"
+                },
+                "downloads": -1,
+                "filename": "first_breaks_picking-0.0.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "0f5dea93125413ec6a6aab487982c435",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7,<4.0",
+                "size": 32534,
+                "upload_time": "2023-05-30T19:13:32",
+                "upload_time_iso_8601": "2023-05-30T19:13:32.798782Z",
+                "url": "https://files.pythonhosted.org/packages/f8/ea/45222e8a4e00181effd55959ecf572f913d1463f21dc1441377265d335a2/first_breaks_picking-0.0.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "34409b9c145d4322df019559d18f5860e0f7d6c6f3277d3b9e8cc72391188ffb",
+                    "md5": "33eeadb1cb4f66ff8605cef8689f4764",
+                    "sha256": "76080c6bb56616ba58ed916ffa3a2d6df1c0cf0887a433555c6669cc9e638d8e"
+                },
+                "downloads": -1,
+                "filename": "first-breaks-picking-0.0.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "33eeadb1cb4f66ff8605cef8689f4764",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7,<4.0",
+                "size": 31216,
+                "upload_time": "2023-05-30T19:13:35",
+                "upload_time_iso_8601": "2023-05-30T19:13:35.061679Z",
+                "url": "https://files.pythonhosted.org/packages/34/40/9b9c145d4322df019559d18f5860e0f7d6c6f3277d3b9e8cc72391188ffb/first-breaks-picking-0.0.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
