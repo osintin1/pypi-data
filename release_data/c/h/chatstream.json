@@ -44,7 +44,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18256948,
+        "last_serial": 18314670,
         "urls": [
             {
                 "comment_text": "",
@@ -137,7 +137,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18256948,
+        "last_serial": 18314670,
         "urls": [
             {
                 "comment_text": "",
@@ -231,7 +231,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18256948,
+        "last_serial": 18314670,
         "urls": [
             {
                 "comment_text": "",
@@ -323,7 +323,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18256948,
+        "last_serial": 18314670,
         "urls": [
             {
                 "comment_text": "",
@@ -383,7 +383,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "# ChatStream\r\n\r\nA load control utility for large-scale streaming chat servers using pre-trained large language models (LLM)\r\n\r\n## Installation\r\n\r\n```\r\npip install chatstream\r\n```\r\n\r\n## What can it do?\r\n\r\n### 1. Simplifies the construction of streaming chats\r\n\r\nYou can easily construct streaming chats with large pre-trained language models based on HuggingFace.\r\n\r\n**What is a Streaming Chat**\r\n\r\nWhen generating sentences with a large language model, there are methods that generate the next sentence entirely based\r\non the inputted prompt (and the conversation history so far) before outputting it, and methods that sequentially output\r\nthe next sentence one token at a time. The latter method is specifically referred to as 'streaming'. In this package,\r\ntoken generation is done one token at a time, and it is streamed as a response to the client. This contributes to a\r\nbetter user experience compared to waiting for the entire sentence to be generated.\r\n\r\n### 2. Automatically maintains conversation history and context\r\n\r\nBy default, the HTTP session feature keeps the conversation history between the user and the language model in on-memory\r\non the server-side. The session duration can be set, but it is basically while the browser is open. This makes it\r\npossible to have multi-round web chats with continued context.\r\n\r\n### 3. Control of concurrent access from multiple users\r\n\r\nIt is designed with concurrent access from multiple clients in mind, and is controlled according to the following\r\nparameters specified in the constructor\r\n\r\n`num_of_concurrent_executions` : int ... The number of concurrent sentence generation tasks to the pre-trained language\r\nmodel\r\n\r\n`max_queue_size: int` ... The size of the queue for sentence generation. When the number of concurrent sentence\r\ngeneration tasks falls below the limit\r\n\r\n![img](https://github.com/riversun/ChatStream/assets/11747460/f743ba6a-64ec-4f44-80aa-ba9a8d9c7875)\r\n\r\n# How to use\r\n\r\nThe following is an example of streaming chat using `togethercomputer/RedPajama-INCITE-Chat-3B-v1` as a model\r\n\r\nCreate a chat_prompt class (chat_prompt_for_redpajama_incite.py) that generates prompts for the model and a server.py\r\nthat acts as a streaming server.\r\n\r\n## Required Packages for the Demo Code\r\n\r\n- Pytorch  \r\n  If you're using CUDA, please install the CUDA-compatible version of pytorch.\r\n\r\n```\r\npip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu117\r\n```\r\n\r\n- HuggingFace Transformer Library\r\n\r\n```\r\npip install transformers\r\n```\r\n\r\n- Web server\r\n\r\nuvicorn or gunicorn\r\n\r\n```\r\npip install \"uvicorn[standard]\" gunicorn \r\n```\r\n\r\n**chat_prompt_for_redpajama_incite.py**\r\n\r\n```python\r\nfrom chatstream.chat_prompt import AbstractChatPrompt\r\n\r\n\r\nclass ChatPromptRedpajamaIncite(AbstractChatPrompt):\r\n\r\n    def __init__(self):\r\n        super().__init__()  # Call the initialization of the base class\r\n        self.set_requester(\"<human>\")\r\n        self.set_responder(\"<bot>\")\r\n\r\n    def get_stop_strs(self):\r\n        \"\"\"\r\n        returns special stop strings for model to finsh generating sentence\r\n        :return:\r\n        \"\"\"\r\n        if not self.chat_mode:\r\n            return None\r\n        return [\r\n            '<|endoftext|>',\r\n            '\\n<'\r\n            # Safety stop valve when the model generates not only AI conversations but also human parts of the conversation.\r\n        ]\r\n\r\n    def create_prompt(self):\r\n        \"\"\"\r\n        Build prompts according to the characteristics of each language model\r\n        :return:\r\n        \"\"\"\r\n        if self.chat_mode == False:\r\n            return self.get_requester_last_msg()\r\n\r\n        ret = self.system;\r\n        for chat_content in self.chat_contents:\r\n            chat_content_role = chat_content.get_role()\r\n            chat_content_message = chat_content.get_message()\r\n            if chat_content_role:\r\n                if chat_content_message:\r\n                    merged_message = chat_content_role + \": \" + chat_content_message + \"\\n\"\r\n                else:\r\n                    merged_message = chat_content_role + \":\"\r\n                ret += merged_message\r\n\r\n        return ret\r\n\r\n\r\n# portable UT\r\nif False:\r\n    chatPrompt = ChatPrompt()\r\n\r\n    chatPrompt.set_requester(\"<human>\")\r\n    chatPrompt.set_responder(\"<bot>\")\r\n    chatPrompt.add_requester_msg(\"Who is Alan Turing\")\r\n    chatPrompt.add_responder_msg(None)\r\n\r\n    assert \"\"\"<human>: Who is Alan Turing\r\n<bot>:\"\"\" == chatPrompt.create_prompt()\r\n\r\n```\r\n\r\n**server.py**\r\n\r\n```python\r\nimport os\r\nimport torch\r\nfrom transformers import AutoTokenizer, AutoModelForCausalLM\r\n\r\nimport uvicorn\r\nfrom fastapi import FastAPI, Request\r\nfrom fastapi.staticfiles import StaticFiles\r\nfrom fastsession import FastSessionMiddleware, MemoryStore\r\n\r\nfrom chat_prompt_for_redpajama_incite import ChatPromptRedpajamaIncite as ChatPrompt\r\nfrom chatstream import ChatStream\r\n\r\nMAX_CONCURRENT_CONNECTIONS = 2\r\nMAX_QUEUE_SIZE = 5\r\n\r\nmodel_path = \"togethercomputer/RedPajama-INCITE-Chat-3B-v1\"\r\n\r\ndevice = \"cuda\"  # \"cuda\" / \"cpu\"\r\ntokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)\r\nmodel = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.float16)\r\nif device == \"cuda\":\r\n    model.to(device)\r\n\r\nchat_stream = ChatStream(\r\n    num_of_concurrent_executions=MAX_CONCURRENT_CONNECTIONS,\r\n    max_queue_size=MAX_QUEUE_SIZE,\r\n    model=model,\r\n    tokenizer=tokenizer,\r\n    device=device,\r\n    chat_prompt_clazz=ChatPrompt,\r\n)\r\n\r\napp = FastAPI()\r\n\r\n# Add session middleware to keep context\r\napp.add_middleware(FastSessionMiddleware,\r\n                   secret_key=\"your-session-secret-key\",  # Key for cookie signature\r\n                   store=MemoryStore(),  # Store for session saving\r\n                   http_only=True,  # True: Cookie cannot be accessed from client-side scripts such as JavaScript\r\n                   secure=False,  # False: For local development env. True: For production. Requires Https\r\n                   )\r\n\r\n\r\n@app.post(\"/chat_stream\")\r\nasync def stream_api(request: Request):\r\n    response = await chat_stream.handle_starlette_request(request)\r\n    return response\r\n\r\n\r\n@app.get(\"/stats\")\r\nasync def stats_api():\r\n    return chat_stream.get_stats()\r\n\r\n\r\n# for absolute URL of html contained dir\r\ndef get_html_dir():\r\n    return os.path.join(os.path.dirname(os.path.realpath(__file__)), 'html')\r\n\r\n\r\napp.mount(\"/\", StaticFiles(directory=get_html_dir(), html=True), name=\"html\")\r\n\r\n\r\n@app.on_event(\"startup\")\r\nasync def startup():\r\n    await chat_stream.start_queue_worker()\r\n\r\n\r\ndef start_server():\r\n    uvicorn.run(app, host='localhost', port=18080)\r\n\r\n\r\ndef main():\r\n    start_server()\r\n\r\n\r\nif __name__ == \"__main__\":\r\n    main()\r\n\r\n```\r\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -416,7 +415,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18256948,
+        "last_serial": 18314670,
         "urls": [
             {
                 "comment_text": "",
@@ -457,6 +456,99 @@
                 "upload_time": "2023-05-26T02:37:11",
                 "upload_time_iso_8601": "2023-05-26T02:37:11.207506Z",
                 "url": "https://files.pythonhosted.org/packages/e6/7d/fdac481bde6b8f35cc7259f323d7238e7f3ec61c8a745389e199405a2bf1/chatstream-0.1.4.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.5": {
+        "info": {
+            "author": "Tom Misawa",
+            "author_email": "riversun.org@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: Apache Software License",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "# ChatStream\r\n\r\n[English](https://github.com/riversun/ChatStream/blob/main/README.md) | [&#26085;&#26412;&#35486;](https://github.com/riversun/ChatStream/blob/main/README_ja.md)\r\n\r\n\r\nA streaming chat toolkit for pre-trained large language models(LLM)\r\n\r\n## Installation\r\n\r\n```\r\npip install chatstream\r\n```\r\n\r\n## What can it do?\r\n\r\n### 1. Simplifies the construction of streaming chats\r\n\r\nYou can easily construct streaming chats with large pre-trained language models based on HuggingFace.\r\n\r\n**What is a Streaming Chat**\r\n\r\nWhen generating sentences with a large language model, there are methods that generate the next sentence entirely based\r\non the inputted prompt (and the conversation history so far) before outputting it, and methods that sequentially output\r\nthe next sentence one token at a time. The latter method is specifically referred to as 'streaming'. In this package,\r\ntoken generation is done one token at a time, and it is streamed as a response to the client. This contributes to a\r\nbetter user experience compared to waiting for the entire sentence to be generated.\r\n\r\n### 2. Automatically maintains conversation history and context\r\n\r\nBy default, the HTTP session feature keeps the conversation history between the user and the language model in on-memory\r\non the server-side. The session duration can be set, but it is basically while the browser is open. This makes it\r\npossible to have multi-round web chats with continued context.\r\n\r\n### 3. Control of concurrent access from multiple users\r\n\r\nIt is designed with concurrent access from multiple clients in mind, and is controlled according to the following\r\nparameters specified in the constructor\r\n\r\n`num_of_concurrent_executions` : int ... The number of concurrent sentence generation tasks to the pre-trained language\r\nmodel\r\n\r\n`max_queue_size: int` ... The size of the queue for sentence generation. When the number of concurrent sentence\r\ngeneration tasks falls below the limit\r\n\r\n![img](https://github.com/riversun/ChatStream/assets/11747460/f743ba6a-64ec-4f44-80aa-ba9a8d9c7875)\r\n\r\n# How to use\r\n\r\nThe following is an example of streaming chat using `togethercomputer/RedPajama-INCITE-Chat-3B-v1` as a model\r\n\r\nCreate a chat_prompt class (chat_prompt_for_redpajama_incite.py) that generates prompts for the model and a server.py\r\nthat acts as a streaming server.\r\n\r\n## Required Packages for the Demo Code\r\n\r\n- Pytorch  \r\n  If you're using CUDA, please install the CUDA-compatible version of pytorch.\r\n\r\n```\r\npip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu117\r\n```\r\n\r\n- HuggingFace Transformer Library\r\n\r\n```\r\npip install transformers\r\n```\r\n\r\n- Web server\r\n\r\nuvicorn or gunicorn\r\n\r\n```\r\npip install \"uvicorn[standard]\" gunicorn \r\n```\r\n\r\n**chat_prompt_for_redpajama_incite.py**\r\n\r\n```python\r\nfrom chatstream.chat_prompt import AbstractChatPrompt\r\n\r\n\r\nclass ChatPromptRedpajamaIncite(AbstractChatPrompt):\r\n\r\n    def __init__(self):\r\n        super().__init__()  # Call the initialization of the base class\r\n        self.set_requester(\"<human>\")\r\n        self.set_responder(\"<bot>\")\r\n\r\n    def get_stop_strs(self):\r\n        \"\"\"\r\n        returns special stop strings for model to finsh generating sentence\r\n        :return:\r\n        \"\"\"\r\n        if not self.chat_mode:\r\n            return None\r\n        return [\r\n            '<|endoftext|>',\r\n            '\\n<'\r\n            # Safety stop valve when the model generates not only AI conversations but also human parts of the conversation.\r\n        ]\r\n\r\n    def create_prompt(self):\r\n        \"\"\"\r\n        Build prompts according to the characteristics of each language model\r\n        :return:\r\n        \"\"\"\r\n        if self.chat_mode == False:\r\n            return self.get_requester_last_msg()\r\n\r\n        ret = self.system;\r\n        for chat_content in self.chat_contents:\r\n            chat_content_role = chat_content.get_role()\r\n            chat_content_message = chat_content.get_message()\r\n            if chat_content_role:\r\n                if chat_content_message:\r\n                    merged_message = chat_content_role + \": \" + chat_content_message + \"\\n\"\r\n                else:\r\n                    merged_message = chat_content_role + \":\"\r\n                ret += merged_message\r\n\r\n        return ret\r\n\r\n\r\n# portable UT\r\nif False:\r\n    chatPrompt = ChatPrompt()\r\n\r\n    chatPrompt.set_requester(\"<human>\")\r\n    chatPrompt.set_responder(\"<bot>\")\r\n    chatPrompt.add_requester_msg(\"Who is Alan Turing\")\r\n    chatPrompt.add_responder_msg(None)\r\n\r\n    assert \"\"\"<human>: Who is Alan Turing\r\n<bot>:\"\"\" == chatPrompt.create_prompt()\r\n\r\n```\r\n\r\n**server.py**\r\n\r\n```python\r\nimport os\r\nimport torch\r\nfrom transformers import AutoTokenizer, AutoModelForCausalLM\r\n\r\nimport uvicorn\r\nfrom fastapi import FastAPI, Request\r\nfrom fastapi.staticfiles import StaticFiles\r\nfrom fastsession import FastSessionMiddleware, MemoryStore\r\n\r\nfrom chat_prompt_for_redpajama_incite import ChatPromptRedpajamaIncite as ChatPrompt\r\nfrom chatstream import ChatStream\r\n\r\nMAX_CONCURRENT_CONNECTIONS = 2\r\nMAX_QUEUE_SIZE = 5\r\n\r\nmodel_path = \"togethercomputer/RedPajama-INCITE-Chat-3B-v1\"\r\n\r\ndevice = \"cuda\"  # \"cuda\" / \"cpu\"\r\ntokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)\r\nmodel = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.float16)\r\nif device == \"cuda\":\r\n    model.to(device)\r\n\r\nchat_stream = ChatStream(\r\n    num_of_concurrent_executions=MAX_CONCURRENT_CONNECTIONS,\r\n    max_queue_size=MAX_QUEUE_SIZE,\r\n    model=model,\r\n    tokenizer=tokenizer,\r\n    device=device,\r\n    chat_prompt_clazz=ChatPrompt,\r\n)\r\n\r\napp = FastAPI()\r\n\r\n# Add session middleware to keep context\r\napp.add_middleware(FastSessionMiddleware,\r\n                   secret_key=\"your-session-secret-key\",  # Key for cookie signature\r\n                   store=MemoryStore(),  # Store for session saving\r\n                   http_only=True,  # True: Cookie cannot be accessed from client-side scripts such as JavaScript\r\n                   secure=False,  # False: For local development env. True: For production. Requires Https\r\n                   )\r\n\r\n\r\n@app.post(\"/chat_stream\")\r\nasync def stream_api(request: Request):\r\n    response = await chat_stream.handle_starlette_request(request)\r\n    return response\r\n\r\n\r\n@app.get(\"/stats\")\r\nasync def stats_api():\r\n    return chat_stream.get_stats()\r\n\r\n\r\n# for absolute URL of html contained dir\r\ndef get_html_dir():\r\n    return os.path.join(os.path.dirname(os.path.realpath(__file__)), 'html')\r\n\r\n\r\napp.mount(\"/\", StaticFiles(directory=get_html_dir(), html=True), name=\"html\")\r\n\r\n\r\n@app.on_event(\"startup\")\r\nasync def startup():\r\n    await chat_stream.start_queue_worker()\r\n\r\n\r\ndef start_server():\r\n    uvicorn.run(app, host='localhost', port=18080)\r\n\r\n\r\ndef main():\r\n    start_server()\r\n\r\n\r\nif __name__ == \"__main__\":\r\n    main()\r\n\r\n```\r\n\r\n# License\r\n\r\nAll code in this repository was developed by Tom Misawa except where otherwise noted.  Copyright (c) 2023, Tom Misawa.  All rights reserved. The code is licensed under the Apache 2.0 license.\r\n\r\n```\r\nCopyright 2023 Tom Misawa(riversun.org@gmail.com)\r\n\r\nLicensed under the Apache License, Version 2.0 (the \"License\");\r\nyou may not use this file except in compliance with the License.\r\nYou may obtain a copy of the License at\r\n\r\n   http://www.apache.org/licenses/LICENSE-2.0\r\n\r\nUnless required by applicable law or agreed to in writing, software\r\ndistributed under the License is distributed on an \"AS IS\" BASIS,\r\nWITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\r\nSee the License for the specific language governing permissions and\r\nlimitations under the License.\r\n```\r\n\r\n# Citing ChatStream\r\n\r\n```bibtex\r\n@software{chatstream,\r\n  title = {{ChatStream: A streaming chat toolkit for pre-trained large language models(LLM)}},\r\n  author = {Tom Misawa(riversun.org@gmail.com) },\r\n  url = {https://github.com/riversun/ChatStream}\r\n  month = {5},\r\n  year = {2023},\r\n  version = {0.15},\r\n}\r\n```\r\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/riversun/ChatStream",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "chatstream",
+            "package_url": "https://pypi.org/project/chatstream/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/chatstream/",
+            "project_urls": {
+                "Homepage": "https://github.com/riversun/ChatStream"
+            },
+            "release_url": "https://pypi.org/project/chatstream/0.1.5/",
+            "requires_dist": [
+                "fastapi",
+                "fastsession",
+                "tokflow"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "A streaming chat toolkit for pre-trained large language models(LLM)",
+            "version": "0.1.5",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18314670,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "4fa8a7f1dd5aefc9e670923107e4b01a733510fd6a97af28877eb02f867e00d2",
+                    "md5": "6ed7338331232cc3d9412622da6bef81",
+                    "sha256": "8eee64c0ac26238bdddc5cc15b449aea29f36de5cce04b4c23e007bde0c8f1d1"
+                },
+                "downloads": -1,
+                "filename": "chatstream-0.1.5-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "6ed7338331232cc3d9412622da6bef81",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 36352,
+                "upload_time": "2023-05-31T09:18:25",
+                "upload_time_iso_8601": "2023-05-31T09:18:25.441533Z",
+                "url": "https://files.pythonhosted.org/packages/4f/a8/a7f1dd5aefc9e670923107e4b01a733510fd6a97af28877eb02f867e00d2/chatstream-0.1.5-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "61ec4b9241d2d25715cd963a120b9f730b32ef7c5507a8ad6efce8102db9c970",
+                    "md5": "a5e00e8bf502afe447e9d63cd16d302f",
+                    "sha256": "a58a4811f8205cac1dfe1f99a33c9b45bc59694d0878a3097ce6e975152a5a86"
+                },
+                "downloads": -1,
+                "filename": "chatstream-0.1.5.tar.gz",
+                "has_sig": false,
+                "md5_digest": "a5e00e8bf502afe447e9d63cd16d302f",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 31069,
+                "upload_time": "2023-05-31T09:18:27",
+                "upload_time_iso_8601": "2023-05-31T09:18:27.611811Z",
+                "url": "https://files.pythonhosted.org/packages/61/ec/4b9241d2d25715cd963a120b9f730b32ef7c5507a8ad6efce8102db9c970/chatstream-0.1.5.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
