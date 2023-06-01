@@ -8,7 +8,6 @@
                 "License :: OSI Approved :: Apache Software License",
                 "Programming Language :: Python :: 3"
             ],
-            "description": "mycgi - A Python3 Replacement for the Deprecated `cgi` Module\r\n=============================================================\r\n\r\nThis module uses the `python-multipart` package for handling non-JSON-encoded POST and PUT requests.\r\n\r\nSome Usage Examples\r\n-------------------\r\n\r\n```\r\n# Instead of:\r\n#from cgi import FieldStorage\r\n# Use:\r\nfrom mycgi import Form\r\n\r\nform = Form()\r\n\r\n# Field 'name' is a text input field:\r\nname = form.getvalue('name') # This will be a list if the form has multiple 'name' fields\r\nname = form.getfirst('name') # This will be a single string\r\nnames = form.getlist('name') # This will be a list of strings\r\n\r\n# Field 'spreadsheet' is a file input field:\r\nfileitem = form['spreadsheet']\r\nfilename = fileitem.filename # The name of the uploaded file\r\n# Get the file contents as bytes 3 different ways:\r\ncontents = fileitem.file.read()\r\ncontents = fileitem.value\r\ncontents = form.getvalue('spreadsheet')\r\n```\r\n\r\nDocumentation\r\n-------------\r\n\r\nThe initializer for the `mycgi.Form` class is:\r\n\r\n```\r\n    def __init__(self, environ=os.environ, fp=None, keep_blank_values=False):\r\n        \"\"\"\r\n        Initialize a Form instance.\r\n\r\n        Arguments (all are optional):\r\n\r\n        environ: environment dictionary\r\n                 default: os.environ\r\n\r\n        fp: stream containing encoded POST and PUT data\r\n            default: None (in which case sys.stdin.buffer will be used for\r\n                     POST and PUT requests)\r\n\r\n        keep_blank_values: flag indicating whether blank values in\r\n                           percent-encoded forms should be treated as blank\r\n                           strings.\r\n                           default: False\r\n        \"\"\"\r\n\r\n```\r\n\r\nA `mycgi.Form` instance is a specialized dictionary whose keys are the field names and whose values are either a `mycgi.Field`\r\ninstance or a list of these instances. A `mycgi.Field` instance has the following attributes:\r\n\r\n1. `name`:     The form field name.\r\n2. `filename`: If this field is for an uploaded file, then the uploaded filename, else None.\r\n3. `value`:    The form field value (or an uploaded file's contents as bytes).\r\n4. `file`:     If the field value is a string or byte string, then a stream that can be read to get the field's value, else None.\r\n\r\n**Also supported are POST and PUT requests where the data is a JSON-encoded dictionary.**\r\n\r\nTo use `mycgi.Form` with a WSGI application:\r\n\r\n```\r\nfrom mycgi import Form\r\n\r\ndef wsgiApp(environ, start_response):\r\n    form = Form(environ=environ, fp=environ['wsgi.input'])\r\n    ...\r\n```\r\n\r\nTests to Further Demonstrate `mycgi` Usage\r\n----------------------------------------\r\n\r\n```\r\nfrom mycgi import Form\r\nimport io\r\n\r\n# Test a GET request:\r\nform = Form(environ={'QUERY_STRING': 'x=1&x=2&y=3'})\r\n\r\nassert form.getvalue('x') == ['1', '2']\r\nassert form.getlist('x') == ['1', '2']\r\nassert form.getfirst('x') == '1'\r\nassert [field.filename for field in form['x']] == [None, None]\r\nassert [field.value for field in form['x']] == ['1', '2']\r\nassert [field.file.read() for field in form['x']] == ['1', '2']\r\n\r\nassert form.getvalue('y') == '3'\r\nassert form.getlist('y') == ['3']\r\nassert form.getfirst('y') == '3'\r\nassert form['y'].name == 'y'\r\nassert form['y'].filename is None\r\nassert form['y'].value == '3'\r\nassert form['y'].file.read() == '3'\r\n\r\n# Test a multipart POST request:\r\n# We have here a text input field named 'act' whose value is 'abc' and two\r\n# file input fields named 'the_file' where a file named 'test.txt' has been\r\n# selected for the first occurence and no file selected for the second\r\n# occurrence:\r\n\r\n# The following definition of fp is on a single line:\r\nfp = io.BytesIO(b'------WebKitFormBoundarytQ0DkMXsDqxwxBlp\\r\\nContent-Disposition: form-data; name=\"act\"\\r\\n\\r\\nTest\\r\\n------WebKitFormBoundarytQ0DkMXsDqxwxBlp\\r\\nContent-Disposition: form-data; name=\"the_file\"; filename=\"test.txt\"\\r\\nContent-Type: text/plain\\r\\n\\r\\nabc\\r\\n------WebKitFormBoundarytQ0DkMXsDqxwxBlp\\r\\nContent-Disposition: form-data; name=\"the_file\"; filename=\"\"\\r\\nContent-Type: application/octet-stream\\r\\n\\r\\n\\r\\n------WebKitFormBoundarytQ0DkMXsDqxwxBlp--\\r\\n')\r\n\r\nenviron = {\r\n    'CONTENT_LENGTH': '431',\r\n    'CONTENT_TYPE': 'multipart/form-data; boundary=----WebKitFormBoundarytQ0DkMXsDqxwxBlp',\r\n}\r\n\r\nform = Form(environ=environ, fp=fp)\r\n\r\nassert form['act'].name == 'act'\r\nassert form['act'].filename is None\r\nassert form['act'].value == 'Test'\r\nassert form['act'].file.read() == 'Test'\r\n\r\nassert form['the_file'][0].name == 'the_file'\r\nassert form['the_file'][0].filename == 'test.txt'\r\nassert form['the_file'][0].value == b'abc'\r\nassert form['the_file'][0].file.read() == b'abc'\r\n\r\nassert form['the_file'][1].name == 'the_file'\r\nassert form['the_file'][1].filename == ''\r\nassert form['the_file'][1].value == b''\r\nassert form['the_file'][1].file.read() == b''\r\n\r\nassert form.getvalue('the_file') == [b'abc', b'']\r\n\r\n# Test a JSON-encoded POST request:\r\nfp = io.BytesIO(b'{\"x\": [1,2], \"y\": 3}')\r\nenviron = {\r\n    'CONTENT_LENGTH': '20',\r\n    'CONTENT_TYPE': 'application/json',\r\n    }\r\nform = Form(environ=environ, fp=fp)\r\n\r\nassert form.getvalue('x') == [1, 2]\r\nassert form.getlist('x') == [1, 2]\r\nassert form.getfirst('x') == 1\r\nassert [field.filename for field in form['x']] == [None, None]\r\nassert [field.value for field in form['x']] == [1, 2]\r\nassert [field.file for field in form['x']] == [None, None]\r\n\r\nassert form.getvalue('y') == 3\r\nassert form.getlist('y') == [3]\r\nassert form.getfirst('y') == 3\r\nassert form['y'].name == 'y'\r\nassert form['y'].filename is None\r\nassert form['y'].value == 3\r\nassert form['y'].file is None\r\n```\r\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -37,7 +36,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17901808,
+        "last_serial": 18321073,
         "urls": [
             {
                 "comment_text": "",
@@ -78,6 +77,91 @@
                 "upload_time": "2023-04-28T18:29:37",
                 "upload_time_iso_8601": "2023-04-28T18:29:37.131901Z",
                 "url": "https://files.pythonhosted.org/packages/22/d7/0d4dab115e9ffeec80e40bf1cb265d9f0fab350b55fd4c29e6239aa669e0/mycgi-0.0.2.post1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.2.post2": {
+        "info": {
+            "author": "",
+            "author_email": "Ronald Aaronson <ronaldaaronson@gmail.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "License :: OSI Approved :: Apache Software License",
+                "Programming Language :: Python :: 3"
+            ],
+            "description": "# mycgi - A Python3 Replacement for the Deprecated `cgi` Module\r\n\r\nOther than using different class names (`mycgi.Form` instead of `cgi.FieldStorage` and `mycgi.Field` instead of `cgi.FieldStorage`) this module should be quite backward-compatible with the `mycgi` module. Additionally, JSON-encoded PUT and POST requests are supported.\r\n\r\nNote that this module depends on the `python-multipart` package for handling POST and PUT requests that are not JSON-encoded.\r\n\r\n## Some Usage Examples\r\n\r\n```\r\n# Instead of:\r\n#from cgi import FieldStorage\r\n# Use:\r\nfrom mycgi import Form\r\n\r\nform = Form()\r\n\r\n# name is a text input field:\r\nname = form.getvalue('name') # this will be a list if the form has multiple 'name' fields\r\n# or: name = form.getfirst('name')\r\n# or: names = form.getlist('name')\r\n\r\n# spreadsheet is a file input field:\r\nfileitem = form['spreadsheet']\r\n# The name of the uploaded file:\r\nfilename = fileitem.filename\r\n# Get the file contents as bytes 3 different ways:\r\ncontents = fileitem.file.read()\r\ncontents = fileitem.value\r\ncontents = form.getvalue('spreadsheet')\r\n```\r\n\r\n## Documentation\r\n\r\nThe initializer for the `mycgi.Form` class is:\r\n\r\n```\r\n    def __init__(self, environ=os.environ, fp=None, keep_blank_values=False):\r\n        \"\"\"\r\n        Initialize a Form instance.\r\n\r\n        Arguments (all are optional):\r\n\r\n        environ: environment dictionary\r\n                 default: os.environ\r\n\r\n        fp: stream containing encoded POST and PUT data\r\n            default: None (in which case sys.stdin.buffer will be used for\r\n                     POST and PUT requests)\r\n\r\n        keep_blank_values: flag indicating whether blank values in\r\n                           percent-encoded forms should be treated as blank\r\n                           strings.\r\n                           default: False\r\n        \"\"\"\r\n\r\n```\r\n\r\nA `mycgi.Form` instance is a specialized dictionary whose keys are the field names and whose values are either a `mycgi.Field`\r\ninstance or a list of these instances. A `mycgi.Field` instance has the following attributes:\r\n\r\n1. `name`:     The form field name.\r\n2. `filename`: If this field is for an uploaded file, then the uploaded filename, else None.\r\n3. `value`:    The form field value (or an uploaded file's contents as bytes).\r\n4. `file`:     If the field value is a string or byte string,then a stream that can be read to get the field's value, else None.\r\n\r\nThe `mycgi.Form` class supports the `getvalue`, `getlist` and `getfirst` methods that behave identically to the like-named methods of the deprecated `cgi.FieldStorage` class and which make it unnecessary to access the `mycgi.Field` instances, although doing so can be useful for processing file uploads.\r\n\r\n### JSON-encoded PUT and POST requests\r\n\r\nAlso supported are POST and PUT requests where the data is a JSON-encoded dictionary.\r\n\r\n### WSGI Application Usage\r\n\r\nTo use `mycgi.Form` with a WSGI application:\r\n\r\n```\r\nfrom mycgi import Form\r\n\r\ndef wsgiApp(environ, start_response):\r\n    form = Form(environ=environ, fp=environ['wsgi.input'])\r\n    ...\r\n```\r\n\r\n## Tests To Demonstrate `mycgi` Usage\r\n\r\n```\r\nfrom mycgi import Form\r\nimport io\r\n\r\n# Test a GET request:\r\nform = Form(environ={'QUERY_STRING': 'x=1&x=2&y=3'})\r\n\r\nassert form.getvalue('x') == ['1', '2']\r\nassert form.getlist('x') == ['1', '2']\r\nassert form.getfirst('x') == '1'\r\nassert [field.filename for field in form['x']] == [None, None]\r\nassert [field.value for field in form['x']] == ['1', '2']\r\nassert [field.file.read() for field in form['x']] == ['1', '2']\r\n\r\nassert form.getvalue('y') == '3'\r\nassert form.getlist('y') == ['3']\r\nassert form.getfirst('y') == '3'\r\nassert form['y'].name == 'y'\r\nassert form['y'].filename is None\r\nassert form['y'].value == '3'\r\nassert form['y'].file.read() == '3'\r\n\r\n# Test a multipart POST request:\r\n# We have here a text input field named 'act' whose value is 'abc' and two\r\n# file input fields named 'the_file' where a file has been selected for only the\r\n# first occurence:\r\n\r\n# The following definition of fp is on a single line:\r\nfp = io.BytesIO(b'------WebKitFormBoundarytQ0DkMXsDqxwxBlp\\r\\nContent-Disposition: form-data; name=\"act\"\\r\\n\\r\\nTest\\r\\n------WebKitFormBoundarytQ0DkMXsDqxwxBlp\\r\\nContent-Disposition: form-data; name=\"the_file\"; filename=\"test.txt\"\\r\\nContent-Type: text/plain\\r\\n\\r\\nabc\\r\\n------WebKitFormBoundarytQ0DkMXsDqxwxBlp\\r\\nContent-Disposition: form-data; name=\"the_file\"; filename=\"\"\\r\\nContent-Type: application/octet-stream\\r\\n\\r\\n\\r\\n------WebKitFormBoundarytQ0DkMXsDqxwxBlp--\\r\\n')\r\n\r\nenviron = {\r\n    'CONTENT_LENGTH': '431',\r\n    'CONTENT_TYPE': 'multipart/form-data; boundary=----WebKitFormBoundarytQ0DkMXsDqxwxBlp',\r\n}\r\n\r\nform = Form(environ=environ, fp=fp)\r\n\r\nassert form['act'].name == 'act'\r\nassert form['act'].filename is None\r\nassert form['act'].value == 'Test'\r\nassert form['act'].file.read() == 'Test'\r\n\r\nassert form['the_file'][0].name == 'the_file'\r\nassert form['the_file'][0].filename == 'test.txt'\r\nassert form['the_file'][0].value == b'abc'\r\nassert form['the_file'][0].file.read() == b'abc'\r\n\r\nassert form['the_file'][1].name == 'the_file'\r\nassert form['the_file'][1].filename == ''\r\nassert form['the_file'][1].value == b''\r\nassert form['the_file'][1].file.read() == b''\r\n\r\nassert form.getvalue('the_file') == [b'abc', b'']\r\n\r\n# Test a JSON-encoded POST request:\r\nfp = io.BytesIO(b'{\"x\": [1,2], \"y\": 3}')\r\nenviron = {\r\n    'CONTENT_LENGTH': '20',\r\n    'CONTENT_TYPE': 'application/json',\r\n    }\r\nform = Form(environ=environ, fp=fp)\r\n\r\nassert form.getvalue('x') == [1, 2]\r\nassert form.getlist('x') == [1, 2]\r\nassert form.getfirst('x') == 1\r\nassert [field.filename for field in form['x']] == [None, None]\r\nassert [field.value for field in form['x']] == [1, 2]\r\nassert [field.file for field in form['x']] == [None, None]\r\n\r\nassert form.getvalue('y') == 3\r\nassert form.getlist('y') == [3]\r\nassert form.getfirst('y') == 3\r\nassert form['y'].name == 'y'\r\nassert form['y'].filename is None\r\nassert form['y'].value == 3\r\nassert form['y'].file is None\r\n```\r\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "cgi,replacement",
+            "license": "Copyright 2023, Ronald Aaronson  Licensed under the Apache License, Version 2.0 (the \"License\"); you may not use this file except in compliance with the License. You may obtain a copy of the License at  https://www.apache.org/licenses/LICENSE-2.0  Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "mycgi",
+            "package_url": "https://pypi.org/project/mycgi/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/mycgi/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/mycgi/0.0.2.post2/",
+            "requires_dist": [
+                "python-multipart (>=0.0.6)"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "A Python3 replacement for the deprecated cgi module",
+            "version": "0.0.2.post2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18321073,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d0ed457db8830e1cb6f4adcb04a382a605706cf962b81a5af0d2f7ced73dfb5c",
+                    "md5": "04c035a7bcf1cf6dd96d14018248139b",
+                    "sha256": "acc1afa9a6e6012dbcdff6a68710acb0b01d2fb339e37c49be1cee19facb1870"
+                },
+                "downloads": -1,
+                "filename": "mycgi-0.0.2.post2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "04c035a7bcf1cf6dd96d14018248139b",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 7105,
+                "upload_time": "2023-05-31T18:47:53",
+                "upload_time_iso_8601": "2023-05-31T18:47:53.385928Z",
+                "url": "https://files.pythonhosted.org/packages/d0/ed/457db8830e1cb6f4adcb04a382a605706cf962b81a5af0d2f7ced73dfb5c/mycgi-0.0.2.post2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "9bfa15df711ac87e869762d8ea0f2f5a3221e37aaa5b9fad2fa0693e6a164fae",
+                    "md5": "2f76b6967c79adaedbbac1c91c423d83",
+                    "sha256": "595960ef34d176e1cda94644ecc9ab1b90b93bec1aeb1028ab11567a8bbea7d8"
+                },
+                "downloads": -1,
+                "filename": "mycgi-0.0.2.post2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "2f76b6967c79adaedbbac1c91c423d83",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 5586,
+                "upload_time": "2023-05-31T18:47:54",
+                "upload_time_iso_8601": "2023-05-31T18:47:54.876201Z",
+                "url": "https://files.pythonhosted.org/packages/9b/fa/15df711ac87e869762d8ea0f2f5a3221e37aaa5b9fad2fa0693e6a164fae/mycgi-0.0.2.post2.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

@@ -38,7 +38,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18312859,
+        "last_serial": 18324777,
         "urls": [
             {
                 "comment_text": "",
@@ -91,7 +91,6 @@
             "author_email": "aebihara@nec.com",
             "bugtrack_url": null,
             "classifiers": [],
-            "description": "# SPRT-TANDEM-PyTorch\nThis repository contains the official PyTorch implementation of __SPRT-TANDEM__ ([ICASSP2023](https://arxiv.org/abs/2302.09810), [ICML2021](http://proceedings.mlr.press/v139/miyagawa21a.html), and [ICLR2021](https://openreview.net/forum?id=Rhsu5qD36cL)). __SPRT-TANDEM__ is a neuroscience-inspired sequential density ratio estimation (SDRE) algorithm that estimates log-likelihood ratios of two or more hypotheses for fast and accurate sequential data classification. For an intuitive understanding, please refer to the [SPRT-TANDEM tutorial](https://github.com/Akinori-F-Ebihara/SPRT-TANDEM_tutorial).\n\n<div align=\"center\">\n<figure>\n<img src =\"./images/SDRE_3class.png\" width=70%>  \n</figure>\n</div>\n<p align=\"center\">Figure 1: Example sequential density ratio estimation (SDRE) results on a 3-class multivariate Gaussian dataset.</p>\n\n\n## Quickstart\n1. To create a new SDRE dataset, run the [Generate_sequential_Gaussian_as_LMDB.ipynb](https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch/blob/main/notebooks/Generate_sequential_Gaussian_as_LMDB.ipynb) notebook.\n2. Edit the user editable block of [config_definition.py](https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch/blob/main/config/config_definition.py). Specify path to the dataset file created in step 1. Other frequently used entries include SUBPROJECT_NAME_PREFIX (to tag your experiment) and EXP_PHASE (to specify whether you are trying, tuning, or running statistics. See Hyperparameter Tuning for details).\n3. Execute [sprt_tandem_main.py](https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch/blob/main/sprt_tandem_main.py).\n\n## Tested Environment\n```\npython      3.8.10\ntorch       2.0.0\nnotebook    6.5.3\noptuna      3.1.0\n```\n\n## Requirements for Reading This Article\n\nThis article is best read using the Chrome browser with the [MathJax Plugin for GitHub](https://chrome.google.com/webstore/detail/mathjax-plugin-for-github/ioemnmodlmafdkllaclgeombjnmnbima?hl=en) installed.\n\n## Supported Network Architectures  \nWe support the two major architectures for processing time series data: Long short-term memory (LSTM, [1]) and Transformer [2]. To avoid the likelihood ratio saturation problem and approach asymptotic optimality (for details, see [Ebihara+, ICASSP2023](https://arxiv.org/abs/2302.09810)), we developed two novel models based on these architectures: B2Bssqrt-TANDEM (based on LSTM) and TANDEMformer (based on Transformer).\n### LSTM (B2Bsqrt-TANDEM, [ICASSP2023](https://arxiv.org/abs/2302.09810))  \nThe LSTM with the back-to-back square root (B2Bsqrt) activation function can be used by setting the following variables: \n\n- MODEL_BACKBONE: \"LSTM\"\n- ACTIVATION_OUTPUT: \"B2Bsqrt\"  \n\nIt's important to note that setting ACTIVATION_OUTPUT to \"tanh\" will result in a vanilla LSTM. The B2Bsqrt function was introduced in the ICASSP2023 paper as a way to precisely avoid the likelihood ratio saturation problem in SDRE.  \n\n\\begin{align}\nf_{\\mathrm{B2Bsqrt}}(x) := \\mathrm{sign}(x)(\\sqrt{\\alpha+|x|}-\\sqrt{\\alpha})\n\\end{align}\n\nWhere $\\alpha$ is a hyperparameter. \n\n<div align=\"center\">\n<figure>\n<img src =\"./images/Conceptual_figure_B2Bsqrt.png\" width=60%>  \n</figure>\n</div>\n<p align=\"center\">Figure 2: Conceptual figure showing the LSTM cell equipped with the B2Bsqrt activation function. B2Bsqrt can be used as an alternative to the tanh function. With an unbounded range and a finite gradient at the origin, B2Bsqrt prevents the saturation problem while enabling stable training.</p>\n\n\n### Transformer (TANDEMformer, [ICASSP2023](https://arxiv.org/abs/2302.09810))  \nThe Transformer is equipped with the Normalized Summation Pooling (NSP) layer, which is incorporated by default.\n\nLet $X_i^{(t, t+w)}$ be subtokens sampled with a sliding window of size $w \\in [N]$, and let $Z_i^{(t, t+w)}:=\\{z_i^{(s)}\\}^{t+w}_{s=t}$ be the subtokens mixed with self-attention. Given the Markov order $N$, the \\texttt{NSP} layer is defined as:\n\n\\begin{align}\nNSP(Z_i^{(t, t+w)}) := \\sum_{s=t}^{t+w}\\frac{z_i^{(s)}}{N+1}.\n\\end{align}\n\nTo use it, set the following variable:\n\n- MODEL_BACKBONE: \"Transformer\"\n\n\n<div align=\"center\">\n<figure>\n<img src =\"./images/Conceptual_figure_TANDEMformer.png\" width=50%>  \n</figure>\n</div>\n<p align=\"center\">Figure 3: Conceptual figure illustrates the Transformer block equipped with the NSP layer. First, tokens are extracted using a sliding window and then mixed with self-attention. The normalized summation pooling layer then takes the sum of the tokens and divides them by a constant, which is the maximum size of the sliding window.</p>  \n\n## Supported Loss Functions for SDRE\nSPRT-TANDEM uses both the loss for sequential likelihood ratio estimation (SDRE) and (multiplet-) cross-entropy loss ([ICLR2021](https://openreview.net/forum?id=Rhsu5qD36cL)). The two functions, LSEL and LLLR, are supported loss function for SDRE. To choose the loss function, set the following variables:\n\n- LLLR_VERSION: \"LSEL\" or \"LLLR\"\n\nAdditionally, modify the values of PARAM_LLR_LOSS and PARAM_MULTIPLET_LOSS to achieve the desired balance between likelihood estimation and cross-entropy loss.\n### Log-sum exponential loss (LSEL, [ICML2021](http://proceedings.mlr.press/v139/miyagawa21a.html))  \n\n\\begin{align}\n\\hat{L}_{\\mathrm{\\text{LSEL}}} (\\mathbb{\\theta}; S) := \\mathbb{E} \\left[ \\log \\left(   1 + \\sum\\_{l(\\neq k)} e^{ -\\hat{\\lambda}\\_{k,l}   ( X_i^{(1,t)}; \\theta)  }\\right)  \\right]\n\\end{align}\n\n<!-- 1 + \\sum_{l(\\neq k)} e^{ - \\hat{\\lambda}_{k l} ( X_i^{(1,t)}; \\theta) } -->\n\n### Loss for log-likelihood ratio estimation (LLLR, [ICLR2021](https://openreview.net/forum?id=Rhsu5qD36cL))  \n\n\\begin{align}\n\\hat{L}_{\\mathrm{\\text{LLLR}}} (\\mathbb{\\theta}; S) := \\mathbb{E} \\left[ \\left| y - \\sigma\\left( \\hat{\\lambda}\\_{k,l}   ( X_i^{(1,t)}; \\theta) \\right) \\right| \\right]\n\\end{align}\n\n## Order N of Markov assumption\nThe Markov order $N$ is used to determine the length of the sliding window that extracts a subset from the entire feature vector of a time series. $N$ is a convenient hyperparameter that incorporates prior knowledge of the time series. An optimal $N$ can be found either based on the \\textit{specific time scale} or through hyperparameter tuning. The specific time scale characterizes the data class, e.g., long temporal action such as UCF101 has a long specific time scale, while a spoofing attack such as SiW has a short specific time scale (because one frame can have sufficient information of the attack). Setting $N$ equal to the specific time scale usually works best. Alternatively, $N$ can be objectively chosen using a hyperparameter tuning algorithm such as Optuna, just like other hyperparameters. Because $N$ is only related to the temporal integrator after feature extraction, optimizing it is not computationally expensive.\n\n<div align=\"center\">\n<figure>\n<img src =\"./images/Conceptual_figure_streamline.png\" width=70%>  \n</figure>\n</div>\n<p align=\"center\">Figure 4: Conceptual figure showing the streamline of online SDRE. A subset of the time series' feature vectors is extracted based on the order of Markov assumption, N. </p>\n\nThe log-likelihood ratio is estimated from a subset of the feature vectors extracted using a sliding window of size $N$. This estimation is classification-based. Specifically, the temporal integrator is trained to output class logits, which are then used to update the log-likelihood ratio at each time step based on the TANDEM formula.\n### TANDEM formula ([ICLR2021](https://openreview.net/forum?id=Rhsu5qD36cL))\n\\begin{align}\n&\\ \\log \\left(\n\\frac{p(x^{(1)},x^{(2)}, ..., x^{(t)}| y=1)}{p(x^{(1)},x^{(2)}, ..., x^{(t)}| y=0)}\n\\right)\\nonumber \\newline\n= &\\sum_{s=N+1}^{t} \\log \\left(\n\\frac{\np(y=1| x^{(s-N)}, ...,x^{(s)})\n}{\np(y=0| x^{(s-N)}, ...,x^{(s)})\n}\n\\right) - \\sum_{s=N+2}^{t} \\log \\left(\n\\frac{\np(y=1| x^{(s-N)}, ...,x^{(s-1)})\n}{\np(y=0| x^{(s-N)}, ...,x^{(s-1)})\n}\n\\right) \\nonumber \\newline\n& - \\log\\left( \\frac{p(y=1)}{p(y=0)} \\right)\n\\end{align}\n\n## Experiment Phases\nEXP_PHASE must be set as one of the followings:\n- try: All the hyperparameters are fixed as defined in [config_definition.py](https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch/blob/main/config/config_definition.py). Use it for debugging purposes.\n- tuning: Enter hyperparameter tuning mode. Hyperparameters with corresponding search spaces will be overwritten with suggested parameters. See the Hyperparameter Tuning section for more details.\n- stat: All the hyperparameters are fixed as defined in [config_definition.py](https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch/blob/main/config/config_definition.py). Repeat training for the specified number of times with NUM_TRIALS to test reproducibility (e.g., plot error bars, run a statistical test). \nThe subproject name will be suffixed with the EXP_PHASE to prevent contamination of results from different phases.\n\n## Hyperparameter Tuning\nOur project supports Optuna [3] for hyperparameter tuning. To begin, edit the following variables in the [config_definition.py](https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch/blob/main/config/config_definition.py):\n- EXP_PHASE: set as \"tuning\" to enter hyperparameter tuning mode.\n- NUM_TRIALS: set an integer that specifies the number of hyperparameter sets to experiment with.\n- PRUNER_NAME (optional): select a pruner supported by Optuna, or set it to \"None.\"    \nAlso, set PRUNER_STARTUP_TRIALS, PRUNER_WARMUP_STEPS, and PRUNER_INTERVAL STEPS. For details, see the [official Optuna docs](https://optuna.readthedocs.io/en/stable/reference/generated/optuna.pruners.MedianPruner.html#optuna.pruners.MedianPruner).  \n\nNext, customize the hyperparameter space defined with variables that have prefix \"SPACE_\". For example, [config_definition.py](https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch/blob/main/config/config_definition.py) contains an entry like this:\n\n```\n    \"SPACE_ORDER_SPRT\": {\n        \"PARAM_SPACE\": \"int\",\n        \"LOW\": 0,\n        \"HIGH\": 5,  # 10\n        \"STEP\": 1,\n        \"LOG\": False,\n    }\n```\nThe above entry specifies the search space of a hyperparameter \"ORDER_SPRT.\" The key \"PARAM_SPACE\" must be one of the followings:  \n - float: use suggest_float to suggest a float of range [LOW, HIGH], separated by STEP. If LOG=True, a float is sampled from logspace. However, if LOG=True, set STEP=None.\n - int: use suggest_int to suggest an integer of range [LOW, HIGH], separated by STEP. STEP should be divisor of the range; otherwise, HIGH will be automatically modified. If LOG=True, an int is sampled from logspace. However, if LOG=True, set STEP=None.\n - categorical: use suggest_categorical to select one category from CATEGORY_SET. Note that if the parameter is continuous (e.g., 1, 2, 3, ..., or 1.0, 0.1, 0.001, ...), it is advisable to use float or int space because suggest_categorical treats each category independently.\n\nFor more informatin, please refer to the [official Optuna docs](https://optuna.readthedocs.io/en/stable/reference/generated/optuna.trial.Trial.html).   \n\nTo select specific values for a hyperparameter, use entries that start with \"SPACE_\". These values will be assigned to the hyperparameter whose name is defined after \"SPACE_\" (for example, in the above example, \"ORDER_SPRT\").\n\n## Command-line Arguments  \nFrequently-used variables can be overwritten by specifying command-line arguments. \n```\noptions:\n  -h, --help            show this help message and exit\n  -g GPU, --gpu         set GPU, gpu number\n  -t NUM_TRIALS, --num_trials \n                        set NUM_TRIALS, number of trials\n  -i NUM_ITER, --num_iter \n                        set NUM_ITER, number of iterations\n  -e EXP_PHASE, --exp_phase EXP_PHASE\n                        phase of an experiment, \"try,\" \"tuning,\" or \"stat\"\n  -m MODEL, --model MODEL\n                        set model backbone, \"LSTM\", or \"Transformer\"\n  -o OPTIMIZE, --optimize OPTIMIZE\n                        set optimization target: \"MABS\", \"MacRec\", \"ausat_confmx\", or \"ALL\"\n  -n NAME, --name NAME  set the subproject name\n  --flip_memory_loading\n                        set a boolean flag indicating whether to load onto memory\n\n```\n## Logging\nUnder the [logs](https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch/blob/main/logs) folder, you will see a subfolder like this:\n```\n{SUBPROJECT_SUFFIX}_offset{DATA_SEPARATION}_optim{OPTIMIZATION_TARGET}_{EXP_PHASE}\n```\ninside of which the following four folders will be created.\n- Optuna_databases: Optuna .db file is stored here.\n- TensorBoard_events: TensorBard event files are saved here.\n- checkpoints: trained parameters are saved as .py files when the best optimation target value is updated.\n- stdout_logs: standard output strings are saved as .log files.\n\nThe plot below shows an example image saved in a TensorBoard event file. Note that you can avoid saving figures by setting IS_SAVE_FIGURE=False.\n\n<div align=\"center\">\n<figure>\n<img src =\"./images/example_tensorboard.png\" width=100%>  \n</figure>\n</div>\n<p align=\"center\">Figure 5: Example image saved in a TensorBoard event file. (left and center) Estimated LLR trajectories and Ground-truth LLR trajectories of 3-class multidimensional Gaussian dataset. (right) Speed-accuracy tradeoff (SAT) curve calculated by running the SPRT algorithm.</p>\n\nNote that \"Class $a$ vs. $b$ at $y=a$\" indicates that the plotted LLR shows $\\log{p(X|y=a) / p(X|y=b)}$, when the ground truth label is $y=a$. \n\n## Citation\n___Please cite the orignal paper(s) if you use the whole or a part of our codes.___\n\n```\n# ICASSP2023\n@inproceedings{saturation_problem,\n  title =     {Toward Asymptotic Optimality: Sequential Unsupervised Regression of Density Ratio for Early Classification},\n  author =    {Akinori F Ebihara and Taiki Miyagawa and Kazuyuki Sakurai and Hitoshi Imaoka},\n  booktitle = {IEEE International Conference on Acoustics, Speech and Signal Processing},\n  year =      {2023},\n}\n\n# ICML2021\n@inproceedings{MSPRT-TANDEM,\n  title = \t  {The Power of Log-Sum-Exp: Sequential Density Ratio Matrix Estimation for Speed-Accuracy Optimization},\n  author =    {Miyagawa, Taiki and Ebihara, Akinori F},\n  booktitle = {Proceedings of the 38th International Conference on Machine Learning},\n  pages = \t  {7792--7804},\n  year = \t  {2021},\n  url = \t  {http://proceedings.mlr.press/v139/miyagawa21a.html}\n}\n\n# ICLR2021\n@inproceedings{SPRT-TANDEM,\n  title={Sequential Density Ratio Estimation for Simultaneous Optimization of Speed and Accuracy},\n  author={Akinori F Ebihara and Taiki Miyagawa and Kazuyuki Sakurai and Hitoshi Imaoka},\n  booktitle={International Conference on Learning Representations},\n  year={2021},\n  url={https://openreview.net/forum?id=Rhsu5qD36cL}\n}\n```\n\n## References\n1. S. Hochreiter and J. Schmidhuber, \u201cLong short-term memory,\u201d Neural Comput., vol. 9, no. 8, pp. 1735\u20131780, 1997.\n2. T. Akiba, S. Sano, T. Yanase, T. Ohta, and M. Koyama, \u201cOptuna: A next-generation hyperparameter optimization framework,\u201d in KDD, 2019, p. 2623\u20132631.\n3. A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, L. u. Kaiser, and I. Polosukhin, \u201cAttention is all you need,\u201d in NeurIPS, 2017, vol. 30, pp. 5998\u20136008.\n\n## Contacts\nSPRT-TANDEM marks its 4th anniversary. What started as a small project has now become a huge undertaking that we never imagined. Due to its complexity, it is difficult for me to explain all the details in this README section. Please feel free to reach out to me anytime if you have any questions.\n- email: aebihara[at]nec.com\n- twitter: [@non_iid](http/twitter.com/non_iid)\n- GitHub issues: see the link above or click [here](https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch/issues)\n\n\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -125,7 +124,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18312859,
+        "last_serial": 18324777,
         "urls": [
             {
                 "comment_text": "",
@@ -166,6 +165,526 @@
                 "upload_time": "2023-05-31T05:33:53",
                 "upload_time_iso_8601": "2023-05-31T05:33:53.727462Z",
                 "url": "https://files.pythonhosted.org/packages/07/a0/84fef6b7e97c59b65e7c503a42cc23522eef5d9ce6cacbb1e009dd501f72/SPRT-TANDEM-0.1.2.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.3": {
+        "info": {
+            "author": "Akinori F. Ebihara",
+            "author_email": "aebihara@nec.com",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch",
+            "keywords": "Sequential Probability Ratio Test,likelihood ratio,density ratio estimation,early classification,artificial intelligence,machine learning",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "SPRT-TANDEM",
+            "package_url": "https://pypi.org/project/SPRT-TANDEM/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/SPRT-TANDEM/",
+            "project_urls": {
+                "Homepage": "https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch"
+            },
+            "release_url": "https://pypi.org/project/SPRT-TANDEM/0.1.3/",
+            "requires_dist": [
+                "loguru",
+                "optuna",
+                "torch",
+                "torchinfo"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "SPRT-TANDEM for sequential density ratio estimation to simultaneously optimize both speed and accuracy of early-classification.",
+            "version": "0.1.3",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18324777,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "03107ffc44de3f46aa973944fbd6e66631fd3505ecdabfea2762ef0a1b42c5d3",
+                    "md5": "a45bafb063b743248b08e29feb44a50f",
+                    "sha256": "fb1475c309587f249dd7c80367bb30ce77bb9154bcc1ca8e7962762b28fa2737"
+                },
+                "downloads": -1,
+                "filename": "SPRT_TANDEM-0.1.3-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "a45bafb063b743248b08e29feb44a50f",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 67476,
+                "upload_time": "2023-05-31T19:52:51",
+                "upload_time_iso_8601": "2023-05-31T19:52:51.594910Z",
+                "url": "https://files.pythonhosted.org/packages/03/10/7ffc44de3f46aa973944fbd6e66631fd3505ecdabfea2762ef0a1b42c5d3/SPRT_TANDEM-0.1.3-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "288b0b0a72ec49514702b019303d3cf2f650c35a38b6e6610e31db27502e8986",
+                    "md5": "5eaa1b18b9b789e6a9016cd68ee120ef",
+                    "sha256": "0506e22d71ae8edfb28181a5034fdfcc394dc71706b8ab7e1c64014ba2546db5"
+                },
+                "downloads": -1,
+                "filename": "SPRT-TANDEM-0.1.3.tar.gz",
+                "has_sig": false,
+                "md5_digest": "5eaa1b18b9b789e6a9016cd68ee120ef",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 61121,
+                "upload_time": "2023-05-31T19:52:54",
+                "upload_time_iso_8601": "2023-05-31T19:52:54.364998Z",
+                "url": "https://files.pythonhosted.org/packages/28/8b/0b0a72ec49514702b019303d3cf2f650c35a38b6e6610e31db27502e8986/SPRT-TANDEM-0.1.3.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.4": {
+        "info": {
+            "author": "Akinori F. Ebihara",
+            "author_email": "aebihara@nec.com",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch",
+            "keywords": "Sequential Probability Ratio Test,likelihood ratio,density ratio estimation,early classification,artificial intelligence,machine learning",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "SPRT-TANDEM",
+            "package_url": "https://pypi.org/project/SPRT-TANDEM/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/SPRT-TANDEM/",
+            "project_urls": {
+                "Homepage": "https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch"
+            },
+            "release_url": "https://pypi.org/project/SPRT-TANDEM/0.1.4/",
+            "requires_dist": [
+                "loguru",
+                "optuna",
+                "torch",
+                "torchinfo"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "SPRT-TANDEM for sequential density ratio estimation to simultaneously optimize both speed and accuracy of early-classification.",
+            "version": "0.1.4",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18324777,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "1970b72b91482e5f13d832badcf0fb0d3c0ac872a5564c57cf922c4ff9fd1235",
+                    "md5": "cddbdca8d924e1bd890d974b0b4086ac",
+                    "sha256": "7833f50aebd53d0a9f9f0df026199387da175db3fb5865956af2f3ae7baf4ffc"
+                },
+                "downloads": -1,
+                "filename": "SPRT_TANDEM-0.1.4-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "cddbdca8d924e1bd890d974b0b4086ac",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 67556,
+                "upload_time": "2023-05-31T20:34:44",
+                "upload_time_iso_8601": "2023-05-31T20:34:44.009435Z",
+                "url": "https://files.pythonhosted.org/packages/19/70/b72b91482e5f13d832badcf0fb0d3c0ac872a5564c57cf922c4ff9fd1235/SPRT_TANDEM-0.1.4-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "48361fadfaad81c5e2d775e4e0b6a1993fcfb74bcabdaae0c07e552d015bf61c",
+                    "md5": "9a85fb1a4e969edcdcb688cc6f1b6838",
+                    "sha256": "97db1776d3f5a32fdce48a1756c42ae15a6ec2ac956e7d3511039d3f316ca1f0"
+                },
+                "downloads": -1,
+                "filename": "SPRT-TANDEM-0.1.4.tar.gz",
+                "has_sig": false,
+                "md5_digest": "9a85fb1a4e969edcdcb688cc6f1b6838",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 61179,
+                "upload_time": "2023-05-31T20:34:47",
+                "upload_time_iso_8601": "2023-05-31T20:34:47.291461Z",
+                "url": "https://files.pythonhosted.org/packages/48/36/1fadfaad81c5e2d775e4e0b6a1993fcfb74bcabdaae0c07e552d015bf61c/SPRT-TANDEM-0.1.4.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.5": {
+        "info": {
+            "author": "Akinori F. Ebihara",
+            "author_email": "aebihara@nec.com",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch",
+            "keywords": "Sequential Probability Ratio Test,likelihood ratio,density ratio estimation,early classification,artificial intelligence,machine learning",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "SPRT-TANDEM",
+            "package_url": "https://pypi.org/project/SPRT-TANDEM/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/SPRT-TANDEM/",
+            "project_urls": {
+                "Homepage": "https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch"
+            },
+            "release_url": "https://pypi.org/project/SPRT-TANDEM/0.1.5/",
+            "requires_dist": [
+                "loguru",
+                "optuna",
+                "torch",
+                "torchinfo"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "SPRT-TANDEM for sequential density ratio estimation to simultaneously optimize both speed and accuracy of early-classification.",
+            "version": "0.1.5",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18324777,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "854d039389a81fc8db8e7430bf61e3b620a35f19baffb361975d094e3a77d279",
+                    "md5": "7f7d8f21302af108d8a4a9d4d99c9be1",
+                    "sha256": "85fa9ef7950b9a6e32efa4ebacea818e3c06c4980544e4ffe9c17e5e0ea75526"
+                },
+                "downloads": -1,
+                "filename": "SPRT_TANDEM-0.1.5-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "7f7d8f21302af108d8a4a9d4d99c9be1",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 67556,
+                "upload_time": "2023-05-31T20:45:35",
+                "upload_time_iso_8601": "2023-05-31T20:45:35.395038Z",
+                "url": "https://files.pythonhosted.org/packages/85/4d/039389a81fc8db8e7430bf61e3b620a35f19baffb361975d094e3a77d279/SPRT_TANDEM-0.1.5-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "57898a6d37a0ec4142a63aee58ccc53ee19db3f4b87901ca39806f993d7c572c",
+                    "md5": "04e9df9e0fa6ed7efab501137889c345",
+                    "sha256": "d0a49379d78678727644d6c66b10ee1cae4ddc475eed7d86312aad44093c8251"
+                },
+                "downloads": -1,
+                "filename": "SPRT-TANDEM-0.1.5.tar.gz",
+                "has_sig": false,
+                "md5_digest": "04e9df9e0fa6ed7efab501137889c345",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 61163,
+                "upload_time": "2023-05-31T20:45:38",
+                "upload_time_iso_8601": "2023-05-31T20:45:38.889857Z",
+                "url": "https://files.pythonhosted.org/packages/57/89/8a6d37a0ec4142a63aee58ccc53ee19db3f4b87901ca39806f993d7c572c/SPRT-TANDEM-0.1.5.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.6": {
+        "info": {
+            "author": "Akinori F. Ebihara",
+            "author_email": "aebihara@nec.com",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch",
+            "keywords": "Sequential Probability Ratio Test,likelihood ratio,density ratio estimation,early classification,artificial intelligence,machine learning",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "SPRT-TANDEM",
+            "package_url": "https://pypi.org/project/SPRT-TANDEM/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/SPRT-TANDEM/",
+            "project_urls": {
+                "Homepage": "https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch"
+            },
+            "release_url": "https://pypi.org/project/SPRT-TANDEM/0.1.6/",
+            "requires_dist": [
+                "loguru",
+                "optuna",
+                "torch",
+                "torchinfo",
+                "tqdm"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "SPRT-TANDEM for sequential density ratio estimation to simultaneously optimize both speed and accuracy of early-classification.",
+            "version": "0.1.6",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18324777,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5694fe9ac483626f3c26ebe9c2f63feab7a256f75429e0b0e9901fdfdaaac10f",
+                    "md5": "129207c209ae663498b518c485e29da2",
+                    "sha256": "30a988a552adc15d51d257e9cf02a27344bc2368c0e79543dd0dd468e7d03a67"
+                },
+                "downloads": -1,
+                "filename": "SPRT_TANDEM-0.1.6-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "129207c209ae663498b518c485e29da2",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 67546,
+                "upload_time": "2023-05-31T23:48:20",
+                "upload_time_iso_8601": "2023-05-31T23:48:20.635519Z",
+                "url": "https://files.pythonhosted.org/packages/56/94/fe9ac483626f3c26ebe9c2f63feab7a256f75429e0b0e9901fdfdaaac10f/SPRT_TANDEM-0.1.6-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ab47e02c4b28f80fbeebab59c1c4ce31e32ed400f31da82cc93732297682779b",
+                    "md5": "e9aeebed659d1c58ba716163e4d5769a",
+                    "sha256": "1b2ff175f86e13415942b30a8225556a304a01c95daf7a80be980341d0c6d66f"
+                },
+                "downloads": -1,
+                "filename": "SPRT-TANDEM-0.1.6.tar.gz",
+                "has_sig": false,
+                "md5_digest": "e9aeebed659d1c58ba716163e4d5769a",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 61060,
+                "upload_time": "2023-05-31T23:48:23",
+                "upload_time_iso_8601": "2023-05-31T23:48:23.377060Z",
+                "url": "https://files.pythonhosted.org/packages/ab/47/e02c4b28f80fbeebab59c1c4ce31e32ed400f31da82cc93732297682779b/SPRT-TANDEM-0.1.6.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.7": {
+        "info": {
+            "author": "Akinori F. Ebihara",
+            "author_email": "aebihara@nec.com",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch",
+            "keywords": "Sequential Probability Ratio Test,likelihood ratio,density ratio estimation,early classification,artificial intelligence,machine learning",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "SPRT-TANDEM",
+            "package_url": "https://pypi.org/project/SPRT-TANDEM/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/SPRT-TANDEM/",
+            "project_urls": {
+                "Homepage": "https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch"
+            },
+            "release_url": "https://pypi.org/project/SPRT-TANDEM/0.1.7/",
+            "requires_dist": [
+                "loguru",
+                "optuna",
+                "torch",
+                "torchinfo",
+                "tqdm"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "SPRT-TANDEM for sequential density ratio estimation to simultaneously optimize both speed and accuracy of early-classification.",
+            "version": "0.1.7",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18324777,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "af1b96c3e3f160ff64135183b697ea108e60b892f7c40162b6d2ff2d12176451",
+                    "md5": "c5500923fbda54de2921e9828a66f51f",
+                    "sha256": "c60f14af8184c53c321479e713a8dd0a39d84866a6ec8826524086281a824f06"
+                },
+                "downloads": -1,
+                "filename": "SPRT_TANDEM-0.1.7-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "c5500923fbda54de2921e9828a66f51f",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 67542,
+                "upload_time": "2023-06-01T00:13:11",
+                "upload_time_iso_8601": "2023-06-01T00:13:11.866472Z",
+                "url": "https://files.pythonhosted.org/packages/af/1b/96c3e3f160ff64135183b697ea108e60b892f7c40162b6d2ff2d12176451/SPRT_TANDEM-0.1.7-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d7574bd4a9711c3dba748f2d6bf805ea384c588bca3b1123caa4d6d934033a84",
+                    "md5": "c15e98a88909e31fdf51678fc6a6dfda",
+                    "sha256": "510cc7ab591987fb7cf46b7f00762b5aa4a055bd21f2377d8e9078375e19b667"
+                },
+                "downloads": -1,
+                "filename": "SPRT-TANDEM-0.1.7.tar.gz",
+                "has_sig": false,
+                "md5_digest": "c15e98a88909e31fdf51678fc6a6dfda",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 61058,
+                "upload_time": "2023-06-01T00:13:14",
+                "upload_time_iso_8601": "2023-06-01T00:13:14.616369Z",
+                "url": "https://files.pythonhosted.org/packages/d7/57/4bd4a9711c3dba748f2d6bf805ea384c588bca3b1123caa4d6d934033a84/SPRT-TANDEM-0.1.7.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.8": {
+        "info": {
+            "author": "Akinori F. Ebihara",
+            "author_email": "aebihara@nec.com",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "# SPRT-TANDEM-PyTorch\nThis repository contains the official PyTorch implementation of __SPRT-TANDEM__ ([ICASSP2023](https://arxiv.org/abs/2302.09810), [ICML2021](http://proceedings.mlr.press/v139/miyagawa21a.html), and [ICLR2021](https://openreview.net/forum?id=Rhsu5qD36cL)). __SPRT-TANDEM__ is a neuroscience-inspired sequential density ratio estimation (SDRE) algorithm that estimates log-likelihood ratios of two or more hypotheses for fast and accurate sequential data classification. For an intuitive understanding, please refer to the [SPRT-TANDEM tutorial](https://github.com/Akinori-F-Ebihara/SPRT-TANDEM_tutorial).\n\n\n## Quickstart\n1. To create a new SDRE dataset, run the [Generate_sequential_Gaussian_as_LMDB.ipynb](https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch/blob/main/notebooks/Generate_sequential_Gaussian_as_LMDB.ipynb) notebook.\n2. Edit the user editable block of [config_definition.py](https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch/blob/main/config/config_definition.py). Specify path to the dataset file created in step 1. Other frequently used entries include SUBPROJECT_NAME_PREFIX (to tag your experiment) and EXP_PHASE (to specify whether you are trying, tuning, or running statistics. See Hyperparameter Tuning for details).\n3. Execute [sprt_tandem_main.py](https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch/blob/main/sprt_tandem_main.py).\n\n## Tested Environment\n```\npython      3.8.10\ntorch       2.0.0\nnotebook    6.5.3\noptuna      3.1.0\n```\n## Supported Network Architectures  \nWe support the two major architectures for processing time series data: Long short-term memory (LSTM, [1]) and Transformer [2]. To avoid the likelihood ratio saturation problem and approach asymptotic optimality (for details, see [Ebihara+, ICASSP2023](https://arxiv.org/abs/2302.09810)), we developed two novel models based on these architectures: B2Bssqrt-TANDEM (based on LSTM) and TANDEMformer (based on Transformer).\n### LSTM (B2Bsqrt-TANDEM, [ICASSP2023](https://arxiv.org/abs/2302.09810))  \nThe LSTM with the back-to-back square root (B2Bsqrt) activation function can be used by setting the following variables: \n\n- MODEL_BACKBONE: \"LSTM\"\n- ACTIVATION_OUTPUT: \"B2Bsqrt\"  \n\nIt's important to note that setting ACTIVATION_OUTPUT to \"tanh\" will result in a vanilla LSTM. The B2Bsqrt function was introduced in the ICASSP2023 paper as a way to precisely avoid the likelihood ratio saturation problem in SDRE.  \n\n\\begin{align}\nf_{\\mathrm{B2Bsqrt}}(x) := \\mathrm{sign}(x)(\\sqrt{\\alpha+|x|}-\\sqrt{\\alpha})\n\\end{align}\n\nWhere $\\alpha$ is a hyperparameter. \n\n\n### Transformer (TANDEMformer, [ICASSP2023](https://arxiv.org/abs/2302.09810))  \nThe Transformer is equipped with the Normalized Summation Pooling (NSP) layer, which is incorporated by default.\n\nLet $X_i^{(t, t+w)}$ be subtokens sampled with a sliding window of size $w \\in [N]$, and let $Z_i^{(t, t+w)}:=\\{z_i^{(s)}\\}^{t+w}_{s=t}$ be the subtokens mixed with self-attention. Given the Markov order $N$, the \\texttt{NSP} layer is defined as:\n\n\\begin{align}\nNSP(Z_i^{(t, t+w)}) := \\sum_{s=t}^{t+w}\\frac{z_i^{(s)}}{N+1}.\n\\end{align}\n\nTo use it, set the following variable:\n\n- MODEL_BACKBONE: \"Transformer\"\n\n\n\n## Supported Loss Functions for SDRE\nSPRT-TANDEM uses both the loss for sequential likelihood ratio estimation (SDRE) and (multiplet-) cross-entropy loss ([ICLR2021](https://openreview.net/forum?id=Rhsu5qD36cL)). The two functions, LSEL and LLLR, are supported loss function for SDRE. To choose the loss function, set the following variables:\n\n- LLLR_VERSION: \"LSEL\" or \"LLLR\"\n\nAdditionally, modify the values of PARAM_LLR_LOSS and PARAM_MULTIPLET_LOSS to achieve the desired balance between likelihood estimation and cross-entropy loss.\n### Log-sum exponential loss (LSEL, [ICML2021](http://proceedings.mlr.press/v139/miyagawa21a.html))  \n\n\\begin{align}\n\\hat{L}_{\\mathrm{\\text{LSEL}}} (\\mathbb{\\theta}; S) := \\mathbb{E} \\left[ \\log \\left(   1 + \\sum\\_{l(\\neq k)} e^{ -\\hat{\\lambda}\\_{k,l}   ( X_i^{(1,t)}; \\theta)  }\\right)  \\right]\n\\end{align}\n\n<!-- 1 + \\sum_{l(\\neq k)} e^{ - \\hat{\\lambda}_{k l} ( X_i^{(1,t)}; \\theta) } -->\n\n### Loss for log-likelihood ratio estimation (LLLR, [ICLR2021](https://openreview.net/forum?id=Rhsu5qD36cL))  \n\n\\begin{align}\n\\hat{L}_{\\mathrm{\\text{LLLR}}} (\\mathbb{\\theta}; S) := \\mathbb{E} \\left[ \\left| y - \\sigma\\left( \\hat{\\lambda}\\_{k,l}   ( X_i^{(1,t)}; \\theta) \\right) \\right| \\right]\n\\end{align}\n\n## Order N of Markov assumption\nThe Markov order $N$ is used to determine the length of the sliding window that extracts a subset from the entire feature vector of a time series. $N$ is a convenient hyperparameter that incorporates prior knowledge of the time series. An optimal $N$ can be found either based on the \\textit{specific time scale} or through hyperparameter tuning. The specific time scale characterizes the data class, e.g., long temporal action such as UCF101 has a long specific time scale, while a spoofing attack such as SiW has a short specific time scale (because one frame can have sufficient information of the attack). Setting $N$ equal to the specific time scale usually works best. Alternatively, $N$ can be objectively chosen using a hyperparameter tuning algorithm such as Optuna, just like other hyperparameters. Because $N$ is only related to the temporal integrator after feature extraction, optimizing it is not computationally expensive.\n\n\nThe log-likelihood ratio is estimated from a subset of the feature vectors extracted using a sliding window of size $N$. This estimation is classification-based. Specifically, the temporal integrator is trained to output class logits, which are then used to update the log-likelihood ratio at each time step based on the TANDEM formula.\n### TANDEM formula ([ICLR2021](https://openreview.net/forum?id=Rhsu5qD36cL))\n\\begin{align}\n&\\ \\log \\left(\n\\frac{p(x^{(1)},x^{(2)}, ..., x^{(t)}| y=1)}{p(x^{(1)},x^{(2)}, ..., x^{(t)}| y=0)}\n\\right)\\nonumber \\newline\n= &\\sum_{s=N+1}^{t} \\log \\left(\n\\frac{\np(y=1| x^{(s-N)}, ...,x^{(s)})\n}{\np(y=0| x^{(s-N)}, ...,x^{(s)})\n}\n\\right) - \\sum_{s=N+2}^{t} \\log \\left(\n\\frac{\np(y=1| x^{(s-N)}, ...,x^{(s-1)})\n}{\np(y=0| x^{(s-N)}, ...,x^{(s-1)})\n}\n\\right) \\nonumber \\newline\n& - \\log\\left( \\frac{p(y=1)}{p(y=0)} \\right)\n\\end{align}\n\n## Experiment Phases\nEXP_PHASE must be set as one of the followings:\n- try: All the hyperparameters are fixed as defined in [config_definition.py](https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch/blob/main/config/config_definition.py). Use it for debugging purposes.\n- tuning: Enter hyperparameter tuning mode. Hyperparameters with corresponding search spaces will be overwritten with suggested parameters. See the Hyperparameter Tuning section for more details.\n- stat: All the hyperparameters are fixed as defined in [config_definition.py](https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch/blob/main/config/config_definition.py). Repeat training for the specified number of times with NUM_TRIALS to test reproducibility (e.g., plot error bars, run a statistical test). \nThe subproject name will be suffixed with the EXP_PHASE to prevent contamination of results from different phases.\n\n## Hyperparameter Tuning\nOur project supports Optuna [3] for hyperparameter tuning. To begin, edit the following variables in the [config_definition.py](https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch/blob/main/config/config_definition.py):\n- EXP_PHASE: set as \"tuning\" to enter hyperparameter tuning mode.\n- NUM_TRIALS: set an integer that specifies the number of hyperparameter sets to experiment with.\n- PRUNER_NAME (optional): select a pruner supported by Optuna, or set it to \"None.\"    \nAlso, set PRUNER_STARTUP_TRIALS, PRUNER_WARMUP_STEPS, and PRUNER_INTERVAL STEPS. For details, see the [official Optuna docs](https://optuna.readthedocs.io/en/stable/reference/generated/optuna.pruners.MedianPruner.html#optuna.pruners.MedianPruner).  \n\nNext, customize the hyperparameter space defined with variables that have prefix \"SPACE_\". For example, [config_definition.py](https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch/blob/main/config/config_definition.py) contains an entry like this:\n\n```\n    \"SPACE_ORDER_SPRT\": {\n        \"PARAM_SPACE\": \"int\",\n        \"LOW\": 0,\n        \"HIGH\": 5,  # 10\n        \"STEP\": 1,\n        \"LOG\": False,\n    }\n```\nThe above entry specifies the search space of a hyperparameter \"ORDER_SPRT.\" The key \"PARAM_SPACE\" must be one of the followings:  \n - float: use suggest_float to suggest a float of range [LOW, HIGH], separated by STEP. If LOG=True, a float is sampled from logspace. However, if LOG=True, set STEP=None.\n - int: use suggest_int to suggest an integer of range [LOW, HIGH], separated by STEP. STEP should be divisor of the range; otherwise, HIGH will be automatically modified. If LOG=True, an int is sampled from logspace. However, if LOG=True, set STEP=None.\n - categorical: use suggest_categorical to select one category from CATEGORY_SET. Note that if the parameter is continuous (e.g., 1, 2, 3, ..., or 1.0, 0.1, 0.001, ...), it is advisable to use float or int space because suggest_categorical treats each category independently.\n\nFor more informatin, please refer to the [official Optuna docs](https://optuna.readthedocs.io/en/stable/reference/generated/optuna.trial.Trial.html).   \n\nTo select specific values for a hyperparameter, use entries that start with \"SPACE_\". These values will be assigned to the hyperparameter whose name is defined after \"SPACE_\" (for example, in the above example, \"ORDER_SPRT\").\n\n## Command-line Arguments  \nFrequently-used variables can be overwritten by specifying command-line arguments. \n```\noptions:\n  -h, --help            show this help message and exit\n  -g GPU, --gpu         set GPU, gpu number\n  -t NUM_TRIALS, --num_trials \n                        set NUM_TRIALS, number of trials\n  -i NUM_ITER, --num_iter \n                        set NUM_ITER, number of iterations\n  -e EXP_PHASE, --exp_phase EXP_PHASE\n                        phase of an experiment, \"try,\" \"tuning,\" or \"stat\"\n  -m MODEL, --model MODEL\n                        set model backbone, \"LSTM\", or \"Transformer\"\n  -o OPTIMIZE, --optimize OPTIMIZE\n                        set optimization target: \"MABS\", \"MacRec\", \"ausat_confmx\", or \"ALL\"\n  -n NAME, --name NAME  set the subproject name\n  --flip_memory_loading\n                        set a boolean flag indicating whether to load onto memory\n\n```\n## Logging\nUnder the [logs](https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch/blob/main/logs) folder, you will see a subfolder like this:\n```\n{SUBPROJECT_SUFFIX}_offset{DATA_SEPARATION}_optim{OPTIMIZATION_TARGET}_{EXP_PHASE}\n```\ninside of which the following four folders will be created.\n- Optuna_databases: Optuna .db file is stored here.\n- TensorBoard_events: TensorBard event files are saved here.\n- checkpoints: trained parameters are saved as .py files when the best optimation target value is updated.\n- stdout_logs: standard output strings are saved as .log files.\n\nThe plot below shows an example image saved in a TensorBoard event file. Note that you can avoid saving figures by setting IS_SAVE_FIGURE=False.\n\n\nNote that \"Class $a$ vs. $b$ at $y=a$\" indicates that the plotted LLR shows $\\log{p(X|y=a) / p(X|y=b)}$, when the ground truth label is $y=a$. \n\n## Citation\n___Please cite the orignal paper(s) if you use the whole or a part of our codes.___\n\n```\n# ICASSP2023\n@inproceedings{saturation_problem,\n  title =     {Toward Asymptotic Optimality: Sequential Unsupervised Regression of Density Ratio for Early Classification},\n  author =    {Akinori F Ebihara and Taiki Miyagawa and Kazuyuki Sakurai and Hitoshi Imaoka},\n  booktitle = {IEEE International Conference on Acoustics, Speech and Signal Processing},\n  year =      {2023},\n}\n\n# ICML2021\n@inproceedings{MSPRT-TANDEM,\n  title = \t  {The Power of Log-Sum-Exp: Sequential Density Ratio Matrix Estimation for Speed-Accuracy Optimization},\n  author =    {Miyagawa, Taiki and Ebihara, Akinori F},\n  booktitle = {Proceedings of the 38th International Conference on Machine Learning},\n  pages = \t  {7792--7804},\n  year = \t  {2021},\n  url = \t  {http://proceedings.mlr.press/v139/miyagawa21a.html}\n}\n\n# ICLR2021\n@inproceedings{SPRT-TANDEM,\n  title={Sequential Density Ratio Estimation for Simultaneous Optimization of Speed and Accuracy},\n  author={Akinori F Ebihara and Taiki Miyagawa and Kazuyuki Sakurai and Hitoshi Imaoka},\n  booktitle={International Conference on Learning Representations},\n  year={2021},\n  url={https://openreview.net/forum?id=Rhsu5qD36cL}\n}\n```\n\n## References\n1. S. Hochreiter and J. Schmidhuber, \u201cLong short-term memory,\u201d Neural Comput., vol. 9, no. 8, pp. 1735\u20131780, 1997.\n2. T. Akiba, S. Sano, T. Yanase, T. Ohta, and M. Koyama, \u201cOptuna: A next-generation hyperparameter optimization framework,\u201d in KDD, 2019, p. 2623\u20132631.\n3. A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, L. u. Kaiser, and I. Polosukhin, \u201cAttention is all you need,\u201d in NeurIPS, 2017, vol. 30, pp. 5998\u20136008.\n\n## Contacts\nSPRT-TANDEM marks its 4th anniversary. What started as a small project has now become a huge undertaking that we never imagined. Due to its complexity, it is difficult for me to explain all the details in this README section. Please feel free to reach out to me anytime if you have any questions.\n- email: aebihara[at]nec.com\n- twitter: [@non_iid](http/twitter.com/non_iid)\n- GitHub issues: see the link above or click [here](https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch/issues)\n\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch",
+            "keywords": "Sequential Probability Ratio Test,likelihood ratio,density ratio estimation,early classification,artificial intelligence,machine learning",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "SPRT-TANDEM",
+            "package_url": "https://pypi.org/project/SPRT-TANDEM/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/SPRT-TANDEM/",
+            "project_urls": {
+                "Homepage": "https://github.com/Akinori-F-Ebihara/SPRT-TANDEM-PyTorch"
+            },
+            "release_url": "https://pypi.org/project/SPRT-TANDEM/0.1.8/",
+            "requires_dist": [
+                "loguru",
+                "optuna",
+                "torch",
+                "torchinfo",
+                "tqdm"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "SPRT-TANDEM for sequential density ratio estimation to simultaneously optimize both speed and accuracy of early-classification.",
+            "version": "0.1.8",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18324777,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "0281e464d9a4dfa6b31200a0e830074754bf104d30f2cc8c4094cbdb071f3df1",
+                    "md5": "9f0187089c2e046f6c65d85f1a6166ea",
+                    "sha256": "f238824c82ff94ee9884789430b5f7b2cd730b3887da4a1c37cc856995f6b9e0"
+                },
+                "downloads": -1,
+                "filename": "SPRT_TANDEM-0.1.8-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "9f0187089c2e046f6c65d85f1a6166ea",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 67539,
+                "upload_time": "2023-06-01T00:20:05",
+                "upload_time_iso_8601": "2023-06-01T00:20:05.160987Z",
+                "url": "https://files.pythonhosted.org/packages/02/81/e464d9a4dfa6b31200a0e830074754bf104d30f2cc8c4094cbdb071f3df1/SPRT_TANDEM-0.1.8-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "7879c73e4ac67d4a24b5cee9fb64d85ba3f8f979f5532505b5e00351eec919ed",
+                    "md5": "955b8bcd44ab9e53e61ad3b22e0e0da8",
+                    "sha256": "3e41d50f31578d4c1f0b98c2d29da3d865445e2d0aea6ee95323213df82b9007"
+                },
+                "downloads": -1,
+                "filename": "SPRT-TANDEM-0.1.8.tar.gz",
+                "has_sig": false,
+                "md5_digest": "955b8bcd44ab9e53e61ad3b22e0e0da8",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 61042,
+                "upload_time": "2023-06-01T00:20:08",
+                "upload_time_iso_8601": "2023-06-01T00:20:08.229779Z",
+                "url": "https://files.pythonhosted.org/packages/78/79/c73e4ac67d4a24b5cee9fb64d85ba3f8f979f5532505b5e00351eec919ed/SPRT-TANDEM-0.1.8.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

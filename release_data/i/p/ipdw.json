@@ -1,0 +1,94 @@
+{
+    "1.0.0": {
+        "info": {
+            "author": "Kyle Wright",
+            "author_email": "Kyle.Wright@twdb.texas.gov",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Natural Language :: English",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3.11",
+                "Topic :: Scientific/Engineering :: GIS"
+            ],
+            "description": "# Inverse Path-Distance Weighted Interpolation\n\n`ipdw` is a Python package for performing [inverse-distance-weighted interpolation](https://en.wikipedia.org/wiki/Inverse_distance_weighting) using **path distances** instead of Euclidean distances. In other words, interpolation weights account for domain geometry and obstacles, which is often preferred in geophysical contexts in which \"in water\" distances are often more relevant to the process at hand than Euclidean distances. For example, this package allows you to quickly and easily interpolate inside a water body, accounting for complex coastlines, islands, and other barriers.\n\nThis package is inspired by [Stachelek & Madden (2015)](doi.org/10.1080/13658816.2015.1018833) and is a Python alternative to the original `R` package [`ipdw`](https://github.com/jsta/ipdw), although likely using different methodology under the hood. We rely heavily on the fast-marching approach of [`scikit-fmm`](https://github.com/scikit-fmm/scikit-fmm) to compute path distances, and rely exclusively on `matplotlib.path` and `numpy` to make sense of domain geometry information, which can be specified in either raster or vector format. _No geospatial packages are required._ Due to the use of fast-marching, vectorization, and a reliance on more efficient packages for the compututationally-expensive steps, this package should be quite fast and computationally efficient relative to the complexity of the underlying algorithm.\n\n## Installation\n\nInstall the latest stable release from PyPi with pip:\n```\npip install ipdw\n```\nIf you want to install from source, clone this repository, navigate to the new directory, and run `python setup.py`.\n\n**Requirements**: `numpy`, `matplotlib`, and `scikit-fmm`\n\n## Background\n\nThe IPDW estimate for the value $V$ of at some location $(x,y)$ can be written:\n$$V(x,y) = \\frac{ \\sum_{i} V_i \\cdot d_i^{-P} }{ \\sum_{i} d_i^{-P}}$$\nfor nearest locations $i = \\[1:N\\]$, and in which $V_i$ is the input value at location $i$, $d_i$ is the path distance to that location, $P$ is some positive exponent (often 1 or 2), and $N$ is the number of nearest locations to use in the weighting. The weight of each input point decreases for increasing distance away from that point, at a rate of $1/d^P$. If $N=1$, this is equivalent to nearest-neighbor interpolation.\n\n## Example Usage\n\nTo use this package for interpolation, the user simply needs to provide domain geometry information and the locations/values of input data points. Domain geometry can be specified in one of two ways (i.e. vector or raster format). Regardless of input format, the output will be a raster array.\n\nTo specify domain geometry in **vector format**, the user needs to specify:\n- The target `cellsize` of the output array.\n- The domain `boundary`, specified as a `list` or `array` of $(x,y)$ points for each vertex along the boundary polygon, e.g. `[[x1,y1],[x2,y2],...,[xn,yn]]`. The length-scale used when specifying these coordinates should be equal to that used for the `cellsize`. If specified as an `array`, dimensions should be `(N,2)`.\n- Optionally, any internal `holes` inside the domain (i.e. obstacles), specified as a `list` of holes, where each hole has the same input format requirements as `boundary`.\n\nThen, an example `Gridded` object can be instantiated as follows:\n```\nimport ipdw\n\ncellsize = X\nboundary = [[x1,y1],[x2,y2],...,[xn,yn]]\nholes = [hole_1, hole_2, ..., hole_n]\n\ngrid = ipdw.Gridded(cellsize, boundary, holes)\n```\nUnder the hood, this process creates a binary array of whatever size is needed to span the `boundary` coordinates at the requested `cellsize`, and then relies heavily on `matplotlib.path.Path` to query whether cell locations within that array are (1) inside the domain boundary and (2) not inside one of the specified holes. If a large number of holes are specified, this process may take a while. After the `Gridded` object has been initialized, the basemap used for interpolation is stored in the `grid.raster` attribute.\n\nTo specify domain geometry in **raster format**, the user needs to specify:\n- A binary `raster` to be used as the basemap for interpolation (in other words, if this raster already exists, we do not need to create it). This raster must be binary (i.e. composed of 1's and 0's), and it will be converted to an integer array during initialization, so any `NaNs` should be set to 0. \n- The geospatial `extent` of that `raster` (i.e. the footprint), specified as `[xmin, xmax, ymin, ymax]`.\n\nThen, an example `Gridded` object can be instantiated as follows (using `rasterio` as an example way in which one might access a basemap):\n```\nimport ipdw\nimport rasterio\n\nsrc = rasterio.open('path_to_file')\nraster = src.read(1).astype(int)\nextent = [src.bounds[0], src.bounds[2], src.bounds[1], src.bounds[3]]\n\ngrid = ipdw.Gridded(raster=raster, extent=extent)\n```\nNote that the combination of **either** (`cellsize`, `boundary`) **or** (`raster`, `extent`) is required to create a `Gridded` object, they cannot be mixed/matched. Also, if the former pair is specified, the latter will be ignored.\n\nRegardless of which of the two options above was used, performing an interpolation looks the same. The user needs to specify:\n- `input_locations` and `input_values` for the data between which we are interpolating\n- Interpolation settings, most notably `n_nearest` (the number of nearest input data points used in the weighting) and `power` (the exponent $P$ above), as well as a few other optional parameters described in the function documentation.\n\nThen, it is as simple as:\n```\ninput_locations = [[x1,y1],[x2,y2],...,[xn,yn]]\ninput_values = [V1, V2, ..., Vn]\n\noutput = grid.interpolate(input_locations, input_values, n_nearest=3, power=1)\n```\nin which `output` is an array with interpolated values in all viable cells, and `NaN` everywhere else. That's it! \nAlso, note that there exists another function, `Gridded.reinterpolate`, which can be used to perform additional interpolations using new `input_values` from the same locations (and with the same parameter settings), which is faster than re-running `interpolate`.\n\nA few example interpolation outputs using different parameter choices are shown below.\n\n<div class=\"nav3\" style=\"width:800px;\">\n    <img src=\"example.jpeg\" alt=\"Example\" width=\"100%\"></a>\n</div>\n\n## Contributing\n\nPlease feel free to open an issue or a pull request!\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/wrightky/ipdw",
+            "keywords": "interpolation ipdw idw",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "ipdw",
+            "package_url": "https://pypi.org/project/ipdw/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/ipdw/",
+            "project_urls": {
+                "Homepage": "https://github.com/wrightky/ipdw"
+            },
+            "release_url": "https://pypi.org/project/ipdw/1.0.0/",
+            "requires_dist": [
+                "numpy",
+                "matplotlib",
+                "scikit-fmm"
+            ],
+            "requires_python": "",
+            "summary": "Inverse-Path-Distance-Weighted Interpolation for Python",
+            "version": "1.0.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18324281,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "50f8b7cbc8d8a629052c512ceddf5b30ceeaf52fb1177a7f5c8666b68c136555",
+                    "md5": "8b03721df7b9c118573b2532d449883e",
+                    "sha256": "e8b4df5311511b0c03075edf469a86b7a6a8dd84bb49b74c511c2c1480719ea5"
+                },
+                "downloads": -1,
+                "filename": "ipdw-1.0.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "8b03721df7b9c118573b2532d449883e",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 9408,
+                "upload_time": "2023-05-31T23:10:14",
+                "upload_time_iso_8601": "2023-05-31T23:10:14.837025Z",
+                "url": "https://files.pythonhosted.org/packages/50/f8/b7cbc8d8a629052c512ceddf5b30ceeaf52fb1177a7f5c8666b68c136555/ipdw-1.0.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d5d65c67b7afd956c6968a279103f02a14fac13f310176fc1e44c807b1fb1d33",
+                    "md5": "e137410629b6d1cf5fec3dfdad24e836",
+                    "sha256": "4e18b91100f4f94fdacf1c305ddff14be0efe2e162ffe5417f86239f6fded214"
+                },
+                "downloads": -1,
+                "filename": "ipdw-1.0.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "e137410629b6d1cf5fec3dfdad24e836",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 12250,
+                "upload_time": "2023-05-31T23:10:16",
+                "upload_time_iso_8601": "2023-05-31T23:10:16.177076Z",
+                "url": "https://files.pythonhosted.org/packages/d5/d6/5c67b7afd956c6968a279103f02a14fac13f310176fc1e44c807b1fb1d33/ipdw-1.0.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

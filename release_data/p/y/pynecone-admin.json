@@ -1,0 +1,100 @@
+{
+    "0.1a0": {
+        "info": {
+            "author": "",
+            "author_email": "Masen Furer <m_github@0x26.net>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 4 - Beta",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: MacOS :: MacOS X",
+                "Operating System :: Microsoft :: Windows",
+                "Operating System :: POSIX",
+                "Programming Language :: Python",
+                "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+                "Topic :: Software Development :: Libraries",
+                "Topic :: Utilities"
+            ],
+            "description": "# pynecone-admin\n\n[![main branch test status](https://github.com/trivial-intelligence/pynecone-admin/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/trivial-intelligence/pynecone-admin/actions/workflows/test.yml?query=branch%3Amain)\n[![PyPI version](https://badge.fury.io/py/pynecone-admin.svg)](https://pypi.org/project/pynecone-admin)\n\nA generic CRUD `Model` boilerplate for the python-based full stack\n[pynecone](https://pynecone.io) framework.\n\n* Simple, extendable login state and redirect helpers\n* `add_crud_routes` method adds Create, Update, Read, Delete\n  capabilities to specified models\n\n## Example\n\nSee [./example/example/example.py](example.py).\n\n## Usage\n\n1. Include `pynecone-admin` in your project `requirements.txt`.\n2. Call `pynecone_admin.add_crud_routes(app=app, obs=[pynecone_admin.User, Widget], prefix=\"/crud\")`\n3. `pc init && pc run`\n4. Access models at `/crud`.\n\n## API\n\n### Authentication\n\nPer-page authentication is provided by `pynecone_admin.login_required`. It can be used\nas a decorator on a page function.\n\n```python\n@pynecone_admin.login_required(State)\ndef page():\n  return pc.text(\"You are logged in as \", State.authenticated_user_id)\n```\n\nA custom `login_component` can be passed as a parameter, see\n`pynecone_admin.auth.default_login_component` as an example for how to customize\nthe logic. A custom component must call `State._login(self, user_id)` to\nauthenticate a session for the given `user_id`.\n\nIf no users exist in the database, the default login component will create the\nfirst user to login as an admin.\n\nBy default, only `authenticated_user_id` is provided, if access to the provided User model is needed, implement a small helper in the local app `State` (from the example):\n\n```python\nclass State(pc.State):\n    @pc.cached_var\n    def authenticated_user(self) -> User:\n        if self.authenticated_user_id >= 0:\n            with pc.session() as session:\n                if user := session.exec(\n                  User.select.where(User.id == self.authenticated_user_id),\n                ).one_or_none():\n                    return user\n        return User()\n```\n\n#### Persistent Token\n\nUsing the `login_required` function will automatically augment the passed `State` class with\nadditional variables and functionality:\n\n* `current_token`: a persistent (`localStorage`-backed) value that identifies\n  the client browser. This value is updated by the `PersistentToken.on_change`\n  event handler defined inside the `login_required` function.\n* `authenticated_user_id`: the user_id associated with a non-expired auth session\n  matching the state's `current_token`. If no such session exists, `-1`.\n* `do_logout`: event handler that disassociates the state's\n  `current_token` with any valid auth session\n* `_login`: backend-only function that associates the state's\n  `current_token` with the given `user_id` (values less than 0 are ignored).\n  To implement a custom login method, the code must somehow call\n  `State._login(self, user_id)` after properly authenticating the user_id.\n\n### CRUD - Create Read Update Delete\n\nThe primary entry point is `pynecone_admin.add_crud_routes`. Two arguments are required:\n\n* `app`: pass an instance of your `pc.App`\n* `objs`: pass a sequence of `pc.Model` classes that should be available for editing\n\nAdditional arguments are available to customize the crud pages:\n\n* `form_component`: function called to render the object create/edit form, defaults to `pynecone_admin.crud.default_form_component`.\n* `field_component`: function called to render a single field in the form, defaults to `pynecone_admin.crud.default_field_component`.\n* `login_component`: function called to render the user login form, defaults to to no login form. If protected access is required, pass `pynecone_admin.default_login_component` or another custom login component.\n* `can_access_resource`: access control function accepting state instance as first parameter, defaults to open access if not present\n* `prefix`: route prefix for admin operations, defaults to `/crud`\n\n#### Supported Field Types\n\nSee `pynecone_admin.crud.default_field_component`.\n\n**Simple Types**\n\n* `str`, `float`: standard `pc.input`\n* `int`: `pc.number_input`\n* `bool`: `pc.check_box`\n\n**Special Types**\n\n* `enum.Enum`: `pc.select` drop down box\n* `datetime.datetime`: `pc.input` with `type_=\"datetime-local\"`, which renders a date picker on modern \n  browsers.\n* `uuid.UUID`: standard `pc.input` with a \"random\" button that sets the value to `\"random\"` (handled in `set_subfield`).\n\nWhy are these types special? Because pynecone cannot handle them out of the box,\nalthough they work fine via sqlmodel / sqlalchemy. The solution is to convert\nthem to serializable types by overriding the `dict()` method of the model:\n\n```python\nfrom __future__ import annotations\n\nimport datetime\nimport enum\nimport uuid\n\nimport pynecone as pc\nimport pynecone_admin\nimport sqlmodel\n\n\nclass TokenStatus(enum.Enum):\n    ACTIVE = \"active\"\n    DISABLED = \"disabled\"\n\n\nclass TokenOwner(pc.Model, table=True):\n    user_id: int\n    token_uuid: uuid.UUID\n    created: datetime.datetime = sqlmodel.Field(\n        sa_column=sqlmodel.Column(\n            sqlmodel.DateTime(timezone=True),\n            server_default=sqlmodel.func.now(),\n        ),\n    )\n    status: TokenStatus\n    comment: str | None = None\n\n    def dict(self, *args, **kwargs):\n        d = super().dict(*args, **kwargs)\n        d[\"token_uuid\"] = str(self.token_uuid) if self.token_uuid else None\n        d[\"created\"] = (\n            self.created.replace(microsecond=0).isoformat() if self.created else None\n        )\n        d[\"status\"] = self.status.name if self.status else None\n        return d\n\n\nclass State(pc.State):\n    pass\n\n\napp = pc.App(state=State)\npynecone_admin.add_crud_routes(app, [TokenOwner], prefix=\"/\")\napp.compile()\n```\n\nThe save field handler, `set_subfield`, currently handles deserializing these types as\nspecial cases.\n\n#### Customizing Per-Model Behavior\n\n`pynecone-admin` respects specially named hook methods or attributes attached to\nModels, to allow behavioral customization:\n\n* `__pynecone_admin_fields__: Sequence[str]`: names of fields to include in the\n  table and editor form. Allows for rendering a subset of available fields. Default\n  uses all fields defined on the model.\n* `__pynecone_admin_load_object_hook__`: method called on each instance\n  after it is loaded from the database for editing.\n* `__pynecone_admin_load_row_hook__`: method called on each instance after it is loaded\n  from the database during enumeration (for the table).\n* `__pynecone_admin_filter_where_hook__`: classmethod accepting a string, `filter_value`, that returns\n  an expression passable to sqlmodel `where()` selector to filter the table query\n  based on a user-supplied value. Default filter hook casts all columns as string and performs\n  a wildcard match (`LIKE %{filter_value}%`) on each.\n* `__pynecone_admin_save_object_hook__`: method called on each instance\n  before it is persisted to the database. The included `User` model, implements this\n  hook to hash password strings that don't look like valid hashes before saving.\n* `__pynecone_admin_delete_object_hook__`: method called on each instance\n  before it is deleted from the database.\n\n## Changelog\n\n### v0.1a0 - 2023-05-31\n\nAlpha Release\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "MIT License  Copyright (c) 2023 Masen Furer  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.  THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. ",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "pynecone-admin",
+            "package_url": "https://pypi.org/project/pynecone-admin/",
+            "platform": "unix",
+            "project_url": "https://pypi.org/project/pynecone-admin/",
+            "project_urls": {
+                "Homepage": "https://github.com/trivial-intelligence/pynecone-admin"
+            },
+            "release_url": "https://pypi.org/project/pynecone-admin/0.1a0/",
+            "requires_dist": [
+                "bcrypt",
+                "pynecone (>=0.1.30)",
+                "pynecone-debounce-input (>=0.3)",
+                "passlib (>=1.7.4)"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "Pynecone full-stack framework CRUD boilerplate",
+            "version": "0.1a0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18320887,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "306aaf3367c895c45cebf8676f744c8fa914783bd010f2668c19a9aac485487a",
+                    "md5": "dcbe0dcec409860c6dc17aed64d605c0",
+                    "sha256": "2959333750d76f044cc39c870af3d04014ba1b2c5ff7314054e3496baba5aecb"
+                },
+                "downloads": -1,
+                "filename": "pynecone_admin-0.1a0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "dcbe0dcec409860c6dc17aed64d605c0",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 19386,
+                "upload_time": "2023-05-31T18:21:51",
+                "upload_time_iso_8601": "2023-05-31T18:21:51.070805Z",
+                "url": "https://files.pythonhosted.org/packages/30/6a/af3367c895c45cebf8676f744c8fa914783bd010f2668c19a9aac485487a/pynecone_admin-0.1a0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "b6b8634cf00742c14096f8a5b941bc5163aa4b1d9727e04096dd54c1a8706c9d",
+                    "md5": "5b0765ca6055edbe672d0fe534746be9",
+                    "sha256": "9ec2e463bcf0dac67e53fb9ae7bc404d910f112ee7170dd950fcd5ab1dff5cec"
+                },
+                "downloads": -1,
+                "filename": "pynecone-admin-0.1a0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "5b0765ca6055edbe672d0fe534746be9",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 25768,
+                "upload_time": "2023-05-31T18:21:52",
+                "upload_time_iso_8601": "2023-05-31T18:21:52.913599Z",
+                "url": "https://files.pythonhosted.org/packages/b6/b8/634cf00742c14096f8a5b941bc5163aa4b1d9727e04096dd54c1a8706c9d/pynecone-admin-0.1a0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

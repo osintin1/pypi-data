@@ -1,0 +1,99 @@
+{
+    "0.0.1": {
+        "info": {
+            "author": "",
+            "author_email": "Eachan Johnson <eachan.johnson@crick.ac.uk>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: MIT License",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Scientific/Engineering :: Bio-Informatics"
+            ],
+            "description": "# \u26d3\ufe0f ogilo\n\n![GitHub Workflow Status (with branch)](https://img.shields.io/github/actions/workflow/status/scbirlab/ogilo/python-publish.yml?branch=main)\n![PyPI - Python Version](https://img.shields.io/pypi/pyversions/ogilo)\n![PyPI](https://img.shields.io/pypi/v/ogilo)\n\nAutomating construction of oligo library sequences for oligo array synthesis.\n\n**ogilo** takes your table of sequences (such as a library of guide RNAs) and concatenates them  \nwith any other nucleotide sequences you provide, Type IIS restriction sites, and PCR handles.\n\nIf your table of sequences contains a column indicating subsets or groups, you can use this column to\ninstruct **ogilo** to add distinct PCR handles to each group. This allows you to order multiple\nlibraries as one oligo pool and selectively PCR each one as needed.\n\n## Installation\n\n### The easy way\n\nInstall the pre-compiled version from PyPI:\n\n```bash\npip install ogilo-array\n```\n\n### From source\n\nClone the repository, then `cd` into it. Then run:\n\n```bash\npip install -e .\n```\n\n## Usage\n\nYou tell **ogilo** which sequences to concatenate using the following format:\n\n```\n<type>:<value>[:<f1>[:<f2>[:<f3>]]]\n```\n\nFor example, file:oligos.csv:2 would instruct ogilo to take sequences from column 2 of \nthe file oligos.csv, and seq:ATCCCGAGAG:spacer would add the sequence ATCCCGAGAG and \ninclude \"spacer\" in the oligo name. \n\nThe allowed values of `<type>` are as follows.\n\n### Files\n\n```\nfile:<filename>[:<seq_col>[:<name_col>[:<group_col>]]]\n```\n\nTake sequences from file `<filename>`. If `<seq_col>` is provided, **ogilo** will use this column,\notherwise assumes column 1. \n\n`<seq_col>`, `<name_col>`, `<group_col>` can be column names (in which \ncase, the first line will be skipped) or integers (in which case, the first line will be \nincluded). \n\nDo not mix column names and integers. If your file has a header, use column names.\nIf `<group_col>` is provided, and PCR handles are requested, then different PCR handles will \nbe added to each group.\n\nFor example:\n\n```\nfile:guide-rnas.tsv:sequence:guide_name:essentiality\n```\n\nwould load sequences from the file `guide-rnas.tsv`, using column `sequence` for sequences, \n`guide_name` for the names, and `essentiality` for the groups (if you want different PCR handles\nfor each group). \n\n### Constant sequences\n\n```\nseq:<sequence>[:<name>]\n```\n\nAn explicit sequence given in `<sequence>`, optionally with a `<name>`.\n\nFor example:\n\n```\nseq:ATCGGGC:spacer\n```\n\n### Type IIS restriction enzyme sites\n\n```\nre:<enzyme_name>:[f|r]\n```\n\nA named Type IIS restriction enzyme site. \"f\" and \"r\" determine whether the site should be\nin a forward or reverse orientation. This does not take care of overhangs for you; these can\nbe added as a seq component.\n\nFor example:\n\n```\nre:BsmBI:f\n```\n\n### Output\n\nThe output is a TSV-formatted table with the following columns:\n- group: The group of oligos sharing the same PCR handles.\n- pcr_handles: The name of the PCR handle pair used (if any).\n- length: Total oligo length.\n- mnemonic: Adjective-noun mnemonic of oligo sequence.\n- restriction_sites: Type IIS restriction sites which happen to be in the oligo even though they weren't requested.\n- oligo_name: Name for the oligo, constricted by concatenating the names of the sequence components.\n- oligo_sequence: Sequence for the oligo. Each concatenated section alternates case to allow visual checks.\n\n### Examples\n\nSimple example showing parts being concatenated. Note that group and pcr_handles columns are empty.\n\n```bash\n$ ogilo seq:ATCG:s1 re:BsmBI:f seq:GGCCTTAA:main re:BsaI:r seq:CATG:s2\ngroup   pcr_handles     length  mnemonic        restriction_sites       oligo_name      oligo_sequence\n                28      dim_lesson              s1-BsmBI_f-main-BsaI_r-s2       ATCGcgtctcGGCCTTAAgagaccCATG\n```\n\nYou can request PCR handles. These are the outermost sections of the sequence.\n\n```bash\n$ ogilo seq:ATCG:s1 re:BsmBI:f seq:GGCCTTAA:main re:BsaI:r seq:CATG:s2 --pcr_handles\ngroup   pcr_handles     length  mnemonic        restriction_sites       oligo_name      oligo_sequence\n        sans18a 68      defeated_active         s1-BsmBI_f-main-BsaI_r-s2       AGGCACTTGCTCGTACGACGatcgCGTCTCggccttaaGAGACCcatgATGTGGGCCCGGCACCTTAA\n```\n\nYou can specify the subset of PCR handles to use. The current options are `illumina` for P5/P7 or NextEra i5/i7 primers, \nor `sanson2018` for the primers used in [](). Here, we request `illumina`, and **ogilo** detects the extra BbsI site in the \nP5/P7 PCR handles.\n\n```bash\n$ ogilo seq:ATCG:s1 re:BsmBI:f seq:GGCCTTAA:main re:BsaI:r seq:CATG:s2 --pcr_handles --handle_set illumina\ngroup   pcr_handles     length  mnemonic        restriction_sites       oligo_name      oligo_sequence\n        p5p7    69      vivid_stereo    BbsI    s1-BsmBI_f-main-BsaI_r-s2       AATGATACGGCGACCACCGAatcgCGTCTCggccttaaGAGACCcatgTCAAGCAGAAGACGGCATACG\n```\n\n**ogilo** will check for other spurious Type IIS restriction sites that emerge *after* sequences have been concatenated. It ignores the ones you've requested.\n\n```bash\n$ ogilo seq:ATCG:s1 re:BsmBI:f seq:ACCTGC:quasi_paqCI re:BsaI:r seq:CATG:s2 --pcr_handles --handle_set illumina\ngroup   pcr_handles     length  mnemonic        restriction_sites       oligo_name      oligo_sequence\n        p5p7    67      muddy_method    BbsI;PaqCI      s1-BsmBI_f-quasi_paqCI-BsaI_r-s2        AATGATACGGCGACCACCGAatcgCGTCTCacctgcGAGACCcatgTCAAGCAGAAGACGGCATACGA\n```\n\nFiles containing sequences can also be used, so long as you specify which column the sequence is coming from.\n\n```bash\n$ ogilo re:BsmBI:f seq:AATTA:s1 file:test/guides-RLC12_mapped-tiny.tsv:guide_sequence seq:ATGCG:s2 re:BsmBI:r --pcr_handles\ngroup   pcr_handles     length  mnemonic        restriction_sites       oligo_name      oligo_sequence\n        sans18a 84      festive_enigma          BsmBI_f-s1-1-s2-BsmBI_r AGGCACTTGCTCGTACGACGcgtctcAATTAaacccaaacactccctttggaaATGCGgagacgATGTGGGCCCGGCACCTTAA\n        sans18a 83      tipsy_classic           BsmBI_f-s1-2-s2-BsmBI_r AGGCACTTGCTCGTACGACGcgtctcAATTAacccaaacactccctttggaaATGCGgagacgATGTGGGCCCGGCACCTTAA\n       ...\n        sans18a 79      tidy_isotope            BsmBI_f-s1-19-s2-BsmBI_r        AGGCACTTGCTCGTACGACGcgtctcAATTAaacactggtgcgcgataATGCGgagacgATGTGGGCCCGGCACCTTAA\n        sans18a 78      wistful_liquid          BsmBI_f-s1-20-s2-BsmBI_r        AGGCACTTGCTCGTACGACGcgtctcAATTAacactggtgcgcgataATGCGgagacgATGTGGGCCCGGCACCTTAA\n```\n\nOptionally, a column to take names from can be specified. Here, we're using the column called `pam_offset`.\n\n```bash\n$ ogilo re:BsmBI:f seq:AATTA:s1 file:test/guides-RLC12_mapped-tiny.tsv:guide_sequence:pam_offset seq:ATGCG:s2 re:BsmBI:r --pcr_handles\ngroup   pcr_handles     length  mnemonic        restriction_sites       oligo_name      oligo_sequence\n        sans18a 84      festive_enigma          BsmBI_f-s1-25-s2-BsmBI_r        AGGCACTTGCTCGTACGACGcgtctcAATTAaacccaaacactccctttggaaATGCGgagacgATGTGGGCCCGGCACCTTAA\n        sans18a 83      tipsy_classic           BsmBI_f-s1-25-s2-BsmBI_r        AGGCACTTGCTCGTACGACGcgtctcAATTAacccaaacactccctttggaaATGCGgagacgATGTGGGCCCGGCACCTTAA\n       ...\n        sans18a 79      tidy_isotope            BsmBI_f-s1-58-s2-BsmBI_r        AGGCACTTGCTCGTACGACGcgtctcAATTAaacactggtgcgcgataATGCGgagacgATGTGGGCCCGGCACCTTAA\n        sans18a 78      wistful_liquid          BsmBI_f-s1-58-s2-BsmBI_r        AGGCACTTGCTCGTACGACGcgtctcAATTAacactggtgcgcgataATGCGgagacgATGTGGGCCCGGCACCTTAA\n```\n\nA column to indicate grouping for different PCR handles can also be specified in addition. Here, we're using the column called `ann_gene_biotype`.\nThe different values in this column are matched with a different PCR handle pair.\n\n```bash\n$ ogilo re:BsmBI:f seq:AATTA:s1 file:test/guides-RLC12_mapped-tiny.tsv:guide_sequence:pam_offset:ann_gene_biotype seq:ATGCG:s2 re:BsmBI:r --pcr_handles\ngroup   pcr_handles     length  mnemonic        restriction_sites       oligo_name      oligo_sequence\nrRNA    sans18a 84      festive_enigma          BsmBI_f-s1-25-s2-BsmBI_r        AGGCACTTGCTCGTACGACGcgtctcAATTAaacccaaacactccctttggaaATGCGgagacgATGTGGGCCCGGCACCTTAA\nrRNA    sans18a 83      tipsy_classic           BsmBI_f-s1-25-s2-BsmBI_r        AGGCACTTGCTCGTACGACGcgtctcAATTAacccaaacactccctttggaaATGCGgagacgATGTGGGCCCGGCACCTTAA\n        ...\ntRNA    sans18b 79      good_iceberg            BsmBI_f-s1-58-s2-BsmBI_r        GTGTAACCCGTAGGGCACCTcgtctcAATTAaacactggtgcgcgataATGCGgagacgGTCGAGAGCAGTCCTTCGAC\ntRNA    sans18b 78      damp_index              BsmBI_f-s1-58-s2-BsmBI_r        GTGTAACCCGTAGGGCACCTcgtctcAATTAacactggtgcgcgataATGCGgagacgGTCGAGAGCAGTCCTTCGAC\n```\n\n### Command line options\n\n```\nusage: ogilo [-h] [--input INPUT] [--pcr_handles] [--column COLUMN] [--pcr_group PCR_GROUP] [--format {TSV,CSV}] [--output OUTPUT] [inputs ...]\n\nAutomated construction of oligo library sequences for oligo array synthesis.\n\npositional arguments:\n  inputs                Further input(s). Format is <type>:<value>:<seq_col>[:<name_col>:<group_col>], for example file:oligos.csv:2 seq:ATCGTAT.\n\noptions:\n  -h, --help            show this help message and exit\n  --input INPUT         Single input file. Default: STDIN\n  --pcr_handles, -p     Requests PCR handles to be added either side of final sequences.\n  --column COLUMN, -c COLUMN\n                        Column number to take from input as sequence. Default: 1\n  --pcr_group PCR_GROUP, -g PCR_GROUP\n                        Column heading containing groups to give different PCR handles to.\n  --format {TSV,CSV}, -f {TSV,CSV}\n                        Format of files. Default: TSV\n  --output OUTPUT, -o OUTPUT\n                        Output file. Default: STDOUT\n```\n\n## Documentation\n\nAvailable at [ReadTheDocs](https://ogilo.readthedocs.org).\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "biology,bioinformatics,science,assay,sequencing,oligonucleotides,oligos",
+            "license": "MIT License  Copyright (c) [year] [fullname]  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the \"Software\"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.  THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "ogilo-array",
+            "package_url": "https://pypi.org/project/ogilo-array/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/ogilo-array/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/scbirlab/ogilo/issues",
+                "Homepage": "https://github.com/scbirlab/ogilo"
+            },
+            "release_url": "https://pypi.org/project/ogilo-array/0.0.1/",
+            "requires_dist": [
+                "nemony",
+                "streq",
+                "tqdm"
+            ],
+            "requires_python": ">=3.8",
+            "summary": "Automated construction of oligo library sequences for oligo array synthesis.",
+            "version": "0.0.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18319670,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d63f44301d269cc0ca499870eb8c5d9339779ca719d39a900414efe1aa3c85d5",
+                    "md5": "554645de639e2e3006155fad3a5a5200",
+                    "sha256": "caaf880ea6fda14fb3bf7142372a767ed596e6dda75340f2f9ccfc75d9c460b5"
+                },
+                "downloads": -1,
+                "filename": "ogilo_array-0.0.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "554645de639e2e3006155fad3a5a5200",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8",
+                "size": 11361,
+                "upload_time": "2023-05-31T16:09:25",
+                "upload_time_iso_8601": "2023-05-31T16:09:25.685824Z",
+                "url": "https://files.pythonhosted.org/packages/d6/3f/44301d269cc0ca499870eb8c5d9339779ca719d39a900414efe1aa3c85d5/ogilo_array-0.0.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "70e03030a8a391686752af759a9f80db7e0948d8705b4293168f3b2308af6c4f",
+                    "md5": "3480cb9aa355597bf2525d8de119d966",
+                    "sha256": "a9564f4125ca264efb1b741e4431a585695bf0f676e1ab90f4ad615a5b13d020"
+                },
+                "downloads": -1,
+                "filename": "ogilo-array-0.0.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "3480cb9aa355597bf2525d8de119d966",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8",
+                "size": 12454,
+                "upload_time": "2023-05-31T16:09:27",
+                "upload_time_iso_8601": "2023-05-31T16:09:27.283224Z",
+                "url": "https://files.pythonhosted.org/packages/70/e0/3030a8a391686752af759a9f80db7e0948d8705b4293168f3b2308af6c4f/ogilo-array-0.0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
