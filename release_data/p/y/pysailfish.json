@@ -39,7 +39,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17935128,
+        "last_serial": 18328270,
         "urls": [
             {
                 "comment_text": "",
@@ -126,7 +126,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17935128,
+        "last_serial": 18328270,
         "urls": [
             {
                 "comment_text": "",
@@ -185,7 +185,6 @@
                 "Programming Language :: Python :: 3.8",
                 "Programming Language :: Python :: 3.9"
             ],
-            "description": "\n## pysailfish\n\n### Example EA --- simple client\n```python\nfrom pysailfish.internal.MT_EA.MT4_EA import MT4_EA\n\nclass MT4DemoEA(MT4_EA):\n    def __init__(self):\n        super().__init__()\n\n    # override\n    def _OnInit(self) -> int:\n        self._logger.info(self._user_inputs)\n        self._logger.info(\"Here\")\n        return 0\n\n    # override\n    def _OnDeinit(self, reason: int) -> None:\n        self._logger.info(f\"Here reason: {reason}\")\n        return None\n\n    # override\n    def _OnTick(self) -> None:\n        self._logger.info(\"Here\")\n        return None\n\n    # override\n    def _OnTimer(self) -> None:\n        return None\n\n    # override\n    def _OnTester(self) -> float:\n        self._logger.info(\"Here\")\n        return 0.0\n\n    # override\n    def _OnChartEvent(self\n                      , id: int\n                      , lparam: int\n                      , dparam: float\n                      , sparam: str) -> None:\n        self._logger.info(f\"Here id: {id} lparam: {lparam} dparam: {dparam} sparam: {sparam}\")\n        return None\n\ndef main() -> None:\n    ea = MT4DemoEA()\n    ea.InitComponent(server_ip=\"127.0.0.1\"\n                     , server_port=23456\n                     , ea_name=\"MT4DemoEA\")\n    ea.StartEA()\n\nif __name__ == \"__main__\":\n    main()\n```\n\n### Example EA --- Moving Average EA\n```python\nfrom datetime import datetime\n\nimport pysailfish.internal.MT_EA.mt4_const as mc\nfrom pysailfish.internal.MT_EA.MT4_EA import MT4_EA\n\nclass MA_EA(MT4_EA):\n    def __init__(self):\n        super().__init__()\n\n    # override\n    def _OnInit(self) -> int:\n        self._logger.info(self._user_inputs)\n        self._logger.info(\"Here\")\n        return 0\n\n    # override\n    def _OnDeinit(self, reason: int) -> None:\n        self._logger.info(f\"Here reason: {reason}\")\n        return None\n\n    # override\n    def _OnTick(self) -> None:\n        vv = self.iADX(symbol=self._pv.symbol\n                       , timeframe=mc.PERIOD_CURRENT\n                       , period=self._user_inputs[\"MovingPeriod\"]\n                       , applied_price=mc.PRICE_CLOSE\n                       , mode=mc.MODE_MAIN\n                       , shift=0)\n        # self._logger.info(f\"Here {self._pv.symbol} {self._pv.time[0]}\")\n        # --- check for history and trading\n        if self._pv.bars < 100 or self._pv.is_trade_allowed == False:\n            return\n\n        # --- calculate open orders by current symbol\n        if self.__calculate_current_orders(self._pv.symbol) == 0:\n            self.__check_for_open()\n        else:\n            self.__check_for_close()\n        return None\n\n    # override\n    def _OnTimer(self) -> None:\n        return None\n\n    # override\n    def _OnTester(self) -> float:\n        self._logger.info(\"Here\")\n        return 0.0\n\n    # override\n    def _OnChartEvent(self\n                      , id: int\n                      , lparam: int\n                      , dparam: float\n                      , sparam: str) -> None:\n        self._logger.info(f\"Here id: {id} lparam: {lparam} dparam: {dparam} sparam: {sparam}\")\n        return None\n\n    def __check_for_close(self) -> None:\n        ma: float = 0\n        #--- go trading only for first tiks of new bar\n        if self._pv.volume[0] > 1:\n            return None\n        #--- get Moving Average\n        ma = self.iMA(symbol=self._pv.symbol\n                      , timeframe=mc.PERIOD_CURRENT\n                      , ma_period=self._user_inputs[\"MovingPeriod\"]\n                      , ma_shift=self._user_inputs[\"MovingShift\"]\n                      , ma_method=mc.MODE_SMA\n                      , applied_price=mc.PRICE_CLOSE\n                      , shift=0)\n        #---\n        for i in range(self.OrdersTotal()):\n            if self.OrderSelect(index=i, select=mc.SELECT_BY_POS, pool=mc.MODE_TRADES) == False:\n                break\n            if self.OrderMagicNumber() != self._pv.magic_num or self.OrderSymbol() != self._pv.symbol:\n                continue\n            #--- check order type\n            if self.OrderType() == mc.OP_BUY:\n                if self._pv.open[1] > ma and self._pv.close[1] < ma:\n                    if not self.OrderClose(ticket=self.OrderTicket(), lots=self.OrderLots(), price=self._pv.bid, slippage=3, arrow_color=mc.clrWhite):\n                        self._logger.error(f\"OrderClose error {self.GetLastError()}\")\n                break\n            if self.OrderType() == mc.OP_SELL:\n                if self._pv.open[1] < ma and self._pv.close[1] > ma:\n                    if not self.OrderClose(ticket=self.OrderTicket(), lots=self.OrderLots(), price=self._pv.ask, slippage=3, arrow_color=mc.clrWhite):\n                        self._logger.error(f\"OrderClose error {self.GetLastError()}\");\n                break\n\n    def __lots_optimized(self) -> float:\n        lot: float = float(self._user_inputs[\"Lots\"])\n        maximum_risk: float = float(self._user_inputs[\"MaximumRisk\"])\n        decrease_factor: float = float(self._user_inputs[\"DecreaseFactor\"])\n        orders: int = self.OrdersHistoryTotal() # history orders total\n        losses: int = 0 # number of losses orders without a break\n        #--- select lot size\n        lot = self.NormalizeDouble(value=(self.AccountFreeMargin() * maximum_risk / 1000.0), digits=1);\n        #--- calcuulate number of losses orders without a break\n        if decrease_factor > 0:\n            for i in reversed(range(orders)):\n                if self.OrderSelect(index=i, select=mc.SELECT_BY_POS, pool=mc.MODE_HISTORY) == False:\n                    self._logger.error(\"Error in history\")\n                    break\n                if self.OrderSymbol() != self._pv.symbol or self.OrderType() > mc.OP_SELL:\n                    continue\n                #---\n                if self.OrderProfit() > 0:\n                    break\n                if self.OrderProfit() < 0:\n                    losses += 1\n            if losses > 1:\n                lot = self.NormalizeDouble(value=(lot - lot * losses / decrease_factor), digits=1)\n        #--- return lot size\n        if lot < 0.1:\n            lot = 0.1\n        return lot\n\n    def __check_for_open(self) -> None:\n        ma: float = 0\n        res: int = 0\n        #--- go trading only for first tiks of new bar\n        if self._pv.volume[0] > 1:\n            return None\n        #--- get Moving Average\n        ma = self.iMA(symbol=self._pv.symbol\n                      , timeframe=mc.PERIOD_CURRENT\n                      , ma_period=self._user_inputs[\"MovingPeriod\"]\n                      , ma_shift=self._user_inputs[\"MovingShift\"]\n                      , ma_method=mc.MODE_SMA\n                      , applied_price=mc.PRICE_CLOSE\n                      , shift=0)\n        #--- sell conditions\n        if self._pv.open[1] > ma and self._pv.close[1] < ma:\n            res = self.OrderSend(symbol=self._pv.symbol\n                                 , cmd=mc.OP_SELL\n                                 , volume=self.__lots_optimized()\n                                 , price=self._pv.bid\n                                 , slippage=3\n                                 , stoploss=0\n                                 , takeprofit=0\n                                 , comment=\"\"\n                                 , magic=self._pv.magic_num\n                                 , expiration=datetime(1970, 1, 1, 0, 0, 0)\n                                 , arrow_color=mc.clrRed)\n            return None\n        #--- buy conditions\n        if self._pv.open[1] < ma and self._pv.close[1] > ma:\n            res = self.OrderSend(symbol=self._pv.symbol\n                                 , cmd=mc.OP_BUY\n                                 , volume=self.__lots_optimized()\n                                 , price=self._pv.ask\n                                 , slippage=3\n                                 , stoploss=0\n                                 , takeprofit=0\n                                 , comment=\"\"\n                                 , magic=self._pv.magic_num\n                                 , expiration=datetime(1970, 1, 1, 0, 0, 0)\n                                 , arrow_color=mc.clrBlue)\n            return None\n\n    def __calculate_current_orders(self, symbol: str) -> int:\n        buys: int = 0\n        sells: int = 0\n        # ---\n        for i in range(self.OrdersTotal()):\n            if self._tf.order_select(index=i, select=mc.SELECT_BY_POS, pool=mc.MODE_TRADES) == False:\n                break\n            if self.OrderSymbol() == self._pv.symbol and self.OrderMagicNumber() == self._pv.magic_num:\n                if self.OrderType() == mc.OP_BUY:\n                    buys += 1\n                if self.OrderType() == mc.OP_SELL:\n                    sells += 1\n        # --- return orders volume\n        if buys > 0:\n            return buys\n        else:\n            return -sells\n\ndef main() -> None:\n    ea = MA_EA()\n    ea.InitComponent(server_ip=\"127.0.0.1\"\n                     , server_port=23456\n                     , ea_name=\"MA_EA\")\n    ea.StartEA()\n\nif __name__ == \"__main__\":\n    main()\n```\n\n### How to publish to pypi\n```bash\n# set up pypi token\n$ poetry config pypi-token.pypi my-token\n\n# build the project\n$ poetry build\n\n# publish the project\n$ poetry publish\n\n# DONE\n```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -214,7 +213,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17935128,
+        "last_serial": 18328270,
         "urls": [
             {
                 "comment_text": "",
@@ -255,6 +254,177 @@
                 "upload_time": "2023-05-02T01:59:00",
                 "upload_time_iso_8601": "2023-05-02T01:59:00.019464Z",
                 "url": "https://files.pythonhosted.org/packages/38/3c/75ebb6fbdfa44644fb5a3a185c1d81df67c6bb26d5d6970d16a5b55f068e/pysailfish-1.2.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.3.0": {
+        "info": {
+            "author": "SulfredLee",
+            "author_email": "sflee1112@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "pysailfish",
+            "package_url": "https://pypi.org/project/pysailfish/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/pysailfish/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/pysailfish/1.3.0/",
+            "requires_dist": null,
+            "requires_python": ">=3.8,<4.0",
+            "summary": "",
+            "version": "1.3.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18328270,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "79e7555026aba157ced65765e02eff0574c39965e460c0bd6e0ddc3a46e14f14",
+                    "md5": "afd87259d69b78a28b21b53709d0f9ba",
+                    "sha256": "047b08500ec7fc624cf67101053bb76c19d05eebb7f6402118b5e267f0dbd5db"
+                },
+                "downloads": -1,
+                "filename": "pysailfish-1.3.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "afd87259d69b78a28b21b53709d0f9ba",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8,<4.0",
+                "size": 42614,
+                "upload_time": "2023-06-01T03:58:35",
+                "upload_time_iso_8601": "2023-06-01T03:58:35.265919Z",
+                "url": "https://files.pythonhosted.org/packages/79/e7/555026aba157ced65765e02eff0574c39965e460c0bd6e0ddc3a46e14f14/pysailfish-1.3.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e25d5e98254c4297668c77519ed17e576bcb57d240cb32ecd96b2d74897197e8",
+                    "md5": "dc2f67216b28463366556080baddcf68",
+                    "sha256": "fb3b5ca676b6c47e43af3f0512996c412a2a85f8e8f1f22382027e14e6e73493"
+                },
+                "downloads": -1,
+                "filename": "pysailfish-1.3.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "dc2f67216b28463366556080baddcf68",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8,<4.0",
+                "size": 31011,
+                "upload_time": "2023-06-01T03:58:37",
+                "upload_time_iso_8601": "2023-06-01T03:58:37.551528Z",
+                "url": "https://files.pythonhosted.org/packages/e2/5d/5e98254c4297668c77519ed17e576bcb57d240cb32ecd96b2d74897197e8/pysailfish-1.3.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.4.0": {
+        "info": {
+            "author": "SulfredLee",
+            "author_email": "sflee1112@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "\n## pysailfish\n\n### Example EA --- simple client\n```python\nfrom pysailfish.internal.MT_EA.MT4_EA import MT4_EA\n\nclass MT4DemoEA(MT4_EA):\n    def __init__(self):\n        super().__init__()\n\n    # override\n    def _OnInit(self) -> int:\n        self._logger.info(self._user_inputs)\n        self._logger.info(\"Here\")\n        return 0\n\n    # override\n    def _OnDeinit(self, reason: int) -> None:\n        self._logger.info(f\"Here reason: {reason}\")\n        return None\n\n    # override\n    def _OnTick(self) -> None:\n        self._logger.info(\"Here\")\n        return None\n\n    # override\n    def _OnTimer(self) -> None:\n        return None\n\n    # override\n    def _OnTester(self) -> float:\n        self._logger.info(\"Here\")\n        return 0.0\n\n    # override\n    def _OnChartEvent(self\n                      , id: int\n                      , lparam: int\n                      , dparam: float\n                      , sparam: str) -> None:\n        self._logger.info(f\"Here id: {id} lparam: {lparam} dparam: {dparam} sparam: {sparam}\")\n        return None\n\ndef main() -> None:\n    ea = MT4DemoEA()\n    ea.InitComponent(server_ip=\"127.0.0.1\"\n                     , server_port=23456\n                     , ea_name=\"MT4DemoEA\")\n    ea.StartEA()\n\nif __name__ == \"__main__\":\n    main()\n```\n\n### Example EA --- Moving Average EA\n```python\nfrom datetime import datetime\n\nimport pysailfish.internal.MT_EA.mt4_const as mc\nfrom pysailfish.internal.MT_EA.MT4_EA import MT4_EA\n\nclass MA_EA(MT4_EA):\n    def __init__(self):\n        super().__init__()\n\n    # override\n    def _OnInit(self) -> int:\n        self._logger.info(self._user_inputs)\n        self._logger.info(\"Here\")\n        return 0\n\n    # override\n    def _OnDeinit(self, reason: int) -> None:\n        self._logger.info(f\"Here reason: {reason}\")\n        return None\n\n    # override\n    def _OnTick(self) -> None:\n        vv = self.iADX(symbol=self._pv.symbol\n                       , timeframe=mc.PERIOD_CURRENT\n                       , period=self._user_inputs[\"MovingPeriod\"]\n                       , applied_price=mc.PRICE_CLOSE\n                       , mode=mc.MODE_MAIN\n                       , shift=0)\n        # self._logger.info(f\"Here {self._pv.symbol} {self._pv.time[0]}\")\n        # --- check for history and trading\n        if self._pv.bars < 100 or self._pv.is_trade_allowed == False:\n            return\n\n        # --- calculate open orders by current symbol\n        if self.__calculate_current_orders(self._pv.symbol) == 0:\n            self.__check_for_open()\n        else:\n            self.__check_for_close()\n        return None\n\n    # override\n    def _OnTimer(self) -> None:\n        return None\n\n    # override\n    def _OnTester(self) -> float:\n        self._logger.info(\"Here\")\n        return 0.0\n\n    # override\n    def _OnChartEvent(self\n                      , id: int\n                      , lparam: int\n                      , dparam: float\n                      , sparam: str) -> None:\n        self._logger.info(f\"Here id: {id} lparam: {lparam} dparam: {dparam} sparam: {sparam}\")\n        return None\n\n    def __check_for_close(self) -> None:\n        ma: float = 0\n        #--- go trading only for first tiks of new bar\n        if self._pv.volume[0] > 1:\n            return None\n        #--- get Moving Average\n        ma = self.iMA(symbol=self._pv.symbol\n                      , timeframe=mc.PERIOD_CURRENT\n                      , ma_period=self._user_inputs[\"MovingPeriod\"]\n                      , ma_shift=self._user_inputs[\"MovingShift\"]\n                      , ma_method=mc.MODE_SMA\n                      , applied_price=mc.PRICE_CLOSE\n                      , shift=0)\n        #---\n        for i in range(self.OrdersTotal()):\n            if self.OrderSelect(index=i, select=mc.SELECT_BY_POS, pool=mc.MODE_TRADES) == False:\n                break\n            if self.OrderMagicNumber() != self._pv.magic_num or self.OrderSymbol() != self._pv.symbol:\n                continue\n            #--- check order type\n            if self.OrderType() == mc.OP_BUY:\n                if self._pv.open[1] > ma and self._pv.close[1] < ma:\n                    if not self.OrderClose(ticket=self.OrderTicket(), lots=self.OrderLots(), price=self._pv.bid, slippage=3, arrow_color=mc.clrWhite):\n                        self._logger.error(f\"OrderClose error {self.GetLastError()}\")\n                break\n            if self.OrderType() == mc.OP_SELL:\n                if self._pv.open[1] < ma and self._pv.close[1] > ma:\n                    if not self.OrderClose(ticket=self.OrderTicket(), lots=self.OrderLots(), price=self._pv.ask, slippage=3, arrow_color=mc.clrWhite):\n                        self._logger.error(f\"OrderClose error {self.GetLastError()}\");\n                break\n\n    def __lots_optimized(self) -> float:\n        lot: float = float(self._user_inputs[\"Lots\"])\n        maximum_risk: float = float(self._user_inputs[\"MaximumRisk\"])\n        decrease_factor: float = float(self._user_inputs[\"DecreaseFactor\"])\n        orders: int = self.OrdersHistoryTotal() # history orders total\n        losses: int = 0 # number of losses orders without a break\n        #--- select lot size\n        lot = self.NormalizeDouble(value=(self.AccountFreeMargin() * maximum_risk / 1000.0), digits=1);\n        #--- calcuulate number of losses orders without a break\n        if decrease_factor > 0:\n            for i in reversed(range(orders)):\n                if self.OrderSelect(index=i, select=mc.SELECT_BY_POS, pool=mc.MODE_HISTORY) == False:\n                    self._logger.error(\"Error in history\")\n                    break\n                if self.OrderSymbol() != self._pv.symbol or self.OrderType() > mc.OP_SELL:\n                    continue\n                #---\n                if self.OrderProfit() > 0:\n                    break\n                if self.OrderProfit() < 0:\n                    losses += 1\n            if losses > 1:\n                lot = self.NormalizeDouble(value=(lot - lot * losses / decrease_factor), digits=1)\n        #--- return lot size\n        if lot < 0.1:\n            lot = 0.1\n        return lot\n\n    def __check_for_open(self) -> None:\n        ma: float = 0\n        res: int = 0\n        #--- go trading only for first tiks of new bar\n        if self._pv.volume[0] > 1:\n            return None\n        #--- get Moving Average\n        ma = self.iMA(symbol=self._pv.symbol\n                      , timeframe=mc.PERIOD_CURRENT\n                      , ma_period=self._user_inputs[\"MovingPeriod\"]\n                      , ma_shift=self._user_inputs[\"MovingShift\"]\n                      , ma_method=mc.MODE_SMA\n                      , applied_price=mc.PRICE_CLOSE\n                      , shift=0)\n        #--- sell conditions\n        if self._pv.open[1] > ma and self._pv.close[1] < ma:\n            res = self.OrderSend(symbol=self._pv.symbol\n                                 , cmd=mc.OP_SELL\n                                 , volume=self.__lots_optimized()\n                                 , price=self._pv.bid\n                                 , slippage=3\n                                 , stoploss=0\n                                 , takeprofit=0\n                                 , comment=\"\"\n                                 , magic=self._pv.magic_num\n                                 , expiration=datetime(1970, 1, 1, 0, 0, 0)\n                                 , arrow_color=mc.clrRed)\n            return None\n        #--- buy conditions\n        if self._pv.open[1] < ma and self._pv.close[1] > ma:\n            res = self.OrderSend(symbol=self._pv.symbol\n                                 , cmd=mc.OP_BUY\n                                 , volume=self.__lots_optimized()\n                                 , price=self._pv.ask\n                                 , slippage=3\n                                 , stoploss=0\n                                 , takeprofit=0\n                                 , comment=\"\"\n                                 , magic=self._pv.magic_num\n                                 , expiration=datetime(1970, 1, 1, 0, 0, 0)\n                                 , arrow_color=mc.clrBlue)\n            return None\n\n    def __calculate_current_orders(self, symbol: str) -> int:\n        buys: int = 0\n        sells: int = 0\n        # ---\n        for i in range(self.OrdersTotal()):\n            if self._tf.order_select(index=i, select=mc.SELECT_BY_POS, pool=mc.MODE_TRADES) == False:\n                break\n            if self.OrderSymbol() == self._pv.symbol and self.OrderMagicNumber() == self._pv.magic_num:\n                if self.OrderType() == mc.OP_BUY:\n                    buys += 1\n                if self.OrderType() == mc.OP_SELL:\n                    sells += 1\n        # --- return orders volume\n        if buys > 0:\n            return buys\n        else:\n            return -sells\n\ndef main() -> None:\n    ea = MA_EA()\n    ea.InitComponent(server_ip=\"127.0.0.1\"\n                     , server_port=23456\n                     , ea_name=\"MA_EA\")\n    ea.StartEA()\n\nif __name__ == \"__main__\":\n    main()\n```\n\n### How to publish to pypi\n```bash\n# set up pypi token\n$ poetry config pypi-token.pypi my-token\n\n# build the project\n$ poetry build\n\n# publish the project\n$ poetry publish\n\n# DONE\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "pysailfish",
+            "package_url": "https://pypi.org/project/pysailfish/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/pysailfish/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/pysailfish/1.4.0/",
+            "requires_dist": null,
+            "requires_python": ">=3.8,<4.0",
+            "summary": "",
+            "version": "1.4.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18328270,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5c2cf15f4f085769613677be1eb2321d7542941b0922c36f063b86fd5f68b2cf",
+                    "md5": "04a7487b318f8913a5c67c999b4a53e4",
+                    "sha256": "2228ab499ee3e18198652c2318ddc9786e4b8a3e1c2fc54da63157fd75bb7616"
+                },
+                "downloads": -1,
+                "filename": "pysailfish-1.4.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "04a7487b318f8913a5c67c999b4a53e4",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8,<4.0",
+                "size": 42643,
+                "upload_time": "2023-06-01T04:44:00",
+                "upload_time_iso_8601": "2023-06-01T04:44:00.633954Z",
+                "url": "https://files.pythonhosted.org/packages/5c/2c/f15f4f085769613677be1eb2321d7542941b0922c36f063b86fd5f68b2cf/pysailfish-1.4.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "120707c68f83fe7cd97bc9e961be1d1ce19294971a365453464cddb8bb7657b9",
+                    "md5": "59ada777dc7cfeaf427fa145cc574e22",
+                    "sha256": "603ab2526df63fecbfe4f0134bf61568c478946b68a8adc2e807900941308d83"
+                },
+                "downloads": -1,
+                "filename": "pysailfish-1.4.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "59ada777dc7cfeaf427fa145cc574e22",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8,<4.0",
+                "size": 31089,
+                "upload_time": "2023-06-01T04:44:02",
+                "upload_time_iso_8601": "2023-06-01T04:44:02.978217Z",
+                "url": "https://files.pythonhosted.org/packages/12/07/07c68f83fe7cd97bc9e961be1d1ce19294971a365453464cddb8bb7657b9/pysailfish-1.4.0.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

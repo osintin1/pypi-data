@@ -56,7 +56,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18180480,
+        "last_serial": 18329672,
         "urls": [
             {
                 "comment_text": "",
@@ -160,7 +160,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18180480,
+        "last_serial": 18329672,
         "urls": [
             {
                 "comment_text": "",
@@ -267,7 +267,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18180480,
+        "last_serial": 18329672,
         "urls": [
             {
                 "comment_text": "",
@@ -374,7 +374,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18180480,
+        "last_serial": 18329672,
         "urls": [
             {
                 "comment_text": "",
@@ -485,7 +485,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18180480,
+        "last_serial": 18329672,
         "urls": [
             {
                 "comment_text": "",
@@ -596,7 +596,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18180480,
+        "last_serial": 18329672,
         "urls": [
             {
                 "comment_text": "",
@@ -707,7 +707,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18180480,
+        "last_serial": 18329672,
         "urls": [
             {
                 "comment_text": "",
@@ -773,7 +773,6 @@
                 "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
                 "Topic :: Software Development :: Libraries :: Application Frameworks"
             ],
-            "description": "# Sneakpeek\n\n![CI](https://github.com/flulemon/sneakpeek/actions/workflows/ci.yml/badge.svg)\n[![PyPI version](https://badge.fury.io/py/sneakpeek-py.svg)](https://badge.fury.io/py/sneakpeek-py)\n![PyPI - Downloads](https://img.shields.io/pypi/dm/sneakpeek-py?color=)\n[![Documentation Status](https://readthedocs.org/projects/sneakpeek-py/badge/?version=latest)](https://sneakpeek-py.readthedocs.io/en/latest/?badge=latest)\n[![codecov](https://codecov.io/gh/flulemon/sneakpeek/branch/main/graph/badge.svg?token=7h45P8qHRG)](https://codecov.io/gh/flulemon/sneakpeek)\n\n**Sneakpeek** - is a framework that helps to quickly and conviniently develop scrapers.\nIt's the best choice for scrapers that have some specific complex scraping logic that needs\nto be run on a constant basis.\n\n## Demo\n\n[Here's a demo project](https://github.com/flulemon/sneakpeek-demo) which uses **Sneakpeek** framework.\n\nYou can also run the demo using Docker:\n\n```bash\ndocker run -it --rm -p 8080:8080 flulemon/sneakpeek-demo\n```\n\nOnce it has started head over to http://localhost:8080 to play around with it.\n\n## Quick start\n\nSo you want to create a new scraper, first you need to make sure you\nhave installed **Sneakpeek**:\n\n```bash\npip install sneakpeek-py\n```\n\nThe next step would be implementing scraper logic (or so called scraper\nhandler):\n\n```python3\n# file: demo_scraper.py\n\nimport json\nimport logging\n\nfrom pydantic import BaseModel\n\nfrom sneakpeek.scraper_context import ScraperContext\nfrom sneakpeek.scraper_handler import ScraperHandler\n\n\n# This defines model of handler parameters that are defined\n# in the scraper config and then passed to the handler\nclass DemoScraperParams(BaseModel):\n    url: str\n\n# This is a class which actually implements logic\n# Note that you need to inherit the implementation from\n# the `sneakpeek.scraper_handler.ScraperHandler`\nclass DemoScraper(ScraperHandler):\n    # You can have any dependencies you want and pass them\n    # in the server configuration\n    def __init__(self) -> None:\n        self._logger = logging.getLogger(__name__)\n\n    # Each handler must define its name so it later\n    # can be referenced in scrapers' configuration\n    @property\n    def name(self) -> str:\n        return \"demo_scraper\"\n\n    # Some example function that processes the response\n    # and extracts valuable information\n    async def process_page(self, response: str):\n        ...\n\n    # This function is called by the worker to execute the logic\n    # The only argument that is passed is `sneakpeek.scraper_context.ScraperContext`\n    # It implements basic async HTTP client and also provides parameters\n    # that are defined in the scraper config\n    async def run(self, context: ScraperContext) -> str:\n        params = DemoScraperParams.parse_obj(context.params)\n        # Perform GET request to the URL defined in the scraper config\n        response = await context.get(params.url)\n        response_body = await response.text()\n\n        # Perform some business logic on a response\n        result = await self.process_page(response_body)\n\n        # Return meaningful job summary - must return a string\n        return json.dumps({\n            \"processed_urls\": 1,\n            \"found_results\": len(result),\n        })\n```\n\nNow that we have some scraper logic, let\\'s make it run periodically. To\ndo so let\\'s configure **SneakpeekServer**:\n\n```python3\n# file: main.py\n\nfrom sneakpeek.lib.models import Scraper, ScraperJobPriority, ScraperSchedule\nfrom sneakpeek.lib.storage.in_memory_storage import (\n    InMemoryLeaseStorage,\n    InMemoryScraperJobsStorage,\n    InMemoryScrapersStorage,\n)\nfrom sneakpeek.logging import configure_logging\nfrom sneakpeek.plugins.requests_logging_plugin import RequestsLoggingPlugin\nfrom sneakpeek.scraper_config import ScraperConfig\nfrom sneakpeek.server import SneakpeekServer\n\nfrom demo_scraper import DemoScraper\n\n# For now let's have a static list of scrapers\n# but this can as well be a dynamic list which is\n# stored in some SQL DB\nscrapers = [\n    Scraper(\n        # Unique ID of the scraper\n        id=1,\n        # Name of the scraper\n        name=f\"Demo Scraper\",\n        # How frequent should scraper be executed\n        schedule=ScraperSchedule.EVERY_MINUTE,\n        # Our handler name\n        handler=\"demo_scraper\",\n        # Scraper config, note that params must be successfully\n        # deserialized into `DemoScraperParams` class\n        config=ScraperConfig(params={\"url\": url}),\n        # Priority of the periodic scraper jobs.\n        # Note that manually invoked jobs are always\n        # scheduled with `UTMOST` priority\n        schedule_priority=ScraperJobPriority.UTMOST,\n    )\n]\n\n# Define a storage to use to store the list of the scrapers\nscrapers_storage = InMemoryScrapersStorage(scrapers)\n\n# Define a jobs storage to use\njobs_storage = InMemoryScraperJobsStorage()\n\n# Define a lease storage for the scheduler to ensure\n# that at any point of time there's only 1 active scheduler.\n# This eliminates concurrent scrapers execution\nlease_storage = InMemoryLeaseStorage()\n\n# Configure server\nserver = SneakpeekServer.create(\n    # List of implemented scraper handlers\n    handlers=[DemoScraper()],\n    scrapers_storage=scrapers_storage,\n    jobs_storage=jobs_storage,\n    lease_storage=lease_storage,\n\n    # List of plugins which will be invoked before request\n    # is dispatched or after response is received.\n    # In the example we use `sneakpeek.plugins.requests_logging_plugin.RequestsLoggingPlugin`\n    # which logs all requests and responses being made\n    plugins=[RequestsLoggingPlugin()],\n)\n\nif __name__ == \"__main__\":\n    configure_logging()\n    # Run server (spawns scheduler, API and worker)\n    # open http://localhost:8080 and explore UI\n    server.serve()\n```\n\nNow, the only thing is left is to actually run the server:\n\n```bash\npython run main.py\n```\n\nThat\\'s it! Now you can open <http://localhost:8080> and explore the UI\nto see how you scraper is being automatically scheduled and executed.\n\n## Local handler testing\n\nYou can easily test handler without running full-featured server. Here's how you can do that for the `DemoScraper` that we have developed in the [Quick start](#quick-start).\n\nAdd import in the beginning of the file:\n\n```python3\nfrom sneakpeek.runner import LocalRunner\n```\n\nAnd add the following lines to the end of the file:\n\n```python3\nif __name__ == \"__main__\":\n    LocalRunner.run(\n        DemoScraper(),\n        ScraperConfig(\n            params=DemoScraperParams(\n                url=\"http://google.com\",\n            ).dict(),\n        ),\n        plugins=[\n            RequestsLoggingPlugin(),\n        ],\n    )\n```\n\nFor the argument `LocalRunner.run` takes:\n\n1. An instance of your scraper handler\n2. Scraper config\n3. **[Optional]** List of plugins that will be used in the handler ([see full list of the plugins here](https://sneakpeek-py.readthedocs.io/en/latest/plugins/index.html))\n\nNow you can run you handler as an ordinary Python script. Given it's in `demo_scraper.py` file you can use:\n\n```bash\npython demo_scraper.py\n```\n\n## Documentation\n\nFor the full documentation please visit [sneakpeek-py.readthedocs.io](https://sneakpeek-py.readthedocs.io/en/latest/)\n\n## Contributing\n\nPlease take a look at our [contributing](https://github.com/flulemon/sneakpeek/blob/main/CONTRIBUTING.md) guidelines if you're interested in helping!\n\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -819,7 +818,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18180480,
+        "last_serial": 18329672,
         "urls": [
             {
                 "comment_text": "",
@@ -860,6 +859,118 @@
                 "upload_time": "2023-05-20T08:07:39",
                 "upload_time_iso_8601": "2023-05-20T08:07:39.947462Z",
                 "url": "https://files.pythonhosted.org/packages/6e/9f/5900d4931daf7ad0aeb71bbf93b369e84763b7a213ab3cfb25ed2ad22018/sneakpeek_py-0.1.8.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.1.9": {
+        "info": {
+            "author": "Dan Yazovsky",
+            "author_email": "daniil.yazovsky@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 2 - Pre-Alpha",
+                "Framework :: FastAPI",
+                "Framework :: Pydantic",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: BSD License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+                "Topic :: Software Development :: Libraries :: Application Frameworks"
+            ],
+            "description": "# Sneakpeek\n\n![CI](https://github.com/flulemon/sneakpeek/actions/workflows/ci.yml/badge.svg)\n[![PyPI version](https://badge.fury.io/py/sneakpeek-py.svg)](https://badge.fury.io/py/sneakpeek-py)\n![PyPI - Downloads](https://img.shields.io/pypi/dm/sneakpeek-py?color=)\n[![Documentation Status](https://readthedocs.org/projects/sneakpeek-py/badge/?version=latest)](https://sneakpeek-py.readthedocs.io/en/latest/?badge=latest)\n[![codecov](https://codecov.io/gh/flulemon/sneakpeek/branch/main/graph/badge.svg?token=7h45P8qHRG)](https://codecov.io/gh/flulemon/sneakpeek)\n\n**Sneakpeek** - is a framework that helps to quickly and conviniently develop scrapers.\nIt's the best choice for scrapers that have some specific complex scraping logic that needs\nto be run on a constant basis.\n\n## Demo\n\n[Here's a demo project](https://github.com/flulemon/sneakpeek-demo) which uses **Sneakpeek** framework.\n\nYou can also run the demo using Docker:\n\n```bash\ndocker run -it --rm -p 8080:8080 flulemon/sneakpeek-demo\n```\n\nOnce it has started head over to http://localhost:8080 to play around with it.\n\n## Quick start\n\nSo you want to create a new scraper, first you need to make sure you\nhave installed **Sneakpeek**:\n\n```bash\npip install sneakpeek-py\n```\n\nThe next step would be implementing scraper logic (or so called scraper\nhandler):\n\n```python3\n# file: demo_scraper.py\n\nimport json\nimport logging\n\nfrom pydantic import BaseModel\n\nfrom sneakpeek.scraper_context import ScraperContext\nfrom sneakpeek.scraper_handler import ScraperHandler\n\n\n# This defines model of handler parameters that are defined\n# in the scraper config and then passed to the handler\nclass DemoScraperParams(BaseModel):\n    url: str\n\n# This is a class which actually implements logic\n# Note that you need to inherit the implementation from\n# the `sneakpeek.scraper_handler.ScraperHandler`\nclass DemoScraper(ScraperHandler):\n    # You can have any dependencies you want and pass them\n    # in the server configuration\n    def __init__(self) -> None:\n        self._logger = logging.getLogger(__name__)\n\n    # Each handler must define its name so it later\n    # can be referenced in scrapers' configuration\n    @property\n    def name(self) -> str:\n        return \"demo_scraper\"\n\n    # Some example function that processes the response\n    # and extracts valuable information\n    async def process_page(self, response: str):\n        ...\n\n    # This function is called by the worker to execute the logic\n    # The only argument that is passed is `sneakpeek.scraper_context.ScraperContext`\n    # It implements basic async HTTP client and also provides parameters\n    # that are defined in the scraper config\n    async def run(self, context: ScraperContext) -> str:\n        params = DemoScraperParams.parse_obj(context.params)\n        # Perform GET request to the URL defined in the scraper config\n        response = await context.get(params.url)\n        response_body = await response.text()\n\n        # Perform some business logic on a response\n        result = await self.process_page(response_body)\n\n        # Return meaningful job summary - must return a string\n        return json.dumps({\n            \"processed_urls\": 1,\n            \"found_results\": len(result),\n        })\n```\n\nNow that we have some scraper logic, let\\'s make it run periodically. To\ndo so let\\'s configure **SneakpeekServer**:\n\n```python3\n# file: main.py\n\nfrom sneakpeek.models import Scraper, ScraperJobPriority, ScraperSchedule\nfrom sneakpeek.storage.in_memory_storage import (\n    InMemoryLeaseStorage,\n    InMemoryScraperJobsStorage,\n    InMemoryScrapersStorage,\n)\nfrom sneakpeek.logging import configure_logging\nfrom sneakpeek.plugins.requests_logging_plugin import RequestsLoggingPlugin\nfrom sneakpeek.scraper_config import ScraperConfig\nfrom sneakpeek.server import SneakpeekServer\n\nfrom demo_scraper import DemoScraper\n\n# For now let's have a static list of scrapers\n# but this can as well be a dynamic list which is\n# stored in some SQL DB\nscrapers = [\n    Scraper(\n        # Unique ID of the scraper\n        id=1,\n        # Name of the scraper\n        name=f\"Demo Scraper\",\n        # How frequent should scraper be executed\n        schedule=ScraperSchedule.EVERY_MINUTE,\n        # Our handler name\n        handler=\"demo_scraper\",\n        # Scraper config, note that params must be successfully\n        # deserialized into `DemoScraperParams` class\n        config=ScraperConfig(params={\"url\": url}),\n        # Priority of the periodic scraper jobs.\n        # Note that manually invoked jobs are always\n        # scheduled with `UTMOST` priority\n        schedule_priority=ScraperJobPriority.UTMOST,\n    )\n]\n\n# Define a storage to use to store the list of the scrapers\nscrapers_storage = InMemoryScrapersStorage(scrapers)\n\n# Define a jobs storage to use\njobs_storage = InMemoryScraperJobsStorage()\n\n# Define a lease storage for the scheduler to ensure\n# that at any point of time there's only 1 active scheduler.\n# This eliminates concurrent scrapers execution\nlease_storage = InMemoryLeaseStorage()\n\n# Configure server\nserver = SneakpeekServer.create(\n    # List of implemented scraper handlers\n    handlers=[DemoScraper()],\n    scrapers_storage=scrapers_storage,\n    jobs_storage=jobs_storage,\n    lease_storage=lease_storage,\n\n    # List of plugins which will be invoked before request\n    # is dispatched or after response is received.\n    # In the example we use `sneakpeek.plugins.requests_logging_plugin.RequestsLoggingPlugin`\n    # which logs all requests and responses being made\n    plugins=[RequestsLoggingPlugin()],\n)\n\nif __name__ == \"__main__\":\n    configure_logging()\n    # Run server (spawns scheduler, API and worker)\n    # open http://localhost:8080 and explore UI\n    server.serve()\n```\n\nNow, the only thing is left is to actually run the server:\n\n```bash\npython run main.py\n```\n\nThat\\'s it! Now you can open <http://localhost:8080> and explore the UI\nto see how you scraper is being automatically scheduled and executed.\n\n## Local handler testing\n\nYou can easily test handler without running full-featured server. Here's how you can do that for the `DemoScraper` that we have developed in the [Quick start](#quick-start).\n\nAdd import in the beginning of the file:\n\n```python3\nfrom sneakpeek.runner import LocalRunner\n```\n\nAnd add the following lines to the end of the file:\n\n```python3\nif __name__ == \"__main__\":\n    LocalRunner.run(\n        DemoScraper(),\n        ScraperConfig(\n            params=DemoScraperParams(\n                url=\"http://google.com\",\n            ).dict(),\n        ),\n        plugins=[\n            RequestsLoggingPlugin(),\n        ],\n    )\n```\n\nFor the argument `LocalRunner.run` takes:\n\n1. An instance of your scraper handler\n2. Scraper config\n3. **[Optional]** List of plugins that will be used in the handler ([see full list of the plugins here](https://sneakpeek-py.readthedocs.io/en/latest/plugins/index.html))\n\nNow you can run you handler as an ordinary Python script. Given it's in `demo_scraper.py` file you can use:\n\n```bash\npython demo_scraper.py\n```\n\n## Documentation\n\nFor the full documentation please visit [sneakpeek-py.readthedocs.io](https://sneakpeek-py.readthedocs.io/en/latest/)\n\n## Contributing\n\nPlease take a look at our [contributing](https://github.com/flulemon/sneakpeek/blob/main/CONTRIBUTING.md) guidelines if you're interested in helping!\n\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/flulemon/sneakpeek",
+            "keywords": "",
+            "license": "BSD-3-Clause",
+            "maintainer": "Dan Yazovsky",
+            "maintainer_email": "daniil.yazovsky@gmail.com",
+            "name": "sneakpeek-py",
+            "package_url": "https://pypi.org/project/sneakpeek-py/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/sneakpeek-py/",
+            "project_urls": {
+                "Documentation": "https://sneakpeek-py.readthedocs.io/en/latest/",
+                "Homepage": "https://github.com/flulemon/sneakpeek",
+                "Repository": "https://github.com/flulemon/sneakpeek"
+            },
+            "release_url": "https://pypi.org/project/sneakpeek-py/0.1.9/",
+            "requires_dist": [
+                "Sphinx (==4.2.0) ; extra == \"docs\"",
+                "aiohttp (>=3.8.4,<4.0.0)",
+                "apscheduler (>=3.10.1,<4.0.0)",
+                "cachetools (>=5.3.0,<6.0.0)",
+                "fake-useragent (>=1.1.3,<2.0.0)",
+                "fastapi (>=0.95.0,<0.96.0)",
+                "fastapi-jsonrpc (>=2.4.1,<3.0.0)",
+                "prometheus-client (>=0.16.0,<0.17.0)",
+                "pydantic (>=1.10.7,<2.0.0)",
+                "redis (>=4.5.4,<5.0.0)",
+                "sphinx-rtd-theme (==1.0.0) ; extra == \"docs\"",
+                "sphinxcontrib-napoleon (==0.7) ; extra == \"docs\"",
+                "uvicorn (>=0.21.1,<0.22.0)",
+                "yarl (>=1.9.1,<2.0.0)"
+            ],
+            "requires_python": ">=3.10,<4.0",
+            "summary": "Sneakpeek is a framework that helps to quickly and conviniently develop scrapers. It's the best choice for scrapers that have some specific complex scraping logic that needs to be run on a constant basis.",
+            "version": "0.1.9",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18329672,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "d30475febdf6327cacff476dafb3eae7fe4c29dc1605d31be38f20e50e54cb3f",
+                    "md5": "4c4d7c4568367e527fd397853f4bfca0",
+                    "sha256": "e751250a5f22afcee5e4c71673a4d27c39b558dfc0dffc04b9ec9b8c586ebeb4"
+                },
+                "downloads": -1,
+                "filename": "sneakpeek_py-0.1.9-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "4c4d7c4568367e527fd397853f4bfca0",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.10,<4.0",
+                "size": 6441839,
+                "upload_time": "2023-06-01T07:54:48",
+                "upload_time_iso_8601": "2023-06-01T07:54:48.821240Z",
+                "url": "https://files.pythonhosted.org/packages/d3/04/75febdf6327cacff476dafb3eae7fe4c29dc1605d31be38f20e50e54cb3f/sneakpeek_py-0.1.9-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6eb5b628c0df2e17f43e92530939351ac446d88e7d0c19b819418f0016d061bf",
+                    "md5": "da4f06df7aed64380fa5f5f7b8422775",
+                    "sha256": "ac333e166fc0e6320f84a9728a0992080918ab26702fcd2e83580510067f5629"
+                },
+                "downloads": -1,
+                "filename": "sneakpeek_py-0.1.9.tar.gz",
+                "has_sig": false,
+                "md5_digest": "da4f06df7aed64380fa5f5f7b8422775",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.10,<4.0",
+                "size": 6353968,
+                "upload_time": "2023-06-01T07:54:51",
+                "upload_time_iso_8601": "2023-06-01T07:54:51.671465Z",
+                "url": "https://files.pythonhosted.org/packages/6e/b5/b628c0df2e17f43e92530939351ac446d88e7d0c19b819418f0016d061bf/sneakpeek_py-0.1.9.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

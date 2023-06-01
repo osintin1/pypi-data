@@ -9,7 +9,6 @@
                 "Programming Language :: Python :: 3.10",
                 "Programming Language :: Python :: 3.11"
             ],
-            "description": "# LLM4Data\n\nLLM4Data is a Python library designed to facilitate the application of large language models (LLMs) and artificial intelligence for data and knowledge discovery. It is intended to empower users and organizations to discover and interact with development data in innovative ways through natural language.\n\nBuilt around existing metadata standards and schemas, users and organizations can benefit from LLMs to enhance data-driven applications, enabling natural language processing, text generation, and more with LLM4Data. The library serves as a bridge between LLMs and development data using open-sourced libraries, offering a seamless interface to leverage the capabilities of these powerful language models.\n\n## Installation\n\nUse the package manager [pip](https://pip.pypa.io/en/stable/) to install LLM4Data.\n\n```bash\npip install llm4data\n```\n\n## Usage\n\n\n### Generate WDI API URL from a prompt\n\n```python\nfrom llm4data.promps.indicators import wdi\n\n# Create a WDI API prompt object\nwdi_api = wdi.WDIAPIPrompt()\n\n# Send a prompt to the LLM to get a WDI API URL relevant to the prompt\nresponse = wdi_api.send_prompt(\n    \"What is the gdp and the co2 emissions of the philippines and its neighbors in the last decade?\"\n)\n\n# Parse the response to get the WDI API URL\nwdi_api_url = wdi_api.parse_response(response)\nprint(wdi_api_url)\n```\n\nThe output will look like the following:\n\n```\nhttps://api.worldbank.org/v2/country/PHL;IDN;MYS;SGP;THA;VNM/indicator/NY.GDP.MKTP.CD;EN.ATM.CO2E.KT?date=2013:2022&format=json&source=2\n```\n\nNotice that the URL generated already includes the country codes and indicators relevant to the prompt. It understands which countries are the neighbors of the Philippines. It also understands which indicator codes are likely to provide the relevant data for GDP and CO2 emissions.\n\nThe URL also includes the date range, format, and source of the data. The user can then tweak the URL as needed, and use it to query the WDI API.\n\n### Generate SQL queries on WDI data from a prompt\n\nWhile the WDI data can be loaded into a Pandas dataframe, it is not always practical to do so; for example, developing applications that can answer arbitrary data questions.\n\nThe LLM4Data library includes an SQL interface to WDI data, allowing users to query the data using SQL.\n\nThis interface will allow users to query the data using SQL, and return the results as a Pandas dataframe. The interface also allows users to query the data using SQL, and return the results as a JSON object.\n\n```python\nimport json\nfrom llm4data.prompts.indicators import templates, wdi\nfrom llm4data.llm.indicators import wdi_sql\n\nprompt = \"What is the GDP and army spending of the Philippines in 2020?\"\n\nsql_data = wdi_sql.WDISQL().llm2sql_answer(prompt, as_dict=True)\n\nprint(sql_data)\n# # {'sql': \"SELECT country, value AS gdp, (SELECT value FROM wdi WHERE country_iso3 = 'PHL' AND indicator = 'MS.MIL.XPND.GD.ZS' AND year = 2020) AS army_spending FROM wdi WHERE country_iso3 = 'PHL' AND indicator = 'NY.GDP.MKTP.CD' AND year = 2020 AND value IS NOT NULL\",\n# #  'params': {},\n# #  'data': {'data': [{'country': 'Philippines',\n# #     'gdp': 361751116292.541,\n# #     'army_spending': 1.01242392260698}],\n# #   'sample': [{'country': 'Philippines',\n# #     'gdp': 361751116292.541,\n# #     'army_spending': 1.01242392260698}]},\n# #  'num_samples': 20}\n```\n\n### Generate a narrative explanation of the SQL query response\n\nThe LLM4Data library also includes support for generating narrative explanations of SQL query responses. This is useful for generating natural language descriptions of data, which can be used to provide context to users and to explain the results of data queries.\n\n```python\nfrom llm4data.prompts.indicators import templates\n# Send the prompt to the LLM for a narrative explanation of the response.\n# This is optional and can be skipped.\n# Note that we pass only a sample in the `context_data`.\n# This could limit the quality of the response.\n# This is a limitation of the current version of the LLM which is constrained by the context length and cost.\n\nexplainer = templates.IndicatorPrompt()\ndescription = explainer.send_prompt(prompt=prompt, context_data=json.dumps(sql_data[\"data\"][\"sample\"]))\n\nprint(description[\"content\"])\n# # Based on the data provided, the GDP of the Philippines in 2020 was approximately 362 billion USD. Meanwhile, the country's army spending in the same year was around 1.01 billion USD. It is worth noting that while army spending is an important aspect of a country's budget, it is not the only factor that contributes to its economic growth and development. Other factors such as infrastructure, education, and healthcare also play a crucial role in shaping a country's economy.\n```\n\n### Why not use Langchain for SQL queries?\n\nLangchain is a great library and it has a wrapper for SQL databases that allows you to query them using natural language. The wrapper is called `SQLDatabaseChain` and can be used as follows:\n\n```python\nfrom langchain import OpenAI, SQLDatabase, SQLDatabaseChain\n\ndb = SQLDatabase.from_uri(\"sqlite:///../llm4dev/data/sqldb/wdi.db\")\nllm = OpenAI(temperature=0, verbose=True)\n\ndb_chain = SQLDatabaseChain.from_llm(llm, db, verbose=True, return_intermediate_steps=True)\nout = db_chain(\"What is the GDP and army spending of the Philippines in 2020?\")\n```\n\n```bash\n> Entering new SQLDatabaseChain chain...\nWhat is the GDP and army spending of the Philippines in 2020?\nSQLQuery:SELECT \"value\" FROM wdi WHERE \"name\" = 'GDP (current US$)' AND \"country_iso3\" = 'PHL' AND \"year\" = 2020\nUNION\nSELECT \"value\" FROM wdi WHERE \"name\" = 'Military expenditure (% of GDP)' AND \"country_iso3\" = 'PHL' AND \"year\" = 2020\nSQLResult: [(1.01242392260698,), (361751116292.541,)]\nAnswer:The GDP of the Philippines in 2020 was 1.01242392260698 and the military expenditure (% of GDP) was 361751116292.541.\n> Finished chain.\n```\n\nUnfortunately, the answer `The GDP of the Philippines in 2020 was 1.01242392260698 and the military expenditure (% of GDP) was 361751116292.541.` is incorrect because the values have been swapped.\n\nOne of the goals of LLM4Data is to develop solutions around the limitations of existing open-source solutions as applied to development data and knowledge discovery.\n\n## Key Features and Roadmap:\n\n- Text generation: Utilize LLMs to generate coherent and contextually relevant text around development data, enabling the creation of chatbots and content generation systems.\n- Interactive experiences: Create engaging user experiences by integrating LLMs into applications, allowing users to interact with development data in a more intuitive and conversational manner.\n- Metadata augmentation: Enhance existing metadata with LLMs, enabling the creation of new metadata and the improvement of existing metadata.\n- AI-powered insights: Extract valuable insights from datasets using LLMs, empowering data exploration, trend analysis, and knowledge discovery.\n- Dynamic integration: Through the use of metadata standards and schemas, load and utilize your own Python scripts containing LLM functionality on-the-fly, seamlessly incorporating them into your project through plug-ins.\n- Natural language processing: Leverage LLMs to analyze and process textual data, enabling tasks like sentiment analysis, text classification, and language translation.\n\n## Contributing\n\nPull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.\n\nPlease see [CONTRIBUTING.md](CONTRIBUTING.md) for more information.\n\n## License\n\nLLM4Data is licensed under the [ World Bank Master Community License Agreement](LICENSE).\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -46,7 +45,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18276062,
+        "last_serial": 18326646,
         "urls": [
             {
                 "comment_text": "",
@@ -87,6 +86,104 @@
                 "upload_time": "2023-05-27T18:31:08",
                 "upload_time_iso_8601": "2023-05-27T18:31:08.204164Z",
                 "url": "https://files.pythonhosted.org/packages/9b/b9/7229b9e24b70dc5f18f54b9f38798e668fd40091a20dfa5d946852c95f8e/llm4data-0.0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.2": {
+        "info": {
+            "author": "Aivin V. Solatorio",
+            "author_email": "avsolatorio@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11"
+            ],
+            "description": "# LLM4Data\n\nLLM4Data is a Python library designed to facilitate the application of large language models (LLMs) and artificial intelligence for development data and knowledge discovery. It is intended to empower users and organizations to discover and interact with development data in innovative ways through natural language.\n\nThis library contains a collection of discovery and data augmentation solutions for various data types including documents, indicators, microdata, geospatial data, and more. The current version of the library includes solutions for the WDI indicators. Additional solutions will be added in [future releases](https://worldbank.github.io/llm4data/README.html#upcoming-features).\n\nBuilt around existing [metadata standards and schemas](https://mah0001.github.io/schema-guide/), users and organizations can benefit from LLMs to enhance data-driven applications, enabling natural language processing, text generation, and more with LLM4Data. The library serves as a bridge between LLMs and development data using open-sourced libraries, offering a seamless interface to leverage the capabilities of these powerful language models.\n\n## Installation\n\nUse the package manager [pip](https://pip.pypa.io/en/stable/) to install LLM4Data.\n\n```bash\npip install llm4data\n```\n\n## Usage\n\nThe following examples demonstrate how to use LLM4Data to generate WDI API URLs and SQL queries from prompts.\n\nAdditional examples can be found [here](notebooks/examples/).\n\n### Generate WDI API URL from a prompt\n\n```{warning}\nThis example uses the OpenAI API. Before you proceed, make sure to set your API keys in the `.env` file. See the [setup instructions](https://worldbank.github.io/llm4data/notebooks/examples/getting-started/openai-api.html) for more details.\n```\n\n\n```python\nfrom llm4data.prompts.indicators import wdi\n\n# Create a WDI API prompt object\nwdi_api = wdi.WDIAPIPrompt()\n\n# Send a prompt to the LLM to get a WDI API URL relevant to the prompt\nresponse = wdi_api.send_prompt(\n    \"What is the gdp and the co2 emissions of the philippines and its neighbors in the last decade?\"\n)\n\n# Parse the response to get the WDI API URL\nwdi_api_url = wdi_api.parse_response(response)\nprint(wdi_api_url)\n```\n\nThe output will look like the following:\n\n```\nhttps://api.worldbank.org/v2/country/PHL;IDN;MYS;SGP;THA;VNM/indicator/NY.GDP.MKTP.CD;EN.ATM.CO2E.KT?date=2013:2022&format=json&source=2\n```\n\nNotice that the URL generated already includes the country codes and indicators relevant to the prompt. It understands which countries are the neighbors of the Philippines. It also understands which indicator codes are likely to provide the relevant data for GDP and CO2 emissions.\n\nThe URL also includes the date range, format, and source of the data. The user can then tweak the URL as needed, and use it to query the WDI API.\n\n### Generate SQL queries on WDI data from a prompt\n\n```{warning}\nMake sure you have set up your environment first. The example below requires a working database engine, e.g., postgresql. If you want to use SQLite, make sure to update the `.env` file and set the environment variables.\n```\n\nWhile the WDI data can be loaded into a Pandas dataframe, it is not always practical to do so; for example, developing applications that can answer arbitrary data questions.\n\nThe LLM4Data library includes an SQL interface to WDI data, allowing users to query the data using SQL.\n\nThis interface will allow users to query the data using SQL, and return the results as a Pandas dataframe. The interface also allows users to query the data using SQL, and return the results as a JSON object.\n\n```python\nimport json\nfrom llm4data.prompts.indicators import templates, wdi\nfrom llm4data.llm.indicators import wdi_sql\n\nprompt = \"What is the GDP and army spending of the Philippines in 2020?\"\n\nsql_data = wdi_sql.WDISQL().llm2sql_answer(prompt, as_dict=True)\n\nprint(sql_data)\n# # {'sql': \"SELECT country, value AS gdp, (SELECT value FROM wdi WHERE country_iso3 = 'PHL' AND indicator = 'MS.MIL.XPND.GD.ZS' AND year = 2020) AS army_spending FROM wdi WHERE country_iso3 = 'PHL' AND indicator = 'NY.GDP.MKTP.CD' AND year = 2020 AND value IS NOT NULL\",\n# #  'params': {},\n# #  'data': {'data': [{'country': 'Philippines',\n# #     'gdp': 361751116292.541,\n# #     'army_spending': 1.01242392260698}],\n# #   'sample': [{'country': 'Philippines',\n# #     'gdp': 361751116292.541,\n# #     'army_spending': 1.01242392260698}]},\n# #  'num_samples': 20}\n```\n\n### Generate a narrative explanation of the SQL query response\n\nThe LLM4Data library also includes support for generating narrative explanations of SQL query responses. This is useful for generating natural language descriptions of data, which can be used to provide context to users and to explain the results of data queries.\n\n```python\nfrom llm4data.prompts.indicators import templates\n# Send the prompt to the LLM for a narrative explanation of the response.\n# This is optional and can be skipped.\n# Note that we pass only a sample in the `context_data`.\n# This could limit the quality of the response.\n# This is a limitation of the current version of the LLM which is constrained by the context length and cost.\n\nexplainer = templates.IndicatorPrompt()\ndescription = explainer.send_prompt(prompt=prompt, context_data=json.dumps(sql_data[\"data\"][\"sample\"]))\n\nprint(description[\"content\"])\n# # Based on the data provided, the GDP of the Philippines in 2020 was approximately 362 billion USD. Meanwhile, the country's army spending in the same year was around 1.01 billion USD. It is worth noting that while army spending is an important aspect of a country's budget, it is not the only factor that contributes to its economic growth and development. Other factors such as infrastructure, education, and healthcare also play a crucial role in shaping a country's economy.\n```\n\n### Why not use Langchain for SQL queries?\n\nLangchain is a great library and it has a wrapper for SQL databases that allows you to query them using natural language. The wrapper is called `SQLDatabaseChain` and can be used as follows:\n\n```python\nfrom langchain import OpenAI, SQLDatabase, SQLDatabaseChain\n\ndb = SQLDatabase.from_uri(\"sqlite:///../llm4dev/data/sqldb/wdi.db\")\nllm = OpenAI(temperature=0, verbose=True)\n\ndb_chain = SQLDatabaseChain.from_llm(llm, db, verbose=True, return_intermediate_steps=True)\nout = db_chain(\"What is the GDP and army spending of the Philippines in 2020?\")\n```\n\n```bash\n> Entering new SQLDatabaseChain chain...\nWhat is the GDP and army spending of the Philippines in 2020?\nSQLQuery:SELECT \"value\" FROM wdi WHERE \"name\" = 'GDP (current US$)' AND \"country_iso3\" = 'PHL' AND \"year\" = 2020\nUNION\nSELECT \"value\" FROM wdi WHERE \"name\" = 'Military expenditure (% of GDP)' AND \"country_iso3\" = 'PHL' AND \"year\" = 2020\nSQLResult: [(1.01242392260698,), (361751116292.541,)]\nAnswer:The GDP of the Philippines in 2020 was 1.01242392260698 and the military expenditure (% of GDP) was 361751116292.541.\n> Finished chain.\n```\n\nUnfortunately, the answer `The GDP of the Philippines in 2020 was 1.01242392260698 and the military expenditure (% of GDP) was 361751116292.541.` is incorrect because the values have been swapped.\n\nOne of the goals of LLM4Data is to develop solutions around the limitations of existing open-source solutions as applied to development data and knowledge discovery.\n\n## Key Features and Roadmap\n\n- Text generation: Utilize LLMs to generate coherent and contextually relevant text around development data, enabling the creation of chatbots and content generation systems.\n- Interactive experiences: Create engaging user experiences by integrating LLMs into applications, allowing users to interact with development data in a more intuitive and conversational manner.\n- Metadata augmentation: Enhance existing metadata with LLMs, enabling the creation of new metadata and the improvement of existing metadata.\n- AI-powered insights: Extract valuable insights from datasets using LLMs, empowering data exploration, trend analysis, and knowledge discovery.\n- Dynamic integration: Through the use of metadata standards and schemas, load and utilize your own Python scripts containing LLM functionality on-the-fly, seamlessly incorporating them into your project through plug-ins.\n- Natural language processing: Leverage LLMs to analyze and process textual data, enabling tasks like sentiment analysis, text classification, and language translation.\n\n## Contributing\n\nPull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.\n\nPlease see [CONTRIBUTING.md](.github/CONTRIBUTING.md) for more information.\n\n## License\n\nLLM4Data is licensed under the [ World Bank Master Community License Agreement](LICENSE).\n\n\n## Upcoming Features\n\n- [ ] Metadata augmentation with LLM\n- [ ] Document and metadata indexing\n- [ ] Semantic search:\n  - [ ] For indicators\n  - [ ] For documents\n  - [ ] For microdata\n  - [ ] For geospatial data\n  - [ ] For voice and videos\n- [ ] Open-source chat UI\n- [ ] Data use framework\n\n\n## TODO\n\n- [ ] Add contributing guidelines\n- [ ] Add more documentations\n- [ ] Add unit tests\n- [ ] Add CI/CD\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "llm4data",
+            "package_url": "https://pypi.org/project/llm4data/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/llm4data/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/llm4data/0.0.2/",
+            "requires_dist": [
+                "pandas (>=2.0.1,<3.0.0)",
+                "numpy (>=1.24.3,<2.0.0)",
+                "sqlalchemy (>=2.0.15,<3.0.0)",
+                "openai-tools (==0.0.0.1.dev3)",
+                "tomli (>=2.0.1,<3.0.0)",
+                "langchain (>=0.0.178,<0.0.179)",
+                "psycopg2-binary (>=2.9.6,<3.0.0)",
+                "python-dotenv (>=1.0.0,<2.0.0)",
+                "tiktoken (>=0.4.0,<0.5.0)",
+                "fire (>=0.5.0,<0.6.0)",
+                "qdrant-client (>=1.2.0,<2.0.0) ; python_version >= \"3.10\" and python_version < \"3.12\"",
+                "sentence-transformers (>=2.2.2,<3.0.0)",
+                "instructorembedding (>=1.0.1,<2.0.0)"
+            ],
+            "requires_python": ">=3.10,<4.0",
+            "summary": "LLM4Data is a Python library designed to facilitate the application of large language models (LLMs) and artificial intelligence for development data and knowledge discovery.",
+            "version": "0.0.2",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18326646,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e54e8fd8ba6b095235e3a664b892a560779dfb3d68f268ef1fabdb53441273ba",
+                    "md5": "d71722ab759bd6de38c1a9e26b19120b",
+                    "sha256": "5d963c3600f430ce42ef39079f6167f9e387ef33c7d6aecc1f9deea1d503373b"
+                },
+                "downloads": -1,
+                "filename": "llm4data-0.0.2-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "d71722ab759bd6de38c1a9e26b19120b",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.10,<4.0",
+                "size": 50156,
+                "upload_time": "2023-06-01T02:24:49",
+                "upload_time_iso_8601": "2023-06-01T02:24:49.168229Z",
+                "url": "https://files.pythonhosted.org/packages/e5/4e/8fd8ba6b095235e3a664b892a560779dfb3d68f268ef1fabdb53441273ba/llm4data-0.0.2-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e0585d01cc15612a27143e2a7ea7ff77ccb6d9babcdb66f7ffd0b974d83fcc22",
+                    "md5": "9006a1523f33c9f78da94ad967190b82",
+                    "sha256": "be2b64b99e0667310305cd8a9190cf4a40310f54331dd59e24f24b4ffaffabe8"
+                },
+                "downloads": -1,
+                "filename": "llm4data-0.0.2.tar.gz",
+                "has_sig": false,
+                "md5_digest": "9006a1523f33c9f78da94ad967190b82",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.10,<4.0",
+                "size": 48814,
+                "upload_time": "2023-06-01T02:24:50",
+                "upload_time_iso_8601": "2023-06-01T02:24:50.691103Z",
+                "url": "https://files.pythonhosted.org/packages/e0/58/5d01cc15612a27143e2a7ea7ff77ccb6d9babcdb66f7ffd0b974d83fcc22/llm4data-0.0.2.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
