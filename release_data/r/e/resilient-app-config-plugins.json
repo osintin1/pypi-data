@@ -1,0 +1,101 @@
+{
+    "1.0.0": {
+        "info": {
+            "author": "IBM SOAR",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Programming Language :: Python :: 2.7",
+                "Programming Language :: Python :: 3.6",
+                "Programming Language :: Python :: 3.9"
+            ],
+            "description": "![IBM Security](https://raw.githubusercontent.com/ibmresilient/resilient-python-api/master/resilient-sdk/assets/IBM_Security_lockup_pos_RGB.png)\n\n# IBM SOAR App Config Plugins\n- [Release Notes](#release-notes)\n- [Overview](#overview)\n- [Usage](#usage)\n- [Creating a Custom Plugin](#creating-a-custom-plugin)\n  - [Edge Gateway Deployment](#edge-gateway-deployment)\n- [License and Terms](#license-and-terms)\n\n## Release Notes\n* **v1.0.0** introduced `resilient-app-config-plugins`. This release included the built-in plugins for HashiCorp Vault, Cyberark, and Keyring.\n\n## Overview\nThis package (`resilient-app-config-plugins`) is a Python package for the base classes for App Config plugins. This package exposes built-in plugins, as well as the interface class that outlines how to implement custom plugins. App Config plugins allow you to use external credential providers (sometimes referred to here as PAMs) manage secrets. With App Config plugins, your secrets are managed by your provider and loaded only into memory on an as-need basis for your SOAR apps. Credentials are kept out of logs and never saved to disk.\n\n## Usage\nSee the official IBM documentation for details on how to use each supported App Config plugin: [ibm.biz/soar-docs](https://ibm.biz/soar-docs).\n\n## Creating a Custom Plugin\n\nYou can create your own plugin to connect `resilient-circuits` to any external credential provider that may not be built-in to the `resilient-circuits` framework. To create a custom plugin, you'll need to create a custom implementation of this package. If you plan to deploy the app on the Edge Gateway, you will also require a custom docker registry from which your Edge Gateway machine is setup to pull from.\n\n1. Clone this repo to your local machine: `git clone https://github.com/ibmresilient/resilient-python-api.git`\n1. Open the repo in your favorite code editor\n1. Navigate to the `resilient-app-config-plugins/resilient_app_config_plugins` directory and create a new `.py` file with the name of your PAM solution which you wish to integrate with.\n1. This Python file should expose a custom class, which implements the interface defined by `resilient_app_config_plugins.plugin_base.PAMPluginInterface`. That interface requires that you implement a constructor, a `get()` method, and a `selftest()` method. See one of the built-in plugins for details. The most important part is to implement the `get()` method to make a REST request out to the solution to retrieve the data affiliated with the value that you set for that config in your app.config file. The format which you use to reference values in the app.config is up to you.\n\n    This Python file should expose a custom class, which implements the interface defined by `resilient_app_config_plugins.plugin_base.PAMPluginInterface`. That interface requires that you implement a constructor, a `get()` method, and a `selftest()` method. See one of the built-in plugins for details. The most important part is to implement the `get()` method to make a REST request out to the solution to retrieve the data affiliated with the value that you set for that config in your app.config file. The format which you use to reference values in the app.config is up to you.\n\n    Note that there are a few conventions that we use which are exposed from the parent class `PAMPluginInterface`. \n    * `PAM_VERIFY_SERVER_CERT`: true, false or path to a certificate file for self-signed certs. Should be parsed with `resilient_app_config_plugins.plugin_base.get_verify_from_string()` to properly read the value\n    * `PAM_ADDRESS`: address where the PAM endpoint is hosted\n    * `PAM_APP_ID`: ID needed to authenticate to endpoint with plugin\n\n    **Example:**\n\n    ```python\n    import requests\n    from resilient_app_config_plugins.plugin_base import PAMPluginInterface\n\n    class MyPlugin(PAMPluginInterface):\n        def __init__(self, protected_secrets_manager, key, *args, **kwargs):\n            \"\"\"\n            here save the protected_secrets_manager and key variables if needed\n            \"\"\"\n            pass\n        def get(self, plain_text_value, default=None):\n            \"\"\"\n            plain_text_value is the content of a ^-prefixed string from the app.config.\n            parse the value as needed to reach out to your endpoint\n            \"\"\"\n            return plain_text_value\n        def selftest(self):\n            \"\"\"\n            return a tuple of a boolean and a string\n            where the boolean indicates whether or not the\n            plugin is correctly configured and the string \n            is a reason for why it might not be correctly configured.\n            \"\"\"\n            return True, \"\"\n    ```\n\n1. Add the class to the `__init__.py` file at the root of the package. Exposing your class here is the key to allowing the `resilient` package to load your plugin:\n\n    ```python\n    #!/usr/bin/env python\n    # -*- coding: utf-8 -*-\n    # (c) Copyright IBM Corp. 2023. All Rights Reserved.\n\n    # All valid built-in PAM plugins must be defined and imported here\n    from .cyberark import Cyberark\n    from .hashicorp import HashiCorpVault\n    from .keyring import Keyring\n    from .my_custom_plug import MyPlugin\n    ```\n\n---\n\n### Edge Gateway Deployment\n\nDeploying an app with a custom App Config plugin requires a custom Docker registry to which you can push and host app container images. This guide assumes your Docker registry is configured and your Edge Gateway is configured to pull from that registry.\n\n6. *(Edge Gateway deployment only)*: To add the package to your container image, build the wheel for your custom implementation of the `resilient-app-config-plugins` package:\n\n    ```sh\n    cd resilient-app-config-plugins\n    pip install build\n    python -m build\n    ```\n\n1. *(Edge Gateway deployment only)*: For each app which you wish to include this custom plugin, download the source code from App Exchange. You will have to rebuild each app with the plugins included\n1.  *(Edge Gateway deployment only)*: Edit the Dockerfile so that the .whl file created by `build` is copied to the Docker image and installed with pip (NOTE: you first have to copy the .whl file to a location knowable by the Dockerfile, usually this is a folder called `dist` within the app's package structure):\n\n    ```Docker\n    COPY ./dist /tmp/packages\n    RUN pip install /tmp/packages/resilient_app_config_plugins-*.whl\n    ```\n\n9. *(Edge Gateway deployment only)*: Repackage the app with `resilient-sdk package`:\n\n    ```sh\n    resilient-sdk package -p . --repository-name <repo name>\n    ```\n\n1. *(Edge Gateway deployment only)*: Rebuild the Docker image:\n\n    ```sh\n    docker build . -t <docker registry address>/<repo name>/<app name>:<version>\n    ```\n\n1. *(Edge Gateway deployment only)*: When installing the app through the Edge Gateway, make sure to use the app's `/dist/*.zip` file rather than the `.zip` file found on app exchange as the custom one will contain your repository name.\n\n## License and Terms\n\nCopyright \u00a9 IBM Corporation 2023\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to\ndeal in the Software without restriction, including without limitation the\nrights to use, copy, modify, merge, publish, distribute, sublicense, and/or\nsell copies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in\nall copies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING\nFROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS\nIN THE SOFTWARE.\n",
+            "description_content_type": "text/markdown; charset=UTF-8",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/ibmresilient/resilient-python-api/tree/main/resilient-app-config-plugins",
+            "keywords": "ibm,soar,resilient,resilient-circuits,circuits,resilient-sdk,sdk,plugins,resilient-plugins,app-config-plugins",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "resilient-app-config-plugins",
+            "package_url": "https://pypi.org/project/resilient-app-config-plugins/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/resilient-app-config-plugins/",
+            "project_urls": {
+                "API Docs": "https://ibm.biz/soar-python-docs",
+                "Documentation": "https://ibm.biz/soar-docs",
+                "Homepage": "https://github.com/ibmresilient/resilient-python-api/tree/main/resilient-app-config-plugins",
+                "IBM Community": "https://ibm.biz/soarcommunity"
+            },
+            "release_url": "https://pypi.org/project/resilient-app-config-plugins/1.0.0/",
+            "requires_dist": [
+                "requests (~=2.27)",
+                "six (~=1.16)",
+                "cachetools (~=2.1) ; python_version <= \"3.6\"",
+                "requests-pkcs12 (==1.10) ; python_version == \"2.7\"",
+                "keyring (==18.0.1) ; python_version == \"2.7\"",
+                "keyring (~=23.4) ; python_version == \"3.6\"",
+                "keyring (~=23.5) ; python_version > \"3.6\"",
+                "cachetools (~=5.0) ; python_version > \"3.6\"",
+                "requests-pkcs12 (==1.15) ; python_version >= \"3.6\""
+            ],
+            "requires_python": "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,!=3.5.*,>=2.7",
+            "summary": "Python base package for IBM SOAR apps App Config Plugins",
+            "version": "1.0.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18336390,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "551c97c4e21373bef7b1e1deb823a215c776a17b77e53b53cc4a418e8d0629da",
+                    "md5": "0d0529c229b2417c9c00915cf31eb773",
+                    "sha256": "016624c24afe12d5b8f44e2812b2f0a8ba227ec252900294b7b6837dfb755e6a"
+                },
+                "downloads": -1,
+                "filename": "resilient_app_config_plugins-1.0.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "0d0529c229b2417c9c00915cf31eb773",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,!=3.5.*,>=2.7",
+                "size": 14965,
+                "upload_time": "2023-06-01T15:58:13",
+                "upload_time_iso_8601": "2023-06-01T15:58:13.661829Z",
+                "url": "https://files.pythonhosted.org/packages/55/1c/97c4e21373bef7b1e1deb823a215c776a17b77e53b53cc4a418e8d0629da/resilient_app_config_plugins-1.0.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "09501fa3a8cb8cef38d642c87aa17e7e3b15abea012d6b911703fea00dcb07e7",
+                    "md5": "20ec134cb22ba686c0b48c4872c10e49",
+                    "sha256": "37c6e7de9a5d00ef55666b4327ec1e454b26f8110e80ae81502b4113dc3e07aa"
+                },
+                "downloads": -1,
+                "filename": "resilient_app_config_plugins-1.0.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "20ec134cb22ba686c0b48c4872c10e49",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": "!=3.0.*,!=3.1.*,!=3.2.*,!=3.3.*,!=3.4.*,!=3.5.*,>=2.7",
+                "size": 14325,
+                "upload_time": "2023-06-01T15:58:15",
+                "upload_time_iso_8601": "2023-06-01T15:58:15.464181Z",
+                "url": "https://files.pythonhosted.org/packages/09/50/1fa3a8cb8cef38d642c87aa17e7e3b15abea012d6b911703fea00dcb07e7/resilient_app_config_plugins-1.0.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

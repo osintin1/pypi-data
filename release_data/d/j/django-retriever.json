@@ -1,0 +1,99 @@
+{
+    "0.0.1": {
+        "info": {
+            "author": "",
+            "author_email": "Jake Ballantyne <jake.david.ballantyne@gmail.com>",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 2 - Pre-Alpha",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3 :: Only",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.12"
+            ],
+            "description": "# Django Retriever \n### The Simple Way to Interface JSON and Django\n\n## Overview\nThe retriever is an interface used to define how to map\na JSON object to a Django model. The retriever takes care\nof mutating the JSON structure, connecting foreign objects,\nand creating or updating the resulting Django model.\n\nThere are several components that must be defined in the\nretriever to complete the job,\n  - `model` the Django model with which the retriever\nis intended to interface\n  - `id` the list of field names in the Django model\nthat should be used to determine whether an object is\nalready in the database. These can be thought of unique\nfields. If they are not actually unique, the retriever will\nreact by not saving the JSON object.\n  - `structures` the critical component of the retriever. The\n`structures` attribute is the interface between the JSON\ndocument and the Django model. The interface is a nested structure\nof lists and dictionaries, and must nest to a series of tuple/list\nobjects in the following format,\n    - `name` the name of the key in the JSON document\n    - `foreign_structures` (defined below) the list of foreign structures to\ndefine how a key in the JSON document must be used to relate\nDjango models\n    - `structures` (defined below) the list of mappings to determine how the\nJSON document value must be mutated and saved to the Django\nmodel\n\n## Definitions\n- `ForeignStructure`\n  - `model` the foreign model\n  - `id` the primary key field name in the foreign model\n  - `id2` the field name in the current model that is mapped\nto the primary key in the foreign model (`id`)\n  - `Structure` the normal structure definition for the JSON\ndocument, because the value might very well map to another\nfield on the foreign model\n- `Structure`\n  - `name` the new name of the JSON document, in the case\nthe JSON and the Django model name the field differently\n  - `func` the mutation to perform on the JSON document. Can\nbe one of `int`, `str`, `bool`, or a custom function\n\n## Installation\n```\npip install django-retriever\n```\n\n## Contributing\nBefore contributing, please install the `test` and `dev` versions of\nthe library,\n```\npip install django-retriever[dev,test]\n```\n\nPlease run tests using (in the root project directory)\n```\npython -m pytest tests\n```\n\nOnce the package is ready to be uploaded, please complete the\nfollowing in order,\n- Increment the `version` template in `pyproject.toml`\n- Set the `PYPI_TOKEN` environment variable\n- Run `./bin/twine` from the root project directory\n\n\n## Usage\nThe best explanation is going to be through an implementation, so please\nconsider the following case. The JSON object includes information\nabout a product image, and is taken from a public API.\n\nConsider the JSON document,\n```\n{\n  \"results\": [\n    {\n      \"raw\": {\n        \"ec_sku\": \"333333\",\n        \"image\": \"https://image3.jpeg\"\n      }\n    }\n    {\n      \"raw\": {\n        \"ec_sku\": \"333333\",\n        \"image\": \"https://image3.jpeg\"\n      }\n    }\n    {\n      \"raw\": {\n        \"ec_sku\": \"333333\",\n        \"image\": \"https://image3.jpeg\"\n      }\n    }\n  ]\n}\n```\nThe JSON document should be loaded into a python object,\nusing a parser of your choice. The following code in\n`models.py` and `retriever.py` is a sample that could be\nused to parse the JSON document into some database objects\nthrough the Django ORM.\n```\n# models.py\n\nfrom django.db import models\n\n\nclass Product(models.Model):\n\n    id = models.AutoField(\n        primary_key=True)\n    sku = models.CharField(\n        max_length=64)\n\n\nclass Image(models.Model):\n\n    product = models.ForeignKey(\n        Product,\n        on_delete=models.CASCADE,\n        related_name=\"images\")\n    image = models.ImageField(\n        # storage, etc.\n        ...)\n    source_url = models.CharField(\n      max_length=512)\n```\n```\n# retrievers.py\n\nfrom retriever import Retriever\nfrom .models import (\n    Image,\n    Product\n)\n\n\nclass ProductRetriever(Retriever):\n\n    model = Product\n    id = [\"sku\"]\n    structures = [\n        {\n            \"results\": [\n                {\n                    \"raw\": [\n                        [\n                            \"ec_sku\",\n                            [],\n                            [\n                                \"sku\",\n                                None\n                            ]\n                        ]\n                    ]\n                }\n            ]\n        }\n    ]\n\n\nclass ImageRetriever(Retriever):\n\n    model = Image\n    id = [\"product_id\", \"source_url\"]\n    structures = [\n        {\n            \"results\": [\n                {\n                    \"raw\": [\n                        [\n                            # JSON name\n                            \"ec_sku\",\n                            # foreign structures\n                            [\n                                # foreign model\n                                Product,\n                                # id and foreign id field name\n                                [\"id\"],\n                                [\"product_id\"],\n                                # normal structure, the `ec_sku` field is\n                                # clearly a map to the unique field `sku`, not `id` # itself. Note that `sku` should be unique or the\n                                # structure will not be created and an error should\n                                # be propagated\n                                [\n                                    \"sku\",\n                                    None\n                                ],\n                            ],\n                            # structures. Note `sku` is not in the `Image` model,\n                            # we are not interested in mapping it\n                            [],\n                        ],\n                        [\n                            # JSON name\n                            \"image\",\n                            # no foreign structures\n                            [],\n                            # map it to `source_url` field name, no\n                            # mutation required\n                            [\n                                \"source_url\",\n                                None,\n                            ],\n                        ],\n                    ]\n                },\n            ]\n        }\n    ]\n```\nIf you've loaded in the JSON document and defined the retrievers\ncorrectly, you can now simply save the JSON document to\nthe database,\n```\nfrom .retrievers import *\n\njson_object = {\n    \"results\": [\n        ...\n    ]\n}\n\nProductRetriever(\n    batch_size=5,\n    default=[],\n    strict=True\n).save(json_object)\n\nImageRetriever(\n    batch_size=5,\n    default=[],\n    strict=True\n).save(json_object)\n```\nThe retrievers have used the `ec_sku` field in the JSON\ndocument to find the `Product` object that corresponds to\nthe correct `Image` object. In this way, a JSON document can\nbe decomposed into several retrievers, and the definitions \ncan be isolated. Note, the `ProductRetriever` should be called\nbefore the `ImageRetriever`, or there will be no `Product` objects\nin the database to find.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "django,JSON",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "Jake Ballantyne <jake.david.ballantyne@gmail.com>",
+            "name": "django-retriever",
+            "package_url": "https://pypi.org/project/django-retriever/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/django-retriever/",
+            "project_urls": {
+                "Homepage": "https://github.com/jbal/django-retriever",
+                "Issues": "https://github.com/jbal/django-retriever/issues",
+                "Repository": "https://github.com/jbal/django-retriever"
+            },
+            "release_url": "https://pypi.org/project/django-retriever/0.0.1/",
+            "requires_dist": [
+                "django (>=4.2)",
+                "pre-commit (>=2.20.0) ; extra == 'dev'",
+                "pytest (>=7.2.0) ; extra == 'test'"
+            ],
+            "requires_python": ">=3.10",
+            "summary": "The `Retriever` class is used to bridge the",
+            "version": "0.0.1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18339483,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "69ef46cd6c44d398cbd3807770c47493a16c8f7e570cb448d78e4d342df1ec2e",
+                    "md5": "bfdcabefdd2427f86a73daefbd2cf9ba",
+                    "sha256": "7591d9d6e9072aacc917de8b5ce5c3dc828d50360876ffcc6c5268e8badddd22"
+                },
+                "downloads": -1,
+                "filename": "django_retriever-0.0.1-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "bfdcabefdd2427f86a73daefbd2cf9ba",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.10",
+                "size": 4403,
+                "upload_time": "2023-06-01T20:25:06",
+                "upload_time_iso_8601": "2023-06-01T20:25:06.485382Z",
+                "url": "https://files.pythonhosted.org/packages/69/ef/46cd6c44d398cbd3807770c47493a16c8f7e570cb448d78e4d342df1ec2e/django_retriever-0.0.1-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "bd04db38f8f76dd09b6a4bad030e3a5114ba63fb067c0280529577c8cd8cd119",
+                    "md5": "ed4e823d0965212a0333bfc16b27a86a",
+                    "sha256": "4cf0d6bb72d7faf031f8174a1a185d947d186cadd225028037613565f2f3de5a"
+                },
+                "downloads": -1,
+                "filename": "django-retriever-0.0.1.tar.gz",
+                "has_sig": false,
+                "md5_digest": "ed4e823d0965212a0333bfc16b27a86a",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.10",
+                "size": 5822,
+                "upload_time": "2023-06-01T20:25:08",
+                "upload_time_iso_8601": "2023-06-01T20:25:08.537813Z",
+                "url": "https://files.pythonhosted.org/packages/bd/04/db38f8f76dd09b6a4bad030e3a5114ba63fb067c0280529577c8cd8cd119/django-retriever-0.0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
