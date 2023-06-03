@@ -19,7 +19,6 @@
                 "Programming Language :: Python :: Implementation :: CPython",
                 "Topic :: Security :: Cryptography"
             ],
-            "description": "# gmssl_pyx\n\npython wrapper of [GmSSL](https://github.com/guanzhi/GmSSL)\n\n\u4f7f\u7528\u7684\u7248\u672c\u662f [GmSSL-3.1.0](https://github.com/guanzhi/GmSSL/releases/tag/v3.1.0)\n\n\u652f\u6301 Python 3.7, 3.8, 3.9, 3.10\n\n## \u5b89\u88c5\n\n```shell\npip install gmssl_pyx\n```\n\n## SM2\n\n### \u52a0\u5bc6\u548c\u89e3\u5bc6\n\n```python\nfrom gmssl_pyx import sm2_key_generate, sm2_encrypt, sm2_decrypt\n\n\n# \u751f\u6210 SM2 \u516c\u79c1\u94a5\npublic_key, private_key = sm2_key_generate()\n# \u52a0\u5bc6\nplaintext = b\"hello world\"\nciphertext = sm2_encrypt(public_key, plaintext)\nprint(\"ciphertext\", ciphertext)\n# \u89e3\u5bc6\nplaintext = sm2_decrypt(private_key, ciphertext)\nprint(\"plaintext\", plaintext)\n\n```\n\n### \u7b7e\u540d\u548c\u9a8c\u7b7e\n\n```python\nfrom gmssl_pyx import sm2_key_generate, sm2_sign, sm2_verify\n\n\n# \u751f\u6210 SM2 \u516c\u79c1\u94a5\npublic_key, private_key = sm2_key_generate()\n\n# \u6ca1\u6709 signer_id \u548c SM3 \u6742\u51d1\u503c z\n# \u7b7e\u540d\nmessage = b\"hello world\"\nsignature = sm2_sign(private_key, public_key, message, signer_id=None)\nprint(\"signature\", signature)\n# \u9a8c\u8bc1\u7b7e\u540d\nverify = sm2_verify(private_key, public_key, message, signature, signer_id=None)\nprint(\"verify\", verify)\n\n# \u9ed8\u8ba4 signer_id \u548c SM3 \u6742\u51d1\u503c z\nsignature = sm2_sign(private_key, public_key, message)\nprint(\"signature\", signature)\n# \u9a8c\u8bc1\u7b7e\u540d\nverify = sm2_verify(private_key, public_key, message, signature)\nprint(\"verify\", verify)\n\n# \u81ea\u5b9a\u4e49 signer_id \u548c SM3 \u6742\u51d1\u503c z\nsigner_id = b\"signer_id\"\nsignature = sm2_sign(private_key, public_key, message, signer_id=signer_id)\nprint(\"signature\", signature)\n# \u9a8c\u8bc1\u7b7e\u540d\nverify = sm2_verify(private_key, public_key, message, signature, signer_id=signer_id)\nprint(\"verify\", verify)\n```\n\n### ASN.1 DER \u7f16\u7801\n\n\u52a0\u5bc6\u548c\u7b7e\u540d\u7684\u7ed3\u679c\u90fd\u662f ASN.1 DER \u7f16\u7801\uff0c\u5982\u679c\u8981\u5f97\u5230\u539f\u59cb\u7684\u5bc6\u6587\u548c\u7b7e\u540d\uff0c\u53ef\u4ee5\u53c2\u8003\u4e0b\u9762\u7684\u4f8b\u5b50\n\n\u9700\u8981\u5b89\u88c5 pycryptodomex \u5e93\n\n```shell\npip install pycryptodomex\n```\n\n```python\nfrom Cryptodome.Util.asn1 import DerSequence, DerOctetString, DerInteger\nfrom gmssl_pyx import sm2_key_generate, sm2_encrypt, sm2_decrypt\n\n\n# \u751f\u6210 SM2 \u516c\u79c1\u94a5\npublic_key, private_key = sm2_key_generate()\n# \u52a0\u5bc6\nplaintext = b\"hello world\"\nciphertext = sm2_encrypt(public_key, plaintext)\nprint(\"ciphertext\", ciphertext)\nseq_der = DerSequence()\ndecoded_ciphertext = seq_der.decode(ciphertext)\n# ASN.1 DER \u89e3\u7801\n# c1: point(x, y) 64bytes\n# c2: ciphertext len(data)\n# c3: hash 32bytes\n# der order: c1x c1y hash ciphertext\nc1x = decoded_ciphertext[0]\nc1y = decoded_ciphertext[1]\nc3 = DerOctetString().decode(decoded_ciphertext[2]).payload\nc2 = DerOctetString().decode(decoded_ciphertext[3]).payload\n# \u6a21\u5f0f\u4e3a C1C3C2\nraw_ciphertext = c1x.to_bytes(32, \"big\") + c1y.to_bytes(32, \"big\") + c3 + c2\n\n# \u5982\u679c\u9700\u8981\u89e3\u5bc6\u539f\u59cb\u5bc6\u6587\uff0c\u9700\u8981\u5148\u8fdb\u884c ASN.1 DER \u7f16\u7801\nseq_der = DerSequence()\nc1x = raw_ciphertext[:32]\nx = DerInteger(int.from_bytes(c1x, byteorder='big'))\nseq_der.append(x)\nc1y = raw_ciphertext[32:64]\ny = DerInteger(int.from_bytes(c1y, byteorder='big'))\nseq_der.append(y)\nc3 = raw_ciphertext[64:64 + 32]\nseq_der.append(DerOctetString(c3))\nc2 = raw_ciphertext[64 +32:]\nseq_der.append(DerOctetString(c2))\nciphertext = seq_der.encode()\nplaintext = sm2_decrypt(private_key, ciphertext)\nprint(\"plaintext\", plaintext)\n\n# \u7b7e\u540d\nsignature = sm2_sign(private_key, public_key, message)\nseq_der = DerSequence()\ndecoded_sign = seq_der.decode(signature)\n# ASN.1 DER \u89e3\u7801\uff0c\u4e24\u4e2a 32 \u5b57\u8282\u7684\u6574\u6570\nr = decoded_sign[0]\ns = decoded_sign[1]\nprint('r', r)\nprint('s', s)\nraw_signature = '%064x%064x' % (r, s)\n\n# \u9a8c\u8bc1\u539f\u59cb\u7b7e\u540d\u540c\u6837\u9700\u8981\u5148\u8fdb\u884c ASN.1 DER \u7f16\u7801\nr = int(raw_signature[:64], base=16)\ns = int(raw_signature[64:], base=16)\nseq_der = DerSequence()\nseq_der.append(DerInteger(r))\nseq_der.append(DerInteger(s))\nsignature = seq_der.encode()\nverify = sm2_verify(private_key, public_key, message, signature)\nprint('verify', verify)\n```\n\n### \u516c\u79c1\u94a5\u7684\u4e00\u4e9b\u8865\u5145\u8bf4\u660e\n\n\u516c\u94a5\u957f\u5ea6\u4e3a 64 \u5b57\u8282\uff0c\u662f\u4e24\u4e2a 32 \u5b57\u8282\u7684\u6574\u6570 x y \u62fc\u63a5\u800c\u6210\u3002\n\n\u5982\u679c\u516c\u94a5\u957f\u5ea6\u4e3a 65 \u5b57\u8282\uff0c\u90a3\u4e48\u7b2c\u4e00\u4e2a\u5b57\u8282\u4e3a '\\x04' \uff0c\u8868\u793a\u540e\u9762\u7684 64 \u5b57\u8282\u5c31\u662f\u516c\u94a5\u3002\n\n\u5982\u679c\u516c\u94a5\u957f\u5ea6\u4e3a 33 \u5b57\u8282\uff0c\u90a3\u4e48\u7b2c\u4e00\u4e2a\u5b57\u8282\u4e3a '\\x02' \u6216\u8005 '\\x03' \uff0c \n\u8fd9\u662f\u4e00\u79cd\u538b\u7f29\u683c\u5f0f\uff0c\u540e\u9762\u7684 32 \u5b57\u8282\u4e3a\u6574\u6570 x \uff0c y \u53ef\u4ee5\u6839\u636e x \u8ba1\u7b97\u51fa\u6765\u3002\n\n\u79c1\u94a5\u957f\u5ea6\u4e3a 32 \u5b57\u8282\uff0c\u6ca1\u6709\u5176\u4ed6\u53d8\u5316\u3002\n\n```python\nfrom gmssl_pyx import sm2_key_generate, normalize_sm2_public_key\n\n\nraw_public_key, _ = sm2_key_generate()\nk1 = normalize_sm2_public_key(raw_public_key)\nassert k1 == raw_public_key\nk1 = normalize_sm2_public_key(b'\\x04' + raw_public_key)\nassert k1 == raw_public_key\n\n# \u538b\u7f29\u7248\u516c\u94a5\ny = int.from_bytes(raw_public_key[32:], byteorder='big')\nif y % 2 == 0:\n    # y \u662f\u5076\u6570\n    compressed_public_key = b'\\x02' +raw_public_key[:32]\nelse:\n    compressed_public_key = b'\\x03' + raw_public_key[:32]\nk1 = normalize_sm2_public_key(compressed_public_key)\nassert k1 == raw_public_key\n```\n\n## SM3\n\n### hash \u8ba1\u7b97\n\n```python\nfrom gmssl_pyx import sm3_hash\n\n\nmessage = b'hello world'\nsignature = sm3_hash(message)\nprint('message', message)\nprint('signature', signature.hex())\n```\n\n### hmac \u8ba1\u7b97\n\n```python\nimport secrets\nfrom gmssl_pyx import sm3_hmac\n\n\nkey = secrets.token_bytes(32)\nmessage = b\"sm3_hmac\"\nhmac_data = sm3_hmac(key, message)\nprint(\"message\", message)\nprint(\"hmac_data\", hmac_data)\n```\n\n### kdf \u8ba1\u7b97\n\n```python\nimport secrets\nfrom gmssl_pyx import sm3_kdf\n\n\nkey = secrets.token_bytes(32)\nnew_key = sm3_kdf(key, 32)\nprint('kdf new_key', new_key)\n```\n\n## SM4\n\n### CBC \u6a21\u5f0f\u52a0\u5bc6\u548c\u89e3\u5bc6\n\n```python\nimport secrets\nfrom gmssl_pyx import (\n    sm4_cbc_padding_encrypt,\n    sm4_cbc_padding_decrypt,\n    SM4_KEY_SIZE,\n    SM4_BLOCK_SIZE,\n)\n\n\nkey = secrets.token_bytes(SM4_KEY_SIZE)\niv = secrets.token_bytes(SM4_BLOCK_SIZE)\nplaintext = b\"hello world\"\n# \u52a0\u5bc6\nciphertext = sm4_cbc_padding_encrypt(key, iv, plaintext)\nprint(\"ciphertext\", ciphertext.hex())\n\n# \u89e3\u5bc6\ndecrypted = sm4_cbc_padding_decrypt(key, iv, ciphertext)\nprint(\"decrypted\", decrypted)\n\n```\n\n### CTR \u6a21\u5f0f\u52a0\u5bc6\u548c\u89e3\u5bc6\n\n```python\nimport secrets\nfrom gmssl_pyx import (\n    sm4_ctr_encrypt,\n    sm4_ctr_decrypt,\n    SM4_KEY_SIZE,\n    SM4_BLOCK_SIZE,\n)\n\n\nkey = secrets.token_bytes(SM4_KEY_SIZE)\nctr = secrets.token_bytes(SM4_BLOCK_SIZE)\nplaintext = b\"hello world\"\n# \u52a0\u5bc6\nciphertext = sm4_ctr_encrypt(key, ctr, plaintext)\nprint(\"ciphertext\", ciphertext.hex())\n\n# \u89e3\u5bc6\ndecrypted = sm4_ctr_decrypt(key, ctr, ciphertext)\nprint(\"decrypted\", decrypted)\n\n```\n\n### GCM \u6a21\u5f0f\u52a0\u5bc6\u548c\u89e3\u5bc6\n\n```python\nimport secrets\nfrom gmssl_pyx import sm4_gcm_encrypt, sm4_gcm_decrypt, SM4_KEY_SIZE, SM4_BLOCK_SIZE\n\n\nplaintext = b'hello world'\nkey = secrets.token_bytes(SM4_KEY_SIZE)\niv = secrets.token_bytes(SM4_BLOCK_SIZE)\naad = secrets.token_bytes(16)\n# \u52a0\u5bc6\nciphertext, tag = sm4_gcm_encrypt(key, iv, aad, plaintext=plaintext)\nprint('ciphertext', ciphertext)\n\n# \u89e3\u5bc6\nplaintext = sm4_gcm_decrypt(key, iv=iv, aad=aad, ciphertext=ciphertext, tag=tag)\nprint('plaintext', plaintext)\n\n```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -48,7 +47,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 17940429,
+        "last_serial": 18350941,
         "urls": [
             {
                 "comment_text": "",
@@ -320,6 +319,333 @@
                 "upload_time": "2023-05-02T12:33:52",
                 "upload_time_iso_8601": "2023-05-02T12:33:52.761975Z",
                 "url": "https://files.pythonhosted.org/packages/0e/3a/01ff128c84c4749a20efe8534aaf36ad3e88fe3e99b028066b9ea52acdf7/gmssl_pyx-1.0.1.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.1.0": {
+        "info": {
+            "author": "yeqing",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: Apache Software License",
+                "Operating System :: MacOS :: MacOS X",
+                "Operating System :: Microsoft :: Windows",
+                "Operating System :: Unix",
+                "Programming Language :: C",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Programming Language :: Python :: Implementation :: CPython",
+                "Topic :: Security :: Cryptography"
+            ],
+            "description": "# gmssl_pyx\n\npython wrapper of [GmSSL](https://github.com/guanzhi/GmSSL)\n\n\u4f7f\u7528\u7684\u7248\u672c\u662f [GmSSL-3.1.0](https://github.com/guanzhi/GmSSL/releases/tag/v3.1.0)\n\n\u652f\u6301 Python 3.7, 3.8, 3.9, 3.10\n\n## \u5b89\u88c5\n\n```shell\npip install gmssl-pyx\n```\n\n## SM2\n\n### \u52a0\u5bc6\u548c\u89e3\u5bc6\n\n```python\nfrom gmssl_pyx import sm2_key_generate, sm2_encrypt, sm2_decrypt\n\n\n# \u751f\u6210 SM2 \u516c\u79c1\u94a5\npublic_key, private_key = sm2_key_generate()\n# \u52a0\u5bc6\nplaintext = b\"hello world\"\nciphertext = sm2_encrypt(public_key, plaintext)\nprint(\"ciphertext\", ciphertext)\n# \u89e3\u5bc6\nplaintext = sm2_decrypt(private_key, ciphertext)\nprint(\"plaintext\", plaintext)\n\n```\n\n### \u7b7e\u540d\u548c\u9a8c\u7b7e\n\n```python\nfrom gmssl_pyx import sm2_key_generate, sm2_sign, sm2_verify\n\n\n# \u751f\u6210 SM2 \u516c\u79c1\u94a5\npublic_key, private_key = sm2_key_generate()\n\n# \u6ca1\u6709 signer_id \u548c SM3 \u6742\u51d1\u503c z\n# \u7b7e\u540d\nmessage = b\"hello world\"\nsignature = sm2_sign(private_key, public_key, message, signer_id=None)\nprint(\"signature\", signature)\n# \u9a8c\u8bc1\u7b7e\u540d\nverify = sm2_verify(private_key, public_key, message, signature, signer_id=None)\nprint(\"verify\", verify)\n\n# \u9ed8\u8ba4 signer_id \u548c SM3 \u6742\u51d1\u503c z\nsignature = sm2_sign(private_key, public_key, message)\nprint(\"signature\", signature)\n# \u9a8c\u8bc1\u7b7e\u540d\nverify = sm2_verify(private_key, public_key, message, signature)\nprint(\"verify\", verify)\n\n# \u81ea\u5b9a\u4e49 signer_id \u548c SM3 \u6742\u51d1\u503c z\nsigner_id = b\"signer_id\"\nsignature = sm2_sign(private_key, public_key, message, signer_id=signer_id)\nprint(\"signature\", signature)\n# \u9a8c\u8bc1\u7b7e\u540d\nverify = sm2_verify(private_key, public_key, message, signature, signer_id=signer_id)\nprint(\"verify\", verify)\n```\n\n### ASN.1 DER \u7f16\u7801\n\n\u52a0\u5bc6\u548c\u7b7e\u540d\u7684\u7ed3\u679c\u90fd\u662f ASN.1 DER \u7f16\u7801\uff0c\u5982\u679c\u8981\u5f97\u5230\u539f\u59cb\u7684\u5bc6\u6587\u548c\u7b7e\u540d\uff0c\u53ef\u4ee5\u53c2\u8003\u4e0b\u9762\u7684\u4f8b\u5b50\n\n\u9700\u8981\u5b89\u88c5 pycryptodomex \u5e93\n\n```shell\npip install pycryptodomex\n```\n\n```python\nfrom Cryptodome.Util.asn1 import DerSequence, DerOctetString, DerInteger\nfrom gmssl_pyx import sm2_key_generate, sm2_encrypt, sm2_decrypt\n\n\n# \u751f\u6210 SM2 \u516c\u79c1\u94a5\npublic_key, private_key = sm2_key_generate()\n# \u52a0\u5bc6\nplaintext = b\"hello world\"\nciphertext = sm2_encrypt(public_key, plaintext)\nprint(\"ciphertext\", ciphertext)\nseq_der = DerSequence()\ndecoded_ciphertext = seq_der.decode(ciphertext)\n# ASN.1 DER \u89e3\u7801\n# c1: point(x, y) 64bytes\n# c2: ciphertext len(data)\n# c3: hash 32bytes\n# der order: c1x c1y hash ciphertext\nc1x = decoded_ciphertext[0]\nc1y = decoded_ciphertext[1]\nc3 = DerOctetString().decode(decoded_ciphertext[2]).payload\nc2 = DerOctetString().decode(decoded_ciphertext[3]).payload\n# \u6a21\u5f0f\u4e3a C1C3C2\nraw_ciphertext = c1x.to_bytes(32, \"big\") + c1y.to_bytes(32, \"big\") + c3 + c2\n\n# \u5982\u679c\u9700\u8981\u89e3\u5bc6\u539f\u59cb\u5bc6\u6587\uff0c\u9700\u8981\u5148\u8fdb\u884c ASN.1 DER \u7f16\u7801\nseq_der = DerSequence()\nc1x = raw_ciphertext[:32]\nx = DerInteger(int.from_bytes(c1x, byteorder='big'))\nseq_der.append(x)\nc1y = raw_ciphertext[32:64]\ny = DerInteger(int.from_bytes(c1y, byteorder='big'))\nseq_der.append(y)\nc3 = raw_ciphertext[64:64 + 32]\nseq_der.append(DerOctetString(c3))\nc2 = raw_ciphertext[64 +32:]\nseq_der.append(DerOctetString(c2))\nciphertext = seq_der.encode()\nplaintext = sm2_decrypt(private_key, ciphertext)\nprint(\"plaintext\", plaintext)\n\n# \u7b7e\u540d\nsignature = sm2_sign(private_key, public_key, message)\nseq_der = DerSequence()\ndecoded_sign = seq_der.decode(signature)\n# ASN.1 DER \u89e3\u7801\uff0c\u4e24\u4e2a 32 \u5b57\u8282\u7684\u6574\u6570\nr = decoded_sign[0]\ns = decoded_sign[1]\nprint('r', r)\nprint('s', s)\nraw_signature = '%064x%064x' % (r, s)\n\n# \u9a8c\u8bc1\u539f\u59cb\u7b7e\u540d\u540c\u6837\u9700\u8981\u5148\u8fdb\u884c ASN.1 DER \u7f16\u7801\nr = int(raw_signature[:64], base=16)\ns = int(raw_signature[64:], base=16)\nseq_der = DerSequence()\nseq_der.append(DerInteger(r))\nseq_der.append(DerInteger(s))\nsignature = seq_der.encode()\nverify = sm2_verify(private_key, public_key, message, signature)\nprint('verify', verify)\n```\n\n### \u516c\u79c1\u94a5\u7684\u4e00\u4e9b\u8865\u5145\u8bf4\u660e\n\n\u516c\u94a5\u957f\u5ea6\u4e3a 64 \u5b57\u8282\uff0c\u662f\u4e24\u4e2a 32 \u5b57\u8282\u7684\u6574\u6570 x y \u62fc\u63a5\u800c\u6210\u3002\n\n\u5982\u679c\u516c\u94a5\u957f\u5ea6\u4e3a 65 \u5b57\u8282\uff0c\u90a3\u4e48\u7b2c\u4e00\u4e2a\u5b57\u8282\u4e3a '\\x04' \uff0c\u8868\u793a\u540e\u9762\u7684 64 \u5b57\u8282\u5c31\u662f\u516c\u94a5\u3002\n\n\u5982\u679c\u516c\u94a5\u957f\u5ea6\u4e3a 33 \u5b57\u8282\uff0c\u90a3\u4e48\u7b2c\u4e00\u4e2a\u5b57\u8282\u4e3a '\\x02' \u6216\u8005 '\\x03' \uff0c\n\u8fd9\u662f\u4e00\u79cd\u538b\u7f29\u683c\u5f0f\uff0c\u540e\u9762\u7684 32 \u5b57\u8282\u4e3a\u6574\u6570 x \uff0c y \u53ef\u4ee5\u6839\u636e x \u8ba1\u7b97\u51fa\u6765\u3002\n\n\u79c1\u94a5\u957f\u5ea6\u4e3a 32 \u5b57\u8282\uff0c\u6ca1\u6709\u5176\u4ed6\u53d8\u5316\u3002\n\n```python\nfrom gmssl_pyx import sm2_key_generate, normalize_sm2_public_key\n\n\nraw_public_key, _ = sm2_key_generate()\nk1 = normalize_sm2_public_key(raw_public_key)\nassert k1 == raw_public_key\nk1 = normalize_sm2_public_key(b'\\x04' + raw_public_key)\nassert k1 == raw_public_key\n\n# \u538b\u7f29\u7248\u516c\u94a5\ny = int.from_bytes(raw_public_key[32:], byteorder='big')\nif y % 2 == 0:\n    # y \u662f\u5076\u6570\n    compressed_public_key = b'\\x02' +raw_public_key[:32]\nelse:\n    compressed_public_key = b'\\x03' + raw_public_key[:32]\nk1 = normalize_sm2_public_key(compressed_public_key)\nassert k1 == raw_public_key\n```\n\n## SM3\n\n### hash \u8ba1\u7b97\n\n```python\nfrom gmssl_pyx import sm3_hash\n\n\nmessage = b'hello world'\nsignature = sm3_hash(message)\nprint('message', message)\nprint('signature', signature.hex())\n```\n\n### hmac \u8ba1\u7b97\n\n```python\nimport secrets\nfrom gmssl_pyx import sm3_hmac\n\n\nkey = secrets.token_bytes(32)\nmessage = b\"sm3_hmac\"\nhmac_data = sm3_hmac(key, message)\nprint(\"message\", message)\nprint(\"hmac_data\", hmac_data)\n```\n\n### kdf \u8ba1\u7b97\n\n```python\nimport secrets\nfrom gmssl_pyx import sm3_kdf\n\n\nkey = secrets.token_bytes(32)\nnew_key = sm3_kdf(key, 32)\nprint('kdf new_key', new_key)\n```\n\n## SM4\n\n### CBC \u6a21\u5f0f\u52a0\u5bc6\u548c\u89e3\u5bc6\n\n```python\nimport secrets\nfrom gmssl_pyx import (\n    sm4_cbc_padding_encrypt,\n    sm4_cbc_padding_decrypt,\n    SM4_KEY_SIZE,\n    SM4_BLOCK_SIZE,\n)\n\n\nkey = secrets.token_bytes(SM4_KEY_SIZE)\niv = secrets.token_bytes(SM4_BLOCK_SIZE)\nplaintext = b\"hello world\"\n# \u52a0\u5bc6\nciphertext = sm4_cbc_padding_encrypt(key, iv, plaintext)\nprint(\"ciphertext\", ciphertext.hex())\n\n# \u89e3\u5bc6\ndecrypted = sm4_cbc_padding_decrypt(key, iv, ciphertext)\nprint(\"decrypted\", decrypted)\n\n```\n\n### CTR \u6a21\u5f0f\u52a0\u5bc6\u548c\u89e3\u5bc6\n\n```python\nimport secrets\nfrom gmssl_pyx import (\n    sm4_ctr_encrypt,\n    sm4_ctr_decrypt,\n    SM4_KEY_SIZE,\n    SM4_BLOCK_SIZE,\n)\n\n\nkey = secrets.token_bytes(SM4_KEY_SIZE)\nctr = secrets.token_bytes(SM4_BLOCK_SIZE)\nplaintext = b\"hello world\"\n# \u52a0\u5bc6\nciphertext = sm4_ctr_encrypt(key, ctr, plaintext)\nprint(\"ciphertext\", ciphertext.hex())\n\n# \u89e3\u5bc6\ndecrypted = sm4_ctr_decrypt(key, ctr, ciphertext)\nprint(\"decrypted\", decrypted)\n\n```\n\n### GCM \u6a21\u5f0f\u52a0\u5bc6\u548c\u89e3\u5bc6\n\n```python\nimport secrets\nfrom gmssl_pyx import sm4_gcm_encrypt, sm4_gcm_decrypt, SM4_KEY_SIZE, SM4_BLOCK_SIZE\n\n\nplaintext = b'hello world'\nkey = secrets.token_bytes(SM4_KEY_SIZE)\niv = secrets.token_bytes(SM4_BLOCK_SIZE)\naad = secrets.token_bytes(16)\n# \u52a0\u5bc6\nciphertext, tag = sm4_gcm_encrypt(key, iv, aad, plaintext=plaintext)\nprint('ciphertext', ciphertext)\n\n# \u89e3\u5bc6\nplaintext = sm4_gcm_decrypt(key, iv=iv, aad=aad, ciphertext=ciphertext, tag=tag)\nprint('plaintext', plaintext)\n\n```\n\n## \u5176\u4ed6\n\n[SM9](docs/sm9.md)\n\n\u5982\u679c\u8981\u67e5\u770b\u6240\u6709\u53ef\u7528\u7684 API \uff0c\u53ef\u4ee5\u770b [gmsslext.pyi](gmssl_pyx/gmsslext.pyi) \u6587\u4ef6\u3002\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/yetsing/gmssl_pyx",
+            "keywords": "gmssl",
+            "license": "Apache Software License",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "gmssl-pyx",
+            "package_url": "https://pypi.org/project/gmssl-pyx/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/gmssl-pyx/",
+            "project_urls": {
+                "Homepage": "https://github.com/yetsing/gmssl_pyx"
+            },
+            "release_url": "https://pypi.org/project/gmssl-pyx/1.1.0/",
+            "requires_dist": null,
+            "requires_python": ">=3.7",
+            "summary": "python wrapper of GmSSL",
+            "version": "1.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18350941,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "9bfe26b5ea197996198d2f8add2d58438dc40cc85b7dc108e4ec628cd8b49456",
+                    "md5": "9554fa78ee2a2f92869ffa633ab22cc5",
+                    "sha256": "cff11f38891440557c01209b747a4a1dbcb63e634cc1c0396fc164a9e19b0992"
+                },
+                "downloads": -1,
+                "filename": "gmssl_pyx-1.1.0-cp310-cp310-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "9554fa78ee2a2f92869ffa633ab22cc5",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.7",
+                "size": 118794,
+                "upload_time": "2023-06-02T16:13:45",
+                "upload_time_iso_8601": "2023-06-02T16:13:45.017984Z",
+                "url": "https://files.pythonhosted.org/packages/9b/fe/26b5ea197996198d2f8add2d58438dc40cc85b7dc108e4ec628cd8b49456/gmssl_pyx-1.1.0-cp310-cp310-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "0596412b0e8f84e0b11d74f1560e684babd5f72afcb55daffb1b40a354d31ed0",
+                    "md5": "8f4ecfbe4e67c2389c6c4d8d3d999bd6",
+                    "sha256": "64e47de3dd2db1ae62121a4e4914d45dd1cb72ab461109e68d64d1c93d2ca6f5"
+                },
+                "downloads": -1,
+                "filename": "gmssl_pyx-1.1.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "8f4ecfbe4e67c2389c6c4d8d3d999bd6",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.7",
+                "size": 169530,
+                "upload_time": "2023-06-02T16:13:47",
+                "upload_time_iso_8601": "2023-06-02T16:13:47.063641Z",
+                "url": "https://files.pythonhosted.org/packages/05/96/412b0e8f84e0b11d74f1560e684babd5f72afcb55daffb1b40a354d31ed0/gmssl_pyx-1.1.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "f59fbdcbd740f5ac5d4d56f5039b78e93a8ac3af7d96e3512bd16f5f99486e8c",
+                    "md5": "e66b5fae2c8353e16babd183b27e4eb2",
+                    "sha256": "c1f026dee840dc954d00db150a5856fcadc72d1554d938ff34d21daa9831fa39"
+                },
+                "downloads": -1,
+                "filename": "gmssl_pyx-1.1.0-cp310-cp310-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "e66b5fae2c8353e16babd183b27e4eb2",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.7",
+                "size": 135920,
+                "upload_time": "2023-06-02T16:13:48",
+                "upload_time_iso_8601": "2023-06-02T16:13:48.771350Z",
+                "url": "https://files.pythonhosted.org/packages/f5/9f/bdcbd740f5ac5d4d56f5039b78e93a8ac3af7d96e3512bd16f5f99486e8c/gmssl_pyx-1.1.0-cp310-cp310-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "034c638ba318c6747fd57d675c763eb2b872e332b03cc8cba35aaac77aca08e5",
+                    "md5": "207523ee8e6fe401f28afa1944aab00c",
+                    "sha256": "e07b93a19c82a414c053432d506d936321a382df2ac54f3a82a7c10fba65e806"
+                },
+                "downloads": -1,
+                "filename": "gmssl_pyx-1.1.0-cp37-cp37m-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "207523ee8e6fe401f28afa1944aab00c",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.7",
+                "size": 115763,
+                "upload_time": "2023-06-02T16:13:50",
+                "upload_time_iso_8601": "2023-06-02T16:13:50.724841Z",
+                "url": "https://files.pythonhosted.org/packages/03/4c/638ba318c6747fd57d675c763eb2b872e332b03cc8cba35aaac77aca08e5/gmssl_pyx-1.1.0-cp37-cp37m-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "4a9a747ac9224bfcf08555a695b63818e414d24e27eac43a8fdf150cc818e0b3",
+                    "md5": "241c45087513724f396c2f53b2338fef",
+                    "sha256": "2df994127f37d5c10b9271193f5f23324f322358372228d413b14b2e8595fd8c"
+                },
+                "downloads": -1,
+                "filename": "gmssl_pyx-1.1.0-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "241c45087513724f396c2f53b2338fef",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.7",
+                "size": 167744,
+                "upload_time": "2023-06-02T16:13:52",
+                "upload_time_iso_8601": "2023-06-02T16:13:52.878954Z",
+                "url": "https://files.pythonhosted.org/packages/4a/9a/747ac9224bfcf08555a695b63818e414d24e27eac43a8fdf150cc818e0b3/gmssl_pyx-1.1.0-cp37-cp37m-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6ade7f884defc3338cc504bdbdbc73d19991e3531f7ad2597be5a6c27b22f906",
+                    "md5": "b3b6cfd1441e64f2c365f8188db9ca06",
+                    "sha256": "6fced4ecf602ede8496b2c7a0cb534f3a493c3d0143075a4e2680e8e250fa00b"
+                },
+                "downloads": -1,
+                "filename": "gmssl_pyx-1.1.0-cp37-cp37m-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "b3b6cfd1441e64f2c365f8188db9ca06",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp37",
+                "requires_python": ">=3.7",
+                "size": 135832,
+                "upload_time": "2023-06-02T16:13:54",
+                "upload_time_iso_8601": "2023-06-02T16:13:54.523639Z",
+                "url": "https://files.pythonhosted.org/packages/6a/de/7f884defc3338cc504bdbdbc73d19991e3531f7ad2597be5a6c27b22f906/gmssl_pyx-1.1.0-cp37-cp37m-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ce3516137394516b7ec294835bf26423f20868aae7cb340b9df96357e3ad3d79",
+                    "md5": "d1a74fd9d1f0a644b40c981dc3b8e89c",
+                    "sha256": "623d59d7bcb91d2e34f73ea2f1471526f860e378eb34798131076abebdb6e21c"
+                },
+                "downloads": -1,
+                "filename": "gmssl_pyx-1.1.0-cp38-cp38-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "d1a74fd9d1f0a644b40c981dc3b8e89c",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.7",
+                "size": 115877,
+                "upload_time": "2023-06-02T16:13:56",
+                "upload_time_iso_8601": "2023-06-02T16:13:56.347817Z",
+                "url": "https://files.pythonhosted.org/packages/ce/35/16137394516b7ec294835bf26423f20868aae7cb340b9df96357e3ad3d79/gmssl_pyx-1.1.0-cp38-cp38-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6e393a7b8a06a116bf8bba552b2dc507dc67816adc49a6d0dc777adf2b0f151a",
+                    "md5": "c7ac7d26663539f336d53bdb5a50768b",
+                    "sha256": "bbe183918fec450c77c9f854d023cb6cef844e4d14cd2329f9212a3c5e73bfdc"
+                },
+                "downloads": -1,
+                "filename": "gmssl_pyx-1.1.0-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "c7ac7d26663539f336d53bdb5a50768b",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.7",
+                "size": 169142,
+                "upload_time": "2023-06-02T16:13:58",
+                "upload_time_iso_8601": "2023-06-02T16:13:58.161537Z",
+                "url": "https://files.pythonhosted.org/packages/6e/39/3a7b8a06a116bf8bba552b2dc507dc67816adc49a6d0dc777adf2b0f151a/gmssl_pyx-1.1.0-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "1e27611f761619aa148a9bcf4b9660cdd5fbc37d6811b96a83ace99662b3aa28",
+                    "md5": "9b396e5f00e5f2203f57e8bddc56ec31",
+                    "sha256": "d5752dc18a8aac427de586a588996ce7ff45f4675159cd96b528e5ce2ebff9cc"
+                },
+                "downloads": -1,
+                "filename": "gmssl_pyx-1.1.0-cp38-cp38-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "9b396e5f00e5f2203f57e8bddc56ec31",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp38",
+                "requires_python": ">=3.7",
+                "size": 135862,
+                "upload_time": "2023-06-02T16:14:00",
+                "upload_time_iso_8601": "2023-06-02T16:14:00.523648Z",
+                "url": "https://files.pythonhosted.org/packages/1e/27/611f761619aa148a9bcf4b9660cdd5fbc37d6811b96a83ace99662b3aa28/gmssl_pyx-1.1.0-cp38-cp38-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "c8394466d3e10c8a4183315d4f151d01a20ddeee4ff2b3bfcdd6c60a93467c61",
+                    "md5": "521f4d40a36a54e5e538f98bb06b6051",
+                    "sha256": "5712151cb6db7af2cc021495baadfc3a246a56340ec79318d88ab5c7b2cbd0a3"
+                },
+                "downloads": -1,
+                "filename": "gmssl_pyx-1.1.0-cp39-cp39-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "521f4d40a36a54e5e538f98bb06b6051",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.7",
+                "size": 118786,
+                "upload_time": "2023-06-02T16:14:03",
+                "upload_time_iso_8601": "2023-06-02T16:14:03.054080Z",
+                "url": "https://files.pythonhosted.org/packages/c8/39/4466d3e10c8a4183315d4f151d01a20ddeee4ff2b3bfcdd6c60a93467c61/gmssl_pyx-1.1.0-cp39-cp39-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "94ba3efdfef9e76bef032a3d9844ae6861b004c4a5bd48ec0faf22283865b0e2",
+                    "md5": "90777d70a373a5385835fd48b62b8726",
+                    "sha256": "1f866eddde1287a2d54035689352f9d23c5341f1d070a88a707f3b034883a179"
+                },
+                "downloads": -1,
+                "filename": "gmssl_pyx-1.1.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "90777d70a373a5385835fd48b62b8726",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.7",
+                "size": 169158,
+                "upload_time": "2023-06-02T16:14:04",
+                "upload_time_iso_8601": "2023-06-02T16:14:04.671461Z",
+                "url": "https://files.pythonhosted.org/packages/94/ba/3efdfef9e76bef032a3d9844ae6861b004c4a5bd48ec0faf22283865b0e2/gmssl_pyx-1.1.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "5d2c265ce6968653634287329f009cf7e894c252e42b47460da1db186f4355eb",
+                    "md5": "a7cab29f81df4485fd0f7c81041731ad",
+                    "sha256": "b3cc3aa9fa3432b2bc56fb6a07e8a79cee2efa85251772bdaca6cb2eabc7d887"
+                },
+                "downloads": -1,
+                "filename": "gmssl_pyx-1.1.0-cp39-cp39-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "a7cab29f81df4485fd0f7c81041731ad",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp39",
+                "requires_python": ">=3.7",
+                "size": 135908,
+                "upload_time": "2023-06-02T16:14:06",
+                "upload_time_iso_8601": "2023-06-02T16:14:06.879107Z",
+                "url": "https://files.pythonhosted.org/packages/5d/2c/265ce6968653634287329f009cf7e894c252e42b47460da1db186f4355eb/gmssl_pyx-1.1.0-cp39-cp39-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "51e840c7e759ac9b3af1302d9dd7f34d253c6f4b5d88f94db7af2565ab3d8907",
+                    "md5": "2b0b59cc7ef90207ced6ea5df2396546",
+                    "sha256": "26ade7aefbb33200dbe8196f6405eb4f67c6390281510f31d2c059340c958f04"
+                },
+                "downloads": -1,
+                "filename": "gmssl_pyx-1.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "2b0b59cc7ef90207ced6ea5df2396546",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 22814,
+                "upload_time": "2023-06-02T16:14:08",
+                "upload_time_iso_8601": "2023-06-02T16:14:08.526665Z",
+                "url": "https://files.pythonhosted.org/packages/51/e8/40c7e759ac9b3af1302d9dd7f34d253c6f4b5d88f94db7af2565ab3d8907/gmssl_pyx-1.1.0.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
