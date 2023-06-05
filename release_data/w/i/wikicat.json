@@ -5,7 +5,6 @@
             "author_email": "wikicat@xinghanlu.com",
             "bugtrack_url": null,
             "classifiers": [],
-            "description": "# `wikicat`\n\n*A Python toolkit for managing and navigating graphs of Wikipedia categories \ud83d\udd16*\n\n| ![API Sample](assets/api.jpg) | ![CLI Sample](assets/cli.jpg) |\n|:---:|:---:|\n| Simple [Python API](#main-api) for exploring graph offline | Useful CLI for [processing](#wikicatprocessing) and [launching app](#wikicatviewer) |\n| ![Interactive network](assets/interactive_network.jpg) | ![panels in the user interface](assets/ui.jpg) |\n| [Interactive visualization of categories](#wikicatviewer) | [UI to display information and filter nodes](#usage) |\n\n> **Note** If you need help at any time, you can head over to [the official documentations](https://xhluca.github.io/wikicat/).\n\n## Main API\n\n> **Note** The reference can be found on the [doc page](https://xhluca.github.io/wikicat/wikicat) or in [`docs/wikicat.md`](docs/wikicat.md)\n\nThe main `wikicat` API allows you work with category graphs generated from a certain dump by Wikipedia. Once the dump is processed via `wikicat.processing`, you can easily navigate the graph using simple and clear Python code, all offline (i.e., you do not need to make web requests to Wikipedia, and you can choose dump going back to any date you prefer). The API is designed to be as simple as possible, and is intended to be used by researchers and developers who want to work with the Wikipedia category graph.\n\nTo install the API, run:\n\n```\npip3 install wikicat\n```\n\n`wikicat` contains two classes to work with the Wikipedia category graph: `CategoryGraph` and `Page`. The `CategoryGraph` class is used to load the graph from a file, and to navigate the graph. The `Page` class is used to represent a Wikipedia page, and to retrieve information about the page from Wikipedia. They are meant to be used together, as shown in the following example:\n\n```python\nimport wikicat as wc\n\n# Load the graph\ncg = wc.CategoryGraph.read_json(\n    '~/.wikicat_data/enwiki_<yyyy>_<mm>_<dd>/category_graph.json'\n)\n\n# Get the page for \"Montreal\"\npage = cg.get_page_from_title('Montreal', 'article')\n\n# Get the categories for \"Montreal\"\ncats = cg.get_parents(page=page)\nprint(f\"Category tags of {page.title}: {cats}\")\n\n# Get URL of \"Montreal\"\nprint(\"URL:\", page.get_url())\n```\n\nBy default, the path will be `~/.wikicat_data/`, but the JSON can be stored anywhere you want (see `wikicat.processing` below for more information).\n\n\n## `wikicat.processing`\n\n*`wikicat.processing` is a command line interface (CLI) for downloading and processing the data*\n\n> **Note** The reference can be found on the [doc page](https://xhluca.github.io/wikicat/wikicat/processing) or in [`docs/wikicat/processing.md`](docs/wikicat/processing.md)\n\nTo install the processing tools, run:\n\n```\npip3 install wikicat[processing]\n```\n\nNow, following those instructions to download and process the data:\n\n```bash\n# 1. Download DB dump of Wikipedia categories (extension .sql.gz)\npython3 -m wikicat.processing.download_dump \\\n        --year <yyyy> \\\n        --month <mm> \\\n        --day <dd> \\\n        --base_dir ~/.wikicat_data/  # optional, default is ~/.wikicat_data/\n\n# 2. Process individual dumps (.sql.gz) into csv files (to be merged later)\npython3 -m wikicat.processing.process_dump \\\n        -y <yyyy> -m <mm> -d <dd>\n\n# 3. Merge the individual table csvs into a single category graph csv\npython3 -m wikicat.processing.merge_tables \\\n        -y <yyyy> -m <mm> -d <dd>\n\n# 4. Convert CSV category graph into JSON category graph (the final output)\npython3 -m wikicat.processing.generate_graph \\\n        -y <yyyy> -m <mm> -d <dd>\n```\n\nNotes (by step):\n1. If you do not specify `--base_dir`, it will automatically be saved to `~/.wikicat_data/enwiki_<yyyy>_<mm>_<dd>`. \n2. This may take a while depending on your hardware, and will need plenty of RAM. It will generate two CSV files with the relevant tables.\n3. This should take under 30 mins depending on your hardware, and will generate a single CSV file with the relevant category graph links.\n4. The results will be saved in `~/.wikicat_data/enwiki_<yyyy>_<mm>_<dd>/category_graph.json`.\n\n\n## `wikicat.viewer`\n\n*`wikicat.viewer` is an application that lets you visually explore a category graph*\n\n> **Note** The reference can be found on the [doc page](https://xhluca.github.io/wikicat/wikicat/viewer) or in [`docs/wikicat/viewer.md`](docs/wikicat/viewer.md)\n\nTo install the viewer, run:\n\n```bash\npip3 install wikicat[viewer]\n```\n\nTo run the viewer, run:\n\n```bash\npython3 -m wikicat.viewer -y <yyyy> -m <mm> -d <dd> --port 8050\n```\n\nThen, open your browser to `http://0.0.0.0:8050`.\n\n### Usage\n\nThe viewer let you interact with the nodes. You can zoom in and out, move and click the nodes in the graph.\n- When you click on a node, you will see various information (including a list of children articles) appear on the middle panel. \n- On the right panel, you will see various checklists of children and parents of the selected node. When you click on \"Update\", the checked parents and children will be added to the graph.\n- There's a dropdown and a validated input. For the input, a green check will appear if a valid article title is input, otherwise it remains red. The dropdown lets you choose one of [28 top-level categories](https://en.wikipedia.org/wiki/Wikipedia:Contents/Categories). The input let you type the name of an article (not category). When the title is valid, you can click on the \"Compute Path\" button, which will *try* to find a valid path between the top-level category and the article you chose.\n- Click on the \"Reset\" button to go back to the original view.\n\n### Accessing components\n\n`wikicat.viewer` was built using [Dash](https://dash.plotly.com/), a Python framework for building web applications. The application is composed of several components, which can be accessed inside `wikicat.viewer.components`. For example, to access the `Network` component, you can run:\n\n```python\nimport wikicat.viewer.components as comp\n\n# Build the network\ncytoscape_graph = comp.build_cytoscape_graph(...)\n\n# Build the right panel\npanel = comp.build_panel(...)\n```\n\nThose can be reused in your custom Dash application. You can also create your own component and add it to the viewer. For example:\n\n```python\nimport wikicat.viewer as wcv\n\n# ...\n\n# Define app\napp = dash.Dash(__name__, external_stylesheets=[style], title=title, **kwargs)\n\n# Define your custom components\ndef build_btn(...):\n    # ...\n\n# Build regular components\ncyto_graph = wcv.components.build_cytoscape_graph(root)\n# ...\ncards = wcv.components.build_cards(cl=cl, sw=sw)\ncards_column = wcv.components.build_card_column(cards)\n\n# Build layout\napp.layout = wcv.components.build_layout(...)\n\n# Assign callbacks to make app interactive\nwcv.components.assign_callbacks(app=app, ...)\n\n# Run app\nrun(app=app, ...)\n```\n\nSee the `wikicat.viewer.build_app()` function for more details.\n\n## Warning\n\nBecause of the size of the graph, some parts of the API (such as the viewer and the processing CLI) require a lot of memory. We recommend using a machine with at least 32 GB of RAM. We are working on a more memory-efficient version of the API.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -43,7 +42,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18363931,
+        "last_serial": 18368138,
         "urls": [
             {
                 "comment_text": "",
@@ -84,6 +83,97 @@
                 "upload_time": "2023-06-04T04:50:40",
                 "upload_time_iso_8601": "2023-06-04T04:50:40.191392Z",
                 "url": "https://files.pythonhosted.org/packages/86/e0/bf27ffe4ff79b3fee2ce1a50ce32cbd022e3bdf883221a04f6cfdc04be46/wikicat-0.0.1.dev7.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.1.dev8": {
+        "info": {
+            "author": "Xing Han Lu, Aristides Milios",
+            "author_email": "wikicat@xinghanlu.com",
+            "bugtrack_url": null,
+            "classifiers": [],
+            "description": "# `wikicat`\n\n*A Python toolkit for managing and navigating graphs of Wikipedia categories \ud83d\udd16*\n\n| ![API Sample](assets/api.jpg) | ![CLI Sample](assets/cli.jpg) |\n|:---:|:---:|\n| Simple [Python API](#main-api) for exploring graph offline | Useful CLI for [processing](#wikicatprocessing) and [launching app](#wikicatviewer) |\n| ![Interactive network](assets/interactive_network.jpg) | ![panels in the user interface](assets/ui.jpg) |\n| [Interactive visualization of categories](#wikicatviewer) | [UI to display information and filter nodes](#usage) |\n\n> **Note** If you need help at any time, you can head over to [the official documentations](https://xhluca.github.io/wikicat/).\n\n## Main API\n\n> **Note** The reference can be found on the [doc page](https://xhluca.github.io/wikicat/wikicat) or in [`docs/wikicat.md`](docs/wikicat.md)\n\nThe main `wikicat` API allows you work with category graphs generated from a certain dump by Wikipedia. Once the dump is processed via `wikicat.processing`, you can easily navigate the graph using simple and clear Python code, all offline (i.e., you do not need to make web requests to Wikipedia, and you can choose dump going back to any date you prefer). The API is designed to be as simple as possible, and is intended to be used by researchers and developers who want to work with the Wikipedia category graph.\n\nTo install the API, run:\n\n```\npip3 install wikicat\n```\n\n`wikicat` contains two classes to work with the Wikipedia category graph: `CategoryGraph` and `Page`. The `CategoryGraph` class is used to load the graph from a file, and to navigate the graph. The `Page` class is used to represent a Wikipedia page, and to retrieve information about the page from Wikipedia. They are meant to be used together, as shown in the following example:\n\n```python\nimport wikicat as wc\n\n# Load the graph\ncg = wc.CategoryGraph.read_json(\n    '~/.wikicat_data/enwiki_<yyyy>_<mm>_<dd>/category_graph.json'\n)\n\n# Get the page for \"Montreal\"\npage = cg.get_page_from_title('Montreal', 'article')\n\n# Get the categories for \"Montreal\"\ncats = cg.get_parents(page=page)\nprint(f\"Category tags of {page.title}: {cats}\")\n\n# Get URL of \"Montreal\"\nprint(\"URL:\", page.get_url())\n```\n\nBy default, the path will be `~/.wikicat_data/`, but the JSON can be stored anywhere you want (see `wikicat.processing` below for more information).\n\n\n## `wikicat.processing`\n\n*`wikicat.processing` is a command line interface (CLI) for downloading and processing the data*\n\n> **Note** The reference can be found on the [doc page](https://xhluca.github.io/wikicat/wikicat/processing) or in [`docs/wikicat/processing.md`](docs/wikicat/processing.md)\n\nTo install the processing tools, run:\n\n```\npip3 install wikicat[processing]\n```\n\nNow, following those instructions to download and process the data:\n\n```bash\n# 1. Download DB dump of Wikipedia categories (extension .sql.gz)\npython3 -m wikicat.processing.download_dump \\\n        --year <yyyy> \\\n        --month <mm> \\\n        --day <dd> \\\n        --base_dir ~/.wikicat_data/  # optional, default is ~/.wikicat_data/\n\n# 2. Process individual dumps (.sql.gz) into csv files (to be merged later)\npython3 -m wikicat.processing.process_dump \\\n        -y <yyyy> -m <mm> -d <dd>\n\n# 3. Merge the individual table csvs into a single category graph csv\npython3 -m wikicat.processing.merge_tables \\\n        -y <yyyy> -m <mm> -d <dd>\n\n# 4. Convert CSV category graph into JSON category graph (the final output)\npython3 -m wikicat.processing.generate_graph \\\n        -y <yyyy> -m <mm> -d <dd>\n```\n\nNotes (by step):\n1. If you do not specify `--base_dir`, it will automatically be saved to `~/.wikicat_data/enwiki_<yyyy>_<mm>_<dd>`. \n2. This may take a while depending on your hardware, and will need plenty of RAM. It will generate two CSV files with the relevant tables.\n3. This should take under 30 mins depending on your hardware, and will generate a single CSV file with the relevant category graph links.\n4. The results will be saved in `~/.wikicat_data/enwiki_<yyyy>_<mm>_<dd>/category_graph.json`.\n\n\n## `wikicat.viewer`\n\n*`wikicat.viewer` is an application that lets you visually explore a category graph*\n\n> **Note** The reference can be found on the [doc page](https://xhluca.github.io/wikicat/wikicat/viewer) or in [`docs/wikicat/viewer.md`](docs/wikicat/viewer.md)\n\nTo install the viewer, run:\n\n```bash\npip3 install wikicat[viewer]\n```\n\nTo run the viewer, run:\n\n```bash\npython3 -m wikicat.viewer -y <yyyy> -m <mm> -d <dd> --port 8050\n```\n\nThen, open your browser to `http://0.0.0.0:8050`.\n\n### Usage\n\nThe viewer let you interact with the nodes. You can zoom in and out, move and click the nodes in the graph.\n- When you click on a node, you will see various information (including a list of children articles) appear on the middle panel. \n- On the right panel, you will see various checklists of children and parents of the selected node. When you click on \"Update\", the checked parents and children will be added to the graph.\n- There's a dropdown and a validated input. For the input, a green check will appear if a valid article title is input, otherwise it remains red. The dropdown lets you choose one of [28 top-level categories](https://en.wikipedia.org/wiki/Wikipedia:Contents/Categories). The input let you type the name of an article (not category). When the title is valid, you can click on the \"Compute Path\" button, which will *try* to find a valid path between the top-level category and the article you chose.\n- Click on the \"Reset\" button to go back to the original view.\n\n### Accessing components\n\n`wikicat.viewer` was built using [Dash](https://dash.plotly.com/), a Python framework for building web applications. The application is composed of several components, which can be accessed inside `wikicat.viewer.components`. For example, to access the `Network` component, you can run:\n\n```python\nimport wikicat.viewer.components as comp\n\n# Build the network\ncytoscape_graph = comp.build_cytoscape_graph(...)\n\n# Build the right panel\npanel = comp.build_panel(...)\n```\n\nThose can be reused in your custom Dash application. You can also create your own component and add it to the viewer. For example:\n\n```python\nimport wikicat.viewer as wcv\n\n# ...\n\n# Define app\napp = dash.Dash(__name__, external_stylesheets=[style], title=title, **kwargs)\n\n# Define your custom components\ndef build_btn(...):\n    # ...\n\n# Build regular components\ncyto_graph = wcv.components.build_cytoscape_graph(root)\n# ...\ncards = wcv.components.build_cards(cl=cl, sw=sw)\ncards_column = wcv.components.build_card_column(cards)\n\n# Build layout\napp.layout = wcv.components.build_layout(...)\n\n# Assign callbacks to make app interactive\nwcv.components.assign_callbacks(app=app, ...)\n\n# Run app\nrun(app=app, ...)\n```\n\nSee the `wikicat.viewer.build_app()` function for more details.\n\n## Warning\n\nBecause of the size of the graph, some parts of the API (such as the viewer and the processing CLI) require a lot of memory. We recommend using a machine with at least 32 GB of RAM. We are working on a more memory-efficient version of the API.\n\n## Alternatives\n\n`wikicat` was designed for offline and high-throughput workflows, with support for different versions of Wikipedia (as categories change over time). As a result, there's a high overhead (long build time and high RAM usage). If this is not what you are looking for, you can check out alternatives to this library:\n* [MediaWiki](https://www.mediawiki.org/wiki/MediaWiki): This is Wikipedia's web API, and contains documentations for accessing categories (see [API:Categories](https://www.mediawiki.org/wiki/API:Categories) and [API:Categorymembers](https://www.mediawiki.org/wiki/API:Categorymembers))\n* [Wikipedia Histories](https://github.com/ndrezn/wikipedia-histories): This library contains a [domain-level analysis](https://github.com/ndrezn/wikipedia-histories/#domain-level-analysis) module that allows you to query articles associated with a certain category. Since it utilizes the Wikipedia Web API, it does not have the same overhead.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://xhluca.github.io/wikicat",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "wikicat",
+            "package_url": "https://pypi.org/project/wikicat/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/wikicat/",
+            "project_urls": {
+                "Homepage": "https://xhluca.github.io/wikicat"
+            },
+            "release_url": "https://pypi.org/project/wikicat/0.0.1.dev8/",
+            "requires_dist": [
+                "black (==23.*) ; extra == 'dev'",
+                "wheel ; extra == 'dev'",
+                "pandas ; extra == 'processing'",
+                "kwnlp-sql-parser (==0.0.1) ; extra == 'processing'",
+                "dash (>=2.7) ; extra == 'viewer'",
+                "dash-bootstrap-components (>=1.2) ; extra == 'viewer'",
+                "dash-cytoscape (>=0.2.4) ; extra == 'viewer'",
+                "gunicorn ; extra == 'viewer'"
+            ],
+            "requires_python": ">=3.7",
+            "summary": "Toolkit for managing and navigating graphs of Wikipedia categories",
+            "version": "0.0.1.dev8",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18368138,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "b6ec18916e2511128c704b1c8d35d8b3935ca9ab0e4b7994386ab897ce411bf2",
+                    "md5": "557430255658369c366ad1e3674a4979",
+                    "sha256": "b7bc8516c9141a2224c7cee25690d9a9061175e1c344f15cefe3e009a478f795"
+                },
+                "downloads": -1,
+                "filename": "wikicat-0.0.1.dev8-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "557430255658369c366ad1e3674a4979",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.7",
+                "size": 27952,
+                "upload_time": "2023-06-04T19:26:32",
+                "upload_time_iso_8601": "2023-06-04T19:26:32.274130Z",
+                "url": "https://files.pythonhosted.org/packages/b6/ec/18916e2511128c704b1c8d35d8b3935ca9ab0e4b7994386ab897ce411bf2/wikicat-0.0.1.dev8-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "9f37843f8b12318aedda86d39181dcda78c92ab419798d5b3e0db0c08608f3c6",
+                    "md5": "a4189e098fb6e904f65b99a5c3c529a9",
+                    "sha256": "1a2f09e94c9f09285c1f5d8777239b27ba611c2634322f6d287f0d5477849135"
+                },
+                "downloads": -1,
+                "filename": "wikicat-0.0.1.dev8.tar.gz",
+                "has_sig": false,
+                "md5_digest": "a4189e098fb6e904f65b99a5c3c529a9",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.7",
+                "size": 32560,
+                "upload_time": "2023-06-04T19:26:35",
+                "upload_time_iso_8601": "2023-06-04T19:26:35.139028Z",
+                "url": "https://files.pythonhosted.org/packages/9f/37/843f8b12318aedda86d39181dcda78c92ab419798d5b3e0db0c08608f3c6/wikicat-0.0.1.dev8.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }
