@@ -52,7 +52,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18188262,
+        "last_serial": 18389247,
         "urls": [
             {
                 "comment_text": "",
@@ -152,7 +152,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18188262,
+        "last_serial": 18389247,
         "urls": [
             {
                 "comment_text": "",
@@ -252,7 +252,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18188262,
+        "last_serial": 18389247,
         "urls": [
             {
                 "comment_text": "",
@@ -349,7 +349,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18188262,
+        "last_serial": 18389247,
         "urls": [
             {
                 "comment_text": "",
@@ -446,7 +446,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18188262,
+        "last_serial": 18389247,
         "urls": [
             {
                 "comment_text": "",
@@ -541,7 +541,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18188262,
+        "last_serial": 18389247,
         "urls": [
             {
                 "comment_text": "",
@@ -608,7 +608,6 @@
                 "Programming Language :: Python :: 3.9",
                 "Topic :: Software Development :: Testing"
             ],
-            "description": "[![pipeline status](https://gitlab.com/gorilladev/pytest-django-ifactory/badges/develop/pipeline.svg)](https://gitlab.com/gorilladev/pytest-django-ifactory/commits/develop)\n[![coverage report](https://gitlab.com/gorilladev/pytest-django-ifactory/badges/develop/coverage.svg)](https://gitlab.com/gorilladev/pytest-django-ifactory/commits/develop)\n\n# pytest-django-ifactory\n\nA model instance factory for [pytest-django][].\n\n[pytest-django]: https://pytest-django.readthedocs.io/\n\n## Motivation\n\npytest-django-ifactory makes it easy to create model instances for\nyour test cases even if they contain a lot of non-nullable fields and\ncomplex foreign key relationships. If you every felt like you spent\ntoo much time coming up with dummy values for you models' fields just\nto get an instance into the database to use in a test then\npytest-django-ifactory might be for you.\n\npytest's fixtures are great and perfect if you want to have a static\nmodel instance available in the database for your tests. Problems\narise however when you want to vary one of its fields. To reuse your\nfixture in that case you need to modify the field and save the\ninstance back to the database (assuming your test needs it in the\ndatabase, of course). This results in at least two lines of extra\nsetup code in you test case and an extra call to the database.\n\npytest-django-ifactory is simply an instance factory (hence\n*ifactory*) function that automatically detects your Django models and\ntries to come up with acceptable defaults for the fields you don't\ncare about. This includes generating unique values for fields marked\nas unique and to create related instances for non-nullable foreign\nkeys.\n\n## Usage\n\nThis plugin comes with two fixtures: `ifactory` and\n`transactional_ifactory`.  Use them when you need to put model\ninstances in the database.  `ifactory` and `transactional_ifactory`\nare identical except that the latter uses [pytest-django][]'s\n`transactional_db` fixture instead of the `db` fixture.  See\npytest-django's and Django's documentation for when you would want to\nuse it.  Below is a contrived example to test a function that finds\nduplicate names of your users:\n\n```python\nfrom itertools import groupby\nfrom operator import methodcaller\n\nfrom django.contrib.auth.models import User\n\n\ndef get_duplicate_names():\n    all_users = User.objects.order_by(\"last_name\", \"first_name\")\n    users_by_name = groupby(all_users, methodcaller(\"get_full_name\"))\n    return [full_name for full_name, users in users_by_name if len(list(users)) > 1]\n\n\ndef test_get_duplicate_names(ifactory):\n    ifactory.auth.user(first_name=\"Albert\", last_name=\"Einstein\")\n    ifactory.auth.user(first_name=\"Albert\", last_name=\"Einstein\")\n    ifactory.auth.user(first_name=\"Erwin\", last_name=\"Schrodinger\")\n    ifactory.auth.user(first_name=\"Richard\", last_name=\"Feynman\")\n    assert get_duplicate_names() == [\"Albert Einstein\"]\n    assert User.objects.count() == 4\n```\n\nYou find you models namespaced by the application name and the model\nname on the `ifactory` instance. For instance, if you have created a\n`Book` model in a `library` application (and put your library\napplication in INSTALLED_APPS), its factory function will be\n`ifactory.library.book()`. This function accepts the same arguments as\nyour model constructor does and returns the created instance.\n\nNotice in the example above that we create four new users without\nspecifying their unique usernames. The goal of this project is that\nyou should never have to specify the value of a field if you're not\ninterested in that value in your test. Conversely, you should never\nrely on a value you haven't explicity set. This library gives no\nguarantees that the value it chooses for a field will be the same the\nnext time the test is run. It just tries to make sure that the\ninstance can be saved to the database without any integrity errors.\n\nWhile I would recommend against it, if you do want to know which\ndefault value will be used, you can use the\n`pytest_django_ifactory_configure` hook. A good place to put it is in\nyour *conftest.py*:\n\n```python\ndef pytest_django_ifactory_configure(ifactory):\n    ifactory.configure_defaults(\"auth.user\", {\n        \"first_name\": \"Albert\",\n        \"last_name\": \"Einstein\",\n    })\n```\n\nFrom now on, all users in your tests will be Albert Einstein unless\nyou say otherwise:\n\n```python\ndef test_albert_by_default(ifactory):\n    albert = ifactory.auth.user()\n    assert albert.get_full_name() == \"Albert Einstein\"\n    not_albert = ifactory.auth.user(first_name=\"Erwin\", last_name=\"Schrodinger\")\n    assert not_albert.full_name() == \"Erwin Schrodinger\"\n```\n\nWhile the above example might not be the best idea as your test suit\ngrows the hook can be used to enforce constraints in your models that\nthis library is unaware of, e.g., validation errors raised by your\nmodels that depend on the model's field values.\n\n## Development\n\nThis project uses [black][] to auto-format the code, [flake8][] to\ncheck it, [pytest][] to test it, and finally [check-manifest][] to\ncheck the project's [MANIFEST.in](MANIFEST.in). To facilitate (and\nremember) to actually run all these tools, [pre-commit][] is\nused. Hence, the only hard development requirement is\n*pre-commit*. Install it and run\n\n```console\n$ pre-commit install\n```\n\nonce the first time you check out the repo and from now on all checks\nexcept the unit tests will be run everytime a commit is made. The unit\ntests are run manually with pytest\n\n```console\n$ pytest\n```\n\nGitlab CI is configured to run the tests with Python 3.7-3.11 and all\nsupported Django LTS versions.\n\nIf you want to install all development requirements to run them\nmanually (and without using `pre-commit run --all-files`), use the\n[requirements.txt](requirements.txt) file:\n\n```console\n$ pip install -r requirements.txt\n```\n\n[black]: https://github.com/ambv/black\n[check-manifest]: https://github.com/mgedmin/check-manifest\n[flake8]: https://gitlab.com/pycqa/flake8\n[pre-commit]: https://github.com/pre-commit/pre-commit\n[pytest]: http://pytest.org/\n\n## License\n\nLike [pytest-django][], pytest-django-ifactory is released under the\n[BSD 3-clause](LICENSE) license.\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -639,7 +638,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18188262,
+        "last_serial": 18389247,
         "urls": [
             {
                 "comment_text": "",
@@ -680,6 +679,104 @@
                 "upload_time": "2023-05-21T17:38:09",
                 "upload_time_iso_8601": "2023-05-21T17:38:09.923496Z",
                 "url": "https://files.pythonhosted.org/packages/0c/4c/e43eb39d725c1b7261c5849685c738f196a84c7f35da49bcd944ac966e65/pytest-django-ifactory-1.0.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "1.1.0": {
+        "info": {
+            "author": "Mattias Jakobsson",
+            "author_email": "mjakob422@gmail.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 5 - Production/Stable",
+                "Environment :: Plugins",
+                "Framework :: Django",
+                "Framework :: Pytest",
+                "Intended Audience :: Developers",
+                "License :: OSI Approved :: BSD License",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.7",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Software Development :: Testing"
+            ],
+            "description": "[![pipeline status](https://gitlab.com/gorilladev/pytest-django-ifactory/badges/develop/pipeline.svg)](https://gitlab.com/gorilladev/pytest-django-ifactory/commits/develop)\n[![coverage report](https://gitlab.com/gorilladev/pytest-django-ifactory/badges/develop/coverage.svg)](https://gitlab.com/gorilladev/pytest-django-ifactory/commits/develop)\n\n# pytest-django-ifactory\n\nA model instance factory for [pytest-django][].\n\n[pytest-django]: https://pytest-django.readthedocs.io/\n\n## Motivation\n\npytest-django-ifactory makes it easy to create model instances for\nyour test cases even if they contain a lot of non-nullable fields and\ncomplex foreign key relationships. If you every felt like you spent\ntoo much time coming up with dummy values for you models' fields just\nto get an instance into the database to use in a test then\npytest-django-ifactory might be for you.\n\npytest's fixtures are great and perfect if you want to have a static\nmodel instance available in the database for your tests. Problems\narise however when you want to vary one of its fields. To reuse your\nfixture in that case you need to modify the field and save the\ninstance back to the database (assuming your test needs it in the\ndatabase, of course). This results in at least two lines of extra\nsetup code in you test case and an extra call to the database.\n\npytest-django-ifactory is simply an instance factory (hence\n*ifactory*) function that automatically detects your Django models and\ntries to come up with acceptable defaults for the fields you don't\ncare about. This includes generating unique values for fields marked\nas unique and to create related instances for non-nullable foreign\nkeys.\n\n## Usage\n\nThis plugin comes with two fixtures: `ifactory` and\n`transactional_ifactory`.  Use them when you need to put model\ninstances in the database.  `ifactory` and `transactional_ifactory`\nare identical except that the latter uses [pytest-django][]'s\n`transactional_db` fixture instead of the `db` fixture.  See\npytest-django's and Django's documentation for when you would want to\nuse it.  Below is a contrived example to test a function that finds\nduplicate names of your users:\n\n```python\nfrom itertools import groupby\nfrom operator import methodcaller\n\nfrom django.contrib.auth.models import User\n\n\ndef get_duplicate_names():\n    all_users = User.objects.order_by(\"last_name\", \"first_name\")\n    users_by_name = groupby(all_users, methodcaller(\"get_full_name\"))\n    return [full_name for full_name, users in users_by_name if len(list(users)) > 1]\n\n\ndef test_get_duplicate_names(ifactory):\n    ifactory.auth.user(first_name=\"Albert\", last_name=\"Einstein\")\n    ifactory.auth.user(first_name=\"Albert\", last_name=\"Einstein\")\n    ifactory.auth.user(first_name=\"Erwin\", last_name=\"Schrodinger\")\n    ifactory.auth.user(first_name=\"Richard\", last_name=\"Feynman\")\n    assert get_duplicate_names() == [\"Albert Einstein\"]\n    assert User.objects.count() == 4\n```\n\nYou find you models namespaced by the application name and the model\nname on the `ifactory` instance. For instance, if you have created a\n`Book` model in a `library` application (and put your library\napplication in INSTALLED_APPS), its factory function will be\n`ifactory.library.book()`. This function accepts the same arguments as\nyour model constructor does and returns the created instance.\n\nNotice in the example above that we create four new users without\nspecifying their unique usernames. The goal of this project is that\nyou should never have to specify the value of a field if you're not\ninterested in that value in your test. Conversely, you should never\nrely on a value you haven't explicity set. This library gives no\nguarantees that the value it chooses for a field will be the same the\nnext time the test is run. It just tries to make sure that the\ninstance can be saved to the database without any integrity errors.\n\nWhile I would recommend against it, if you do want to know which\ndefault value will be used, you can use the\n`pytest_django_ifactory_configure` hook. A good place to put it is in\nyour *conftest.py*:\n\n```python\ndef pytest_django_ifactory_configure(ifactory):\n    ifactory.configure_defaults(\"auth.user\", {\n        \"first_name\": \"Albert\",\n        \"last_name\": \"Einstein\",\n    })\n```\n\nFrom now on, all users in your tests will be Albert Einstein unless\nyou say otherwise:\n\n```python\ndef test_albert_by_default(ifactory):\n    albert = ifactory.auth.user()\n    assert albert.get_full_name() == \"Albert Einstein\"\n    not_albert = ifactory.auth.user(first_name=\"Erwin\", last_name=\"Schrodinger\")\n    assert not_albert.full_name() == \"Erwin Schrodinger\"\n```\n\nWhile the above example might not be the best idea as your test suit\ngrows the hook can be used to enforce constraints in your models that\nthis library is unaware of, e.g., validation errors raised by your\nmodels that depend on the model's field values.\n\n## Development\n\nThis project uses [black][] to auto-format the code, [flake8][] to\ncheck it, [pytest][] to test it, and finally [check-manifest][] to\ncheck the project's [MANIFEST.in](MANIFEST.in). To facilitate (and\nremember) to actually run all these tools, [pre-commit][] is\nused. Hence, the only hard development requirement is\n*pre-commit*. Install it and run\n\n```console\n$ pre-commit install\n```\n\nonce the first time you check out the repo and from now on all checks\nexcept the unit tests will be run everytime a commit is made. The unit\ntests are run manually with pytest\n\n```console\n$ pytest\n```\n\nGitlab CI is configured to run the tests with Python 3.7-3.11 and all\nsupported Django LTS versions.\n\nIf you want to install all development requirements to run them\nmanually (and without using `pre-commit run --all-files`), use the\n[requirements.txt](requirements.txt) file:\n\n```console\n$ pip install -r requirements.txt\n```\n\n[black]: https://github.com/ambv/black\n[check-manifest]: https://github.com/mgedmin/check-manifest\n[flake8]: https://gitlab.com/pycqa/flake8\n[pre-commit]: https://github.com/pre-commit/pre-commit\n[pytest]: http://pytest.org/\n\n## License\n\nLike [pytest-django][], pytest-django-ifactory is released under the\n[BSD 3-clause](LICENSE) license.\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://gitlab.com/gorilladev/pytest-django-ifactory",
+            "keywords": "pytest django database testing",
+            "license": "BSD-3-Clause",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "pytest-django-ifactory",
+            "package_url": "https://pypi.org/project/pytest-django-ifactory/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/pytest-django-ifactory/",
+            "project_urls": {
+                "Homepage": "https://gitlab.com/gorilladev/pytest-django-ifactory"
+            },
+            "release_url": "https://pypi.org/project/pytest-django-ifactory/1.1.0/",
+            "requires_dist": [
+                "pytest-django"
+            ],
+            "requires_python": "",
+            "summary": "A model instance factory for pytest-django",
+            "version": "1.1.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18389247,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "ecedf6381cea4cdf31bf24fea62f672b004d8bfe822e29bfbf0e9c913f682a00",
+                    "md5": "c862bb418f32feda558f22f4d394b1bc",
+                    "sha256": "f2f761be29edd00d70cfcb883507277c0324448e290a181f1190a1b479caf6e1"
+                },
+                "downloads": -1,
+                "filename": "pytest_django_ifactory-1.1.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "c862bb418f32feda558f22f4d394b1bc",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 9214,
+                "upload_time": "2023-06-06T09:13:10",
+                "upload_time_iso_8601": "2023-06-06T09:13:10.981110Z",
+                "url": "https://files.pythonhosted.org/packages/ec/ed/f6381cea4cdf31bf24fea62f672b004d8bfe822e29bfbf0e9c913f682a00/pytest_django_ifactory-1.1.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "72b414ceecc5dc213b1057a254649970fc73b3dad7ca300b6215e26a1f432964",
+                    "md5": "dc29e553a86f07dedf459fe8ecb07488",
+                    "sha256": "5d3aba1dd881b43dda9780adcb2adf43bb61328ad9ca3e2a6d6a45fa5b12a126"
+                },
+                "downloads": -1,
+                "filename": "pytest-django-ifactory-1.1.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "dc29e553a86f07dedf459fe8ecb07488",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 17409,
+                "upload_time": "2023-06-06T09:13:12",
+                "upload_time_iso_8601": "2023-06-06T09:13:12.641585Z",
+                "url": "https://files.pythonhosted.org/packages/72/b4/14ceecc5dc213b1057a254649970fc73b3dad7ca300b6215e26a1f432964/pytest-django-ifactory-1.1.0.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

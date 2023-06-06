@@ -42,7 +42,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18374477,
+        "last_serial": 18389266,
         "urls": [
             {
                 "comment_text": "",
@@ -132,7 +132,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18374477,
+        "last_serial": 18389266,
         "urls": [
             {
                 "comment_text": "",
@@ -222,7 +222,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18374477,
+        "last_serial": 18389266,
         "urls": [
             {
                 "comment_text": "",
@@ -282,7 +282,6 @@
                 "Topic :: Scientific/Engineering :: Artificial Intelligence",
                 "Topic :: Scientific/Engineering :: Mathematics"
             ],
-            "description": "\n# LinSATNet\nThis is the official implementation of our ICML 2023 paper \"LinSATNet: The Positive Linear Satisfiability Neural Networks\".\n\n* [[paper]](https://runzhong.wang/files/icml2023_LinSATNet.pdf)\n\nWith LinSATNet, you can enforce the satisfiability of general **positive linear constraints** to the output of neural networks.\n\n![usecase](https://github.com/Thinklab-SJTU/LinSATNet/blob/main/figures/usecase.png?raw=true)\n\nThe LinSAT layer is fully differentiable, and the gradients are exactly computed. Our implementation now supports PyTorch.\n\nYou can install it by\n\n```shell\npip install linsatnet\n```\n\nAnd get started by\n\n```python\nfrom LinSATNet import linsat_layer\n```\n\n## A Quick Example\n\nThere is a quick example if you run ``LinSATNet/linsat.py`` directly. In this\nexample, the doubly-stochastic constraint is enforced for 3x3 variables.\n\nTo run the example, first clone the repo:\n```shell\ngit clone https://github.com/Thinklab-SJTU/LinSATNet.git\n```\n\nGo into the repo, and run the example code:\n```shell\ncd LinSATNet\npython LinSATNet/linsat.py\n```\n\nIn this example, we try to enforce doubly-stochastic constraint to a 3x3 matrix.\nThe doubly-stochastic constraint means that all rows and columns of the matrix\nshould sum to 1.\n\nThe 3x3 matrix is flattened into a vector, and the following positive\nlinear constraints are considered (for $\\mathbf{E}\\mathbf{x}=\\mathbf{f}$):\n```python\nE = torch.tensor(\n    [[1, 1, 1, 0, 0, 0, 0, 0, 0],\n     [0, 0, 0, 1, 1, 1, 0, 0, 0],\n     [0, 0, 0, 0, 0, 0, 1, 1, 1],\n     [1, 0, 0, 1, 0, 0, 1, 0, 0],\n     [0, 1, 0, 0, 1, 0, 0, 1, 0],\n     [0, 0, 1, 0, 0, 1, 0, 0, 1]], dtype=torch.float32\n)\nf = torch.tensor([1, 1, 1, 1, 1, 1], dtype=torch.float32)\n```\n\nWe randomly init ``w`` and regard it as the output of some neural networks:\n```python\nw = torch.rand(9) # w could be the output of neural network\nw = w.requires_grad_(True)\n```\n\nWe also have a \"ground-truth target\" for the output of ``linsat_layer``, which\nis an orthogonal matrix in this example:\n```python\nx_gt = torch.tensor(\n    [1, 0, 0,\n     0, 1, 0,\n     0, 0, 1], dtype=torch.float32\n)\n```\n\nThe forward/backward passes of LinSAT follow the standard PyTorch style and are\nreadily integrated into existing deep learning pipelines.\n\nThe forward pass:\n```python\nlinsat_outp = linsat_layer(w, E=E, f=f, tau=0.1, max_iter=10, dummy_val=0)\n```\n\nThe backward pass:\n```python\nloss = ((linsat_outp - x_gt) ** 2).sum()\nloss.backward()\n```\n\nWe can also do gradient-based optimization over ``w`` to make the output of\n``linsat_layer`` closer to ``x_gt``. This is what's happening when you train a\nneural network.\n```python\nniters = 10\nopt = torch.optim.SGD([w], lr=0.1, momentum=0.9)\nfor i in range(niters):\n    x = linsat_layer(w, E=E, f=f, tau=0.1, max_iter=10, dummy_val=0)\n    cv = torch.matmul(E, x.t()).t() - f.unsqueeze(0)\n    loss = ((x - x_gt) ** 2).sum()\n    loss.backward()\n    opt.step()\n    opt.zero_grad()\n    print(f'{i}/{niters}\\n'\n          f'  underlying obj={torch.sum(w * x)},\\n'\n          f'  loss={loss},\\n'\n          f'  sum(constraint violation)={torch.sum(cv[cv > 0])},\\n'\n          f'  x={x},\\n'\n          f'  constraint violation={cv}')\n```\nAnd you are likely to see the loss decreasing during the gradient steps.\n\n## API Reference\n\nTo use LinSATNet in your own project, make sure you have the package installed:\n```shell\npip install linsatnet\n```\nand import the pacakge at the beginning of your code:\n```python\nfrom LinSATNet import linsat_layer\n```\n\n### The ``linsat_layer`` function\n> **LinSATNet.linsat_layer**(x, A=None, b=None, C=None, d=None, E=None, f=None, tau=0.05, max_iter=100, dummy_val=0) [[source]](https://github.com/Thinklab-SJTU/LinSATNet/blob/main/LinSATNet/linsat.py#L11)\n\nLinSAT layer enforces positive linear constraints to the input ``x`` and\nprojects it with the constraints\n$$\\mathbf{A} \\mathbf{x} <= \\mathbf{b}, \\mathbf{C} \\mathbf{x} >= \\mathbf{d}, \\mathbf{E} \\mathbf{x} = \\mathbf{f}$$\nand all elements in $\\mathbf{A}, \\mathbf{b}, \\mathbf{C}, \\mathbf{d}, \\mathbf{E}, \\mathbf{f}$ must be non-negative.\n\n**Parameters:**\n* ``x``: PyTorch tensor of size ($n_v$), it can optionally have a batch size ($b \\times n_v$)\n* ``A``, ``C``, ``E``: PyTorch tensor of size ($n_c \\times n_v$), constraint matrix on the left hand side\n* ``b``, ``d``, ``f``: PyTorch tensor of size ($n_c$), constraint vector on the right hand side\n* ``tau``: (``default=0.05``) parameter to control the discreteness of the projection. Smaller value leads to more discrete (harder) results, larger value leads to more continuous (softer) results.\n* ``max_iter``: (``default=100``) max number of iterations\n* ``dummy_val``: (``default=0``) the value of dummy variables appended to the input vector\n\n**return:** PyTorch tensor of size ($n_v$) or ($b \\times n_v$), the projected variables\n\nNotations:\n* $b$ means the batch size.\n* $n_c$ means the number of constraints ($\\mathbf{A}$, $\\mathbf{C}$, $\\mathbf{E}$ may have different $n_c$)\n* $n_v$ means the number of variables\n\n### Some practical notes\n\n1. You must ensure that your input constraints have a non-empty feasible space.\nOtherwise, ``linsat_layer`` will not converge.\n2. You may tune the value of ``tau`` for your specific tasks. Monitor the output\nof LinSAT so that the \"smoothness\" of the output meets your task. Reasonable\nchoices of ``tau`` may range from ``1e-4`` to ``100`` in our experience.\n3. Be careful of potential numerical issues. Sometimes ``A x <= 1`` does not\nwork, but ``A x <= 0.999`` works.\n4. The input vector ``x`` may have a batch dimension, but the constraints can\nnot have a batch dimension. The constraints should be consistent for all data in\none batch.\n\n## Citation\nIf you find our paper/code useful in your research, please cite\n```\n@inproceedings{WangICML23,\n  title={LinSATNet: The Positive Linear Satisfiability Neural Networks},\n  author={Wang, Runzhong and Zhang, Yunhao and Guo, Ziao and Chen, Tianyi and Yang, Xiaokang and Yan, Junchi},\n  booktitle={International Conference on Machine Learning (ICML)},\n  year={2023}\n}\n```\n",
             "description_content_type": "text/markdown",
             "docs_url": null,
             "download_url": "",
@@ -313,7 +312,7 @@
             "yanked": false,
             "yanked_reason": null
         },
-        "last_serial": 18374477,
+        "last_serial": 18389266,
         "urls": [
             {
                 "comment_text": "",
@@ -354,6 +353,97 @@
                 "upload_time": "2023-06-05T10:18:10",
                 "upload_time_iso_8601": "2023-06-05T10:18:10.526775Z",
                 "url": "https://files.pythonhosted.org/packages/48/f1/596a046b3bb06a914f0c92b0ec00722da6caad7e4b3b211a37ac39d197f2/LinSATNet-0.0.4.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    },
+    "0.0.5": {
+        "info": {
+            "author": "Runzhong Wang",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Environment :: Console",
+                "Environment :: GPU :: NVIDIA CUDA",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Topic :: Scientific/Engineering :: Artificial Intelligence",
+                "Topic :: Scientific/Engineering :: Mathematics"
+            ],
+            "description": "\n# LinSATNet\nThis is the official implementation of our ICML 2023 paper \"LinSATNet: The Positive Linear Satisfiability Neural Networks\".\n\n* [[paper]](https://runzhong.wang/files/icml2023_LinSATNet.pdf)\n\nWith LinSATNet, you can enforce the satisfiability of general **positive linear constraints** to the output of neural networks.\n\n![usecase](https://github.com/Thinklab-SJTU/LinSATNet/blob/main/figures/usecase.png?raw=true)\n\nThe LinSAT layer is fully differentiable, and the gradients are exactly computed. Our implementation now supports PyTorch.\n\nYou can install it by\n\n```shell\npip install linsatnet\n```\n\nAnd get started by\n\n```python\nfrom LinSATNet import linsat_layer\n```\n\n## A Quick Example\n\nThere is a quick example if you run ``LinSATNet/linsat.py`` directly. In this\nexample, the doubly-stochastic constraint is enforced for 3x3 variables.\n\nTo run the example, first clone the repo:\n```shell\ngit clone https://github.com/Thinklab-SJTU/LinSATNet.git\n```\n\nGo into the repo, and run the example code:\n```shell\ncd LinSATNet\npython LinSATNet/linsat.py\n```\n\nIn this example, we try to enforce doubly-stochastic constraint to a 3x3 matrix.\nThe doubly-stochastic constraint means that all rows and columns of the matrix\nshould sum to 1.\n\nThe 3x3 matrix is flattened into a vector, and the following positive\nlinear constraints are considered (for $\\mathbf{E}\\mathbf{x}=\\mathbf{f}$):\n```python\nE = torch.tensor(\n    [[1, 1, 1, 0, 0, 0, 0, 0, 0],\n     [0, 0, 0, 1, 1, 1, 0, 0, 0],\n     [0, 0, 0, 0, 0, 0, 1, 1, 1],\n     [1, 0, 0, 1, 0, 0, 1, 0, 0],\n     [0, 1, 0, 0, 1, 0, 0, 1, 0],\n     [0, 0, 1, 0, 0, 1, 0, 0, 1]], dtype=torch.float32\n)\nf = torch.tensor([1, 1, 1, 1, 1, 1], dtype=torch.float32)\n```\n\nWe randomly init ``w`` and regard it as the output of some neural networks:\n```python\nw = torch.rand(9) # w could be the output of neural network\nw = w.requires_grad_(True)\n```\n\nWe also have a \"ground-truth target\" for the output of ``linsat_layer``, which\nis an orthogonal matrix in this example:\n```python\nx_gt = torch.tensor(\n    [1, 0, 0,\n     0, 1, 0,\n     0, 0, 1], dtype=torch.float32\n)\n```\n\nThe forward/backward passes of LinSAT follow the standard PyTorch style and are\nreadily integrated into existing deep learning pipelines.\n\nThe forward pass:\n```python\nlinsat_outp = linsat_layer(w, E=E, f=f, tau=0.1, max_iter=10, dummy_val=0)\n```\n\nThe backward pass:\n```python\nloss = ((linsat_outp - x_gt) ** 2).sum()\nloss.backward()\n```\n\nWe can also do gradient-based optimization over ``w`` to make the output of\n``linsat_layer`` closer to ``x_gt``. This is what's happening when you train a\nneural network.\n```python\nniters = 10\nopt = torch.optim.SGD([w], lr=0.1, momentum=0.9)\nfor i in range(niters):\n    x = linsat_layer(w, E=E, f=f, tau=0.1, max_iter=10, dummy_val=0)\n    cv = torch.matmul(E, x.t()).t() - f.unsqueeze(0)\n    loss = ((x - x_gt) ** 2).sum()\n    loss.backward()\n    opt.step()\n    opt.zero_grad()\n    print(f'{i}/{niters}\\n'\n          f'  underlying obj={torch.sum(w * x)},\\n'\n          f'  loss={loss},\\n'\n          f'  sum(constraint violation)={torch.sum(cv[cv > 0])},\\n'\n          f'  x={x},\\n'\n          f'  constraint violation={cv}')\n```\nAnd you are likely to see the loss decreasing during the gradient steps.\n\n## API Reference\n\nTo use LinSATNet in your own project, make sure you have the package installed:\n```shell\npip install linsatnet\n```\nand import the pacakge at the beginning of your code:\n```python\nfrom LinSATNet import linsat_layer\n```\n\n### The ``linsat_layer`` function\n> **LinSATNet.linsat_layer**(x, A=None, b=None, C=None, d=None, E=None, f=None, tau=0.05, max_iter=100, dummy_val=0) [[source]](https://github.com/Thinklab-SJTU/LinSATNet/blob/main/LinSATNet/linsat.py#L11)\n\nLinSAT layer enforces positive linear constraints to the input ``x`` and\nprojects it with the constraints\n$$\\mathbf{A} \\mathbf{x} <= \\mathbf{b}, \\mathbf{C} \\mathbf{x} >= \\mathbf{d}, \\mathbf{E} \\mathbf{x} = \\mathbf{f}$$\nand all elements in $\\mathbf{A}, \\mathbf{b}, \\mathbf{C}, \\mathbf{d}, \\mathbf{E}, \\mathbf{f}$ must be non-negative.\n\n**Parameters:**\n* ``x``: PyTorch tensor of size ($n_v$), it can optionally have a batch size ($b \\times n_v$)\n* ``A``, ``C``, ``E``: PyTorch tensor of size ($n_c \\times n_v$), constraint matrix on the left hand side\n* ``b``, ``d``, ``f``: PyTorch tensor of size ($n_c$), constraint vector on the right hand side\n* ``tau``: (``default=0.05``) parameter to control the discreteness of the projection. Smaller value leads to more discrete (harder) results, larger value leads to more continuous (softer) results.\n* ``max_iter``: (``default=100``) max number of iterations\n* ``dummy_val``: (``default=0``) the value of dummy variables appended to the input vector\n\n**return:** PyTorch tensor of size ($n_v$) or ($b \\times n_v$), the projected variables\n\nNotations:\n* $b$ means the batch size.\n* $n_c$ means the number of constraints ($\\mathbf{A}$, $\\mathbf{C}$, $\\mathbf{E}$ may have different $n_c$)\n* $n_v$ means the number of variables\n\n### Some practical notes\n\n1. You must ensure that your input constraints have a non-empty feasible space.\nOtherwise, ``linsat_layer`` will not converge.\n2. You may tune the value of ``tau`` for your specific tasks. Monitor the output\nof LinSAT so that the \"smoothness\" of the output meets your task. Reasonable\nchoices of ``tau`` may range from ``1e-4`` to ``100`` in our experience.\n3. Be careful of potential numerical issues. Sometimes ``A x <= 1`` does not\nwork, but ``A x <= 0.999`` works.\n4. The input vector ``x`` may have a batch dimension, but the constraints can\nnot have a batch dimension. The constraints should be consistent for all data in\none batch.\n\n## Citation\nIf you find our paper/code useful in your research, please cite\n```\n@inproceedings{WangICML23,\n  title={LinSATNet: The Positive Linear Satisfiability Neural Networks},\n  author={Wang, Runzhong and Zhang, Yunhao and Guo, Ziao and Chen, Tianyi and Yang, Xiaokang and Yan, Junchi},\n  booktitle={International Conference on Machine Learning (ICML)},\n  year={2023}\n}\n```\n",
+            "description_content_type": "text/markdown",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "https://github.com/Thinklab-SJTU/LinSATNet",
+            "keywords": "",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "LinSATNet",
+            "package_url": "https://pypi.org/project/LinSATNet/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/LinSATNet/",
+            "project_urls": {
+                "Homepage": "https://github.com/Thinklab-SJTU/LinSATNet"
+            },
+            "release_url": "https://pypi.org/project/LinSATNet/0.0.5/",
+            "requires_dist": [
+                "torch (>=1.0.0)"
+            ],
+            "requires_python": "",
+            "summary": "LinSATNet offers a neural network layer to enforce the satisfiability of positive linear constraints to the output of neural networks. The gradient through the layer is exactly computed. This package now works with PyTorch.",
+            "version": "0.0.5",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18389266,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "080b535e96b35846eac45aae8ec413be4c5d219def2e77dd7f563ec324baa26e",
+                    "md5": "ff9cfb1cd8c138789f6d56741bbc3b8a",
+                    "sha256": "8f073b30273a260fbe0fd865e5a4e590b80534f268f23a9fb4839feb6763322c"
+                },
+                "downloads": -1,
+                "filename": "LinSATNet-0.0.5-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "ff9cfb1cd8c138789f6d56741bbc3b8a",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": null,
+                "size": 7420,
+                "upload_time": "2023-06-06T09:14:42",
+                "upload_time_iso_8601": "2023-06-06T09:14:42.110393Z",
+                "url": "https://files.pythonhosted.org/packages/08/0b/535e96b35846eac45aae8ec413be4c5d219def2e77dd7f563ec324baa26e/LinSATNet-0.0.5-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "97d5751032112f63d817bd40786a8b6b429a7e6ac88c9ade984ea2b52047f17b",
+                    "md5": "f6628a82e2d0bc8aa9c9730604d2efc9",
+                    "sha256": "8a3d395cb1952dbb3d6cba6fbcaf8b1b18f1e6e81044e8f3f5593bf9233dabe2"
+                },
+                "downloads": -1,
+                "filename": "LinSATNet-0.0.5.tar.gz",
+                "has_sig": false,
+                "md5_digest": "f6628a82e2d0bc8aa9c9730604d2efc9",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": null,
+                "size": 11948,
+                "upload_time": "2023-06-06T09:14:43",
+                "upload_time_iso_8601": "2023-06-06T09:14:43.605624Z",
+                "url": "https://files.pythonhosted.org/packages/97/d5/751032112f63d817bd40786a8b6b429a7e6ac88c9ade984ea2b52047f17b/LinSATNet-0.0.5.tar.gz",
                 "yanked": false,
                 "yanked_reason": null
             }

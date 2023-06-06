@@ -1,0 +1,243 @@
+{
+    "0.0.1a1": {
+        "info": {
+            "author": "",
+            "author_email": "",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Development Status :: 3 - Alpha",
+                "Intended Audience :: Developers",
+                "Intended Audience :: Science/Research",
+                "License :: OSI Approved :: Apache Software License",
+                "Natural Language :: English",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10"
+            ],
+            "description": "##################################\nPlaquette UnionFind Decoder Plugin\n##################################\n\n.. image:: https://github.com/qc-design/plaquette-unionfind/actions/workflows/tests_linux.yml/badge.svg\n    :target: https://github.com/qc-design/plaquette-unionfind/actions/workflows/tests_linux.yml\n\n.. image:: https://github.com/qc-design/plaquette-unionfind/actions/workflows/tests_windows.yml/badge.svg\n    :target: https://github.com/qc-design/plaquette-unionfind/actions/workflows/tests_windows.yml\n\n.. header-start-inclusion-marker-do-not-remove\n\n.. contents:: Table of Contents\n\n.. about-start-inclusion-marker-do-not-remove\n\nAbout \n=====\n\nThe `Plaquette-UnionFind <https://github.com/qc-design/plaquette-unionfind>`_ plugin\nextends the `Plaquette <https://github.com/qc-design/plaquette>`_ error correction\nsoftware, providing a fast unionfind decoder written in C++. See the `Benchmarks`_\nsection for a comparison to other known decoding packages.\n\n.. about-end-inclusion-marker-do-not-remove\n\n.. installation-start-inclusion-marker-do-not-remove\n\nInstallation\n============\n\nThe basic dependencies for installation are cmake and ninja.\n\nThe C++ tests/examples and python bindings can be built independently by\n\n.. code-block:: console\n\n   cmake -Bbuild -G Ninja -DPLAQUETTE_UNIONFIND_BUILD_TESTS=On -DPLAQUETTE_UNIONFIND_BUILD_BINDINGS=On\n   cmake --build ./build\n\n\nYou can run the C++ backend tests with\n\n.. code-block:: console\n\n   make test-cpp\n\n\nYou can install just the python interface with (this quietly builds the C++ backend):\n\n.. code-block:: console\n\n   pip install -r requirements.txt\n   pip install .\n\nor get the latest stable release from PyPI\n\n.. code-block:: console\n\n    pip install plaquette_unionfind\n\n\nYou can run the python frontend tests with\n\n.. code-block:: console\n\n   make test-python\n\n.. installation-end-inclusion-marker-do-not-remove\n\n.. benchmark-start-inclusion-marker-do-not-remove\n\nUsage\n==========\n\nPython Frontend\n---------------\n\n.. code-block:: python\n\n    import plaquette_unionfind as puf\n    import plaquette_graph as pg\n\n    vertex_boundary = [False] * 12 + [True] * 8\n    edges = [(0, 12), (0, 1), (1, 2), (2, 13), (0, 3), (1, 4), (2, 5), (3, 14), (3, 4),\n             (4, 5), (5, 15), (3, 6), (4, 7), (5, 8), (6, 16), (6, 7), (7, 8), (8, 17),\n             (6, 9), (7, 10), (8, 11), (9, 18), (9, 10), (10, 11), (11, 19)]\n    syndrome = [False, False, True, True, False, True, True, False, True, False, True,\n                False, False, False, False, False, False, False, False, False]\n    dg = pg.DecodingGraph(num_vertices, edges, vertex_boundary)\n    uf = puf.UnionFindDecoder(dg)\n    correction = uf.decode(syndrome)\n\n\nC++ Backend\n-----------\n\n.. code-block:: cpp\n\n    #include \"DecodingGraph.hpp\"\n    #include \"UnionFindDecoder.hpp\"\n\n    int main(int argc, char *argv[]) {\n\n        using namespace Plaquette;\n        //a vector storing a flag that is 1 if the vertex is on the boundary\n        std::vector<bool> vertex_boundary = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0,\n                                             0, 0, 1, 1, 1, 1, 1, 1, 1, 1};\n        std::vector<std::pair<size_t, size_t>> edges = {\n            {0, 12}, {0, 1},  {1, 2},   {2, 13}, {0, 3}, {1, 4},  {2, 5},\n            {3, 14}, {3, 4},  {4, 5},   {5, 15}, {3, 6}, {4, 7},  {5, 8},\n            {6, 16}, {6, 7},  {7, 8},   {8, 17}, {6, 9}, {7, 10}, {8, 11},\n            {9, 18}, {9, 10}, {10, 11}, {11, 19}};\n\n        std::vector<bool> syndrome = {false, false, true,  true,  false, true,  true,\n                                      false, true,  false, true,  false, false, false,\n                                      false, false, false, false, false, false};\n\n        auto decoding_graph = DecodingGraph(vertex_boundary.size(),\n                                          edges, vertex_boundary);\n        UnionFindDecoder decoder(decoding_graph);\n        auto correction = decoder.Decode(syndrome);\n    }\n\nInterface to Plaquette\n----------------------\n\n`Plaquette <https://github.com/qc-design/plaquette>`_ is undergoing heavy development, so this interface is likely to change. If you are benchmarking\nour decoder, please do not use the plaquette interface unless you know what you are doing. You will be timing other computations unrelated to the decoding.\n\n.. code-block:: python\n\n    from plaquette.codes import LatticeCode\n    import plaquette_unionfind\n    \n        code = LatticeCode.make_planar(n_rounds=1, size=size)\n        qed = {\n            \"pauli\": {q.equbit_idx: {\"x\": error_rate} for q in code.lattice.dataqubits}\n        }\n        decoder = plaquette_unionfind.UnionFindDecoderInterface.from_code(code, qed, weighted=False)\n    \nBenchmarks\n==========\n\nFor our benchmarks, we have been careful to only time the intrinsic Pymatching-v2 and FusionBlossom decoding\nfunctions. We do not use the decode_batch function for Pymatching-v2 because this does not test the intrinsic speed of the\ndecoder. We also set FusionBlossom to single-threaded mode since we are running both our code and Pymatching-v2 in that mode.\nAll benchmarks are performed on a m6id.4xlarge AWS node. All benchmarks are reproducible (see below) using our scripts on\na m6id.4xlarge.\n\nFor our first benchmark, we use the 2-D (perfect measurement) Planar Code with p = 0.05 depolarization\nerror. We see around 8-10x speedup over competitors\n\n.. image:: https://github.com/qc-design/plaquette-unionfind/blob/40fb8fab11ad60e281089e3b0b26865c899749cb/benchmarks/perfect_planar_0.05.png?raw=true\n   :align: center\n   :width: 500px \n\nFor our second benchmark we use the 3-D (imperfect measurement) Rotated Planar Code with p = 0.01 depolarization\nerror and p = 0.01 measurement error. We see that Pymatching-v2 is much more sensitive to the lattice size.\n\n.. image:: https://github.com/qc-design/plaquette-unionfind/blob/40fb8fab11ad60e281089e3b0b26865c899749cb/benchmarks/imperfect_rotated_planar_0.01.png?raw=true\n   :align: center\n   :width: 500px \n\n\nFinally we benchmark a 30x30 Rotated Planar Code (29 rounds of measurement) with varying probability. We see that\nfusion-blossom is heavily sensitive to the error probability.\n\n.. image:: https://github.com/qc-design/plaquette-unionfind/blob/40fb8fab11ad60e281089e3b0b26865c899749cb/benchmarks/imperfect_rotated_planar_fixed_size.png?raw=true\n   :align: center\n   :width: 500px \n\nTo run all three benchmarks, use the following bash commands:\n\n.. code-block:: console\n\n   source benchmarks/run_perfect_planar_benchmark.sh 0.05\n   source benchmarks/run_imperfect_rotated_planar_benchmark.sh 0.01\n   source benchmarks/run_imperfect_rotated_planar_fixed_size_benchmark.sh\n\n   python plot_benchmark_1.py perfect_planar_0.05.dat perfect_planar_0.05.png \"Surface Code Benchmark #1\" 5\n   python plot_benchmark_2.py imperfect_rotated_planar_0.01.dat imperfect_rotated_planar_0.01.png \"Surface Code Benchmark #2\" 5\n   python plot_benchmark_3.py imperfect_rotated_planar_fixed_size.dat imperfect_rotated_planar_fixed_size.png \"Surface Code Benchmark #3\" 1\n        \n.. benchmark-end-inclusion-marker-do-not-remove\n\nDocumentation\n=============\n\nTo generate the documentation you will need to install graphviz and doxygen. Then run\n\n.. code-block:: console\n\n   pip install -r doc/requirements.txt\n   make docs\n   firefox ./doc/_build/html/index.html\n\nHere is a live link to the documentation: https://docs.plaquette.design/projects/unionfind\n",
+            "description_content_type": "text/x-rst",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "Quantum error correction,qec,quantum computing,fault tolerance,error decoding",
+            "license": "",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "plaquette-unionfind",
+            "package_url": "https://pypi.org/project/plaquette-unionfind/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/plaquette-unionfind/",
+            "project_urls": {
+                "Bug Tracker": "https://github.com/qc-design/plaquette-unionfind/issues",
+                "Homepage": "https://docs.plaquette.design/projects/unionfind"
+            },
+            "release_url": "https://pypi.org/project/plaquette-unionfind/0.0.1a1/",
+            "requires_dist": [
+                "plaquette",
+                "plaquette-graph"
+            ],
+            "requires_python": ">=3.10",
+            "summary": "",
+            "version": "0.0.1a1",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18387643,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "9d2f179b99d55a713e329da6fb4e1603b5b0e6bf2ee041efe085f9d9aa118240",
+                    "md5": "69a7edabe78e98f6f2eb41019f1f70fe",
+                    "sha256": "3688e1adbddef55831f03e1abd2ccea481e72ff1130639bf223969e59eb66a08"
+                },
+                "downloads": -1,
+                "filename": "plaquette_unionfind-0.0.1a1-cp310-cp310-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "69a7edabe78e98f6f2eb41019f1f70fe",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.10",
+                "size": 83573,
+                "upload_time": "2023-06-06T06:46:45",
+                "upload_time_iso_8601": "2023-06-06T06:46:45.747890Z",
+                "url": "https://files.pythonhosted.org/packages/9d/2f/179b99d55a713e329da6fb4e1603b5b0e6bf2ee041efe085f9d9aa118240/plaquette_unionfind-0.0.1a1-cp310-cp310-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "63a0dd380f289d7c303955162970bb73b2ff7206635a517a883638c01323d88d",
+                    "md5": "2fe759a7506f9fb43124206c14876f49",
+                    "sha256": "da4d5ef02e25bfda55715e402c355be323c45371d688e2b09d501abbc34c8539"
+                },
+                "downloads": -1,
+                "filename": "plaquette_unionfind-0.0.1a1-cp310-cp310-macosx_13_0_arm64.whl",
+                "has_sig": false,
+                "md5_digest": "2fe759a7506f9fb43124206c14876f49",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.10",
+                "size": 87867,
+                "upload_time": "2023-06-06T06:43:55",
+                "upload_time_iso_8601": "2023-06-06T06:43:55.061924Z",
+                "url": "https://files.pythonhosted.org/packages/63/a0/dd380f289d7c303955162970bb73b2ff7206635a517a883638c01323d88d/plaquette_unionfind-0.0.1a1-cp310-cp310-macosx_13_0_arm64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "e9b448c564a0ca4a50f4af651826d1e1a4bb13f61ef588b8e2c435221c01485a",
+                    "md5": "f7a47a1eeb6e0415a1e33ff87c72d615",
+                    "sha256": "00b26bf116d8ee35c5e860e176c80460dd1f4170fb1410fe1f13ea74ddcbfa50"
+                },
+                "downloads": -1,
+                "filename": "plaquette_unionfind-0.0.1a1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "f7a47a1eeb6e0415a1e33ff87c72d615",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.10",
+                "size": 113062,
+                "upload_time": "2023-06-06T06:46:47",
+                "upload_time_iso_8601": "2023-06-06T06:46:47.726875Z",
+                "url": "https://files.pythonhosted.org/packages/e9/b4/48c564a0ca4a50f4af651826d1e1a4bb13f61ef588b8e2c435221c01485a/plaquette_unionfind-0.0.1a1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "49b9cea0f9a0b98e79d526c9aa05cd3b68ef19c93d496b3ff3eee48968f99824",
+                    "md5": "b0f5d1966e75689509b75122d1c49c43",
+                    "sha256": "bd6328d905030357969b5c8bd378678df42a77420742eae328d5f509aff90460"
+                },
+                "downloads": -1,
+                "filename": "plaquette_unionfind-0.0.1a1-cp310-cp310-musllinux_1_1_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "b0f5d1966e75689509b75122d1c49c43",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.10",
+                "size": 635947,
+                "upload_time": "2023-06-06T06:46:49",
+                "upload_time_iso_8601": "2023-06-06T06:46:49.656419Z",
+                "url": "https://files.pythonhosted.org/packages/49/b9/cea0f9a0b98e79d526c9aa05cd3b68ef19c93d496b3ff3eee48968f99824/plaquette_unionfind-0.0.1a1-cp310-cp310-musllinux_1_1_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "3929127a0bcb82de37dc214b69e819b357cf4cc05fd70f551f5a3e9ba9a1ebcc",
+                    "md5": "1addea3933b981ac1d3e75690e225bdc",
+                    "sha256": "14ac8c9b88278d97daf99c70233ff0fad486ddff79b4e36eca6771db081a64ea"
+                },
+                "downloads": -1,
+                "filename": "plaquette_unionfind-0.0.1a1-cp310-cp310-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "1addea3933b981ac1d3e75690e225bdc",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp310",
+                "requires_python": ">=3.10",
+                "size": 1118622,
+                "upload_time": "2023-06-06T06:46:53",
+                "upload_time_iso_8601": "2023-06-06T06:46:53.992655Z",
+                "url": "https://files.pythonhosted.org/packages/39/29/127a0bcb82de37dc214b69e819b357cf4cc05fd70f551f5a3e9ba9a1ebcc/plaquette_unionfind-0.0.1a1-cp310-cp310-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "fc97746d36d5640721d0823507af80ef206fdb088238fb3273f5ead2bf0a202e",
+                    "md5": "8fe69e9f56e8fa51e829995e185f81b7",
+                    "sha256": "006c8d1f0e9e1970e4e4a335695fc58d7148884bdd1b89ee58c90890a7b10564"
+                },
+                "downloads": -1,
+                "filename": "plaquette_unionfind-0.0.1a1-cp311-cp311-macosx_10_9_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "8fe69e9f56e8fa51e829995e185f81b7",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.10",
+                "size": 83536,
+                "upload_time": "2023-06-06T06:46:57",
+                "upload_time_iso_8601": "2023-06-06T06:46:57.399547Z",
+                "url": "https://files.pythonhosted.org/packages/fc/97/746d36d5640721d0823507af80ef206fdb088238fb3273f5ead2bf0a202e/plaquette_unionfind-0.0.1a1-cp311-cp311-macosx_10_9_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "a5cdd055f3d49c13f1d18db592586baf366126f7be816abcb3c226e5f3a440b2",
+                    "md5": "5b070133a37522432531e787e1fc8d12",
+                    "sha256": "cb1ca71ae19d7338fec67f49a442fc05b4eebb466a387e7c638d1f63df05922c"
+                },
+                "downloads": -1,
+                "filename": "plaquette_unionfind-0.0.1a1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "5b070133a37522432531e787e1fc8d12",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.10",
+                "size": 113005,
+                "upload_time": "2023-06-06T06:46:59",
+                "upload_time_iso_8601": "2023-06-06T06:46:59.929548Z",
+                "url": "https://files.pythonhosted.org/packages/a5/cd/d055f3d49c13f1d18db592586baf366126f7be816abcb3c226e5f3a440b2/plaquette_unionfind-0.0.1a1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "1b5946e001b58e9b51551e97ab3bd2215bcf047ef61c905bb3f64c183ae7a1a8",
+                    "md5": "329057ad72e1a251ca70b53f0e87f927",
+                    "sha256": "e62e8b410dcb7a53c2337ca4d30e07085646c2c66b6e62da445ae623486b57ac"
+                },
+                "downloads": -1,
+                "filename": "plaquette_unionfind-0.0.1a1-cp311-cp311-musllinux_1_1_x86_64.whl",
+                "has_sig": false,
+                "md5_digest": "329057ad72e1a251ca70b53f0e87f927",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.10",
+                "size": 635939,
+                "upload_time": "2023-06-06T06:47:02",
+                "upload_time_iso_8601": "2023-06-06T06:47:02.688694Z",
+                "url": "https://files.pythonhosted.org/packages/1b/59/46e001b58e9b51551e97ab3bd2215bcf047ef61c905bb3f64c183ae7a1a8/plaquette_unionfind-0.0.1a1-cp311-cp311-musllinux_1_1_x86_64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "2286895ef01b24f6d4084e7b96ab54121184c64c801d503dc1e3ab537d2342b0",
+                    "md5": "41453586fffbaa313bdbe3fa25fa2b2b",
+                    "sha256": "ce4a334fac5296bfacac1512e011d91e112875825f0ec77d10164b5dc3c15907"
+                },
+                "downloads": -1,
+                "filename": "plaquette_unionfind-0.0.1a1-cp311-cp311-win_amd64.whl",
+                "has_sig": false,
+                "md5_digest": "41453586fffbaa313bdbe3fa25fa2b2b",
+                "packagetype": "bdist_wheel",
+                "python_version": "cp311",
+                "requires_python": ">=3.10",
+                "size": 1119614,
+                "upload_time": "2023-06-06T06:47:05",
+                "upload_time_iso_8601": "2023-06-06T06:47:05.629203Z",
+                "url": "https://files.pythonhosted.org/packages/22/86/895ef01b24f6d4084e7b96ab54121184c64c801d503dc1e3ab537d2342b0/plaquette_unionfind-0.0.1a1-cp311-cp311-win_amd64.whl",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}

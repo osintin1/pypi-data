@@ -1,0 +1,97 @@
+{
+    "0.2.0": {
+        "info": {
+            "author": "Jo\u00ebl Perras",
+            "author_email": "joel@fictivekin.com",
+            "bugtrack_url": null,
+            "classifiers": [
+                "Environment :: Console",
+                "License :: OSI Approved :: MIT License",
+                "Operating System :: OS Independent",
+                "Programming Language :: Python :: 3",
+                "Programming Language :: Python :: 3.10",
+                "Programming Language :: Python :: 3.11",
+                "Programming Language :: Python :: 3.8",
+                "Programming Language :: Python :: 3.9",
+                "Topic :: Software Development :: Documentation",
+                "Topic :: Software Development :: Libraries :: Python Modules"
+            ],
+            "description": "Dynaconf AWS Systems Manager Parameter Store Loader\n====================================================\n\nWhen configured, this loader will permit Dynaconf to query `AWS Systems Manager Parameter Store <https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-parameter-store.html>`_ for slash-delimited hierarchical configuration data.\n\nLoader Configuration\n--------------------\n\nAn example:\n\n.. code-block:: python\n\n    from dynaconf import Dynaconf\n\n    settings = Dynaconf(\n        environments=True,\n        settings_file=\"settings.toml\",\n        LOADERS_FOR_DYNACONF=[\n            \"dynaconf_aws_loader.loader\",\n            \"dynaconf.loaders.env_loader\"\n        ],\n    )\n\n\nNote that for the basic functioning of this loader, the `environments <https://www.dynaconf.com/configuration/#environments>`_ option for ``Dynaconf`` must be set, and an environment must be used.\n\nConfiguration Variables\n-----------------------\n\n- ``AWS_SSM_PARAMETER_PROJECT_PREFIX``: Required.\n  The ``project`` prefix in the parameter store path. This value is required. It may be set in ``settings.toml`` (or equivalent), *or* may be sourced from the environment directly. This latter is a useful option if you wish to avoid using materialized settings files and instead wish to use environment variables only.\n\n- ``AWS_SSM_PARAMETER_NAMESPACE``: Optional.\n  This provides an additional level of grouping once the project and environment have been determined.\n\nParameter Store Details\n~~~~~~~~~~~~~~~~~~~~~~~\n\nThe structure that this loader expects from the path-based organization in SSM is:\n\n.. code-block::\n\n    /<project-name>/<environment>/<parameter-name>\n\n\nAn optional ``namespace`` can be specified as a sub-project grouping for parameters:\n\n.. code-block::\n\n    /<project-name>/<environment>/<namespace>/<parameter-name>\n\n\nNote that if you choose to use a ``namespace`` identifier, it must not conflict with existing ``environment`` identifiers.\n\nThe ``environment`` identifiers of: ``default``, ``main``, ``global``, and ``dynaconf`` indicate that any parameters nested below said identifiers will be inherited by *all* environments; these names are Dynaconf defaults. This can be useful for setting a default value that can then be overridden on a per-environment basis as necessary.\n\nSecurity Considerations\n~~~~~~~~~~~~~~~~~~~~~~~\n\nFor this loader to function correctly and securely, the use of IAM policies to restrict which parameters can be read/mutated is highly encouraged.\n\nPolicies can be enacted on a glob-path basis, which will ensure that the only parameters that can be fetched/hydrated into the local object instance are the ones that the current environment is permitted to load.\n\nThe following policy for a fictional account allows a user to call the ``DescribeParameters`` and ``GetParameters`` API operations for parameters that begin with the path ``/testapp/production``:\n\n.. code-block:: json\n\n    {\n        \"Version\": \"2012-10-17\",\n        \"Statement\": [\n            {\n                \"Effect\": \"Allow\",\n                \"Action\": [\n                    \"ssm:DescribeParameters\"\n                ],\n                \"Resource\": \"*\"\n            },\n            {\n                \"Effect\": \"Allow\",\n                \"Action\": [\n                    \"ssm:GetParameters\"\n                ],\n                \"Resource\": \"arn:aws:ssm:us-east-1:000000000000:parameter/testapp/production*\"\n            }\n        ]\n    }\n\n\n.. warning::\n\n    If a user has access to a path, then the user can access all levels of that path. For example, if a user has permission to access path ``/testapp``, then the user can also access ``testapp/production``. Even if a user has explicitly been denied access in IAM for parameter ``/testapp/production``, they can still call the ``GetParametersByPath`` API operation recursively for ``/testapp`` and view ``/testapp/production``.\n\n\nSetting Parameters via Boto3\n~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\nParameters may be set via the AWS Web Console UI, or one of their many client libraries. The `boto3 <https://boto3.amazonaws.com/v1/documentation/api/latest/index.html>`_ library is perhaps the most well-known, and the process is relatively straightforward:\n\n.. code-block:: python\n\n    import boto3\n    ssm_client = boto3.client(\"ssm\")\n\n    ssm_client.put_parameter(\n        Name=\"/testapp/development/database/host\",\n        Value=\"localhost\",\n        Type=\"String\",\n    )\n\n    ssm_client.put_parameter(\n        Name=\"/testapp/production/database/password\",\n        Value=\"sekrit\",\n        Type=\"SecureString\",\n    )\n\n    ssm_client.put_parameter(\n        Name=\"/testapp/production/database/host\",\n        Value=\"db.example.com\",\n        Type=\"String\",\n    )\n\n    ssm_client.put_parameter(\n        Name=\"/testapp/production/admin_email\",\n        Value=\"help@example.com\",\n        Type=\"String\",\n    )\n\n\nThis creates a parameter hierarchy with the following structure:\n\n.. code-block:: json\n\n    {\n        \"testapp\": {\n            \"development\": {\"database\": {\"host\": \"localhost\"}},\n            \"production\": {\n                \"database\": {\"host\": \"db.example.com\", \"password\": \"sekrit\"},\n                \"admin_email\": \"help@example.com\",\n            },\n        },\n    }\n\n\nParameter Name Limitations\n--------------------------\n\nAWS SSM has the following key (and thus path) limitations:\n\n- Parameter names are case sensitive\n- A parameter name must be unique within an Amazon Web Services Region\n- A parameter name can't be prefixed with \"aws\" or \"ssm\" (case-insensitive)\n- Parameter names can include only the following symbols and letters: a-zA-Z0-9\\_.-\n- The slash character ( ``/`` ) is used to delineate hierarchies in parameter names\n- A parameter name can't include spaces\n- Parameter hierarchies are limited to a maximum depth of fifteen levels\n\n\nTesting\n~~~~~~~\n\n0. Have Docker installed and running\n1. Clone this repository\n2. Ensure you have `poetry` available on your system\n3. `poetry run pytest`\n\nThe test suite will spin up an ephemeral Docker container; it may take a few seconds for it to load. The relevant test fixtures will handle setting parameters and their values in the Localstack SSM service.\n\n\nTODO\n~~~~\n\n- [ ] CI configuration for matrix-based python/dynaconf version testing\n- [ ] Handle `Parameter Store references to AWS Secrets Manager <https://docs.aws.amazon.com/systems-manager/latest/userguide/integration-ps-secretsmanager.html>`_\n- [ ] Make ``tests/docker-compose.yml`` more configurable, e.g. ports, in case a different Localstack container is already running for the user\n",
+            "description_content_type": "text/x-rst",
+            "docs_url": null,
+            "download_url": "",
+            "downloads": {
+                "last_day": -1,
+                "last_month": -1,
+                "last_week": -1
+            },
+            "home_page": "",
+            "keywords": "dynaconf,AWS,SSM",
+            "license": "MIT",
+            "maintainer": "",
+            "maintainer_email": "",
+            "name": "dynaconf-aws-loader",
+            "package_url": "https://pypi.org/project/dynaconf-aws-loader/",
+            "platform": null,
+            "project_url": "https://pypi.org/project/dynaconf-aws-loader/",
+            "project_urls": null,
+            "release_url": "https://pypi.org/project/dynaconf-aws-loader/0.2.0/",
+            "requires_dist": [
+                "boto3 (>=1.26,<2.0)",
+                "botocore (>=1.29,<2.0)",
+                "dynaconf (>=3.1,<4.0)"
+            ],
+            "requires_python": ">=3.8,<4.0",
+            "summary": "A custom loader for Dynaconf that uses AWS Systems Manager Parameter Store as a source of truth",
+            "version": "0.2.0",
+            "yanked": false,
+            "yanked_reason": null
+        },
+        "last_serial": 18386393,
+        "urls": [
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "6f75dcc0a4f25b2712f9c86315a7dd7b09b9d84993f0192309ac569533e62b47",
+                    "md5": "0798b65682cffd9d5d20d517c8186d3b",
+                    "sha256": "6dbf7e15d35d9cec6050d769c75b1cfb16ba5940c861aefd339484a9a8a9bd58"
+                },
+                "downloads": -1,
+                "filename": "dynaconf_aws_loader-0.2.0-py3-none-any.whl",
+                "has_sig": false,
+                "md5_digest": "0798b65682cffd9d5d20d517c8186d3b",
+                "packagetype": "bdist_wheel",
+                "python_version": "py3",
+                "requires_python": ">=3.8,<4.0",
+                "size": 8406,
+                "upload_time": "2023-06-06T03:59:25",
+                "upload_time_iso_8601": "2023-06-06T03:59:25.063398Z",
+                "url": "https://files.pythonhosted.org/packages/6f/75/dcc0a4f25b2712f9c86315a7dd7b09b9d84993f0192309ac569533e62b47/dynaconf_aws_loader-0.2.0-py3-none-any.whl",
+                "yanked": false,
+                "yanked_reason": null
+            },
+            {
+                "comment_text": "",
+                "digests": {
+                    "blake2b_256": "0430c1f8d650e9a587a39fe3c772d4e01689ecd5fa630e1433caa2774c675052",
+                    "md5": "c6ccb6bbedbed1d6b0dc99402bc6dc09",
+                    "sha256": "9f98804fdf9a979e0a827ce401a17e328d7373938c68686e5579d851c440df8c"
+                },
+                "downloads": -1,
+                "filename": "dynaconf_aws_loader-0.2.0.tar.gz",
+                "has_sig": false,
+                "md5_digest": "c6ccb6bbedbed1d6b0dc99402bc6dc09",
+                "packagetype": "sdist",
+                "python_version": "source",
+                "requires_python": ">=3.8,<4.0",
+                "size": 6449,
+                "upload_time": "2023-06-06T03:59:26",
+                "upload_time_iso_8601": "2023-06-06T03:59:26.947361Z",
+                "url": "https://files.pythonhosted.org/packages/04/30/c1f8d650e9a587a39fe3c772d4e01689ecd5fa630e1433caa2774c675052/dynaconf_aws_loader-0.2.0.tar.gz",
+                "yanked": false,
+                "yanked_reason": null
+            }
+        ],
+        "vulnerabilities": []
+    }
+}
